@@ -1,0 +1,2002 @@
+     1→"use client";
+     2→
+     3→/* =========================================================================
+     4→   dial. — Contacts & calls overlays (Task 2-a)
+     5→   ContactDetail · ContactEdit · CallScreen · MergeOverlay · SpeedDialOverlay
+     6→   ========================================================================= */
+     7→
+     8→import { useEffect, useMemo, useRef, useState } from "react";
+     9→import { motion } from "framer-motion";
+    10→import {
+    11→  ArrowDown,
+    12→  Ban,
+    13→  Building2,
+    14→  Cake,
+    15→  Camera,
+    16→  Check,
+    17→  ChevronRight,
+    18→  Copy,
+    19→  GitMerge,
+    20→  Grid3X3,
+    21→  Info,
+    22→  Link2,
+    23→  Mail,
+    24→  MapPin,
+    25→  MessageCircle,
+    26→  Mic,
+    27→  MicOff,
+    28→  MoreVertical,
+    29→  Pencil,
+    30→  Phone,
+    31→  PhoneCall,
+    32→  PhoneOff,
+    33→  Pin,
+    34→  Plus,
+    35→  RefreshCw,
+    36→  Send,
+    37→  Share2,
+    38→  Shield,
+    39→  Sparkles,
+    40→  Star,
+    41→  StickyNote,
+    42→  Trash2,
+    43→  UserRound,
+    44→  UserPlus,
+    45→  Volume2,
+    46→  VolumeX,
+    47→  X,
+    48→} from "lucide-react";
+    49→import { useApp } from "@/lib/store";
+    50→import { useUI } from "@/lib/ui-store";
+    51→import { openListsPending, ownerFullBalance } from "@/lib/calc";
+    52→import { toVCard } from "@/lib/exporters";
+    53→import {
+    54→  clockStr,
+    55→  copyText,
+    56→  displayName,
+    57→  downloadBlob,
+    58→  fd,
+    59→  money,
+    60→  normalizePhone,
+    61→  prettyPhone,
+    62→  uid,
+    63→  vibrate,
+    64→} from "@/lib/utils";
+    65→import {
+    66→  fillTemplate,
+    67→  mailtoLink,
+    68→  openExternal,
+    69→  primaryEmail,
+    70→  primaryPhone,
+    71→  reminderTemplates,
+    72→  shareText,
+    73→  smsLink,
+    74→  telLink,
+    75→  telegramHandle,
+    76→  tgLink,
+    77→  waLink,
+    78→} from "@/lib/share";
+    79→import type {
+    80→  CallLog,
+    81→  Contact,
+    82→  ID,
+    83→  Phone as PhoneT,
+    84→  Settings,
+    85→  Social,
+    86→} from "@/lib/types";
+    87→import { PHONE_LABELS } from "@/lib/types";
+    88→import {
+    89→  Avatar,
+    90→  BalancePill,
+    91→  Button,
+    92→  EmptyState,
+    93→  Field,
+    94→  IconButton,
+    95→  Money,
+    96→  SectionCard,
+    97→  SectionLabel,
+    98→  Segmented,
+    99→  cx,
+   100→  inputCls,
+   101→} from "../kit/primitives";
+   102→import { BottomSheet, Sheet } from "../kit/Sheet";
+   103→import { useConfirm } from "../kit/Confirm";
+   104→import { toastErr, toastOk, toastUndoLast } from "../kit/toast";
+   105→import { AttachButton, AttachmentStrip, FilesOfOwner } from "../kit/Attachments";
+   106→import { ContactPicker } from "../kit/ContactPicker";
+   107→import { LedgerSection } from "../sections/LedgerSection";
+   108→import { ListsSection } from "../sections/ListsSection";
+   109→import { NotesSection } from "../sections/NotesSection";
+   110→import { BankSection } from "../sections/BankSection";
+   111→import { RemindersSection } from "../sections/RemindersSection";
+   112→
+   113→/* ------------------------------------------------------------------ */
+   114→/* Shared bits                                                          */
+   115→/* ------------------------------------------------------------------ */
+   116→
+   117→const SPEED_KEYS = ["2", "3", "4", "5", "6", "7", "8", "9"];
+   118→const KEY_LETTERS: Record<string, string> = {
+   119→  "2": "ABC", "3": "DEF", "4": "GHI", "5": "JKL",
+   120→  "6": "MNO", "7": "PQRS", "8": "TUV", "9": "WXYZ",
+   121→};
+   122→const EMAIL_LABELS = ["home", "work", "other"];
+   123→const ADDRESS_LABELS = ["home", "work", "other"];
+   124→const SOCIAL_APPS: Social["app"][] = ["telegram", "whatsapp", "signal", "instagram", "x", "other"];
+   125→
+   126→type SettingsPatch = Partial<Settings> & { speedDial?: Record<string, string | undefined> };
+   127→
+   128→function speedDialMap(settings: Settings): Record<string, string | undefined> {
+   129→  return (settings as Settings & { speedDial?: Record<string, string | undefined> }).speedDial ?? {};
+   130→}
+   131→
+   132→async function shareVCard(c: Contact) {
+   133→  const vcf = toVCard([c], true);
+   134→  const res = await shareText(`Contact · ${displayName(c)}`, vcf);
+   135→  if (res === "copied") {
+   136→    await copyText(vcf);
+   137→    toastOk("vCard copied to clipboard");
+   138→  } else if (res === "failed") {
+   139→    downloadBlob(new Blob([vcf], { type: "text/vcard" }), `${displayName(c)}.vcf`);
+   140→    toastOk("vCard downloaded");
+   141→  }
+   142→}
+   143→
+   144→function daysUntilBirthday(bd?: string): number | null {
+   145→  if (!bd) return null;
+   146→  const d = new Date(`${bd}T00:00:00`);
+   147→  if (isNaN(d.getTime())) return null;
+   148→  const today = new Date();
+   149→  today.setHours(0, 0, 0, 0);
+   150→  let next = new Date(today.getFullYear(), d.getMonth(), d.getDate());
+   151→  if (next.getTime() < today.getTime()) next = new Date(today.getFullYear() + 1, d.getMonth(), d.getDate());
+   152→  return Math.round((next.getTime() - today.getTime()) / 86400000);
+   153→}
+   154→
+   155→function ActionRow({
+   156→  icon,
+   157→  title,
+   158→  sub,
+   159→  onClick,
+   160→  danger,
+   161→}: {
+   162→  icon: React.ReactNode;
+   163→  title: string;
+   164→  sub?: string;
+   165→  onClick: () => void;
+   166→  danger?: boolean;
+   167→}) {
+   168→  return (
+   169→    <button
+   170→      type="button"
+   171→      onClick={onClick}
+   172→      className={cx(
+   173→        "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition active:scale-[0.98]",
+   174→        danger ? "text-neg" : "text-ink",
+   175→        "hover:bg-surface2"
+   176→      )}
+   177→    >
+   178→      <span
+   179→        className={cx(
+   180→          "flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px]",
+   181→          danger ? "bg-negsoft text-neg" : "bg-brandsoft text-brand"
+   182→        )}
+   183→      >
+   184→        {icon}
+   185→      </span>
+   186→      <span className="min-w-0 flex-1">
+   187→        <span className="block truncate text-[13px] font-semibold">{title}</span>
+   188→        {sub && <span className="block truncate text-[11px] text-mute">{sub}</span>}
+   189→      </span>
+   190→    </button>
+   191→  );
+   192→}
+   193→
+   194→function LabelChip({ children }: { children: React.ReactNode }) {
+   195→  return (
+   196→    <span className="shrink-0 rounded-full bg-brandsoft px-2 py-0.5 text-[9px] font-bold uppercase tracking-[1px] text-brand">
+   197→      {children}
+   198→    </span>
+   199→  );
+   200→}
+   201→
+   202→/** Accessible styled toggle (shared shadcn switch is currently broken — see worklog). */
+   203→function SwitchToggle({
+   204→  checked,
+   205→  onChange,
+   206→  label,
+   207→}: {
+   208→  checked: boolean;
+   209→  onChange: (v: boolean) => void;
+   210→  label: string;
+   211→}) {
+   212→  return (
+   213→    <button
+   214→      type="button"
+   215→      role="switch"
+   216→      aria-checked={checked}
+   217→      aria-label={label}
+   218→      onClick={() => onChange(!checked)}
+   219→      className="flex h-11 w-16 shrink-0 items-center justify-center rounded-full transition active:scale-95"
+   220→    >
+   221→      <span
+   222→        aria-hidden
+   223→        className={cx("relative h-7 w-12 rounded-full transition-colors", checked ? "bg-brand" : "bg-line2")}
+   224→      >
+   225→        <span
+   226→          className={cx(
+   227→            "absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow-key transition-transform",
+   228→            checked ? "translate-x-[20px]" : "translate-x-0"
+   229→          )}
+   230→        />
+   231→      </span>
+   232→    </button>
+   233→  );
+   234→}
+   235→
+   236→const SOCIAL_ICONS: Record<Social["app"], React.ReactNode> = {
+   237→  telegram: <Send size={15} />,
+   238→  whatsapp: <MessageCircle size={15} />,
+   239→  signal: <Shield size={15} />,
+   240→  instagram: <Camera size={15} />,
+   241→  x: <Sparkles size={15} />,
+   242→  other: <Link2 size={15} />,
+   243→};
+   244→
+   245→function socialUrl(s: Social): string | null {
+   246→  const h = s.handle.trim().replace(/^@/, "");
+   247→  switch (s.app) {
+   248→    case "telegram":
+   249→      return tgLink(s.handle);
+   250→    case "whatsapp":
+   251→      return waLink(h);
+   252→    case "instagram":
+   253→      return `https://instagram.com/${encodeURIComponent(h)}`;
+   254→    case "x":
+   255→      return `https://x.com/${encodeURIComponent(h)}`;
+   256→    case "signal":
+   257→      return `https://signal.me/#p/${encodeURIComponent(h)}`;
+   258→    default:
+   259→      return /^https?:\/\//i.test(h) ? h : null;
+   260→  }
+   261→}
+   262→
+   263→/* ------------------------------------------------------------------ */
+   264→/* ContactDetail                                                        */
+   265→/* ------------------------------------------------------------------ */
+   266→
+   267→type DetailTab = "overview" | "ledger" | "lists" | "notes" | "bank" | "files" | "reminders";
+   268→
+   269→export function ContactDetail({ contactId }: { contactId: ID }) {
+   270→  const app = useApp();
+   271→  const ui = useUI();
+   272→  const confirm = useConfirm();
+   273→  const [tab, setTab] = useState<DetailTab>("overview");
+   274→  const [menuOpen, setMenuOpen] = useState(false);
+   275→  const [moreOpen, setMoreOpen] = useState(false);
+   276→  const [phoneSheet, setPhoneSheet] = useState<PhoneT | null>(null);
+   277→
+   278→  const contact = app.contacts.find((c) => c.id === contactId && !c.deletedAt);
+   279→  const cc = app.settings.countryCode;
+   280→
+   281→  const balance = useMemo(
+   282→    () => (contact ? ownerFullBalance(app.entries, app.lists, contact.id) : 0),
+   283→    [app.entries, app.lists, contact]
+   284→  );
+   285→  const openPending = useMemo(
+   286→    () => (contact ? openListsPending(app.lists, contact.id) : 0),
+   287→    [app.lists, contact]
+   288→  );
+   289→
+   290→  if (!contact) {
+   291→    return (
+   292→      <Sheet title="Contact" onBack={ui.pop}>
+   293→        <div className="p-5">
+   294→          <EmptyState
+   295→            icon={<UserRound size={22} />}
+   296→            title="Contact not found"
+   297→            hint="It may have been deleted or merged into another contact."
+   298→          />
+   299→        </div>
+   300→      </Sheet>
+   301→    );
+   302→  }
+   303→
+   304→  const settled = Math.abs(balance) < 0.005;
+   305→  const balanceLabel = settled ? "Settled up" : balance > 0 ? "They owe you" : "You owe them";
+   306→  const phone = primaryPhone(contact);
+   307→  const email = primaryEmail(contact);
+   308→  const tg = telegramHandle(contact);
+   309→  const hasTelegramSocial = contact.socials.some((s) => s.app === "telegram");
+   310→  const name = displayName(contact);
+   311→  const subtitle = contact.company || (phone ? prettyPhone(phone, cc) : undefined);
+   312→
+   313→  /* WhatsApp payment reminder — one tap opens WhatsApp pre-filled. */
+   314→  const waReminder = settled
+   315→    ? undefined
+   316→    : balance > 0
+   317→      ? fillTemplate(reminderTemplates[0].body, {
+   318→          name,
+   319→          amount: money(Math.abs(balance), app.settings.currency),
+   320→          date: fd(new Date()),
+   321→        })
+   322→      : `Hi ${name}, I'd like to settle up ${money(Math.abs(balance), app.settings.currency)} that I owe you. How would you like to receive it?`;
+   323→
+   324→  const openWhatsApp = () => {
+   325→    if (!phone) {
+   326→      toastErr("No phone number on this contact");
+   327→      return;
+   328→    }
+   329→    openExternal(waLink(phone, waReminder, cc));
+   330→    if (waReminder) app.logMessage(contact.id, "whatsapp", waReminder);
+   331→  };
+   332→
+   333→  const remove = async () => {
+   334→    const ok = await confirm({
+   335→      title: "Delete contact?",
+   336→      message: `“${name}” will move to Trash. Ledger history stays safe and can be re-linked later.`,
+   337→      confirmLabel: "Delete",
+   338→      tone: "danger",
+   339→    });
+   340→    if (!ok) return;
+   341→    app.deleteContact(contact.id);
+   342→    toastUndoLast();
+   343→    ui.pop();
+   344→  };
+   345→
+   346→  const setPrimaryPhone = (p: PhoneT) => {
+   347→    app.saveContact({ id: contact.id, phones: contact.phones.map((x) => ({ ...x, primary: x.id === p.id })) });
+   348→    setPhoneSheet(null);
+   349→    toastOk("Primary number updated");
+   350→  };
+   351→
+   352→  const birthdayIn = daysUntilBirthday(contact.birthday);
+   353→
+   354→  return (
+   355→    <Sheet
+   356→      title={name}
+   357→      subtitle={subtitle}
+   358→      onBack={ui.pop}
+   359→      actions={
+   360→        <>
+   361→          <IconButton
+   362→            label={contact.favorite ? "Remove from favorites" : "Add to favorites"}
+   363→            variant={contact.favorite ? "brand" : "ghost"}
+   364→            onClick={() => {
+   365→              app.toggleFavorite(contact.id);
+   366→              toastOk(contact.favorite ? "Removed from favorites" : "Added to favorites");
+   367→            }}
+   368→          >
+   369→            <Star size={17} fill={contact.favorite ? "currentColor" : "none"} />
+   370→          </IconButton>
+   371→          <IconButton label="More actions" onClick={() => setMenuOpen(true)}>
+   372→            <MoreVertical size={18} />
+   373→          </IconButton>
+   374→        </>
+   375→      }
+   376→    >
+   377→      <div className="px-5 pb-10 pt-4">
+   378→        {/* hero */}
+   379→        <div className="flex flex-col items-center">
+   380→          <Avatar contact={contact} size="xl" />
+   381→          <h2 className="mt-3 text-[22px] font-bold tracking-tight text-ink">{name}</h2>
+   382→          {contact.company && (
+   383→            <p className="mt-0.5 text-[11px] text-mute">
+   384→              {contact.jobTitle ? `${contact.jobTitle} · ` : ""}
+   385→              {contact.company}
+   386→            </p>
+   387→          )}
+   388→          <div className="mt-2.5">
+   389→            <BalancePill value={balance} size="lg" />
+   390→          </div>
+   391→          <p className="mt-1.5 text-[11px] font-medium text-mute">{balanceLabel}</p>
+   392→          {openPending !== 0 && (
+   393→            <p className="mt-1 text-[10px] text-mute">
+   394→              Open lists <Money value={openPending} signed /> counted in balance
+   395→            </p>
+   396→          )}
+   397→        </div>
+   398→
+   399→        {/* quick actions */}
+   400→        <div className="app-scroll -mx-1 mt-5 flex gap-2 overflow-x-auto px-1 pb-1">
+   401→          <QuickAction
+   402→            primary
+   403→            icon={<PhoneCall size={19} />}
+   404→            label="Call"
+   405→            disabled={!phone}
+   406→            onClick={() => phone && ui.open({ type: "call", phone, contactId: contact.id })}
+   407→          />
+   408→          <QuickAction
+   409→            icon={<MessageCircle size={19} />}
+   410→            label="SMS"
+   411→            disabled={!phone}
+   412→            onClick={() => phone && openExternal(smsLink(phone, undefined, cc))}
+   413→          />
+   414→          <QuickAction
+   415→            icon={<MessageCircle size={19} />}
+   416→            label="WhatsApp"
+   417→            disabled={!phone}
+   418→            onClick={openWhatsApp}
+   419→          />
+   420→          {tg && (
+   421→            <QuickAction icon={<Send size={19} />} label="Telegram" onClick={() => openExternal(tgLink(tg))} />
+   422→          )}
+   423→          {email && (
+   424→            <QuickAction
+   425→              icon={<Mail size={19} />}
+   426→              label="Email"
+   427→              onClick={() => openExternal(mailtoLink(email))}
+   428→            />
+   429→          )}
+   430→          <QuickAction icon={<MoreVertical size={19} />} label="More" onClick={() => setMoreOpen(true)} />
+   431→        </div>
+   432→
+   433→        {/* tabs */}
+   434→        <div className="mt-5">
+   435→          <Segmented
+   436→            value={tab}
+   437→            onChange={setTab}
+   438→            options={[
+   439→              { value: "overview", label: "Overview" },
+   440→              { value: "ledger", label: "Ledger" },
+   441→              { value: "lists", label: "Lists" },
+   442→              { value: "notes", label: "Notes" },
+   443→              { value: "bank", label: "Bank" },
+   444→              { value: "files", label: "Files" },
+   445→              { value: "reminders", label: "Reminders" },
+   446→            ]}
+   447→          />
+   448→
+   449→          <div className="mt-4 space-y-4">
+   450→            {tab === "ledger" && <LedgerSection ownerId={contact.id} />}
+   451→            {tab === "lists" && <ListsSection ownerId={contact.id} />}
+   452→            {tab === "notes" && <NotesSection ownerId={contact.id} />}
+   453→            {tab === "bank" && <BankSection ownerId={contact.id} />}
+   454→            {tab === "files" && <FilesOfOwner ownerId={contact.id} />}
+   455→            {tab === "reminders" && <RemindersSection ownerId={contact.id} />}
+   456→            {tab === "reminders" && (
+   457→              <p className="text-center text-[10px] text-mute">
+   458→                Reminders for {name} · birthdays fire automatically
+   459→              </p>
+   460→            )}
+   461→
+   462→            {tab === "overview" && (
+   463→              <motion.div
+   464→                initial={{ opacity: 0, y: 6 }}
+   465→                animate={{ opacity: 1, y: 0 }}
+   466→                transition={{ duration: 0.2 }}
+   467→                className="space-y-4"
+   468→              >
+   469→                {/* phones */}
+   470→                {contact.phones.length > 0 && (
+   471→                  <section>
+   472→                    <SectionLabel>Phones</SectionLabel>
+   473→                    <SectionCard className="divide-y divide-line p-0">
+   474→                      {contact.phones.map((p) => (
+   475→                        <button
+   476→                          key={p.id}
+   477→                          type="button"
+   478→                          onClick={() => setPhoneSheet(p)}
+   479→                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition active:bg-surface2"
+   480→                          aria-label={`Options for ${prettyPhone(p.number, cc)}`}
+   481→                        >
+   482→                          <LabelChip>{p.label}</LabelChip>
+   483→                          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
+   484→                            {prettyPhone(p.number, cc)}
+   485→                          </span>
+   486→                          <Star
+   487→                            size={12}
+   488→                            className={cx("shrink-0", p.primary ? "text-brand" : "text-line2")}
+   489→                            fill={p.primary ? "currentColor" : "none"}
+   490→                          />
+   491→                          <ChevronRight size={14} className="shrink-0 text-line2" />
+   492→                        </button>
+   493→                      ))}
+   494→                    </SectionCard>
+   495→                  </section>
+   496→                )}
+   497→
+   498→                {/* emails */}
+   499→                {contact.emails.length > 0 && (
+   500→                  <section>
+   501→                    <SectionLabel>Emails</SectionLabel>
+   502→                    <SectionCard className="divide-y divide-line p-0">
+   503→                      {contact.emails.map((e) => (
+   504→                        <div key={e.id} className="flex items-center gap-3 px-4 py-3">
+   505→                          <LabelChip>{e.label}</LabelChip>
+   506→                          <button
+   507→                            type="button"
+   508→                            className="min-w-0 flex-1 truncate text-left text-[13px] font-semibold text-ink"
+   509→                            onClick={() => {
+   510→                              void copyText(e.address).then((ok) => toastOk(ok ? "Email copied" : "Couldn't copy"));
+   511→                            }}
+   512→                            aria-label="Copy email address"
+   513→                          >
+   514→                            {e.address}
+   515→                          </button>
+   516→                          <IconButton
+   517→                            label={`Write email to ${e.address}`}
+   518→                            variant="surface"
+   519→                            className="h-9 w-9"
+   520→                            onClick={() => openExternal(mailtoLink(e.address))}
+   521→                          >
+   522→                            <Mail size={14} />
+   523→                          </IconButton>
+   524→                        </div>
+   525→                      ))}
+   526→                    </SectionCard>
+   527→                  </section>
+   528→                )}
+   529→
+   530→                {/* socials */}
+   531→                {contact.socials.length > 0 && (
+   532→                  <section>
+   533→                    <SectionLabel>Socials</SectionLabel>
+   534→                    <SectionCard className="divide-y divide-line p-0">
+   535→                      {contact.socials.map((s) => (
+   536→                        <button
+   537→                          key={s.id}
+   538→                          type="button"
+   539→                          onClick={() => {
+   540→                            const url = socialUrl(s);
+   541→                            if (url) openExternal(url);
+   542→                            else {
+   543→                              void copyText(s.handle).then((ok) => toastOk(ok ? "Handle copied" : "Couldn't copy"));
+   544→                            }
+   545→                          }}
+   546→                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition active:bg-surface2"
+   547→                          aria-label={`Open ${s.app}`}
+   548→                        >
+   549→                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-brandsoft text-brand">
+   550→                            {SOCIAL_ICONS[s.app]}
+   551→                          </span>
+   552→                          <span className="min-w-0 flex-1">
+   553→                            <span className="block truncate text-[13px] font-semibold text-ink">
+   554→                              {s.handle}
+   555→                            </span>
+   556→                            <span className="block text-[10px] uppercase tracking-[1.5px] text-mute">{s.app}</span>
+   557→                          </span>
+   558→                          <ChevronRight size={14} className="shrink-0 text-line2" />
+   559→                        </button>
+   560→                      ))}
+   561→                    </SectionCard>
+   562→                  </section>
+   563→                )}
+   564→
+   565→                {/* links */}
+   566→                {contact.links.length > 0 && (
+   567→                  <section>
+   568→                    <SectionLabel>Links</SectionLabel>
+   569→                    <SectionCard className="divide-y divide-line p-0">
+   570→                      {contact.links.map((l) => (
+   571→                        <button
+   572→                          key={l.id}
+   573→                          type="button"
+   574→                          onClick={() => openExternal(l.url)}
+   575→                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition active:bg-surface2"
+   576→                          aria-label={`Open ${l.label || l.url}`}
+   577→                        >
+   578→                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-brandsoft text-brand">
+   579→                            <Link2 size={15} />
+   580→                          </span>
+   581→                          <span className="min-w-0 flex-1">
+   582→                            <span className="block truncate text-[13px] font-semibold text-ink">{l.label}</span>
+   583→                            <span className="block truncate text-[10px] text-mute">{l.url}</span>
+   584→                          </span>
+   585→                          <ChevronRight size={14} className="shrink-0 text-line2" />
+   586→                        </button>
+   587→                      ))}
+   588→                    </SectionCard>
+   589→                  </section>
+   590→                )}
+   591→
+   592→                {/* addresses */}
+   593→                {contact.addresses.length > 0 && (
+   594→                  <section>
+   595→                    <SectionLabel>Addresses</SectionLabel>
+   596→                    <SectionCard className="divide-y divide-line p-0">
+   597→                      {contact.addresses.map((a) => (
+   598→                        <button
+   599→                          key={a.id}
+   600→                          type="button"
+   601→                          onClick={() => {
+   602→                            void copyText(a.text).then((ok) => toastOk(ok ? "Address copied" : "Couldn't copy"));
+   603→                          }}
+   604→                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition active:bg-surface2"
+   605→                          aria-label="Copy address"
+   606→                        >
+   607→                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-brandsoft text-brand">
+   608→                            <MapPin size={15} />
+   609→                          </span>
+   610→                          <span className="min-w-0 flex-1">
+   611→                            <span className="block truncate text-[13px] font-semibold text-ink">{a.text}</span>
+   612→                            <span className="block text-[10px] uppercase tracking-[1.5px] text-mute">{a.label}</span>
+   613→                          </span>
+   614→                          <Copy size={13} className="shrink-0 text-line2" />
+   615→                        </button>
+   616→                      ))}
+   617→                    </SectionCard>
+   618→                  </section>
+   619→                )}
+   620→
+   621→                {/* birthday */}
+   622→                {contact.birthday && (
+   623→                  <section>
+   624→                    <SectionLabel>Birthday</SectionLabel>
+   625→                    <SectionCard className="flex items-center gap-3">
+   626→                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-brandsoft text-brand">
+   627→                        <Cake size={17} />
+   628→                      </span>
+   629→                      <div className="min-w-0 flex-1">
+   630→                        <p className="text-[13px] font-semibold text-ink">{fd(contact.birthday)}</p>
+   631→                        {birthdayIn !== null && (
+   632→                          <p className="text-[11px] text-mute">
+   633→                            {birthdayIn === 0
+   634→                              ? "Today — happy birthday!"
+   635→                              : birthdayIn === 1
+   636→                                ? "Tomorrow"
+   637→                                : `In ${birthdayIn} days`}
+   638→                          </p>
+   639→                        )}
+   640→                      </div>
+   641→                    </SectionCard>
+   642→                  </section>
+   643→                )}
+   644→
+   645→                {/* company */}
+   646→                {(contact.company || contact.jobTitle) && (
+   647→                  <section>
+   648→                    <SectionLabel>Work</SectionLabel>
+   649→                    <SectionCard className="flex items-center gap-3">
+   650→                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-brandsoft text-brand">
+   651→                        <Building2 size={17} />
+   652→                      </span>
+   653→                      <div className="min-w-0 flex-1">
+   654→                        <p className="truncate text-[13px] font-semibold text-ink">{contact.company || "—"}</p>
+   655→                        {contact.jobTitle && <p className="text-[11px] text-mute">{contact.jobTitle}</p>}
+   656→                      </div>
+   657→                    </SectionCard>
+   658→                  </section>
+   659→                )}
+   660→
+   661→                {/* custom fields */}
+   662→                {contact.customFields.length > 0 && (
+   663→                  <section>
+   664→                    <SectionLabel>Custom fields</SectionLabel>
+   665→                    <SectionCard className="divide-y divide-line p-0">
+   666→                      {contact.customFields.map((f) => (
+   667→                        <div key={f.id} className="flex items-center gap-3 px-4 py-3">
+   668→                          <span className="w-[92px] shrink-0 truncate text-[10px] font-bold uppercase tracking-[1.2px] text-mute">
+   669→                            {f.key}
+   670→                          </span>
+   671→                          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{f.value}</span>
+   672→                        </div>
+   673→                      ))}
+   674→                    </SectionCard>
+   675→                  </section>
+   676→                )}
+   677→
+   678→                {/* tags */}
+   679→                {contact.tags.length > 0 && (
+   680→                  <section>
+   681→                    <SectionLabel>Tags</SectionLabel>
+   682→                    <div className="flex flex-wrap gap-1.5">
+   683→                      {contact.tags.map((t) => (
+   684→                        <span
+   685→                          key={t}
+   686→                          className="rounded-full border border-line bg-surface px-3 py-1.5 text-[11px] font-semibold text-ink shadow-key"
+   687→                        >
+   688→                          {t}
+   689→                        </span>
+   690→                      ))}
+   691→                    </div>
+   692→                  </section>
+   693→                )}
+   694→
+   695→                {/* notes */}
+   696→                {(contact.pinnedNote || contact.note) && (
+   697→                  <section>
+   698→                    <SectionLabel>Notes</SectionLabel>
+   699→                    <div className="space-y-2.5">
+   700→                      {contact.pinnedNote && (
+   701→                        <div className="flex gap-3 rounded-[22px] border border-brand/25 bg-brandsoft p-4">
+   702→                          <Pin size={15} className="mt-0.5 shrink-0 text-brand" />
+   703→                          <p className="whitespace-pre-wrap text-[12px] font-medium leading-5 text-ink">
+   704→                            {contact.pinnedNote}
+   705→                          </p>
+   706→                        </div>
+   707→                      )}
+   708→                      {contact.note && (
+   709→                        <div className="flex gap-3 rounded-[22px] border border-line bg-surface p-4 shadow-key">
+   710→                          <StickyNote size={15} className="mt-0.5 shrink-0 text-mute" />
+   711→                          <p className="whitespace-pre-wrap text-[12px] leading-5 text-ink">{contact.note}</p>
+   712→                        </div>
+   713→                      )}
+   714→                    </div>
+   715→                  </section>
+   716→                )}
+   717→
+   718→                {/* attachments */}
+   719→                <section>
+   720→                  <SectionLabel
+   721→                    right={
+   722→                      <AttachButton parentType="contact" parentId={contact.id} compact label="Attach" />
+   723→                    }
+   724→                  >
+   725→                    Files
+   726→                  </SectionLabel>
+   727→                  <AttachmentStrip parentType="contact" parentId={contact.id} />
+   728→                  {!app.attachments.some(
+   729→                    (a) => a.parentType === "contact" && a.parentId === contact.id
+   730→                  ) && (
+   731→                    <p className="px-1 text-[10px] text-mute">
+   732→                      Attach ID scans, agreements or voice notes — they live on this contact.
+   733→                    </p>
+   734→                  )}
+   735→                </section>
+   736→              </motion.div>
+   737→            )}
+   738→          </div>
+   739→        </div>
+   740→      </div>
+   741→
+   742→      {/* header ⋯ menu */}
+   743→      <BottomSheet open={menuOpen} onClose={() => setMenuOpen(false)} title={name}>
+   744→        <div className="space-y-0.5 pb-2">
+   745→          <ActionRow
+   746→            icon={<Pencil size={17} />}
+   747→            title="Edit contact"
+   748→            onClick={() => {
+   749→              setMenuOpen(false);
+   750→              ui.open({ type: "contactEdit", contactId: contact.id });
+   751→            }}
+   752→          />
+   753→          <ActionRow
+   754→            icon={<Share2 size={17} />}
+   755→            title="Share vCard"
+   756→            onClick={() => {
+   757→              setMenuOpen(false);
+   758→              void shareVCard(contact);
+   759→            }}
+   760→          />
+   761→          <ActionRow
+   762→            icon={<GitMerge size={17} />}
+   763→            title="Merge duplicates"
+   764→            sub="Scan for similar contacts"
+   765→            onClick={() => {
+   766→              setMenuOpen(false);
+   767→              ui.open({ type: "merge" });
+   768→            }}
+   769→          />
+   770→          <ActionRow
+   771→            icon={<Trash2 size={17} />}
+   772→            title="Delete contact"
+   773→            danger
+   774→            onClick={() => {
+   775→              setMenuOpen(false);
+   776→              void remove();
+   777→            }}
+   778→          />
+   779→        </div>
+   780→      </BottomSheet>
+   781→
+   782→      {/* quick-action "More" sheet */}
+   783→      <BottomSheet open={moreOpen} onClose={() => setMoreOpen(false)} title="More">
+   784→        <div className="space-y-0.5 pb-2">
+   785→          <ActionRow
+   786→            icon={<Share2 size={17} />}
+   787→            title="Share vCard"
+   788→            onClick={() => {
+   789→              setMoreOpen(false);
+   790→              void shareVCard(contact);
+   791→            }}
+   792→          />
+   793→          {phone && (
+   794→            <ActionRow
+   795→              icon={<Copy size={17} />}
+   796→              title="Copy number"
+   797→              sub={prettyPhone(phone, cc)}
+   798→              onClick={() => {
+   799→                void copyText(phone).then((ok) => toastOk(ok ? "Number copied" : "Couldn't copy"));
+   800→                setMoreOpen(false);
+   801→              }}
+   802→            />
+   803→          )}
+   804→          {phone && (
+   805→            <ActionRow
+   806→              icon={<Phone size={17} />}
+   807→              title="Open in phone dialer"
+   808→              onClick={() => {
+   809→                setMoreOpen(false);
+   810→                openExternal(telLink(phone, cc));
+   811→              }}
+   812→            />
+   813→          )}
+   814→          {phone && (
+   815→            <ActionRow
+   816→              icon={<PhoneCall size={17} />}
+   817→              title="Simulate incoming call"
+   818→              onClick={() => {
+   819→                setMoreOpen(false);
+   820→                ui.open({ type: "call", phone, contactId: contact.id, direction: "incoming" });
+   821→              }}
+   822→            />
+   823→          )}
+   824→        </div>
+   825→      </BottomSheet>
+   826→
+   827→      {/* per-phone action sheet */}
+   828→      <BottomSheet
+   829→        open={!!phoneSheet}
+   830→        onClose={() => setPhoneSheet(null)}
+   831→        title={phoneSheet ? prettyPhone(phoneSheet.number, cc) : ""}
+   832→      >
+   833→        {phoneSheet && (
+   834→          <div className="space-y-0.5 pb-2">
+   835→            <ActionRow
+   836→              icon={<Phone size={17} />}
+   837→              title="Call"
+   838→              onClick={() => {
+   839→                const p = phoneSheet.number;
+   840→                setPhoneSheet(null);
+   841→                ui.open({ type: "call", phone: p, contactId: contact.id });
+   842→              }}
+   843→            />
+   844→            <ActionRow
+   845→              icon={<MessageCircle size={17} />}
+   846→              title="SMS"
+   847→              onClick={() => {
+   848→                openExternal(smsLink(phoneSheet.number, undefined, cc));
+   849→                setPhoneSheet(null);
+   850→              }}
+   851→            />
+   852→            <ActionRow
+   853→              icon={<MessageCircle size={17} />}
+   854→              title="WhatsApp"
+   855→              onClick={() => {
+   856→                openExternal(waLink(phoneSheet.number, undefined, cc));
+   857→                setPhoneSheet(null);
+   858→              }}
+   859→            />
+   860→            {hasTelegramSocial && tg && (
+   861→              <ActionRow
+   862→                icon={<Send size={17} />}
+   863→                title="Telegram"
+   864→                sub={`@${tg.replace(/^@/, "")}`}
+   865→                onClick={() => {
+   866→                  openExternal(tgLink(tg));
+   867→                  setPhoneSheet(null);
+   868→                }}
+   869→              />
+   870→            )}
+   871→            <ActionRow
+   872→              icon={<Copy size={17} />}
+   873→              title="Copy number"
+   874→              onClick={() => {
+   875→                void copyText(phoneSheet.number).then((ok) => toastOk(ok ? "Number copied" : "Couldn't copy"));
+   876→                setPhoneSheet(null);
+   877→              }}
+   878→            />
+   879→            {!phoneSheet.primary && (
+   880→              <ActionRow
+   881→                icon={<Star size={17} />}
+   882→                title="Set as primary"
+   883→                onClick={() => setPrimaryPhone(phoneSheet)}
+   884→              />
+   885→            )}
+   886→          </div>
+   887→        )}
+   888→      </BottomSheet>
+   889→    </Sheet>
+   890→  );
+   891→}
+   892→
+   893→function QuickAction({
+   894→  icon,
+   895→  label,
+   896→  onClick,
+   897→  primary,
+   898→  disabled,
+   899→}: {
+   900→  icon: React.ReactNode;
+   901→  label: string;
+   902→  onClick: () => void;
+   903→  primary?: boolean;
+   904→  disabled?: boolean;
+   905→}) {
+   906→  return (
+   907→    <button
+   908→      type="button"
+   909→      onClick={onClick}
+   910→      disabled={disabled}
+   911→      aria-label={label}
+   912→      className="flex w-[64px] shrink-0 flex-col items-center gap-1.5 transition active:scale-95 disabled:opacity-40"
+   913→    >
+   914→      <span
+   915→        className={cx(
+   916→          "flex h-12 w-12 items-center justify-center rounded-[17px] shadow-key",
+   917→          primary ? "bg-brand text-white shadow-floating" : "border border-line bg-surface text-brand"
+   918→        )}
+   919→      >
+   920→        {icon}
+   921→      </span>
+   922→      <span className="text-[10px] font-semibold text-mute">{label}</span>
+   923→    </button>
+   924→  );
+   925→}
+   926→
+   927→/* ------------------------------------------------------------------ */
+   928→/* ContactEdit                                                          */
+   929→/* ------------------------------------------------------------------ */
+   930→
+   931→type PhoneDraft = { id: string; label: string; number: string; primary: boolean };
+   932→type EmailDraft = { id: string; label: string; address: string; primary: boolean };
+   933→type SocialDraft = { id: string; app: Social["app"]; handle: string };
+   934→type LinkDraft = { id: string; label: string; url: string };
+   935→type AddressDraft = { id: string; label: string; text: string };
+   936→type CustomDraft = { id: string; key: string; value: string };
+   937→
+   938→const removeBtnCls =
+   939→  "flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-line2 bg-surface text-mute shadow-key transition active:scale-90 hover:text-neg";
+   940→const addBtnCls =
+   941→  "flex h-11 w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-line2 bg-surface2/60 text-[12px] font-semibold text-brand transition active:scale-[0.98]";
+   942→
+   943→export function ContactEdit({
+   944→  contactId,
+   945→  prefillPhone,
+   946→  prefillName,
+   947→}: {
+   948→  contactId?: ID;
+   949→  prefillPhone?: string;
+   950→  prefillName?: string;
+   951→}) {
+   952→  const app = useApp();
+   953→  const ui = useUI();
+   954→  const confirm = useConfirm();
+   955→  const existing = contactId ? app.contacts.find((c) => c.id === contactId && !c.deletedAt) : undefined;
+   956→
+   957→  const existingThumb = existing?.photoId
+   958→    ? app.attachments.find((a) => a.id === existing.photoId)?.thumb
+   959→    : undefined;
+   960→
+   961→  const [firstName, setFirstName] = useState(existing?.firstName ?? prefillName?.split(/\s+/)[0] ?? "");
+   962→  const [lastName, setLastName] = useState(existing?.lastName ?? prefillName?.split(/\s+/).slice(1).join(" ") ?? "");
+   963→  const [nickname, setNickname] = useState(existing?.nickname ?? "");
+   964→  const [company, setCompany] = useState(existing?.company ?? "");
+   965→  const [jobTitle, setJobTitle] = useState(existing?.jobTitle ?? "");
+   966→  const [phones, setPhones] = useState<PhoneDraft[]>(() =>
+   967→    existing?.phones?.length
+   968→      ? existing.phones.map((p) => ({ id: p.id, label: p.label, number: p.number, primary: !!p.primary }))
+   969→      : prefillPhone
+   970→        ? [{ id: uid(), label: "mobile", number: prefillPhone, primary: true }]
+   971→        : []
+   972→  );
+   973→  const [emails, setEmails] = useState<EmailDraft[]>(
+   974→    () => existing?.emails?.map((e) => ({ id: e.id, label: e.label, address: e.address, primary: !!e.primary })) ?? []
+   975→  );
+   976→  const [socials, setSocials] = useState<SocialDraft[]>(() => existing?.socials?.map((s) => ({ ...s })) ?? []);
+   977→  const [links, setLinks] = useState<LinkDraft[]>(() => existing?.links?.map((l) => ({ ...l })) ?? []);
+   978→  const [addresses, setAddresses] = useState<AddressDraft[]>(
+   979→    () => existing?.addresses?.map((a) => ({ ...a })) ?? []
+   980→  );
+   981→  const [customFields, setCustomFields] = useState<CustomDraft[]>(
+   982→    () => existing?.customFields?.map((f) => ({ ...f })) ?? []
+   983→  );
+   984→  const [birthday, setBirthday] = useState(existing?.birthday ?? "");
+   985→  const [tagsStr, setTagsStr] = useState((existing?.tags ?? []).join(", "));
+   986→  const [favorite, setFavorite] = useState(existing?.favorite ?? false);
+   987→  const [note, setNote] = useState(existing?.note ?? "");
+   988→  const [photoFile, setPhotoFile] = useState<File | null>(null);
+   989→  const [photoPreview, setPhotoPreview] = useState<string | null>(existingThumb ?? null);
+   990→  const [saving, setSaving] = useState(false);
+   991→  const fileRef = useRef<HTMLInputElement>(null);
+   992→
+   993→  if (contactId && !existing) {
+   994→    return (
+   995→      <Sheet title="Edit contact" onBack={ui.pop}>
+   996→        <div className="p-5">
+   997→          <EmptyState
+   998→            icon={<UserRound size={22} />}
+   999→            title="Contact not found"
+  1000→            hint="It may have been deleted. Try again from the contacts list."
+  1001→          />
+  1002→        </div>
+  1003→      </Sheet>
+  1004→    );
+  1005→  }
+  1006→
+  1007→  const save = async () => {
+  1008→    const hasName = !!(firstName.trim() || lastName.trim() || nickname.trim());
+  1009→    const filledPhones = phones.filter((p) => p.number.trim());
+  1010→    if (!hasName && filledPhones.length === 0) {
+  1011→      toastErr("Add at least a name or a phone number");
+  1012→      return;
+  1013→    }
+  1014→    setSaving(true);
+  1015→
+  1016→    const hasPhonePrimary = filledPhones.some((p) => p.primary);
+  1017→    const filledEmails = emails.filter((e) => e.address.trim());
+  1018→    const hasEmailPrimary = filledEmails.some((e) => e.primary);
+  1019→
+  1020→    const saved = app.saveContact({
+  1021→      ...(contactId ? { id: contactId } : {}),
+  1022→      firstName: firstName.trim(),
+  1023→      lastName: lastName.trim(),
+  1024→      nickname: nickname.trim() || undefined,
+  1025→      company: company.trim() || undefined,
+  1026→      jobTitle: jobTitle.trim() || undefined,
+  1027→      phones: filledPhones.map((p, i) => ({
+  1028→        id: p.id,
+  1029→        label: p.label,
+  1030→        number: p.number.trim(),
+  1031→        primary: hasPhonePrimary ? !!p.primary : i === 0,
+  1032→      })),
+  1033→      emails: filledEmails.map((e, i) => ({
+  1034→        id: e.id,
+  1035→        label: e.label,
+  1036→        address: e.address.trim(),
+  1037→        primary: hasEmailPrimary ? !!e.primary : i === 0,
+  1038→      })),
+  1039→      socials: socials
+  1040→        .filter((s) => s.handle.trim())
+  1041→        .map((s) => ({ id: s.id, app: s.app, handle: s.handle.trim().replace(/^@/, "") })),
+  1042→      links: links
+  1043→        .filter((l) => l.url.trim())
+  1044→        .map((l) => ({ id: l.id, label: l.label.trim() || "website", url: l.url.trim() })),
+  1045→      addresses: addresses
+  1046→        .filter((a) => a.text.trim())
+  1047→        .map((a) => ({ id: a.id, label: a.label, text: a.text.trim() })),
+  1048→      customFields: customFields
+  1049→        .filter((f) => f.key.trim() && f.value.trim())
+  1050→        .map((f) => ({ id: f.id, key: f.key.trim(), value: f.value.trim() })),
+  1051→      birthday: birthday || undefined,
+  1052→      tags: tagsStr
+  1053→        .split(",")
+  1054→        .map((t) => t.trim())
+  1055→        .filter(Boolean),
+  1056→      favorite,
+  1057→      note: note.trim() || undefined,
+  1058→    });
+  1059→
+  1060→    if (photoFile) {
+  1061→      const meta = await app.addAttachment(photoFile, "contact", saved.id);
+  1062→      if (meta) app.saveContact({ id: saved.id, photoId: meta.id });
+  1063→    }
+  1064→
+  1065→    setSaving(false);
+  1066→    toastOk(contactId ? "Contact updated" : "Contact saved");
+  1067→    ui.pop();
+  1068→  };
+  1069→
+  1070→  const remove = async () => {
+  1071→    if (!existing) return;
+  1072→    const ok = await confirm({
+  1073→      title: "Delete contact?",
+  1074→      message: `“${displayName(existing)}” will move to Trash. You can undo right after.`,
+  1075→      confirmLabel: "Delete",
+  1076→      tone: "danger",
+  1077→    });
+  1078→    if (!ok) return;
+  1079→    app.deleteContact(existing.id);
+  1080→    toastUndoLast();
+  1081→    ui.pop();
+  1082→  };
+  1083→
+  1084→  return (
+  1085→    <Sheet
+  1086→      title={contactId ? "Edit contact" : "New contact"}
+  1087→      subtitle={existing ? displayName(existing) : prefillPhone ? prettyPhone(prefillPhone) : undefined}
+  1088→      onBack={ui.pop}
+  1089→      footer={
+  1090→        <div className="flex gap-2.5">
+  1091→          {contactId && (
+  1092→            <Button variant="surface" size="lg" className="flex-1 text-neg" onClick={() => void remove()}>
+  1093→              <Trash2 size={16} /> Delete
+  1094→            </Button>
+  1095→          )}
+  1096→          <Button variant="brand" size="lg" className="flex-[2]" disabled={saving} onClick={() => void save()}>
+  1097→            <Check size={16} /> {saving ? "Saving…" : contactId ? "Save changes" : "Save contact"}
+  1098→          </Button>
+  1099→        </div>
+  1100→      }
+  1101→    >
+  1102→      <div className="space-y-5 px-5 pb-8 pt-5">
+  1103→        {/* photo */}
+  1104→        <div className="flex flex-col items-center gap-2">
+  1105→          <button
+  1106→            type="button"
+  1107→            onClick={() => fileRef.current?.click()}
+  1108→            className="relative flex h-[84px] w-[84px] items-center justify-center overflow-hidden rounded-full border border-line2 bg-surface shadow-key transition active:scale-95"
+  1109→            aria-label="Set contact photo"
+  1110→          >
+  1111→            {photoPreview ? (
+  1112→              <img src={photoPreview} alt="Contact photo" className="h-full w-full object-cover" />
+  1113→            ) : (
+  1114→              <Camera size={24} className="text-mute" />
+  1115→            )}
+  1116→          </button>
+  1117→          <p className="text-[10px] font-medium text-mute">
+  1118→            {photoPreview ? "Tap to change photo" : "Add photo"}
+  1119→          </p>
+  1120→          <input
+  1121→            ref={fileRef}
+  1122→            type="file"
+  1123→            accept="image/*"
+  1124→            className="hidden"
+  1125→            onChange={(e) => {
+  1126→              const f = e.target.files?.[0];
+  1127→              if (f) {
+  1128→                setPhotoFile(f);
+  1129→                setPhotoPreview(URL.createObjectURL(f));
+  1130→              }
+  1131→              e.target.value = "";
+  1132→            }}
+  1133→          />
+  1134→        </div>
+  1135→
+  1136→        {/* names */}
+  1137→        <div className="grid grid-cols-2 gap-2.5">
+  1138→          <Field label="First name">
+  1139→            <input
+  1140→              className={inputCls}
+  1141→              value={firstName}
+  1142→              onChange={(e) => setFirstName(e.target.value)}
+  1143→              placeholder="Abel"
+  1144→            />
+  1145→          </Field>
+  1146→          <Field label="Last name">
+  1147→            <input
+  1148→              className={inputCls}
+  1149→              value={lastName}
+  1150→              onChange={(e) => setLastName(e.target.value)}
+  1151→              placeholder="Tesfaye"
+  1152→            />
+  1153→          </Field>
+  1154→        </div>
+  1155→        <Field label="Nickname">
+  1156→          <input
+  1157→            className={inputCls}
+  1158→            value={nickname}
+  1159→            onChange={(e) => setNickname(e.target.value)}
+  1160→            placeholder="What you call them"
+  1161→          />
+  1162→        </Field>
+  1163→        <div className="grid grid-cols-2 gap-2.5">
+  1164→          <Field label="Company">
+  1165→            <input
+  1166→              className={inputCls}
+  1167→              value={company}
+  1168→              onChange={(e) => setCompany(e.target.value)}
+  1169→              placeholder="Tesfaye Trading"
+  1170→            />
+  1171→          </Field>
+  1172→          <Field label="Job title">
+  1173→            <input
+  1174→              className={inputCls}
+  1175→              value={jobTitle}
+  1176→              onChange={(e) => setJobTitle(e.target.value)}
+  1177→              placeholder="Manager"
+  1178→            />
+  1179→          </Field>
+  1180→        </div>
+  1181→
+  1182→        {/* phones — unlimited rows */}
+  1183→        <section>
+  1184→          <SectionLabel>Phones</SectionLabel>
+  1185→          <div className="space-y-2">
+  1186→            {phones.map((p, i) => (
+  1187→              <div key={p.id} className="flex items-center gap-2">
+  1188→                <select
+  1189→                  value={p.label}
+  1190→                  onChange={(e) =>
+  1191→                    setPhones((prev) => prev.map((x) => (x.id === p.id ? { ...x, label: e.target.value } : x)))
+  1192→                  }
+  1193→                  className={cx(inputCls, "w-[100px] shrink-0 px-3 py-2.5 text-xs")}
+  1194→                  aria-label={`Label for phone ${i + 1}`}
+  1195→                >
+  1196→                  {PHONE_LABELS.map((l) => (
+  1197→                    <option key={l} value={l}>
+  1198→                      {l}
+  1199→                    </option>
+  1200→                  ))}
+  1201→                </select>
+  1202→                <input
+  1203→                  value={p.number}
+  1204→                  onChange={(e) =>
+  1205→                    setPhones((prev) => prev.map((x) => (x.id === p.id ? { ...x, number: e.target.value } : x)))
+  1206→                  }
+  1207→                  inputMode="tel"
+  1208→                  placeholder="+251 9…"
+  1209→                  className={cx(inputCls, "min-w-0 flex-1 px-3 py-2.5 text-[13px]")}
+  1210→                  aria-label={`Phone number ${i + 1}`}
+  1211→                />
+  1212→                <button
+  1213→                  type="button"
+  1214→                  onClick={() =>
+  1215→                    setPhones((prev) => prev.map((x) => ({ ...x, primary: x.id === p.id })))
+  1216→                  }
+  1217→                  className={removeBtnCls}
+  1218→                  aria-label="Set as primary number"
+  1219→                  title="Set as primary"
+  1220→                >
+  1221→                  <Star size={16} className={p.primary ? "text-brand" : "text-line2"} fill={p.primary ? "currentColor" : "none"} />
+  1222→                </button>
+  1223→                <button
+  1224→                  type="button"
+  1225→                  onClick={() => setPhones((prev) => prev.filter((x) => x.id !== p.id))}
+  1226→                  className={removeBtnCls}
+  1227→                  aria-label="Remove phone"
+  1228→                >
+  1229→                  <X size={16} />
+  1230→                </button>
+  1231→              </div>
+  1232→            ))}
+  1233→            <button
+  1234→              type="button"
+  1235→              onClick={() =>
+  1236→                setPhones((prev) => [
+  1237→                  ...prev,
+  1238→                  { id: uid(), label: "mobile", number: "", primary: prev.length === 0 },
+  1239→                ])
+  1240→              }
+  1241→              className={addBtnCls}
+  1242→            >
+  1243→              <Plus size={15} /> Add phone
+  1244→            </button>
+  1245→          </div>
+  1246→        </section>
+  1247→
+  1248→        {/* emails */}
+  1249→        <section>
+  1250→          <SectionLabel>Emails</SectionLabel>
+  1251→          <div className="space-y-2">
+  1252→            {emails.map((e, i) => (
+  1253→              <div key={e.id} className="flex items-center gap-2">
+  1254→                <select
+  1255→                  value={e.label}
+  1256→                  onChange={(ev) =>
+  1257→                    setEmails((prev) => prev.map((x) => (x.id === e.id ? { ...x, label: ev.target.value } : x)))
+  1258→                  }
+  1259→                  className={cx(inputCls, "w-[100px] shrink-0 px-3 py-2.5 text-xs")}
+  1260→                  aria-label={`Label for email ${i + 1}`}
+  1261→                >
+  1262→                  {EMAIL_LABELS.map((l) => (
+  1263→                    <option key={l} value={l}>
+  1264→                      {l}
+  1265→                    </option>
+  1266→                  ))}
+  1267→                </select>
+  1268→                <input
+  1269→                  value={e.address}
+  1270→                  onChange={(ev) =>
+  1271→                    setEmails((prev) => prev.map((x) => (x.id === e.id ? { ...x, address: ev.target.value } : x)))
+  1272→                  }
+  1273→                  inputMode="email"
+  1274→                  placeholder="name@example.com"
+  1275→                  className={cx(inputCls, "min-w-0 flex-1 px-3 py-2.5 text-[13px]")}
+  1276→                  aria-label={`Email address ${i + 1}`}
+  1277→                />
+  1278→                <button
+  1279→                  type="button"
+  1280→                  onClick={() => setEmails((prev) => prev.map((x) => ({ ...x, primary: x.id === e.id })))}
+  1281→                  className={removeBtnCls}
+  1282→                  aria-label="Set as primary email"
+  1283→                  title="Set as primary"
+  1284→                >
+  1285→                  <Star size={16} className={e.primary ? "text-brand" : "text-line2"} fill={e.primary ? "currentColor" : "none"} />
+  1286→                </button>
+  1287→                <button
+  1288→                  type="button"
+  1289→                  onClick={() => setEmails((prev) => prev.filter((x) => x.id !== e.id))}
+  1290→                  className={removeBtnCls}
+  1291→                  aria-label="Remove email"
+  1292→                >
+  1293→                  <X size={16} />
+  1294→                </button>
+  1295→              </div>
+  1296→            ))}
+  1297→            <button
+  1298→              type="button"
+  1299→              onClick={() => setEmails((prev) => [...prev, { id: uid(), label: "home", address: "", primary: prev.length === 0 }])}
+  1300→              className={addBtnCls}
+  1301→            >
+  1302→              <Plus size={15} /> Add email
+  1303→            </button>
+  1304→          </div>
+  1305→        </section>
+  1306→
+  1307→        {/* socials */}
+  1308→        <section>
+  1309→          <SectionLabel>Socials</SectionLabel>
+  1310→          <div className="space-y-2">
+  1311→            {socials.map((s, i) => (
+  1312→              <div key={s.id} className="flex items-center gap-2">
+  1313→                <select
+  1314→                  value={s.app}
+  1315→                  onChange={(e) =>
+  1316→                    setSocials((prev) =>
+  1317→                      prev.map((x) => (x.id === s.id ? { ...x, app: e.target.value as Social["app"] } : x))
+  1318→                    )
+  1319→                  }
+  1320→                  className={cx(inputCls, "w-[110px] shrink-0 px-3 py-2.5 text-xs")}
+  1321→                  aria-label={`App for social ${i + 1}`}
+  1322→                >
+  1323→                  {SOCIAL_APPS.map((a) => (
+  1324→                    <option key={a} value={a}>
+  1325→                      {a}
+  1326→                    </option>
+  1327→                  ))}
+  1328→                </select>
+  1329→                <input
+  1330→                  value={s.handle}
+  1331→                  onChange={(e) =>
+  1332→                    setSocials((prev) => prev.map((x) => (x.id === s.id ? { ...x, handle: e.target.value } : x)))
+  1333→                  }
+  1334→                  placeholder="@username or number"
+  1335→                  className={cx(inputCls, "min-w-0 flex-1 px-3 py-2.5 text-[13px]")}
+  1336→                  aria-label={`Handle for social ${i + 1}`}
+  1337→                />
+  1338→                <button
+  1339→                  type="button"
+  1340→                  onClick={() => setSocials((prev) => prev.filter((x) => x.id !== s.id))}
+  1341→                  className={removeBtnCls}
+  1342→                  aria-label="Remove social"
+  1343→                >
+  1344→                  <X size={16} />
+  1345→                </button>
+  1346→              </div>
+  1347→            ))}
+  1348→            <button
+  1349→              type="button"
+  1350→              onClick={() => setSocials((prev) => [...prev, { id: uid(), app: "telegram", handle: "" }])}
+  1351→              className={addBtnCls}
+  1352→            >
+  1353→              <Plus size={15} /> Add social
+  1354→            </button>
+  1355→          </div>
+  1356→        </section>
+  1357→
+  1358→        {/* links */}
+  1359→        <section>
+  1360→          <SectionLabel>Links</SectionLabel>
+  1361→          <div className="space-y-2">
+  1362→            {links.map((l, i) => (
+  1363→              <div key={l.id} className="flex items-center gap-2">
+  1364→                <input
+  1365→                  value={l.label}
+  1366→                  onChange={(e) =>
+  1367→                    setLinks((prev) => prev.map((x) => (x.id === l.id ? { ...x, label: e.target.value } : x)))
+  1368→                  }
+  1369→                  placeholder="Website"
+  1370→                  className={cx(inputCls, "w-[100px] shrink-0 px-3 py-2.5 text-xs")}
+  1371→                  aria-label={`Label for link ${i + 1}`}
+  1372→                />
+  1373→                <input
+  1374→                  value={l.url}
+  1375→                  onChange={(e) =>
+  1376→                    setLinks((prev) => prev.map((x) => (x.id === l.id ? { ...x, url: e.target.value } : x)))
+  1377→                  }
+  1378→                  inputMode="url"
+  1379→                  placeholder="https://…"
+  1380→                  className={cx(inputCls, "min-w-0 flex-1 px-3 py-2.5 text-[13px]")}
+  1381→                  aria-label={`URL for link ${i + 1}`}
+  1382→                />
+  1383→                <button
+  1384→                  type="button"
+  1385→                  onClick={() => setLinks((prev) => prev.filter((x) => x.id !== l.id))}
+  1386→                  className={removeBtnCls}
+  1387→                  aria-label="Remove link"
+  1388→                >
+  1389→                  <X size={16} />
+  1390→                </button>
+  1391→              </div>
+  1392→            ))}
+  1393→            <button
+  1394→              type="button"
+  1395→              onClick={() => setLinks((prev) => [...prev, { id: uid(), label: "", url: "" }])}
+  1396→              className={addBtnCls}
+  1397→            >
+  1398→              <Plus size={15} /> Add link
+  1399→            </button>
+  1400→          </div>
+  1401→        </section>
+  1402→
+  1403→        {/* addresses */}
+  1404→        <section>
+  1405→          <SectionLabel>Addresses</SectionLabel>
+  1406→          <div className="space-y-2">
+  1407→            {addresses.map((a, i) => (
+  1408→              <div key={a.id} className="flex items-center gap-2">
+  1409→                <select
+  1410→                  value={a.label}
+  1411→                  onChange={(e) =>
+  1412→                    setAddresses((prev) =>
+  1413→                      prev.map((x) => (x.id === a.id ? { ...x, label: e.target.value } : x))
+  1414→                    )
+  1415→                  }
+  1416→                  className={cx(inputCls, "w-[100px] shrink-0 px-3 py-2.5 text-xs")}
+  1417→                  aria-label={`Label for address ${i + 1}`}
+  1418→                >
+  1419→                  {ADDRESS_LABELS.map((l) => (
+  1420→                    <option key={l} value={l}>
+  1421→                      {l}
+  1422→                    </option>
+  1423→                  ))}
+  1424→                </select>
+  1425→                <input
+  1426→                  value={a.text}
+  1427→                  onChange={(e) =>
+  1428→                    setAddresses((prev) => prev.map((x) => (x.id === a.id ? { ...x, text: e.target.value } : x)))
+  1429→                  }
+  1430→                  placeholder="Street, city…"
+  1431→                  className={cx(inputCls, "min-w-0 flex-1 px-3 py-2.5 text-[13px]")}
+  1432→                  aria-label={`Address ${i + 1}`}
+  1433→                />
+  1434→                <button
+  1435→                  type="button"
+  1436→                  onClick={() => setAddresses((prev) => prev.filter((x) => x.id !== a.id))}
+  1437→                  className={removeBtnCls}
+  1438→                  aria-label="Remove address"
+  1439→                >
+  1440→                  <X size={16} />
+  1441→                </button>
+  1442→              </div>
+  1443→            ))}
+  1444→            <button
+  1445→              type="button"
+  1446→              onClick={() => setAddresses((prev) => [...prev, { id: uid(), label: "home", text: "" }])}
+  1447→              className={addBtnCls}
+  1448→            >
+  1449→              <Plus size={15} /> Add address
+  1450→            </button>
+  1451→          </div>
+  1452→        </section>
+  1453→
+  1454→        {/* custom fields */}
+  1455→        <section>
+  1456→          <SectionLabel>Custom fields</SectionLabel>
+  1457→          <div className="space-y-2">
+  1458→            {customFields.map((f, i) => (
+  1459→              <div key={f.id} className="flex items-center gap-2">
+  1460→                <input
+  1461→                  value={f.key}
+  1462→                  onChange={(e) =>
+  1463→                    setCustomFields((prev) => prev.map((x) => (x.id === f.id ? { ...x, key: e.target.value } : x)))
+  1464→                  }
+  1465→                  placeholder="Field"
+  1466→                  className={cx(inputCls, "w-[110px] shrink-0 px-3 py-2.5 text-xs")}
+  1467→                  aria-label={`Custom field name ${i + 1}`}
+  1468→                />
+  1469→                <input
+  1470→                  value={f.value}
+  1471→                  onChange={(e) =>
+  1472→                    setCustomFields((prev) => prev.map((x) => (x.id === f.id ? { ...x, value: e.target.value } : x)))
+  1473→                  }
+  1474→                  placeholder="Value"
+  1475→                  className={cx(inputCls, "min-w-0 flex-1 px-3 py-2.5 text-[13px]")}
+  1476→                  aria-label={`Custom field value ${i + 1}`}
+  1477→                />
+  1478→                <button
+  1479→                  type="button"
+  1480→                  onClick={() => setCustomFields((prev) => prev.filter((x) => x.id !== f.id))}
+  1481→                  className={removeBtnCls}
+  1482→                  aria-label="Remove custom field"
+  1483→                >
+  1484→                  <X size={16} />
+  1485→                </button>
+  1486→              </div>
+  1487→            ))}
+  1488→            <button
+  1489→              type="button"
+  1490→              onClick={() => setCustomFields((prev) => [...prev, { id: uid(), key: "", value: "" }])}
+  1491→              className={addBtnCls}
+  1492→            >
+  1493→              <Plus size={15} /> Add field
+  1494→            </button>
+  1495→          </div>
+  1496→        </section>
+  1497→
+  1498→        {/* birthday + tags */}
+  1499→        <div className="grid grid-cols-2 gap-2.5">
+  1500→          <Field label="Birthday">
+  1501→            <input
+  1502→              type="date"
+  1503→              value={birthday}
+  1504→              onChange={(e) => setBirthday(e.target.value)}
+  1505→              className={inputCls}
+  1506→              aria-label="Birthday"
+  1507→            />
+  1508→          </Field>
+  1509→          <Field label="Tags" hint="Comma separated">
+  1510→            <input
+  1511→              value={tagsStr}
+  1512→              onChange={(e) => setTagsStr(e.target.value)}
+  1513→              placeholder="supplier, vip"
+  1514→              className={inputCls}
+  1515→              aria-label="Tags, comma separated"
+  1516→            />
+  1517→          </Field>
+  1518→        </div>
+  1519→
+  1520→        {/* favorite */}
+  1521→        <div className="flex items-center justify-between rounded-2xl border border-line bg-surface px-4 py-3.5 shadow-key">
+  1522→          <div className="flex items-center gap-2.5">
+  1523→            <Star size={16} className="text-brand" fill={favorite ? "currentColor" : "none"} />
+  1524→            <div>
+  1525→              <p className="text-[13px] font-semibold text-ink">Favorite</p>
+  1526→              <p className="text-[10px] text-mute">Pin to your Favorites screen</p>
+  1527→            </div>
+  1528→          </div>
+  1529→          <SwitchToggle checked={favorite} onChange={setFavorite} label="Toggle favorite" />
+  1530→        </div>
+  1531→
+  1532→        {/* note */}
+  1533→        <Field label="Note">
+  1534→          <textarea
+  1535→            rows={3}
+  1536→            value={note}
+  1537→            onChange={(e) => setNote(e.target.value)}
+  1538→            placeholder="Notes about this person…"
+  1539→            className={cx(inputCls, "resize-none")}
+  1540→            aria-label="Note"
+  1541→          />
+  1542→        </Field>
+  1543→      </div>
+  1544→    </Sheet>
+  1545→  );
+  1546→}
+  1547→
+  1548→/* ------------------------------------------------------------------ */
+  1549→/* CallScreen                                                           */
+  1550→/* ------------------------------------------------------------------ */
+  1551→
+  1552→type CallPhase = "incoming" | "dialing" | "connected" | "ended";
+  1553→
+  1554→function ControlButton({
+  1555→  icon,
+  1556→  label,
+  1557→  onClick,
+  1558→  active,
+  1559→  tone,
+  1560→  big,
+  1561→}: {
+  1562→  icon: React.ReactNode;
+  1563→  label: string;
+  1564→  onClick: () => void;
+  1565→  active?: boolean;
+  1566→  tone?: "pos" | "neg";
+  1567→  big?: boolean;
+  1568→}) {
+  1569→  return (
+  1570→    <div className="flex flex-col items-center gap-1.5">
+  1571→      <button
+  1572→        type="button"
+  1573→        onClick={onClick}
+  1574→        aria-label={label}
+  1575→        aria-pressed={active}
+  1576→        className={cx(
+  1577→          "flex items-center justify-center rounded-full transition active:scale-90",
+  1578→          big ? "h-[68px] w-[68px]" : "h-[54px] w-[54px]",
+  1579→          tone === "neg"
+  1580→            ? "bg-neg text-white shadow-floating"
+  1581→            : tone === "pos"
+  1582→              ? "bg-brand text-white shadow-floating"
+  1583→              : active
+  1584→                ? "bg-brand text-white shadow-key"
+  1585→                : "border border-line bg-surface text-[#62716e] shadow-key dark:text-ink"
+  1586→        )}
+  1587→      >
+  1588→        {icon}
+  1589→      </button>
+  1590→      <span className="text-[10px] font-semibold text-mute">{label}</span>
+  1591→    </div>
+  1592→  );
+  1593→}
+  1594→
+  1595→export function CallScreen({
+  1596→  phone,
+  1597→  contactId,
+  1598→  direction,
+  1599→}: {
+  1600→  phone: string;
+  1601→  contactId?: ID;
+  1602→  direction?: "incoming" | "outgoing" | "missed";
+  1603→}) {
+  1604→  const app = useApp();
+  1605→  const ui = useUI();
+  1606→  const cc = app.settings.countryCode;
+  1607→
+  1608→  /* hide while another overlay sits on top of the call (e.g. adding a contact mid-call) */
+  1609→  const stack = useUI((s) => s.overlayStack);
+  1610→  const isTop = stack.length > 0 && stack[stack.length - 1].type === "call";
+  1611→
+  1612→  const contact = useMemo(() => {
+  1613→    const byId = contactId ? app.contacts.find((c) => c.id === contactId && !c.deletedAt) : undefined;
+  1614→    if (byId) return byId;
+  1615→    const norm = normalizePhone(phone, cc);
+  1616→    return (
+  1617→      app.contacts.find((c) =>
+  1618→        !c.deletedAt && c.phones.some((p) => normalizePhone(p.number, cc) === norm)
+  1619→      ) ?? undefined
+  1620→    );
+  1621→  }, [app.contacts, contactId, phone, cc]);
+  1622→
+  1623→  const [phase, setPhase] = useState<CallPhase>(direction === "incoming" ? "incoming" : "dialing");
+  1624→  const [seconds, setSeconds] = useState(0);
+  1625→  const [muted, setMuted] = useState(false);
+  1626→  const [speaker, setSpeaker] = useState(false);
+  1627→  const [keypadOn, setKeypadOn] = useState(false);
+  1628→  const [dtmf, setDtmf] = useState("");
+  1629→  const [closePending, setClosePending] = useState(false);
+  1630→  const finalizedRef = useRef(false);
+  1631→  const isTopRef = useRef(isTop);
+  1632→  useEffect(() => {
+  1633→    isTopRef.current = isTop;
+  1634→  }, [isTop]);
+  1635→
+  1636→  /* dialing → connected after 1.5s */
+  1637→  useEffect(() => {
+  1638→    if (phase !== "dialing") return;
+  1639→    const t = setTimeout(() => setPhase("connected"), 1500);
+  1640→    return () => clearTimeout(t);
+  1641→  }, [phase]);
+  1642→
+  1643→  /* live timer */
+  1644→  useEffect(() => {
+  1645→    if (phase !== "connected") return;
+  1646→    const i = setInterval(() => setSeconds((s) => s + 1), 1000);
+  1647→    return () => clearInterval(i);
+  1648→  }, [phase]);
+  1649→
+  1650→  const logAndClose = (dur: number, dir: CallLog["direction"]) => {
+  1651→    if (finalizedRef.current) return;
+  1652→    finalizedRef.current = true;
+  1653→    app.addCall({ phone, contactId: contact?.id ?? contactId, direction: dir, duration: dur });
+  1654→    if (isTopRef.current) ui.pop();
+  1655→    else setClosePending(true);
+  1656→  };
+  1657→
+  1658→  /* "Call ended" shows briefly, then the screen closes */
+  1659→  useEffect(() => {
+  1660→    if (phase !== "ended") return;
+  1661→    const t = setTimeout(
+  1662→      () => logAndClose(seconds, direction === "incoming" ? "incoming" : direction ?? "outgoing"),
+  1663→      1400
+  1664→    );
+  1665→    return () => clearTimeout(t);
+  1666→  }, [phase]);
+  1667→
+  1668→  /* call ended while another overlay was open — close once we're back on top */
+  1669→  useEffect(() => {
+  1670→    if (isTop && closePending) ui.pop();
+  1671→  }, [isTop, closePending]);
+  1672→
+  1673→  if (!isTop) return null;
+  1674→
+  1675→  const name = contact ? displayName(contact) : prettyPhone(phone, cc);
+  1676→  const status =
+  1677→    phase === "incoming"
+  1678→      ? "Incoming call…"
+  1679→      : phase === "dialing"
+  1680→        ? "Calling…"
+  1681→        : phase === "connected"
+  1682→          ? clockStr(seconds)
+  1683→          : direction === "incoming"
+  1684→            ? "Call declined"
+  1685→            : `Call ended · ${clockStr(seconds)}`;
+  1686→
+  1687→  const answer = () => {
+  1688→    vibrate(15);
+  1689→    setPhase("connected");
+  1690→  };
+  1691→  const decline = () => {
+  1692→    vibrate(20);
+  1693→    logAndClose(0, "missed");
+  1694→  };
+  1695→  const end = () => {
+  1696→    vibrate(20);
+  1697→    if (phase === "incoming") {
+  1698→      decline();
+  1699→      return;
+  1700→    }
+  1701→    setPhase("ended");
+  1702→  };
+  1703→
+  1704→  return (
+  1705→    <motion.div
+  1706→      initial={{ opacity: 0, scale: 0.98 }}
+  1707→      animate={{ opacity: 1, scale: 1 }}
+  1708→      exit={{ opacity: 0, scale: 0.98 }}
+  1709→      transition={{ duration: 0.2 }}
+  1710→      className="absolute inset-0 z-50 flex flex-col"
+  1711→      style={{ background: "var(--app-canvas)" }}
+  1712→      role="dialog"
+  1713→      aria-label={`Call with ${name}`}
+  1714→    >
+  1715→      {/* subtle gradient */}
+  1716→      <div
+  1717→        aria-hidden
+  1718→        className="pointer-events-none absolute inset-0 bg-gradient-to-b from-brandsoft/70 via-transparent to-transparent"
+  1719→      />
+  1720→
+  1721→      <div className="app-scroll relative z-[1] flex flex-1 flex-col items-center overflow-y-auto px-6 pb-[max(24px,env(safe-area-inset-bottom))] pt-[max(56px,env(safe-area-inset-top))]">
+  1722→        {/* hero */}
+  1723→        <div className="flex shrink-0 flex-col items-center pt-2">
+  1724→          <div className={cx("rounded-[26px]", (phase === "dialing" || phase === "incoming") && "pulse-ring")}>
+  1725→            <Avatar contact={contact} name={contact ? undefined : "?"} size="xl" />
+  1726→          </div>
+  1727→          <h2 className="mt-4 text-[24px] font-bold tracking-tight text-ink">{name}</h2>
+  1728→          <p className="mt-1 text-[12px] font-medium text-mute" aria-live="polite">
+  1729→            {status}
+  1730→          </p>
+  1731→          {!contact && phase !== "ended" && (
+  1732→            <p className="mt-1.5 rounded-full bg-surface2 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-[1.5px] text-mute">
+  1733→              Unknown number
+  1734→            </p>
+  1735→          )}
+  1736→        </div>
+  1737→
+  1738→        {/* in-call keypad (DTMF — cosmetic) */}
+  1739→        {keypadOn && phase !== "incoming" && phase !== "ended" && (
+  1740→          <motion.div
+  1741→            initial={{ opacity: 0, y: 14 }}
+  1742→            animate={{ opacity: 1, y: 0 }}
+  1743→            transition={{ duration: 0.2 }}
+  1744→            className="mt-6 w-full max-w-[280px] shrink-0"
+  1745→          >
+  1746→            <div className="mb-2.5 flex h-10 items-center justify-center rounded-2xl bg-surface2 text-[15px] font-semibold tracking-[3px] tabular-nums text-ink shadow-key">
+  1747→              {dtmf || <span className="text-[10px] tracking-[2px] text-mute">DTMF TONES</span>}
+  1748→            </div>
+  1749→            <div className="grid grid-cols-3 gap-2">
+  1750→              {["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"].map((d) => (
+  1751→                <button
+  1752→                  key={d}
+  1753→                  type="button"
+  1754→                  onClick={() => {
+  1755→                    vibrate(6);
+  1756→                    setDtmf((s) => (s + d).slice(0, 18));
+  1757→                  }}
+  1758→                  className="flex h-11 items-center justify-center rounded-2xl bg-surface text-lg font-semibold text-ink shadow-key transition active:scale-95"
+  1759→                  aria-label={`Keypad ${d}`}
+  1760→                >
+  1761→                  {d}
+  1762→                </button>
+  1763→              ))}
+  1764→            </div>
+  1765→          </motion.div>
+  1766→        )}
+  1767→
+  1768→        {/* controls */}
+  1769→        <div className="mt-auto flex w-full shrink-0 flex-col items-center gap-7 pt-8">
+  1770→          {phase === "incoming" && (
+  1771→            <div className="flex items-center gap-16">
+  1772→              <ControlButton big tone="neg" label="Decline" icon={<PhoneOff size={26} />} onClick={decline} />
+  1773→              <ControlButton big tone="pos" label="Answer" icon={<PhoneCall size={26} />} onClick={answer} />
+  1774→            </div>
+  1775→          )}
+  1776→
+  1777→          {(phase === "dialing" || phase === "connected") && (
+  1778→            <>
+  1779→              <div className="flex flex-wrap items-start justify-center gap-x-7 gap-y-4">
+  1780→                <ControlButton
+  1781→                  label={muted ? "Unmute" : "Mute"}
+  1782→                  active={muted}
+  1783→                  icon={muted ? <MicOff size={20} /> : <Mic size={20} />}
+  1784→                  onClick={() => setMuted((m) => !m)}
+  1785→                />
+  1786→                <ControlButton
+  1787→                  label="Keypad"
+  1788→                  active={keypadOn}
+  1789→                  icon={<Grid3X3 size={20} />}
+  1790→                  onClick={() => setKeypadOn((k) => !k)}
+  1791→                />
+  1792→                <ControlButton
+  1793→                  label={speaker ? "Speaker off" : "Speaker"}
+  1794→                  active={speaker}
+  1795→                  icon={speaker ? <Volume2 size={20} /> : <VolumeX size={20} />}
+  1796→                  onClick={() => setSpeaker((s) => !s)}
+  1797→                />
+  1798→                <ControlButton
+  1799→                  label="Message"
+  1800→                  icon={<MessageCircle size={20} />}
+  1801→                  onClick={() => toastOk("Messaging isn't available during a call in this demo")}
+  1802→                />
+  1803→                {!contact && (
+  1804→                  <ControlButton
+  1805→                    label="Add contact"
+  1806→                    icon={<UserPlus size={20} />}
+  1807→                    onClick={() => ui.open({ type: "contactEdit", prefillPhone: phone })}
+  1808→                  />
+  1809→                )}
+  1810→              </div>
+  1811→
+  1812→              <button
+  1813→                type="button"
+  1814→                onClick={end}
+  1815→                aria-label="End call"
+  1816→                className="mx-auto flex h-[68px] w-[68px] items-center justify-center rounded-full bg-neg text-white shadow-floating transition hover:bg-neg/90 active:scale-90"
+  1817→              >
+  1818→                <PhoneOff size={27} />
+  1819→              </button>
+  1820→            </>
+  1821→          )}
+  1822→
+  1823→          {phase === "ended" && <div className="h-[70px]" aria-hidden />}
+  1824→
+  1825→          {/* real-device handoff */}
+  1826→          {phase !== "ended" && (
+  1827→            <div className="flex items-center justify-center gap-2.5">
+  1828→              <button
+  1829→                type="button"
+  1830→                onClick={() => openExternal(telLink(phone, cc))}
+  1831→                className="flex h-11 items-center gap-2 rounded-full border border-line2 bg-surface px-4 text-[11px] font-bold text-ink shadow-key transition active:scale-95"
+  1832→                aria-label="Open in phone dialer"
+  1833→              >
+  1834→                <Phone size={14} className="text-brand" /> Phone dialer
+  1835→              </button>
+  1836→              <button
+  1837→                type="button"
+  1838→                onClick={() => openExternal(waLink(phone, undefined, cc))}
+  1839→                className="flex h-11 items-center gap-2 rounded-full border border-line2 bg-surface px-4 text-[11px] font-bold text-ink shadow-key transition active:scale-95"
+  1840→                aria-label="Open WhatsApp"
+  1841→              >
+  1842→                <MessageCircle size={14} className="text-[#1faa53]" /> WhatsApp
+  1843→              </button>
+  1844→            </div>
+  1845→          )}
+  1846→        </div>
+  1847→      </div>
+  1848→    </motion.div>
+  1849→  );
+  1850→}
+  1851→
+  1852→/* ------------------------------------------------------------------ */
+  1853→/* MergeOverlay                                                         */
+  1854→/* ------------------------------------------------------------------ */
+  1855→
+  1856→export function MergeOverlay() {
+  1857→  const app = useApp();
+  1858→  const ui = useUI();
+  1859→  const confirm = useConfirm();
+  1860→  const [pairs, setPairs] = useState(() => app.findDuplicates());
+  1861→  const [dismissed, setDismissed] = useState<string[]>([]);
+  1862→
+  1863→  const visible = pairs.filter((p) => !dismissed.includes(`${p.primary.id}:${p.dup.id}`));
+  1864→
+  1865→  const rescan = () => {
+  1866→    setPairs(app.findDuplicates());
+  1867→    setDismissed([]);
+  1868→  };
+  1869→
+  1870→  const merge = async (primaryId: string, dupId: string) => {
+  1871→    const primary = app.contacts.find((c) => c.id === primaryId);
+  1872→    const dup = app.contacts.find((c) => c.id === dupId);
+  1873→    if (!primary || !dup) return;
+  1874→    const ok = await confirm({
+  1875→      title: "Merge contacts?",
+  1876→      message: `“${displayName(dup)}” will be merged into “${displayName(primary)}”. Phones, emails, tags and all history are combined.`,
+  1877→      confirmLabel: "Merge",
+  1878→      tone: "brand",
+  1879→    });
+  1880→    if (!ok) return;
+  1881→    app.mergeContacts(primaryId, dupId);
+  1882→    toastOk("Contacts merged");
+  1883→    setPairs(app.findDuplicates());
+  1884→  };
+  1885→
+  1886→  return (
+  1887→    <Sheet
+  1888→      title="Merge duplicates"
+  1889→      subtitle={visible.length > 0 ? `${visible.length} pair${visible.length === 1 ? "" : "s"} found` : undefined}
+  1890→      onBack={ui.pop}
+  1891→      actions={
+  1892→        <IconButton label="Rescan for duplicates" onClick={rescan}>
+  1893→          <RefreshCw size={17} />
+  1894→        </IconButton>
+  1895→      }
+  1896→    >
+  1897→      <div className="px-5 pb-10 pt-4">
+  1898→        {visible.length === 0 ? (
+  1899→          <EmptyState
+  1900→            icon={<Sparkles size={22} />}
+  1901→            title="No duplicates found 🎉"
+  1902→            hint="Every contact looks unique — same phone number or same name + email would land here."
+  1903→          />
+  1904→        ) : (
+  1905→          <div className="space-y-4">
+  1906→            {visible.map((p) => {
+  1907→              const primaryPhoneNo = primaryPhone(p.primary) ?? p.primary.emails[0]?.address;
+  1908→              const dupPhoneNo = primaryPhone(p.dup) ?? p.dup.emails[0]?.address;
+  1909→              return (
+  1910→                <SectionCard key={`${p.primary.id}:${p.dup.id}`} className="space-y-3">
+  1911→                  <div className="flex items-center gap-3">
+  1912→                    <Avatar contact={p.primary} size="sm" />
+  1913→                    <div className="min-w-0 flex-1">
+  1914→                      <p className="truncate text-[13px] font-semibold text-ink">{displayName(p.primary)}</p>
+  1915→                      <p className="truncate text-[11px] text-mute">{primaryPhoneNo || "—"}</p>
+  1916→                    </div>
+  1917→                    <span className="shrink-0 rounded-full bg-brandsoft px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide text-brand">
+  1918→                      Keep
+  1919→                    </span>
+  1920→                  </div>
+  1921→
+  1922→                  <div className="flex items-center justify-center gap-2 rounded-full bg-surface2 px-3 py-1.5">
+  1923→                    <ArrowDown size={12} className="shrink-0 text-brand" />
+  1924→                    <span className="text-[10px] font-semibold text-mute">{p.reason}</span>
+  1925→                  </div>
+  1926→
+  1927→                  <div className="flex items-center gap-3 opacity-80">
+  1928→                    <Avatar contact={p.dup} size="sm" />
+  1929→                    <div className="min-w-0 flex-1">
+  1930→                      <p className="truncate text-[13px] font-semibold text-ink">{displayName(p.dup)}</p>
+  1931→                      <p className="truncate text-[11px] text-mute">{dupPhoneNo || "—"}</p>
+  1932→                    </div>
+  1933→                    <span className="shrink-0 rounded-full bg-negsoft px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide text-neg">
+  1934→                      Duplicate
+  1935→                    </span>
+  1936→                  </div>
+  1937→
+  1938→                  <div className="flex gap-2 pt-0.5">
+  1939→                    <Button
+  1940→                      variant="surface"
+  1941→                      size="md"
+  1942→                      className="min-w-0 flex-1"
+  1943→                      onClick={() =>
+  1944→                        setDismissed((d) => [...d, `${p.primary.id}:${p.dup.id}`])
+  1945→                      }
+  1946→                    >
+  1947→                      Dismiss pair
+  1948→                    </Button>
+  1949→                    <Button
+  1950→                      variant="brand"
+  1951→                      size="md"
+  1952→                      className="min-w-0 flex-[1.4]"
+  1953→                      onClick={() => void merge(p.primary.id, p.dup.id)}
+  1954→                    >
+  1955→                      <GitMerge size={14} className="shrink-0" />
+  1956→                      <span className="truncate">
+  1957→                        Merge into {p.primary.firstName || displayName(p.primary)}
+  1958→                      </span>
+  1959→                    </Button>
+  1960→                  </div>
+  1961→                </SectionCard>
+  1962→              );
+  1963→            })}
+  1964→            <button
+  1965→              type="button"
+  1966→              onClick={rescan}
+  1967→              className="flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-line2 bg-surface2/60 text-[12px] font-semibold text-brand transition active:scale-[0.98]"
+  1968→            >
+  1969→              <RefreshCw size={14} /> Rescan
+  1970→            </button>
+  1971→          </div>
+  1972→        )}
+  1973→      </div>
+  1974→    </Sheet>
+  1975→  );
+  1976→}
+  1977→
+  1978→/* ------------------------------------------------------------------ */
+  1979→/* SpeedDialOverlay                                                     */
+  1980→/* ------------------------------------------------------------------ */
+  1981→
+  1982→export function SpeedDialOverlay() {
+  1983→  const app = useApp();
+  1984→  const ui = useUI();
+  1985→  const [pickKey, setPickKey] = useState<string | null>(null);
+  1986→  const [menuKey, setMenuKey] = useState<string | null>(null);
+  1987→
+  1988→  const contacts = useMemo(() => app.contacts.filter((c) => !c.deletedAt), [app.contacts]);
+  1989→  const sd = speedDialMap(app.settings);
+  1990→
+  1991→  const assigned = useMemo(() => {
+  1992→    const out: Record<string, string | undefined> = {};
+  1993→    contacts.forEach((c) => {
+  1994→      if (c.speedDial) out[c.speedDial] = c.id;
+  1995→    });
+  1996→    SPEED_KEYS.forEach((k) => {
+  1997→      if (k in sd) out[k] = sd[k];
+  1998→    });
+  1999→    return out;
+  2000→  }, [contacts, sd]);
+
+[showing lines 1-2000 of 2112; use offset=2001 with limit to continue reading]

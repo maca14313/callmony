@@ -1,0 +1,237 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------
+   dial. — Contacts & Ledger · design tokens
+   Brand teal #16a085 · ink #172b2a · canvas #f7faf9 (light)
+   Dark: canvas #0e1514 · surface #16211f · brand #2fc4a6
+---------------------------------------------------------------- */
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.55 0.11 165);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.6 0.19 20);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  /* dial. app tokens (light) */
+  --app-canvas: #f7faf9;
+  --app-bg: #eef3f1;
+  --app-surface: #ffffff;
+  --app-surface2: #f0f5f2;
+  --app-ink: #172b2a;
+  --app-mute: #8b9a98;
+  --app-line: #edf1ef;
+  --app-line2: #e8efec;
+  --app-brand: #16a085;
+  --app-brandink: #128d76;
+  --app-brandsoft: #eaf7f2;
+  --app-brandsoft2: #d9f0e7;
+  --app-pos: #16a085;
+  --app-neg: #e16c70;
+  --app-negsoft: #fdeeee;
+  --app-amber: #b8860b;
+  --app-toast: #203b35;
+  --app-toast-ink: #ffffff;
+  --sh-key: 0 3px 10px rgba(30, 65, 58, 0.035);
+  --sh-soft: 0 8px 32px rgba(30, 65, 58, 0.045);
+  --sh-floating: 0 12px 32px rgba(22, 160, 133, 0.25);
+  --app-scrim: rgba(23, 43, 42, 0.32);
+  color-scheme: light;
+}
+
+.dark {
+  --app-canvas: #0e1514;
+  --app-bg: #0a100f;
+  --app-surface: #16211f;
+  --app-surface2: #1b2826;
+  --app-ink: #e8f3f0;
+  --app-mute: #8fa39f;
+  --app-line: #243330;
+  --app-line2: #223030;
+  --app-brand: #2fc4a6;
+  --app-brandink: #35d0b1;
+  --app-brandsoft: #12312a;
+  --app-brandsoft2: #164135;
+  --app-pos: #2fc4a6;
+  --app-neg: #ef7d81;
+  --app-negsoft: #33201f;
+  --app-amber: #d9a521;
+  --app-toast: #e8f3f0;
+  --app-toast-ink: #0e1514;
+  --sh-key: 0 3px 10px rgba(0, 0, 0, 0.3);
+  --sh-soft: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --sh-floating: 0 12px 32px rgba(22, 160, 133, 0.35);
+  --app-scrim: rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+
+@theme inline {
+  /* shadcn tokens (used by ui components) */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter), Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* dial. app tokens */
+  --color-canvas: var(--app-canvas);
+  --color-appbg: var(--app-bg);
+  --color-surface: var(--app-surface);
+  --color-surface2: var(--app-surface2);
+  --color-ink: var(--app-ink);
+  --color-mute: var(--app-mute);
+  --color-line: var(--app-line);
+  --color-line2: var(--app-line2);
+  --color-brand: var(--app-brand);
+  --color-brandink: var(--app-brandink);
+  --color-brandsoft: var(--app-brandsoft);
+  --color-brandsoft2: var(--app-brandsoft2);
+  --color-pos: var(--app-pos);
+  --color-neg: var(--app-neg);
+  --color-negsoft: var(--app-negsoft);
+  --color-amber: var(--app-amber);
+  --color-toast: var(--app-toast);
+  --color-toastink: var(--app-toast-ink);
+  --shadow-key: var(--sh-key);
+  --shadow-soft: var(--sh-soft);
+  --shadow-floating: var(--sh-floating);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html {
+    scroll-padding-top: env(safe-area-inset-top, 0px);
+  }
+  body {
+    @apply bg-appbg text-ink font-sans antialiased;
+  }
+  button {
+    touch-action: manipulation;
+  }
+  input,
+  textarea {
+    outline: none;
+  }
+}
+
+/* helpers */
+.tab-content {
+  animation: appear 180ms ease-out;
+}
+@keyframes appear {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.sheet-content {
+  animation: sheetUp 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes sheetUp {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.pulse-ring {
+  animation: pulsering 1.6s ease-out infinite;
+}
+@keyframes pulsering {
+  0% {
+    box-shadow: 0 0 0 0 rgba(22, 160, 133, 0.35);
+  }
+  70% {
+    box-shadow: 0 0 0 22px rgba(22, 160, 133, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(22, 160, 133, 0);
+  }
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.app-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--app-line2) transparent;
+}
+.app-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+.app-scroll::-webkit-scrollbar-thumb {
+  background: var(--app-line2);
+  border-radius: 99px;
+}
+.hidden-money {
+  filter: blur(7px);
+  user-select: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab-content,
+  .sheet-content,
+  .pulse-ring {
+    animation: none !important;
+  }
+}

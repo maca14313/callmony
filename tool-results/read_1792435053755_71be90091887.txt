@@ -1,0 +1,1475 @@
+     1→"use client";
+     2→
+     3→import { create } from "zustand";
+     4→import {
+     5→  AttachmentMeta,
+     6→  AttachmentParentType,
+     7→  BankAccount,
+     8→  CalcList,
+     9→  CallLog,
+    10→  Contact,
+    11→  ID,
+    12→  LedgerEntry,
+    13→  LinkRef,
+    14→  MessageLog,
+    15→  Note,
+    16→  OwnerId,
+    17→  Payment,
+    18→  Reminder,
+    19→  Settings,
+    20→} from "./types";
+    21→import * as calc from "./calc";
+    22→import { displayName, normalizePhone, now, todayStr, uid } from "./utils";
+    23→import { r2 as r2Fallback } from "./calc";
+    24→import {
+    25→  blobDel,
+    26→  blobGet,
+    27→  blobPut,
+    28→  idbClear,
+    29→  idbDel,
+    30→  idbGetAll,
+    31→  idbPut,
+    32→  idbPutKey,
+    33→  metaGet,
+    34→  metaSet,
+    35→} from "./db";
+    36→
+    37→/* ------------------------------------------------------------------ */
+    38→/* State                                                                */
+    39→/* ------------------------------------------------------------------ */
+    40→
+    41→interface AppState {
+    42→  hydrated: boolean;
+    43→  contacts: Contact[];
+    44→  entries: LedgerEntry[];
+    45→  lists: CalcList[];
+    46→  notes: Note[];
+    47→  reminders: Reminder[];
+    48→  banks: BankAccount[];
+    49→  recents: CallLog[];
+    50→  messages: MessageLog[];
+    51→  attachments: AttachmentMeta[];
+    52→  settings: Settings;
+    53→  lastUndo: { label: string; fn: () => void } | null;
+    54→
+    55→  hydrate: () => Promise<void>;
+    56→  pushUndo: (label: string, fn: () => void) => void;
+    57→  undo: () => boolean;
+    58→
+    59→  /* contacts */
+    60→  saveContact: (c: Partial<Contact> & { id?: ID }) => Contact;
+    61→  deleteContact: (id: ID) => void;
+    62→  restoreContact: (id: ID) => void;
+    63→  purgeContact: (id: ID) => void;
+    64→  toggleFavorite: (id: ID) => void;
+    65→  mergeContacts: (primaryId: ID, dupId: ID) => void;
+    66→  findDuplicates: () => { primary: Contact; dup: Contact; reason: string }[];
+    67→
+    68→  /* ledger entries */
+    69→  saveEntry: (e: Partial<LedgerEntry> & { id?: ID; ownerId: OwnerId; type: "credit" | "debit" }) => LedgerEntry;
+    70→  deleteEntry: (id: ID) => void;
+    71→  restoreEntry: (id: ID) => void;
+    72→  purgeEntry: (id: ID) => void;
+    73→  addPayment: (entryId: ID, payment: Partial<Payment> & { amount: number }) => void;
+    74→  removePayment: (entryId: ID, paymentId: ID) => void;
+    75→  settleUp: (ownerId: OwnerId) => number;
+    76→  moveEntity: (kind: "entry" | "list" | "note" | "reminder" | "bank", id: ID, ownerId: OwnerId) => void;
+    77→
+    78→  /* lists */
+    79→  saveList: (l: Partial<CalcList> & { id?: ID; ownerId: OwnerId; title: string }) => CalcList;
+    80→  deleteList: (id: ID) => void;
+    81→  restoreList: (id: ID) => void;
+    82→  purgeList: (id: ID) => void;
+    83→  duplicateList: (id: ID, opts?: { asTemplate?: boolean; fresh?: boolean }) => ID | undefined;
+    84→  addListItem: (listId: ID, item: Partial<CalcList["items"][number]>) => void;
+    85→  updateListItem: (listId: ID, itemId: ID, patch: Partial<CalcList["items"][number]>) => void;
+    86→  removeListItem: (listId: ID, itemId: ID) => void;
+    87→  addItemPayment: (listId: ID, itemId: ID, payment: Partial<Payment> & { amount: number }) => void;
+    88→  removeItemPayment: (listId: ID, itemId: ID, paymentId: ID) => void;
+    89→  toggleItemChecked: (listId: ID, itemId: ID, checked: boolean) => void;
+    90→  markAllPaid: (listId: ID) => number;
+    91→  clearPaid: (listId: ID) => void;
+    92→
+    93→  /* notes */
+    94→  saveNote: (n: Partial<Note> & { id?: ID; ownerId: OwnerId }) => Note;
+    95→  deleteNote: (id: ID) => void;
+    96→  restoreNote: (id: ID) => void;
+    97→  purgeNote: (id: ID) => void;
+    98→
+    99→  /* reminders */
+   100→  saveReminder: (r: Partial<Reminder> & { id?: ID; ownerId: OwnerId; title: string }) => Reminder;
+   101→  deleteReminder: (id: ID) => void;
+   102→  restoreReminder: (id: ID) => void;
+   103→  purgeReminder: (id: ID) => void;
+   104→  completeReminder: (id: ID) => void;
+   105→  reopenReminder: (id: ID) => void;
+   106→  snoozeReminder: (id: ID, until: number) => void;
+   107→  fireReminder: (id: ID) => void;
+   108→
+   109→  /* banks */
+   110→  saveBank: (b: Partial<BankAccount> & { id?: ID; ownerId: OwnerId; label: string }) => BankAccount;
+   111→  deleteBank: (id: ID) => void;
+   112→  restoreBank: (id: ID) => void;
+   113→  purgeBank: (id: ID) => void;
+   114→
+   115→  /* calls + messages */
+   116→  addCall: (c: Partial<CallLog> & { phone: string; direction: CallLog["direction"] }) => void;
+   117→  deleteRecent: (id: ID) => void;
+   118→  clearRecents: () => void;
+   119→  logMessage: (ownerId: OwnerId, channel: MessageLog["channel"], text: string) => void;
+   120→
+   121→  /* attachments */
+   122→  addAttachment: (file: File, parentType: AttachmentParentType, parentId: ID) => Promise<AttachmentMeta | null>;
+   123→  removeAttachment: (id: ID) => Promise<void>;
+   124→  attachmentBlob: (id: ID) => Promise<Blob | undefined>;
+   125→
+   126→  /* settings + data */
+   127→  updateSettings: (patch: Partial<Settings>) => void;
+   128→  importContacts: (list: Partial<Contact>[], mode: "skip" | "merge") => { added: number; merged: number; skipped: number };
+   129→  wipeAll: () => Promise<void>;
+   130→}
+   131→
+   132→const DEFAULT_SETTINGS: Settings = {
+   133→  theme: "auto",
+   134→  currency: "ETB",
+   135→  countryCode: "ET",
+   136→  autolockMin: 1,
+   137→  hideBalances: false,
+   138→  notifAsked: false,
+   139→  blockedNumbers: [],
+   140→};
+   141→
+   142→/* ------------------------------------------------------------------ */
+   143→/* Store                                                                */
+   144→/* ------------------------------------------------------------------ */
+   145→
+   146→export const useApp = create<AppState>((set, get) => {
+   147→  /* ---- internal helpers ---- */
+   148→  const touch = <T extends { updatedAt: number }>(e: T): T => ({ ...e, updatedAt: now() });
+   149→
+   150→  const persistContact = (c: Contact) => void idbPut("contacts", c);
+   151→  const persistEntry = (e: LedgerEntry) => void idbPut("entries", e);
+   152→  const persistList = (l: CalcList) => void idbPut("lists", l);
+   153→  const persistNote = (n: Note) => void idbPut("notes", n);
+   154→  const persistReminder = (r: Reminder) => void idbPut("reminders", r);
+   155→  const persistBank = (b: BankAccount) => void idbPut("banks", b);
+   156→  const persistRecent = (c: CallLog) => void idbPut("recents", c);
+   157→  const persistMessage = (m: MessageLog) => void idbPut("messages", m);
+   158→  const persistAttachment = (a: AttachmentMeta) => void idbPut("attachments", a);
+   159→  const persistSettings = (s: Settings) => void metaSet("settings", s);
+   160→
+   161→  const updateEntry = (id: ID, fn: (e: LedgerEntry) => LedgerEntry) => {
+   162→    const e = get().entries.find((x) => x.id === id);
+   163→    if (!e) return;
+   164→    const next = touch(fn(e));
+   165→    set((s) => ({ entries: s.entries.map((x) => (x.id === id ? next : x)) }));
+   166→    persistEntry(next);
+   167→  };
+   168→
+   169→  const updateList = (id: ID, fn: (l: CalcList) => CalcList) => {
+   170→    const l = get().lists.find((x) => x.id === id);
+   171→    if (!l) return;
+   172→    const next = touch(fn(l));
+   173→    set((s) => ({ lists: s.lists.map((x) => (x.id === id ? next : x)) }));
+   174→    persistList(next);
+   175→  };
+   176→
+   177→  const updateReminder = (id: ID, fn: (r: Reminder) => Reminder) => {
+   178→    const r = get().reminders.find((x) => x.id === id);
+   179→    if (!r) return;
+   180→    const next = touch(fn(r));
+   181→    set((s) => ({ reminders: s.reminders.map((x) => (x.id === id ? next : x)) }));
+   182→    persistReminder(next);
+   183→  };
+   184→
+   185→  return {
+   186→    hydrated: false,
+   187→    contacts: [],
+   188→    entries: [],
+   189→    lists: [],
+   190→    notes: [],
+   191→    reminders: [],
+   192→    banks: [],
+   193→    recents: [],
+   194→    messages: [],
+   195→    attachments: [],
+   196→    settings: DEFAULT_SETTINGS,
+   197→    lastUndo: null,
+   198→
+   199→    /* ---------------- hydrate ---------------- */
+   200→    hydrate: async () => {
+   201→      if (get().hydrated) return;
+   202→      const [contacts, entries, lists, notes, reminders, banks, recents, messages, attachments] =
+   203→        await Promise.all([
+   204→          idbGetAll<Contact>("contacts"),
+   205→          idbGetAll<LedgerEntry>("entries"),
+   206→          idbGetAll<CalcList>("lists"),
+   207→          idbGetAll<Note>("notes"),
+   208→          idbGetAll<Reminder>("reminders"),
+   209→          idbGetAll<BankAccount>("banks"),
+   210→          idbGetAll<CallLog>("recents"),
+   211→          idbGetAll<MessageLog>("messages"),
+   212→          idbGetAll<AttachmentMeta>("attachments"),
+   213→        ]);
+   214→      let settings = (await metaGet<Settings>("settings")) || DEFAULT_SETTINGS;
+   215→      settings = { ...DEFAULT_SETTINGS, ...settings };
+   216→
+   217→      const seeded = await metaGet<boolean>("demoSeeded");
+   218→      if (!seeded && contacts.length === 0 && entries.length === 0) {
+   219→        const demo = buildDemoData();
+   220→        set({
+   221→          contacts: demo.contacts,
+   222→          entries: demo.entries,
+   223→          lists: demo.lists,
+   224→          notes: demo.notes,
+   225→          reminders: demo.reminders,
+   226→          banks: demo.banks,
+   227→          recents: demo.recents,
+   228→          messages: [],
+   229→          attachments: [],
+   230→          settings: { ...settings, demoSeeded: true },
+   231→        });
+   232→        await metaSet("demoSeeded", true);
+   233→        demo.contacts.forEach(persistContact);
+   234→        demo.entries.forEach(persistEntry);
+   235→        demo.lists.forEach(persistList);
+   236→        demo.notes.forEach(persistNote);
+   237→        demo.reminders.forEach(persistReminder);
+   238→        demo.banks.forEach(persistBank);
+   239→        demo.recents.forEach(persistRecent);
+   240→        await metaSet("settings", { ...settings, demoSeeded: true });
+   241→        set({ hydrated: true });
+   242→        return;
+   243→      }
+   244→
+   245→      set({
+   246→        contacts,
+   247→        entries,
+   248→        lists,
+   249→        notes,
+   250→        reminders,
+   251→        banks,
+   252→        recents: recents.sort((a, b) => b.at - a.at),
+   253→        messages,
+   254→        attachments,
+   255→        settings,
+   256→        hydrated: true,
+   257→      });
+   258→    },
+   259→
+   260→    pushUndo: (label, fn) => set({ lastUndo: { label, fn } }),
+   261→    undo: () => {
+   262→      const u = get().lastUndo;
+   263→      if (!u) return false;
+   264→      set({ lastUndo: null });
+   265→      u.fn();
+   266→      return true;
+   267→    },
+   268→
+   269→    /* ---------------- contacts ---------------- */
+   270→    saveContact: (input) => {
+   271→      const existing = input.id ? get().contacts.find((c) => c.id === input.id) : undefined;
+   272→      const id = input.id || uid();
+   273→      const c: Contact = {
+   274→        id,
+   275→        firstName: input.firstName ?? existing?.firstName ?? "",
+   276→        lastName: input.lastName ?? existing?.lastName ?? "",
+   277→        nickname: input.nickname ?? existing?.nickname,
+   278→        company: input.company ?? existing?.company,
+   279→        jobTitle: input.jobTitle ?? existing?.jobTitle,
+   280→        phones: input.phones ?? existing?.phones ?? [],
+   281→        emails: input.emails ?? existing?.emails ?? [],
+   282→        links: input.links ?? existing?.links ?? [],
+   283→        socials: input.socials ?? existing?.socials ?? [],
+   284→        addresses: input.addresses ?? existing?.addresses ?? [],
+   285→        customFields: input.customFields ?? existing?.customFields ?? [],
+   286→        birthday: input.birthday ?? existing?.birthday,
+   287→        tags: input.tags ?? existing?.tags ?? [],
+   288→        favorite: input.favorite ?? existing?.favorite ?? false,
+   289→        pinnedNote: input.pinnedNote ?? existing?.pinnedNote,
+   290→        note: input.note ?? existing?.note,
+   291→        photoId: input.photoId ?? existing?.photoId,
+   292→        color: input.color ?? existing?.color,
+   293→        textColor: input.textColor ?? existing?.textColor,
+   294→        speedDial: input.speedDial ?? existing?.speedDial,
+   295→        createdAt: existing?.createdAt ?? now(),
+   296→        updatedAt: now(),
+   297→      };
+   298→      // only one primary phone/email
+   299→      if (c.phones.some((p) => p.primary)) c.phones.forEach((p, i) => { if (i > 0 && p.primary && c.phones[0].primary) p.primary = false; });
+   300→      set((s) => ({
+   301→        contacts: existing
+   302→          ? s.contacts.map((x) => (x.id === id ? c : x))
+   303→          : [...s.contacts, c],
+   304→      }));
+   305→      persistContact(c);
+   306→      return c;
+   307→    },
+   308→
+   309→    deleteContact: (id) => {
+   310→      const c = get().contacts.find((x) => x.id === id);
+   311→      if (!c) return;
+   312→      const next = { ...c, deletedAt: now() };
+   313→      set((s) => ({ contacts: s.contacts.map((x) => (x.id === id ? next : x)) }));
+   314→      persistContact(next);
+   315→      get().pushUndo(`“${displayName(c)}” moved to Trash`, () => get().restoreContact(id));
+   316→    },
+   317→
+   318→    restoreContact: (id) => {
+   319→      const c = get().contacts.find((x) => x.id === id);
+   320→      if (!c) return;
+   321→      const next = { ...c, deletedAt: undefined };
+   322→      set((s) => ({ contacts: s.contacts.map((x) => (x.id === id ? next : x)) }));
+   323→      persistContact(next);
+   324→    },
+   325→
+   326→    purgeContact: async (id) => {
+   327→      set((s) => ({ contacts: s.contacts.filter((x) => x.id !== id) }));
+   328→      await idbDel("contacts", id);
+   329→    },
+   330→
+   331→    toggleFavorite: (id) => {
+   332→      const c = get().contacts.find((x) => x.id === id);
+   333→      if (!c) return;
+   334→      const next = touch({ ...c, favorite: !c.favorite });
+   335→      set((s) => ({ contacts: s.contacts.map((x) => (x.id === id ? next : x)) }));
+   336→      persistContact(next);
+   337→    },
+   338→
+   339→    mergeContacts: (primaryId, dupId) => {
+   340→      const { contacts, entries, lists, notes, reminders, banks, recents, attachments } = get();
+   341→      const primary = contacts.find((c) => c.id === primaryId);
+   342→      const dup = contacts.find((c) => c.id === dupId);
+   343→      if (!primary || !dup) return;
+   344→
+   345→      const unionById = <T extends { id: string }>(a: T[], b: T[]) => {
+   346→        const ids = new Set(a.map((x) => x.id));
+   347→        return [...a, ...b.filter((x) => !ids.has(x.id))];
+   348→      };
+   349→      const phoneKeys = new Set(primary.phones.map((p) => normalizePhone(p.number)));
+   350→      const merged: Contact = touch({
+   351→        ...primary,
+   352→        phones: [
+   353→          ...primary.phones,
+   354→          ...dup.phones.filter((p) => !phoneKeys.has(normalizePhone(p.number))),
+   355→        ],
+   356→        emails: unionById(primary.emails, dup.emails),
+   357→        links: unionById(primary.links, dup.links),
+   358→        socials: unionById(primary.socials, dup.socials),
+   359→        addresses: unionById(primary.addresses, dup.addresses),
+   360→        customFields: unionById(primary.customFields, dup.customFields),
+   361→        tags: [...new Set([...primary.tags, ...dup.tags])],
+   362→        favorite: primary.favorite || dup.favorite,
+   363→        birthday: primary.birthday || dup.birthday,
+   364→        note: [primary.note, dup.note].filter(Boolean).join("\n") || undefined,
+   365→      });
+   366→
+   367→      const remapOwner = <T extends { ownerId: OwnerId }>(arr: T[], fn: (x: T) => void) =>
+   368→        arr.map((x) => {
+   369→          if (x.ownerId === dupId) {
+   370→            const n = { ...x, ownerId: primaryId, updatedAt: now() };
+   371→            fn(n as T);
+   372→            return n;
+   373→          }
+   374→          return x;
+   375→        });
+   376→
+   377→      const nextEntries = remapOwner(entries, (e) => persistEntry(e));
+   378→      const nextLists = remapOwner(lists, (l) => persistList(l));
+   379→      const nextNotes = remapOwner(notes, (n) => persistNote(n));
+   380→      const nextReminders = remapOwner(reminders, (r) => persistReminder(r));
+   381→      const nextBanks = remapOwner(banks, (b) => persistBank(b));
+   382→      const nextRecents = recents.map((r) =>
+   383→        r.contactId === dupId ? (persistRecent({ ...r, contactId: primaryId }), { ...r, contactId: primaryId }) : r
+   384→      );
+   385→      const nextAttachments = attachments.map((a) =>
+   386→        a.parentType === "contact" && a.parentId === dupId
+   387→          ? (persistAttachment({ ...a, parentId: primaryId }), { ...a, parentId: primaryId })
+   388→          : a
+   389→      );
+   390→
+   391→      set({
+   392→        contacts: contacts.map((x) => (x.id === primaryId ? merged : x)).filter((x) => x.id !== dupId),
+   393→        entries: nextEntries,
+   394→        lists: nextLists,
+   395→        notes: nextNotes,
+   396→        reminders: nextReminders,
+   397→        banks: nextBanks,
+   398→        recents: nextRecents,
+   399→        attachments: nextAttachments,
+   400→      });
+   401→      persistContact(merged);
+   402→      void idbDel("contacts", dupId);
+   403→    },
+   404→
+   405→    findDuplicates: () => {
+   406→      const { contacts } = get();
+   407→      const live = contacts.filter((c) => !c.deletedAt);
+   408→      const results: { primary: Contact; dup: Contact; reason: string }[] = [];
+   409→      const seen = new Set<ID>();
+   410→      for (let i = 0; i < live.length; i++) {
+   411→        for (let j = i + 1; j < live.length; j++) {
+   412→          const a = live[i];
+   413→          const b = live[j];
+   414→          if (seen.has(a.id) || seen.has(b.id)) continue;
+   415→          const aPhones = new Set(a.phones.map((p) => normalizePhone(p.number)));
+   416→          const sharedPhone = b.phones.some((p) => aPhones.has(normalizePhone(p.number)));
+   417→          const sameName =
+   418→            displayName(a).toLowerCase() === displayName(b).toLowerCase() && displayName(a) !== "Unknown";
+   419→          const aEmails = new Set(a.emails.map((e) => e.address.toLowerCase()));
+   420→          const sharedEmail = b.emails.some((e) => aEmails.has(e.address.toLowerCase()));
+   421→          if (sharedPhone || (sameName && sharedEmail)) {
+   422→            results.push({
+   423→              primary: a,
+   424→              dup: b,
+   425→              reason: sharedPhone ? "Same phone number" : "Same name and email",
+   426→            });
+   427→            seen.add(b.id);
+   428→          }
+   429→        }
+   430→      }
+   431→      return results;
+   432→    },
+   433→
+   434→    /* ---------------- ledger entries ---------------- */
+   435→    saveEntry: (input) => {
+   436→      const existing = input.id ? get().entries.find((e) => e.id === input.id) : undefined;
+   437→      const id = input.id || uid();
+   438→      const e: LedgerEntry = {
+   439→        id,
+   440→        ownerId: input.ownerId,
+   441→        type: input.type,
+   442→        amount: r2Fallback(input.amount ?? existing?.amount ?? 0),
+   443→        payments: input.payments ?? existing?.payments ?? [],
+   444→        date: input.date ?? existing?.date ?? todayStr(),
+   445→        dueDate: input.dueDate ?? existing?.dueDate,
+   446→        category: input.category ?? existing?.category,
+   447→        method: input.method ?? existing?.method,
+   448→        note: input.note ?? existing?.note,
+   449→        listId: input.listId ?? existing?.listId,
+   450→        attachments: input.attachments ?? existing?.attachments ?? [],
+   451→        createdAt: existing?.createdAt ?? now(),
+   452→        updatedAt: now(),
+   453→      };
+   454→      set((s) => ({
+   455→        entries: existing ? s.entries.map((x) => (x.id === id ? e : x)) : [...s.entries, e],
+   456→      }));
+   457→      persistEntry(e);
+   458→      return e;
+   459→    },
+   460→
+   461→    deleteEntry: (id) => {
+   462→      const e = get().entries.find((x) => x.id === id);
+   463→      if (!e) return;
+   464→      const next = { ...e, deletedAt: now() };
+   465→      set((s) => ({ entries: s.entries.map((x) => (x.id === id ? next : x)) }));
+   466→      persistEntry(next);
+   467→      get().pushUndo("Entry moved to Trash", () => get().restoreEntry(id));
+   468→    },
+   469→
+   470→    restoreEntry: (id) => {
+   471→      const e = get().entries.find((x) => x.id === id);
+   472→      if (!e) return;
+   473→      const next = { ...e, deletedAt: undefined };
+   474→      set((s) => ({ entries: s.entries.map((x) => (x.id === id ? next : x)) }));
+   475→      persistEntry(next);
+   476→    },
+   477→
+   478→    purgeEntry: async (id) => {
+   479→      set((s) => ({ entries: s.entries.filter((x) => x.id !== id) }));
+   480→      await idbDel("entries", id);
+   481→    },
+   482→
+   483→    addPayment: (entryId, payment) => {
+   484→      const p: Payment = {
+   485→        id: uid(),
+   486→        amount: r2Fallback(payment.amount),
+   487→        date: payment.date || todayStr(),
+   488→        note: payment.note,
+   489→        method: payment.method,
+   490→        auto: payment.auto,
+   491→        createdAt: now(),
+   492→      };
+   493→      updateEntry(entryId, (e) => ({ ...e, payments: [...e.payments, p] }));
+   494→    },
+   495→
+   496→    removePayment: (entryId, paymentId) => {
+   497→      updateEntry(entryId, (e) => ({
+   498→        ...e,
+   499→        payments: e.payments.filter((p) => p.id !== paymentId),
+   500→      }));
+   501→    },
+   502→
+   503→    settleUp: (ownerId) => {
+   504→      const balance = calc.ownerBalance(get().entries, ownerId);
+   505→      if (Math.abs(balance) < 0.005) return 0;
+   506→      let left = Math.abs(balance);
+   507→      const ordered = get()
+   508→        .entries.filter((e) => e.ownerId === ownerId && !e.deletedAt)
+   509→        .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
+   510→      for (const e of ordered) {
+   511→        if (left < 0.005) break;
+   512→        const rem = calc.entryRemaining(e);
+   513→        // paying down: reduce |remaining| in the direction that zeroes the balance
+   514→        const effective = e.type === "credit" ? rem : -rem;
+   515→        if (Math.sign(effective) === Math.sign(balance)) continue; // same side, skip
+   516→        const pay = Math.min(Math.abs(rem), left);
+   517→        if (pay > 0.005) {
+   518→          get().addPayment(e.id, { amount: r2Fallback(pay), date: todayStr(), auto: "settle", note: "Settle up" });
+   519→          left = r2Fallback(left - pay);
+   520→        }
+   521→      }
+   522→      return Math.abs(balance);
+   523→    },
+   524→
+   525→    moveEntity: (kind, id, ownerId) => {
+   526→      if (ownerId === get().entries.find((e) => e.id === id)?.ownerId && kind === "entry") return;
+   527→      switch (kind) {
+   528→        case "entry":
+   529→          updateEntry(id, (e) => ({ ...e, ownerId }));
+   530→          break;
+   531→        case "list":
+   532→          updateList(id, (l) => ({ ...l, ownerId }));
+   533→          break;
+   534→        case "note":
+   535→          set((s) => {
+   536→            const n = s.notes.find((x) => x.id === id);
+   537→            if (n) {
+   538→              const next = touch({ ...n, ownerId });
+   539→              persistNote(next);
+   540→              return { notes: s.notes.map((x) => (x.id === id ? next : x)) };
+   541→            }
+   542→            return {};
+   543→          });
+   544→          break;
+   545→        case "reminder":
+   546→          updateReminder(id, (r) => ({ ...r, ownerId }));
+   547→          break;
+   548→        case "bank":
+   549→          set((s) => {
+   550→            const b = s.banks.find((x) => x.id === id);
+   551→            if (b) {
+   552→              const next = touch({ ...b, ownerId });
+   553→              persistBank(next);
+   554→              return { banks: s.banks.map((x) => (x.id === id ? next : x)) };
+   555→            }
+   556→            return {};
+   557→          });
+   558→          break;
+   559→      }
+   560→    },
+   561→
+   562→    /* ---------------- lists ---------------- */
+   563→    saveList: (input) => {
+   564→      const existing = input.id ? get().lists.find((l) => l.id === input.id) : undefined;
+   565→      const id = input.id || uid();
+   566→      const l: CalcList = {
+   567→        id,
+   568→        ownerId: input.ownerId,
+   569→        kind: input.kind ?? existing?.kind ?? "calculating",
+   570→        title: input.title,
+   571→        note: input.note ?? existing?.note,
+   572→        discount: input.discount ?? existing?.discount,
+   573→        taxPct: input.taxPct ?? existing?.taxPct,
+   574→        extraCharge: input.extraCharge ?? existing?.extraCharge,
+   575→        isTemplate: input.isTemplate ?? existing?.isTemplate ?? false,
+   576→        postToLedger: input.postToLedger ?? existing?.postToLedger ?? false,
+   577→        repeat: input.repeat ?? existing?.repeat ?? "none",
+   578→        currency: input.currency ?? existing?.currency,
+   579→        items: input.items ?? existing?.items ?? [],
+   580→        attachments: input.attachments ?? existing?.attachments ?? [],
+   581→        createdAt: existing?.createdAt ?? now(),
+   582→        updatedAt: now(),
+   583→      };
+   584→      set((s) => ({ lists: existing ? s.lists.map((x) => (x.id === id ? l : x)) : [...s.lists, l] }));
+   585→      persistList(l);
+   586→      return l;
+   587→    },
+   588→
+   589→    deleteList: (id) => {
+   590→      const l = get().lists.find((x) => x.id === id);
+   591→      if (!l) return;
+   592→      const next = { ...l, deletedAt: now() };
+   593→      set((s) => ({ lists: s.lists.map((x) => (x.id === id ? next : x)) }));
+   594→      persistList(next);
+   595→      get().pushUndo(`“${l.title}” moved to Trash`, () => get().restoreList(id));
+   596→    },
+   597→
+   598→    restoreList: (id) => {
+   599→      const l = get().lists.find((x) => x.id === id);
+   600→      if (!l) return;
+   601→      const next = { ...l, deletedAt: undefined };
+   602→      set((s) => ({ lists: s.lists.map((x) => (x.id === id ? next : x)) }));
+   603→      persistList(next);
+   604→    },
+   605→
+   606→    purgeList: async (id) => {
+   607→      set((s) => ({ lists: s.lists.filter((x) => x.id !== id) }));
+   608→      await idbDel("lists", id);
+   609→    },
+   610→
+   611→    duplicateList: (id, opts) => {
+   612→      const l = get().lists.find((x) => x.id === id);
+   613→      if (!l) return undefined;
+   614→      const nid = uid();
+   615→      const copy: CalcList = {
+   616→        ...l,
+   617→        id: nid,
+   618→        title: opts?.asTemplate ? `${l.title} (template)` : `${l.title} (copy)`,
+   619→        isTemplate: !!opts?.asTemplate || (opts?.fresh ? false : l.isTemplate),
+   620→        postToLedger: l.postToLedger,
+   621→        items: opts?.fresh
+   622→          ? l.items.map((i) => ({
+   623→              ...i,
+   624→              id: uid(),
+   625→              payments: [],
+   626→              checked: false,
+   627→              createdAt: now(),
+   628→              updatedAt: now(),
+   629→            }))
+   630→          : l.items.map((i) => ({ ...i, id: uid(), createdAt: now(), updatedAt: now() })),
+   631→        attachments: [],
+   632→        createdAt: now(),
+   633→        updatedAt: now(),
+   634→        deletedAt: undefined,
+   635→      };
+   636→      set((s) => ({ lists: [...s.lists, copy] }));
+   637→      persistList(copy);
+   638→      return nid;
+   639→    },
+   640→
+   641→    addListItem: (listId, item) => {
+   642→      const i: CalcList["items"][number] = {
+   643→        id: uid(),
+   644→        name: item.name || "New item",
+   645→        qty: item.qty ?? 1,
+   646→        unit: item.unit,
+   647→        unitPrice: r2Fallback(item.unitPrice ?? 0),
+   648→        discount: item.discount,
+   649→        taxPct: item.taxPct,
+   650→        payments: [],
+   651→        checked: false,
+   652→        date: item.date || todayStr(),
+   653→        dueDate: item.dueDate,
+   654→        priority: item.priority,
+   655→        note: item.note,
+   656→        sortOrder: item.sortOrder ?? now(),
+   657→        createdAt: now(),
+   658→        updatedAt: now(),
+   659→      };
+   660→      updateList(listId, (l) => ({ ...l, items: [...l.items, i] }));
+   661→    },
+   662→
+   663→    updateListItem: (listId, itemId, patch) => {
+   664→      updateList(listId, (l) => ({
+   665→        ...l,
+   666→        items: l.items.map((i) => (i.id === itemId ? touch({ ...i, ...patch }) : i)),
+   667→      }));
+   668→    },
+   669→
+   670→    removeListItem: (listId, itemId) => {
+   671→      updateList(listId, (l) => ({ ...l, items: l.items.filter((i) => i.id !== itemId) }));
+   672→    },
+   673→
+   674→    addItemPayment: (listId, itemId, payment) => {
+   675→      const p: Payment = {
+   676→        id: uid(),
+   677→        amount: r2Fallback(payment.amount),
+   678→        date: payment.date || todayStr(),
+   679→        note: payment.note,
+   680→        method: payment.method,
+   681→        auto: payment.auto,
+   682→        createdAt: now(),
+   683→      };
+   684→      updateList(listId, (l) => ({
+   685→        ...l,
+   686→        items: l.items.map((i) => (i.id === itemId ? { ...i, payments: [...i.payments, p] } : i)),
+   687→      }));
+   688→    },
+   689→
+   690→    removeItemPayment: (listId, itemId, paymentId) => {
+   691→      updateList(listId, (l) => ({
+   692→        ...l,
+   693→        items: l.items.map((i) =>
+   694→          i.id === itemId ? { ...i, payments: i.payments.filter((p) => p.id !== paymentId) } : i
+   695→        ),
+   696→      }));
+   697→    },
+   698→
+   699→    /** Tick = adds remaining balance as ONE payment. Untick = removes tick-payments. */
+   700→    toggleItemChecked: (listId, itemId, checked) => {
+   701→      const l = get().lists.find((x) => x.id === listId);
+   702→      const item = l?.items.find((i) => i.id === itemId);
+   703→      if (!l || !item) return;
+   704→      if (checked) {
+   705→        const remaining = calc.itemRemaining(item);
+   706→        if (remaining > 0.005) {
+   707→          get().addItemPayment(listId, itemId, {
+   708→            amount: remaining,
+   709→            date: todayStr(),
+   710→            auto: "tick",
+   711→          });
+   712→        }
+   713→        get().updateListItem(listId, itemId, { checked: true });
+   714→      } else {
+   715→        get().updateListItem(listId, itemId, {
+   716→          checked: false,
+   717→          payments: item.payments.filter((p) => p.auto !== "tick"),
+   718→        });
+   719→      }
+   720→    },
+   721→
+   722→    markAllPaid: (listId) => {
+   723→      const l = get().lists.find((x) => x.id === listId);
+   724→      if (!l) return 0;
+   725→      let added = 0;
+   726→      l.items.forEach((i) => {
+   727→        const rem = calc.itemRemaining(i);
+   728→        if (rem > 0.005) {
+   729→          get().addItemPayment(listId, i.id, { amount: rem, date: todayStr(), auto: "tick" });
+   730→          get().updateListItem(listId, i.id, { checked: true });
+   731→          added++;
+   732→        }
+   733→      });
+   734→      return added;
+   735→    },
+   736→
+   737→    clearPaid: (listId) => {
+   738→      updateList(listId, (l) => ({
+   739→        ...l,
+   740→        items: l.items.map((i) => ({ ...i, payments: [], checked: false })),
+   741→      }));
+   742→    },
+   743→
+   744→    /* ---------------- notes ---------------- */
+   745→    saveNote: (input) => {
+   746→      const existing = input.id ? get().notes.find((n) => n.id === input.id) : undefined;
+   747→      const id = input.id || uid();
+   748→      const n: Note = {
+   749→        id,
+   750→        ownerId: input.ownerId,
+   751→        title: input.title ?? existing?.title ?? "Untitled note",
+   752→        body: input.body ?? existing?.body ?? "",
+   753→        tags: input.tags ?? existing?.tags ?? [],
+   754→        pinned: input.pinned ?? existing?.pinned ?? false,
+   755→        color: input.color ?? existing?.color,
+   756→        links: input.links ?? existing?.links ?? [],
+   757→        attachments: input.attachments ?? existing?.attachments ?? [],
+   758→        createdAt: existing?.createdAt ?? now(),
+   759→        updatedAt: now(),
+   760→      };
+   761→      set((s) => ({ notes: existing ? s.notes.map((x) => (x.id === id ? n : x)) : [...s.notes, n] }));
+   762→      persistNote(n);
+   763→      return n;
+   764→    },
+   765→
+   766→    deleteNote: (id) => {
+   767→      const n = get().notes.find((x) => x.id === id);
+   768→      if (!n) return;
+   769→      const next = { ...n, deletedAt: now() };
+   770→      set((s) => ({ notes: s.notes.map((x) => (x.id === id ? next : x)) }));
+   771→      persistNote(next);
+   772→      get().pushUndo("Note moved to Trash", () => get().restoreNote(id));
+   773→    },
+   774→
+   775→    restoreNote: (id) => {
+   776→      const n = get().notes.find((x) => x.id === id);
+   777→      if (!n) return;
+   778→      const next = { ...n, deletedAt: undefined };
+   779→      set((s) => ({ notes: s.notes.map((x) => (x.id === id ? next : x)) }));
+   780→      persistNote(next);
+   781→    },
+   782→
+   783→    purgeNote: async (id) => {
+   784→      set((s) => ({ notes: s.notes.filter((x) => x.id !== id) }));
+   785→      await idbDel("notes", id);
+   786→    },
+   787→
+   788→    /* ---------------- reminders ---------------- */
+   789→    saveReminder: (input) => {
+   790→      const existing = input.id ? get().reminders.find((r) => r.id === input.id) : undefined;
+   791→      const id = input.id || uid();
+   792→      const r: Reminder = {
+   793→        id,
+   794→        ownerId: input.ownerId,
+   795→        title: input.title,
+   796→        notes: input.notes ?? existing?.notes,
+   797→        kind: input.kind ?? existing?.kind ?? "custom",
+   798→        dueAt: input.dueAt ?? existing?.dueAt ?? now(),
+   799→        repeat: input.repeat ?? existing?.repeat ?? "none",
+   800→        leadMinutes: input.leadMinutes ?? existing?.leadMinutes,
+   801→        links: input.links ?? existing?.links ?? [],
+   802→        done: input.done ?? existing?.done ?? false,
+   803→        doneAt: input.doneAt ?? existing?.doneAt,
+   804→        snoozedUntil: input.snoozedUntil ?? existing?.snoozedUntil,
+   805→        lastFiredAt: input.lastFiredAt ?? existing?.lastFiredAt,
+   806→        firedLeads: input.firedLeads ?? existing?.firedLeads ?? [],
+   807→        attachments: input.attachments ?? existing?.attachments ?? [],
+   808→        createdAt: existing?.createdAt ?? now(),
+   809→        updatedAt: now(),
+   810→      };
+   811→      set((s) => ({
+   812→        reminders: existing ? s.reminders.map((x) => (x.id === id ? r : x)) : [...s.reminders, r],
+   813→      }));
+   814→      persistReminder(r);
+   815→      return r;
+   816→    },
+   817→
+   818→    deleteReminder: (id) => {
+   819→      const r = get().reminders.find((x) => x.id === id);
+   820→      if (!r) return;
+   821→      const next = { ...r, deletedAt: now() };
+   822→      set((s) => ({ reminders: s.reminders.map((x) => (x.id === id ? next : x)) }));
+   823→      persistReminder(next);
+   824→      get().pushUndo("Reminder moved to Trash", () => get().restoreReminder(id));
+   825→    },
+   826→
+   827→    restoreReminder: (id) => {
+   828→      const r = get().reminders.find((x) => x.id === id);
+   829→      if (!r) return;
+   830→      const next = { ...r, deletedAt: undefined };
+   831→      set((s) => ({ reminders: s.reminders.map((x) => (x.id === id ? next : x)) }));
+   832→      persistReminder(next);
+   833→    },
+   834→
+   835→    purgeReminder: async (id) => {
+   836→      set((s) => ({ reminders: s.reminders.filter((x) => x.id !== id) }));
+   837→      await idbDel("reminders", id);
+   838→    },
+   839→
+   840→    completeReminder: (id) => {
+   841→      updateReminder(id, (r) => ({
+   842→        ...r,
+   843→        done: true,
+   844→        doneAt: now(),
+   845→        snoozedUntil: undefined,
+   846→      }));
+   847→    },
+   848→
+   849→    reopenReminder: (id) => {
+   850→      updateReminder(id, (r) => ({ ...r, done: false, doneAt: undefined }));
+   851→    },
+   852→
+   853→    snoozeReminder: (id, until) => {
+   854→      updateReminder(id, (r) => ({ ...r, snoozedUntil: until }));
+   855→    },
+   856→
+   857→    fireReminder: (id) => {
+   858→      updateReminder(id, (r) => {
+   859→        const next = calc.nextOccurrence(r.dueAt, r.repeat);
+   860→        return {
+   861→          ...r,
+   862→          lastFiredAt: now(),
+   863→          firedLeads: [],
+   864→          snoozedUntil: undefined,
+   865→          dueAt: r.repeat !== "none" ? next : r.dueAt,
+   866→        };
+   867→      });
+   868→    },
+   869→
+   870→    /* ---------------- banks ---------------- */
+   871→    saveBank: (input) => {
+   872→      const existing = input.id ? get().banks.find((b) => b.id === input.id) : undefined;
+   873→      const id = input.id || uid();
+   874→      const b: BankAccount = {
+   875→        id,
+   876→        ownerId: input.ownerId,
+   877→        label: input.label,
+   878→        holderName: input.holderName ?? existing?.holderName,
+   879→        bankName: input.bankName ?? existing?.bankName,
+   880→        accountNumber: input.accountNumber ?? existing?.accountNumber,
+   881→        iban: input.iban ?? existing?.iban,
+   882→        swift: input.swift ?? existing?.swift,
+   883→        upiId: input.upiId ?? existing?.upiId,
+   884→        branch: input.branch ?? existing?.branch,
+   885→        notes: input.notes ?? existing?.notes,
+   886→        balance: input.balance ?? existing?.balance,
+   887→        currency: input.currency ?? existing?.currency,
+   888→        attachments: input.attachments ?? existing?.attachments ?? [],
+   889→        createdAt: existing?.createdAt ?? now(),
+   890→        updatedAt: now(),
+   891→      };
+   892→      set((s) => ({ banks: existing ? s.banks.map((x) => (x.id === id ? b : x)) : [...s.banks, b] }));
+   893→      persistBank(b);
+   894→      return b;
+   895→    },
+   896→
+   897→    deleteBank: (id) => {
+   898→      const b = get().banks.find((x) => x.id === id);
+   899→      if (!b) return;
+   900→      const next = { ...b, deletedAt: now() };
+   901→      set((s) => ({ banks: s.banks.map((x) => (x.id === id ? next : x)) }));
+   902→      persistBank(next);
+   903→      get().pushUndo("Account moved to Trash", () => get().restoreBank(id));
+   904→    },
+   905→
+   906→    restoreBank: (id) => {
+   907→      const b = get().banks.find((x) => x.id === id);
+   908→      if (!b) return;
+   909→      const next = { ...b, deletedAt: undefined };
+   910→      set((s) => ({ banks: s.banks.map((x) => (x.id === id ? next : x)) }));
+   911→      persistBank(next);
+   912→    },
+   913→
+   914→    purgeBank: async (id) => {
+   915→      set((s) => ({ banks: s.banks.filter((x) => x.id !== id) }));
+   916→      await idbDel("banks", id);
+   917→    },
+   918→
+   919→    /* ---------------- calls + messages ---------------- */
+   920→    addCall: (c) => {
+   921→      const call: CallLog = {
+   922→        id: uid(),
+   923→        phone: c.phone,
+   924→        contactId: c.contactId,
+   925→        direction: c.direction,
+   926→        at: c.at ?? now(),
+   927→        duration: c.duration ?? 0,
+   928→        via: c.via ?? "app",
+   929→        note: c.note,
+   930→        createdAt: now(),
+   931→      };
+   932→      set((s) => ({ recents: [call, ...s.recents] }));
+   933→      persistRecent(call);
+   934→    },
+   935→
+   936→    deleteRecent: (id) => {
+   937→      set((s) => ({ recents: s.recents.filter((r) => r.id !== id) }));
+   938→      void idbDel("recents", id);
+   939→    },
+   940→
+   941→    clearRecents: () => {
+   942→      set({ recents: [] });
+   943→      void idbClear("recents");
+   944→    },
+   945→
+   946→    logMessage: (ownerId, channel, text) => {
+   947→      const m: MessageLog = {
+   948→        id: uid(),
+   949→        ownerId,
+   950→        channel,
+   951→        text,
+   952→        date: now(),
+   953→        createdAt: now(),
+   954→      };
+   955→      set((s) => ({ messages: [m, ...s.messages] }));
+   956→      persistMessage(m);
+   957→    },
+   958→
+   959→    /* ---------------- attachments ---------------- */
+   960→    addAttachment: async (file, parentType, parentId) => {
+   961→      try {
+   962→        const id = uid();
+   963→        let blob: Blob = file;
+   964→        let kind: AttachmentMeta["kind"] = "file";
+   965→        let thumb: string | undefined;
+   966→
+   967→        if (file.type.startsWith("image/")) {
+   968→          kind = "image";
+   969→          const processed = await compressImage(file, 1600, 0.82);
+   970→          blob = processed.blob;
+   971→          const t = await compressImage(file, 240, 0.6);
+   972→          thumb = await new Promise<string>((resolve) => {
+   973→            const r = new FileReader();
+   974→            r.onload = () => resolve(String(r.result));
+   975→            r.onerror = () => resolve("");
+   976→            r.readAsDataURL(t.blob);
+   977→          });
+   978→        } else if (file.type === "application/pdf") {
+   979→          kind = "pdf";
+   980→        }
+   981→
+   982→        const meta: AttachmentMeta = {
+   983→          id,
+   984→          parentId,
+   985→          parentType,
+   986→          name: file.name || `file-${new Date().toISOString().slice(0, 10)}`,
+   987→          mimeType: file.type || "application/octet-stream",
+   988→          size: blob.size,
+   989→          kind,
+   990→          thumb,
+   991→          createdAt: now(),
+   992→        };
+   993→        await blobPut(id, blob);
+   994→        set((s) => ({ attachments: [...s.attachments, meta] }));
+   995→        persistAttachment(meta);
+   996→        return meta;
+   997→      } catch {
+   998→        return null;
+   999→      }
+  1000→    },
+  1001→
+  1002→    removeAttachment: async (id) => {
+  1003→      const meta = get().attachments.find((a) => a.id === id);
+  1004→      if (!meta) return;
+  1005→      set((s) => ({ attachments: s.attachments.filter((a) => a.id !== id) }));
+  1006→      await idbDel("attachments", id);
+  1007→      await blobDel(id);
+  1008→    },
+  1009→
+  1010→    attachmentBlob: (id) => blobGet(id),
+  1011→
+  1012→    /* ---------------- settings + data ---------------- */
+  1013→    updateSettings: (patch) => {
+  1014→      const next = { ...get().settings, ...patch };
+  1015→      set({ settings: next });
+  1016→      persistSettings(next);
+  1017→    },
+  1018→
+  1019→    importContacts: (list, mode) => {
+  1020→      let added = 0;
+  1021→      let merged = 0;
+  1022→      let skipped = 0;
+  1023→      list.forEach((partial) => {
+  1024→        const phones = (partial.phones || []).map((p) => ({
+  1025→          ...p,
+  1026→          id: p.id || uid(),
+  1027→          number: p.number,
+  1028→        }));
+  1029→        const key = phones[0] ? normalizePhone(phones[0].number) : "";
+  1030→        const existing = key
+  1031→          ? get().contacts.find(
+  1032→              (c) =>
+  1033→                !c.deletedAt &&
+  1034→                c.phones.some((p) => normalizePhone(p.number) === key)
+  1035→            )
+  1036→          : undefined;
+  1037→        if (existing) {
+  1038→          if (mode === "merge") {
+  1039→            const newPhones = phones.filter(
+  1040→              (p) => !existing.phones.some((ep) => normalizePhone(ep.number) === normalizePhone(p.number))
+  1041→            );
+  1042→            const newEmails = (partial.emails || []).filter(
+  1043→              (e) => !existing.emails.some((ee) => ee.address.toLowerCase() === e.address.toLowerCase())
+  1044→            );
+  1045→            get().saveContact({
+  1046→              ...existing,
+  1047→              phones: [...existing.phones, ...newPhones],
+  1048→              emails: [...existing.emails, ...newEmails],
+  1049→              company: existing.company || partial.company,
+  1050→              birthday: existing.birthday || partial.birthday,
+  1051→              note: [existing.note, partial.note].filter(Boolean).join("\n") || undefined,
+  1052→            });
+  1053→            merged++;
+  1054→          } else {
+  1055→            skipped++;
+  1056→          }
+  1057→        } else {
+  1058→          get().saveContact({ ...partial, phones, emails: partial.emails || [] } as Partial<Contact>);
+  1059→          added++;
+  1060→        }
+  1061→      });
+  1062→      return { added, merged, skipped };
+  1063→    },
+  1064→
+  1065→    wipeAll: async () => {
+  1066→      const stores = ["contacts", "entries", "lists", "notes", "reminders", "banks", "recents", "messages", "attachments", "blobs"] as const;
+  1067→      await Promise.all(stores.map((s) => idbClear(s)));
+  1068→      await idbPutKey("meta", "demoSeeded", true);
+  1069→      set({
+  1070→        contacts: [],
+  1071→        entries: [],
+  1072→        lists: [],
+  1073→        notes: [],
+  1074→        reminders: [],
+  1075→        banks: [],
+  1076→        recents: [],
+  1077→        messages: [],
+  1078→        attachments: [],
+  1079→        lastUndo: null,
+  1080→      });
+  1081→    },
+  1082→  };
+  1083→});
+  1084→
+  1085→/* ------------------------------------------------------------------ */
+  1086→/* helpers                                                              */
+  1087→/* ------------------------------------------------------------------ */
+  1088→
+  1089→async function compressImage(
+  1090→  file: File,
+  1091→  maxSide: number,
+  1092→  quality: number
+  1093→): Promise<{ blob: Blob; width: number; height: number }> {
+  1094→  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+  1095→    const url = URL.createObjectURL(file);
+  1096→    const i = new Image();
+  1097→    i.onload = () => {
+  1098→      URL.revokeObjectURL(url);
+  1099→      resolve(i);
+  1100→    };
+  1101→    i.onerror = () => {
+  1102→      URL.revokeObjectURL(url);
+  1103→      reject(new Error("bad image"));
+  1104→    };
+  1105→    i.src = url;
+  1106→  });
+  1107→  const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+  1108→  const w = Math.max(1, Math.round(img.width * scale));
+  1109→  const h = Math.max(1, Math.round(img.height * scale));
+  1110→  const canvas = document.createElement("canvas");
+  1111→  canvas.width = w;
+  1112→  canvas.height = h;
+  1113→  const ctx = canvas.getContext("2d");
+  1114→  if (!ctx) return { blob: file, width: img.width, height: img.height };
+  1115→  ctx.drawImage(img, 0, 0, w, h);
+  1116→  const blob = await new Promise<Blob>((resolve) =>
+  1117→    canvas.toBlob((b) => resolve(b || file), "image/jpeg", quality)
+  1118→  );
+  1119→  return { blob, width: w, height: h };
+  1120→}
+  1121→
+  1122→/* ------------------------------------------------------------------ */
+  1123→/* demo seed data                                                       */
+  1124→/* ------------------------------------------------------------------ */
+  1125→
+  1126→function buildDemoData() {
+  1127→  const t = now();
+  1128→  const mk = (
+  1129→    first: string,
+  1130→    last: string,
+  1131→    phone: string,
+  1132→    favorite: boolean,
+  1133→    extra: Partial<Contact> = {}
+  1134→  ): Contact => ({
+  1135→    id: uid(),
+  1136→    firstName: first,
+  1137→    lastName: last,
+  1138→    phones: [{ id: uid(), label: "mobile", number: phone, primary: true }],
+  1139→    emails: [],
+  1140→    links: [],
+  1141→    socials: [],
+  1142→    addresses: [],
+  1143→    customFields: [],
+  1144→    tags: [],
+  1145→    favorite,
+  1146→    createdAt: t,
+  1147→    updatedAt: t,
+  1148→    ...extra,
+  1149→  });
+  1150→
+  1151→  const abel = mk("Abel", "Tesfaye", "+251 911 234 567", true, {
+  1152→    company: "Tesfaye Trading",
+  1153→    emails: [{ id: uid(), label: "work", address: "abel@tesfaye.com", primary: true }],
+  1154→    socials: [{ id: uid(), app: "telegram", handle: "abelt" }],
+  1155→    birthday: "1992-04-17",
+  1156→    color: "#E4EDE7",
+  1157→    textColor: "#527561",
+  1158→    speedDial: "2",
+  1159→  });
+  1160→  const sara = mk("Sara", "Mohammed", "+251 912 345 678", true, {
+  1161→    color: "#F7E8DF",
+  1162→    textColor: "#B7785B",
+  1163→    speedDial: "3",
+  1164→  });
+  1165→  const daniel = mk("Daniel", "Bekele", "+251 913 456 789", true, {
+  1166→    color: "#E5E8F9",
+  1167→    textColor: "#6B75B5",
+  1168→  });
+  1169→  const hana = mk("Hana", "Alemu", "+251 914 567 890", false, {
+  1170→    color: "#F4E5EE",
+  1171→    textColor: "#A65F88",
+  1172→    socials: [{ id: uid(), app: "telegram", handle: "hanaa" }],
+  1173→  });
+  1174→  const yonas = mk("Yonas", "Girma", "+251 915 678 901", false, {
+  1175→    color: "#F4EEDB",
+  1176→    textColor: "#9B8243",
+  1177→  });
+  1178→  const mimi = mk("Mimi", "Hassan", "+251 916 789 012", false, {
+  1179→    color: "#DFF0F0",
+  1180→    textColor: "#4A8585",
+  1181→  });
+  1182→  const kebede = mk("Kebede", "Wolde", "+251 917 123 456", false, {
+  1183→    company: "Wolde Store",
+  1184→    color: "#F0E9E4",
+  1185→    textColor: "#8A7360",
+  1186→  });
+  1187→  const contacts = [abel, sara, daniel, hana, yonas, mimi, kebede];
+  1188→
+  1189→  const pay = (amount: number, daysAgo: number, auto?: Payment["auto"]): Payment => ({
+  1190→    id: uid(),
+  1191→    amount,
+  1192→    date: new Date(t - daysAgo * 86400000).toISOString().slice(0, 10),
+  1193→    auto,
+  1194→    createdAt: t - daysAgo * 86400000,
+  1195→  });
+  1196→
+  1197→  const entries: LedgerEntry[] = [
+  1198→    {
+  1199→      id: uid(),
+  1200→      ownerId: abel.id,
+  1201→      type: "credit",
+  1202→      amount: 5000,
+  1203→      payments: [pay(2000, 6)],
+  1204→      date: new Date(t - 20 * 86400000).toISOString().slice(0, 10),
+  1205→      category: "Loan",
+  1206→      method: "cash",
+  1207→      note: "Borrowed for shop restock",
+  1208→      attachments: [],
+  1209→      createdAt: t,
+  1210→      updatedAt: t,
+  1211→    },
+  1212→    {
+  1213→      id: uid(),
+  1214→      ownerId: sara.id,
+  1215→      type: "credit",
+  1216→      amount: 1200,
+  1217→      payments: [pay(1200, 2, "settle")],
+  1218→      date: new Date(t - 12 * 86400000).toISOString().slice(0, 10),
+  1219→      category: "Sale",
+  1220→      attachments: [],
+  1221→      createdAt: t,
+  1222→      updatedAt: t,
+  1223→    },
+  1224→    {
+  1225→      id: uid(),
+  1226→      ownerId: daniel.id,
+  1227→      type: "debit",
+  1228→      amount: 800,
+  1229→      payments: [pay(300, 4)],
+  1230→      date: new Date(t - 9 * 86400000).toISOString().slice(0, 10),
+  1231→      category: "Transport",
+  1232→      attachments: [],
+  1233→      createdAt: t,
+  1234→      updatedAt: t,
+  1235→    },
+  1236→    {
+  1237→      id: uid(),
+  1238→      ownerId: hana.id,
+  1239→      type: "credit",
+  1240→      amount: 950,
+  1241→      payments: [],
+  1242→      dueDate: new Date(t + 3 * 86400000).toISOString().slice(0, 10),
+  1243→      date: new Date(t - 2 * 86400000).toISOString().slice(0, 10),
+  1244→      category: "General",
+  1245→      attachments: [],
+  1246→      createdAt: t,
+  1247→      updatedAt: t,
+  1248→    },
+  1249→    {
+  1250→      id: uid(),
+  1251→      ownerId: "general",
+  1252→      type: "debit",
+  1253→      amount: 460,
+  1254→      payments: [],
+  1255→      date: todayStr(),
+  1256→      category: "Groceries",
+  1257→      note: "Monthly market run",
+  1258→      attachments: [],
+  1259→      createdAt: t,
+  1260→      updatedAt: t,
+  1261→    },
+  1262→    {
+  1263→      id: uid(),
+  1264→      ownerId: "general",
+  1265→      type: "credit",
+  1266→      amount: 8500,
+  1267→      payments: [],
+  1268→      date: new Date(t - 5 * 86400000).toISOString().slice(0, 10),
+  1269→      category: "Salary",
+  1270→      attachments: [],
+  1271→      createdAt: t,
+  1272→      updatedAt: t,
+  1273→    },
+  1274→  ];
+  1275→
+  1276→  const li = (
+  1277→    name: string,
+  1278→    qty: number,
+  1279→    price: number,
+  1280→    daysAgo = 0,
+  1281→    payments: Payment[] = []
+  1282→  ): CalcList["items"][number] => ({
+  1283→    id: uid(),
+  1284→    name,
+  1285→    qty,
+  1286→    unit: "pcs",
+  1287→    unitPrice: price,
+  1288→    payments,
+  1289→    checked: payments.length > 0,
+  1290→    date: new Date(t - daysAgo * 86400000).toISOString().slice(0, 10),
+  1291→    sortOrder: t,
+  1292→    createdAt: t,
+  1293→    updatedAt: t,
+  1294→  });
+  1295→
+  1296→  const lists: CalcList[] = [
+  1297→    {
+  1298→      id: uid(),
+  1299→      ownerId: yonas.id,
+  1300→      kind: "calculating",
+  1301→      title: "Shop order — March",
+  1302→      postToLedger: true,
+  1303→      repeat: "monthly",
+  1304→      items: [
+  1305→        li("Cooking oil 5L", 4, 420, 10),
+  1306→        li("Sugar 1kg", 12, 88, 10),
+  1307→        li("Flour 1kg", 10, 62, 8, [pay(300, 7, "tick")]),
+  1308→        li("Tea 250g", 6, 95, 6),
+  1309→        li("Soap", 20, 35, 6, [pay(400, 5), pay(120, 3)]),
+  1310→      ],
+  1311→      taxPct: 0,
+  1312→      isTemplate: false,
+  1313→      attachments: [],
+  1314→      createdAt: t,
+  1315→      updatedAt: t,
+  1316→    },
+  1317→    {
+  1318→      id: uid(),
+  1319→      ownerId: "general",
+  1320→      kind: "checklist",
+  1321→      title: "Monthly shopping",
+  1322→      postToLedger: false,
+  1323→      repeat: "none",
+  1324→      items: [
+  1325→        { ...li("Rice 5kg", 1, 0), checked: true },
+  1326→        li("Pasta", 1, 0),
+  1327→        li("Milk powder", 1, 0),
+  1328→        { ...li("Detergent", 1, 0), checked: true },
+  1329→      ],
+  1330→      isTemplate: false,
+  1331→      attachments: [],
+  1332→      createdAt: t,
+  1333→      updatedAt: t,
+  1334→    },
+  1335→    {
+  1336→      id: uid(),
+  1337→      ownerId: "general",
+  1338→      kind: "calculating",
+  1339→      title: "Rent & utilities (template)",
+  1340→      isTemplate: true,
+  1341→      postToLedger: false,
+  1342→      repeat: "monthly",
+  1343→      items: [
+  1344→        li("House rent", 1, 9000),
+  1345→        li("Electricity", 1, 240),
+  1346→        li("Water", 1, 60),
+  1347→        li("Internet", 1, 350),
+  1348→      ],
+  1349→      attachments: [],
+  1350→      createdAt: t,
+  1351→      updatedAt: t,
+  1352→    },
+  1353→  ];
+  1354→
+  1355→  const notes: Note[] = [
+  1356→    {
+  1357→      id: uid(),
+  1358→      ownerId: abel.id,
+  1359→      title: "Repayment promise",
+  1360→      body: "Abel promised to clear the remaining 3,000 before the end of the month. Prefers cash.",
+  1361→      tags: ["money"],
+  1362→      pinned: true,
+  1363→      links: [],
+  1364→      attachments: [],
+  1365→      createdAt: t,
+  1366→      updatedAt: t,
+  1367→    },
+  1368→    {
+  1369→      id: uid(),
+  1370→      ownerId: "general",
+  1371→      title: "Market prices",
+  1372→      body: "Oil went up by 30 Br this week. Compare with Merkato wholesale before restocking.",
+  1373→      tags: ["shopping"],
+  1374→      pinned: false,
+  1375→      links: [],
+  1376→      attachments: [],
+  1377→      createdAt: t,
+  1378→      updatedAt: t,
+  1379→    },
+  1380→  ];
+  1381→
+  1382→  const reminders: Reminder[] = [
+  1383→    {
+  1384→      id: uid(),
+  1385→      ownerId: abel.id,
+  1386→      title: "Collect remaining from Abel",
+  1387→      notes: "Remaining 3,000 Br on the loan.",
+  1388→      kind: "payment",
+  1389→      dueAt: t + 60 * 60 * 1000,
+  1390→      repeat: "none",
+  1391→      links: [],
+  1392→      done: false,
+  1393→      attachments: [],
+  1394→      createdAt: t,
+  1395→      updatedAt: t,
+  1396→    },
+  1397→    {
+  1398→      id: uid(),
+  1399→      ownerId: "general",
+  1400→      title: "Pay house rent",
+  1401→      kind: "payment",
+  1402→      dueAt: t + 3 * 86400000,
+  1403→      repeat: "monthly",
+  1404→      links: [],
+  1405→      done: false,
+  1406→      attachments: [],
+  1407→      createdAt: t,
+  1408→      updatedAt: t,
+  1409→    },
+  1410→    {
+  1411→      id: uid(),
+  1412→      ownerId: hana.id,
+  1413→      title: `Hana's birthday 🎂`,
+  1414→      kind: "birthday",
+  1415→      dueAt: t + 6 * 86400000,
+  1416→      repeat: "yearly",
+  1417→      links: [],
+  1418→      done: false,
+  1419→      attachments: [],
+  1420→      createdAt: t,
+  1421→      updatedAt: t,
+  1422→    },
+  1423→  ];
+  1424→
+  1425→  const banks: BankAccount[] = [
+  1426→    {
+  1427→      id: uid(),
+  1428→      ownerId: "general",
+  1429→      label: "Main account",
+  1430→      holderName: "Me",
+  1431→      bankName: "Commercial Bank",
+  1432→      accountNumber: "1000234567890",
+  1433→      branch: "Bole Branch",
+  1434→      balance: 24350,
+  1435→      currency: "ETB",
+  1436→      attachments: [],
+  1437→      createdAt: t,
+  1438→      updatedAt: t,
+  1439→    },
+  1440→    {
+  1441→      id: uid(),
+  1442→      ownerId: abel.id,
+  1443→      label: "Abel — CBE",
+  1444→      holderName: "Abel Tesfaye",
+  1445→      bankName: "Commercial Bank",
+  1446→      accountNumber: "1000987654321",
+  1447→      swift: "CBETETAA",
+  1448→      attachments: [],
+  1449→      createdAt: t,
+  1450→      updatedAt: t,
+  1451→    },
+  1452→  ];
+  1453→
+  1454→  const recents: CallLog[] = [
+  1455→    { id: uid(), phone: "+251 911 234 567", contactId: abel.id, direction: "outgoing", at: t - 3600000, duration: 254, via: "app", createdAt: t },
+  1456→    { id: uid(), phone: "+251 912 345 678", contactId: sara.id, direction: "incoming", at: t - 7200000, duration: 96, via: "app", createdAt: t },
+  1457→    { id: uid(), phone: "+251 921 111 222", direction: "missed", at: t - 10800000, duration: 0, via: "app", createdAt: t },
+  1458→    { id: uid(), phone: "+251 913 456 789", contactId: daniel.id, direction: "outgoing", at: t - 86400000, duration: 51, via: "tel", createdAt: t },
+  1459→    { id: uid(), phone: "+251 914 567 890", contactId: hana.id, direction: "outgoing", at: t - 90000000, duration: 0, via: "app", createdAt: t },
+  1460→  ];
+  1461→
+  1462→  return { contacts, entries, lists, notes, reminders, banks, recents };
+  1463→}
+  1464→
+  1465→/* selectors — NOTE: always select stable references (arrays/objects from state),
+  1466→   then filter in useMemo at the call site. Array-returning filters here would
+  1467→   create new references each call and crash React 19 + zustand v5. */
+  1468→export const useContactsState = () => useApp((s) => s.contacts);
+  1469→export const useEntriesState = () => useApp((s) => s.entries);
+  1470→
+  1471→export const useContact = (id?: ID | "general") =>
+  1472→  useApp((s) => (id && id !== "general" ? s.contacts.find((c) => c.id === id && !c.deletedAt) : undefined));
+  1473→
+  1474→export const useHydrated = () => useApp((s) => s.hydrated);
+  1475→

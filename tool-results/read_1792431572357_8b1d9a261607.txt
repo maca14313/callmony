@@ -1,0 +1,402 @@
+     1→<!DOCTYPE html>
+     2→<html lang="en">
+     3→<head>
+     4→<meta charset="utf-8">
+     5→<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+     6→<meta name="theme-color" content="#6d5dfc"><link rel="manifest" href="manifest.json"><link rel="icon" href="icon.svg">
+     7→<title>Contact Ledger</title>
+     8→
+     9→<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    10→<script>tailwind.config={theme:{extend:{colors:{bg:'var(--bg)',card:'var(--card)',ink:'var(--ink)',mute:'var(--mute)',line:'var(--line)',pri:'var(--pri)',pos:'var(--pos)',neg:'var(--neg)'},boxShadow:{card:'var(--sh)',key:'0 3px 10px rgba(30,65,58,.035)',floating:'0 12px 32px rgba(22,160,133,.25)'}}}}</script>
+    11→<style>
+    12→:root{--bg:#f7faf9;--bg2:#eef3f1;--card:#fff;--ink:#172b2a;--mute:#8b9a98;--line:#edf1ef;--pri:#16a085;--pri2:#16a085;--pos:#16a085;--neg:#e16c70;--sh:0 3px 10px rgba(30,65,58,.035);color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+    13→@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1514;--bg2:#0a100f;--card:#16211f;--ink:#e8f3f0;--mute:#8fa39f;--line:#243330;--pri:#2fc4a6;--pri2:#2fc4a6;--pos:#2fc4a6;--neg:#ef7d81;--sh:0 3px 10px rgba(0,0,0,.25);color-scheme:dark}}
+    14→:root[data-theme="dark"]{--bg:#0e1514;--bg2:#0a100f;--card:#16211f;--ink:#e8f3f0;--mute:#8fa39f;--line:#243330;--pri:#2fc4a6;--pri2:#2fc4a6;--pos:#2fc4a6;--neg:#ef7d81;--sh:0 3px 10px rgba(0,0,0,.25);color-scheme:dark}
+    15→html{scroll-padding-top:env(safe-area-inset-top,0px)}
+    16→body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,system-ui,sans-serif;color:var(--ink);background:var(--bg2);-webkit-tap-highlight-color:transparent}
+    17→button{cursor:pointer}
+    18→.row{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+    19→.tab-content{animation:appear 180ms ease-out}
+    20→@keyframes appear{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+    21→.key{transition:background-color 150ms ease,transform 150ms ease,box-shadow 150ms ease}
+    22→.key:active{transform:scale(.92);background-color:color-mix(in srgb,var(--pri) 10%,var(--card))}
+    23→.nav-item{transition:color 150ms ease}
+    24→.scrollbar-hide::-webkit-scrollbar{display:none}.scrollbar-hide{-ms-overflow-style:none;scrollbar-width:none}
+    25→.grad{background:linear-gradient(135deg,var(--pri),var(--pri2));color:#fff}
+    26→.gt{color:var(--ink)}
+    27→.glass{background:color-mix(in srgb,var(--card) 82%,transparent);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+    28→@keyframes up{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}@keyframes fd{from{opacity:0}to{opacity:1}}@keyframes pop{from{transform:translate(0,-46%) scale(.94);opacity:0}to{transform:translate(0,-50%);opacity:1}}
+    29→.up{animation:up .28s cubic-bezier(.2,.8,.2,1)}.fade{animation:fd .2s}.pop{animation:pop .22s cubic-bezier(.2,.8,.2,1)}
+    30→</style>
+    31→<style type="text/tailwindcss">
+    32→@layer components{
+    33→.card{@apply bg-card rounded-[24px] border border-line}
+    34→.inp{@apply w-full bg-bg border border-line rounded-2xl px-4 py-3 outline-none focus:border-pri text-ink}
+    35→.btn{@apply rounded-2xl px-4 py-2.5 text-sm font-semibold bg-card border border-line shadow-card active:scale-95 transition text-ink}
+    36→.chip{@apply inline-flex items-center gap-1 rounded-full bg-bg border border-line px-2.5 py-1 text-xs font-medium max-w-full}
+    37→.ib{@apply w-9 h-9 grid place-items-center rounded-xl bg-bg border border-line text-sm active:scale-90 transition}
+    38→}
+    39→</style>
+    40→</head>
+    41→<body>
+    42→<div id="app" class="relative mx-auto min-h-screen w-full max-w-[430px] overflow-hidden bg-bg pb-48 shadow-2xl sm:my-6 sm:min-h-[850px] sm:rounded-[34px]"></div>
+    43→<div id="sheet"></div><div id="toast"></div><input id="fi" type="file" multiple hidden><input id="vi" type="file" accept=".vcf,.csv,text/vcard,text/csv" hidden><input id="ri" type="file" accept=".json,application/json" hidden>
+    44→<nav id="nav" class="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-[430px] border-t border-line px-3 pt-3 backdrop-blur-xl" style="background:color-mix(in srgb,var(--card) 95%,transparent);padding-bottom:calc(1.25rem + env(safe-area-inset-bottom,0px))"></nav>
+    45→<script>
+    46→const $=s=>document.querySelector(s);
+    47→const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    48→const uid=()=>Math.random().toString(36).slice(2,9);
+    49→const fmt=n=>(S&&S.set&&S.set.cur||'')+Math.abs(n).toLocaleString(S&&S.set&&S.set.loc||undefined,{maximumFractionDigits:2});
+    50→const digits=p=>{const v=(p||'').trim();let d=v.replace(/\D/g,'');if(S&&S.set&&S.set.cc&&!v.startsWith('+')&&d.startsWith('0'))d=S.set.cc+d.slice(1);return d};
+    51→const MV=n=>S.hide?'•••':fmt(n);
+    52→const IC={ph:'📞',em:'✉️',ln:'🔗',ad:'📍',ot:'📝',bd:'🎂',sc:'@'},TN={ph:'Phone',em:'Email',ln:'Link',ad:'Address',ot:'Other',bd:'Birthday',sc:'Social'};
+    53→let S=null,R={tab:'c',cid:null,sub:'ledger',lid:null,q:''};
+    54→try{S=JSON.parse(localStorage.getItem('cl2'))}catch(e){}
+    55→if(!S)S={c:[{id:'c1',name:'Abel Tesfaye',fav:true,f:[{id:'f1',t:'ph',l:'Mobile',v:'+251 911 234 567'},{id:'f2',t:'em',l:'Email',v:'abel@mail.com'}]},{id:'c2',name:'Sara Mohammed',fav:true,f:[{id:'f3',t:'ph',l:'Mobile',v:'+251 912 345 678'}]},{id:'c3',name:'Daniel Bekele',fav:true,f:[{id:'f4',t:'ph',l:'Mobile',v:'+251 913 456 789'}]},{id:'c4',name:'Hana Alemu',f:[{id:'f5',t:'ph',l:'Mobile',v:'+251 914 567 890'}]},{id:'c5',name:'Yonas Girma',f:[{id:'f6',t:'ph',l:'Mobile',v:'+251 915 678 901'}]},{id:'c6',name:'Mimi Hassan',f:[{id:'f7',t:'ph',l:'Mobile',v:'+251 916 789 012'}]}],t:[{id:'t1',cid:'c1',type:'credit',amt:5000,cat:'General',meth:'cash',note:'Loan',d:'2026-10-01',ts:1}],l:[{id:'l1',cid:'c1',k:'calc',title:'Groceries',post:true,items:[{id:'i1',name:'Rice',qty:5,unit:'bags',price:200,pays:[{id:'p1',amt:400,d:'2026-10-05'},{id:'p2',amt:600,d:'2026-10-12'}]},{id:'i2',name:'Oil',qty:3,unit:'litres',price:150,pays:[{id:'p3',amt:200,d:'2026-10-08'}]},{id:'i3',name:'Sugar',qty:10,unit:'kg',price:45,pays:[]}]}],n:[{id:'n1',cid:'c1',title:'Agreement',body:'Pays by the **5th** of each month.\n- Keep receipts',tags:'family',pin:true}],r:[],k:[['n:n1','l:l1'],['t:t1','n:n1']]};
+    56→let ENCLOCK=false,EK=null,ET=0;
+    57→const save=()=>{if(ENCLOCK)return;try{if(EK){clearTimeout(ET);ET=setTimeout(()=>encS(),300);localStorage.removeItem('cl2')}else localStorage.setItem('cl2',JSON.stringify(S))}catch(e){}};
+    58→const cur=()=>R.tab==='g'?null:R.cid;
+    59→const nowStr=()=>new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,16);
+    60→const lt=i=>i.qty*i.price*(1-(i.disc||0)/100)*(1+(i.tax||0)/100);
+    61→const pd=i=>Math.min((i.pays||[]).reduce((s,p)=>s+p.amt,0),lt(i));
+    62→const tot=l=>{let s=0,p=0;if(l.k==='calc')l.items.forEach(i=>{s+=lt(i);p+=pd(i)});const t=l.k==='calc'?s*(1-(l.disc||0)/100)*(1+(l.tax||0)/100)+(+l.extra||0):0;return{t,p,q:t-p,s}};
+    63→const bal=cid=>S.t.filter(t=>t.cid===cid).reduce((s,t)=>s+(t.type==='credit'?t.amt:-t.amt),0)+S.l.filter(l=>l.cid===cid&&l.post&&l.k==='calc').reduce((s,l)=>s+tot(l).q,0);
+    64→const bc=b=>b>0?'text-pos':b<0?'text-neg':'text-mute';
+    65→const tint=(c,a=14)=>`background:color-mix(in srgb,var(--${c}) ${a}%,var(--card))`;
+    66→const PAL=[['#E4EDE7','#527561'],['#F7E8DF','#B7785B'],['#E5E8F9','#6B75B5'],['#F4E5EE','#A65F88'],['#F4EEDB','#9B8243'],['#DFF0F0','#4A8585']];
+    67→const av=(n,big)=>{let h=0;for(const ch of n)h=(h*31+ch.charCodeAt(0))%6;const q=PAL[h],ini=n.trim().split(/\s+/).map(x=>x[0]).join('').slice(0,2).toUpperCase()||'?';return `<div class="${big===2?'w-[58px] h-[58px] text-base rounded-[21px]':big?'w-20 h-20 text-2xl rounded-[28px]':'w-12 h-12 text-[13px] rounded-[17px]'} grid place-items-center font-semibold shrink-0 av" style="background:${q[0]};color:${q[1]}">${esc(ini)}</div>`};
+    68→const toast=m=>{const t=$('#toast');t.innerHTML=`<div class="fixed left-1/2 -translate-x-1/2 z-[60] rounded-full bg-[#203b35] px-5 py-3 text-xs font-medium text-white shadow-xl fade whitespace-nowrap" style="bottom:calc(92px + env(safe-area-inset-bottom,0px))">${esc(m)}</div>`;setTimeout(()=>t.innerHTML='',1600)};
+    69→const close=()=>$('#sheet').innerHTML='';
+    70→
+    71→function sheet(title,fields,ok){
+    72→  const d=$('#sheet');
+    73→  d.innerHTML=`<div class="fixed inset-0 bg-black/50 z-40 fade" id="sx"></div><div class="fixed bottom-0 inset-x-0 z-50 card rounded-b-none p-5 space-y-3 max-w-xl mx-auto up" style="padding-bottom:calc(1.25rem + env(safe-area-inset-bottom,0px))"><div class="w-10 h-1 rounded-full bg-line mx-auto"></div><div class="font-bold text-lg">${title}</div>${fields.map(f=>f[2]==='sel'?`<select id="f_${f[0]}" class="inp">${f[4].map(o=>`<option value="${o[0]}" ${o[0]===f[3]?'selected':''}>${o[1]}</option>`).join('')}</select>`:`<input id="f_${f[0]}" placeholder="${f[1]}" type="${f[2]||'text'}" step="any" value="${esc(f[3]||'')}" class="inp">`).join('')}<button id="sok" class="grad w-full rounded-2xl py-3.5 font-bold">Save</button></div>`;
+    74→  $('#sx').onclick=close;
+    75→  $('#sok').onclick=()=>{const v={};fields.forEach(f=>v[f[0]]=$('#f_'+f[0]).value.trim());if(ok(v)===false)return;close();save();render()};
+    76→  const i=d.querySelector('input');if(i)i.focus();
+    77→}
+    78→function ask(t,m,lb,fn,tone='neg',ic='🗑️'){
+    79→  $('#sheet').innerHTML=`<div class="fixed inset-0 z-40 bg-black/50 fade" id="sx"></div><div class="fixed z-50 inset-x-6 top-1/2 max-w-sm mx-auto card p-6 text-center pop"><div class="w-16 h-16 rounded-full mx-auto grid place-items-center text-3xl mb-3" style="${tint(tone,16)}">${ic}</div><div class="font-extrabold text-lg">${t}</div><p class="text-mute text-sm mt-1.5">${m}</p><div class="flex gap-2.5 mt-6"><button id="sno" class="btn flex-1">Cancel</button><button id="sy" class="btn flex-1 border-0" style="background:var(--${tone});color:#fff">${lb}</button></div></div>`;
+    80→  $('#sx').onclick=$('#sno').onclick=close;
+    81→  $('#sy').onclick=()=>{close();fn();save();render()};
+    82→}
+    83→function picker(src){
+    84→  const all=[];S.c.forEach(c=>all.push('c:'+c.id));S.t.forEach(x=>all.push('t:'+x.id));S.l.forEach(l=>{all.push('l:'+l.id);l.items.forEach(i=>all.push('i:'+i.id))});S.n.forEach(x=>all.push('n:'+x.id));S.b.forEach(x=>all.push('b:'+x.id));(S.x||[]).forEach(x=>all.push('x:'+x.id));S.c.forEach(c=>c.f.forEach(f=>all.push('f:'+f.id)));S.l.forEach(l=>l.items.forEach(i=>(i.pays||[]).forEach(p=>all.push('p:'+p.id))));S.r.forEach(x=>all.push('r:'+x.id));
+    85→  const have=S.k.filter(p=>p.includes(src)).map(p=>p[0]===src?p[1]:p[0]);
+    86→  const L=all.filter(k=>k!==src&&!have.includes(k)).map(k=>[k,look(k)]).filter(x=>x[1]);
+    87→  const list=q=>L.filter(([k,o])=>(o.l+' '+o.s).toLowerCase().includes(q.toLowerCase())).map(([k,o])=>`<div data-k="${k}" class="flex items-center gap-3 p-3 rounded-2xl active:bg-bg"><div class="text-xl">${o.i}</div><div class="min-w-0"><div class="font-semibold truncate">${esc(o.l)}</div><div class="text-xs text-mute">${esc(o.s)}</div></div></div>`).join('')||'<p class="text-center text-mute py-6">Nothing to link.</p>';
+    88→  $('#sheet').innerHTML=`<div class="fixed inset-0 bg-black/50 z-40 fade" id="sx"></div><div class="fixed bottom-0 inset-x-0 z-50 card rounded-b-none p-5 max-w-xl mx-auto up" style="padding-bottom:calc(1.25rem + env(safe-area-inset-bottom,0px))"><div class="font-bold text-lg mb-3">Link to…</div><input id="pq" placeholder="Search contacts, entries, lists, notes…" class="inp mb-2"><div id="pl" class="overflow-y-auto" style="max-height:48vh">${list('')}</div></div>`;
+    89→  $('#sx').onclick=close;$('#pq').oninput=e=>$('#pl').innerHTML=list(e.target.value);
+    90→  $('#pl').onclick=e=>{const b=e.target.closest('[data-k]');if(b){S.k.push([src,b.dataset.k]);close();save();render();toast('Linked')}};
+    91→}
+    92→
+    93→function look(k){
+    94→  const t=k[0],id=k.slice(2);let o;
+    95→  if(t==='c'){o=S.c.find(x=>x.id===id);return o&&{i:'👤',l:o.name,s:'Contact'}}
+    96→  if(t==='i'){for(const L of S.l){o=L.items.find(x=>x.id===id);if(o)return{i:'🧾',l:o.name,s:'Item · '+L.title}}return}
+    97→  o=S[t].find(x=>x.id===id);if(!o)return;
+    98→  const c=S.c.find(x=>x.id===o.cid),s=(c?c.name:'General');
+    99→  const m={t:{i:o.type==='credit'?'↗':'↘',l:(o.note||o.type)+' · '+fmt(o.amt||0)},l:{i:o.k==='calc'?'🧮':'☑️',l:o.title},n:{i:'📝',l:o.title},r:{i:'⏰',l:o.title},b:{i:'🏦',l:o.label||o.bank||'Account'}}[t];
+   100→  return m&&{...m,s:s+' · '+{t:'Entry',l:'List',n:'Note',r:'Reminder',b:'Bank'}[t]};
+   101→}
+   102→const chips=k=>{const L=S.k.filter(p=>p.includes(k)).map(p=>p[0]===k?p[1]:p[0]).map(x=>[x,look(x)]).filter(x=>x[1]);
+   103→  return `<div class="flex flex-wrap gap-1.5 mt-3">${L.map(([x,o])=>`<span class="chip"><span data-a="go" data-k="${x}" class="truncate">${o.i} ${esc(o.l)}</span><span data-a="unlink" data-k="${k}" data-k2="${x}" class="text-mute pl-1">×</span></span>`).join('')}${S.a.filter(a=>a.o===k).map(fchip).join('')}<button data-a="link" data-k="${k}" class="chip border-dashed text-mute">🔗 Link</button><button data-a="attach" data-k="${k}" class="chip border-dashed text-mute">📎 Attach</button>${'tlnrbm'.includes(k[0])?`<button data-a="move" data-k="${k}" class="chip border-dashed text-mute">⇄ Move</button>`:''}</div>`};
+   104→function kill(t,id){
+   105→  const ks=[t+':'+id],own=['t','l','n','r','b','m'];
+   106→  if(t==='c'){own.forEach(x=>S[x].filter(o=>o.cid===id).forEach(o=>{ks.push(x+':'+o.id);if(x==='l')o.items.forEach(i=>ks.push('i:'+i.id))}));S.c=S.c.filter(c=>c.id!==id);own.forEach(x=>S[x]=S[x].filter(o=>o.cid!==id))}
+   107→  else if(t==='l'){S.l.find(l=>l.id===id).items.forEach(i=>ks.push('i:'+i.id));S.l=S.l.filter(l=>l.id!==id)}
+   108→  else if(t==='i'){S.l.forEach(l=>l.items=l.items.filter(i=>i.id!==id))}
+   109→  else S[t]=S[t].filter(o=>o.id!==id);
+   110→  S.k=S.k.filter(p=>!p.some(x=>ks.includes(x)));
+   111→  S.a.filter(a=>ks.includes(a.o)).forEach(a=>idb('del',a.id));S.a=S.a.filter(a=>!ks.includes(a.o));
+   112→}
+   113→function go(k){
+   114→  const t=k[0],id=k.slice(2);let o;R.q='';
+   115→  const at=cid=>{R.lid=null;R.tab=cid?'c':'g';R.cid=cid||null};
+   116→  if(t==='c'){at(id);R.sub='ledger'}
+   117→  else if(t==='l'){o=S.l.find(x=>x.id===id);at(o.cid);R.lid=id}
+   118→  else if(t==='i'){o=S.l.find(l=>l.items.some(i=>i.id===id));at(o.cid);R.lid=o.id}
+   119→  else{o=S[t].find(x=>x.id===id);at(o.cid);R.sub={t:'ledger',n:'notes',r:'rem',b:'bank'}[t]}
+   120→}
+   121→
+   122→const head=(t,back,right)=>`<div class="px-5 pt-5 pb-3 flex items-center gap-3">${back?`<button data-a="back" class="btn !p-0 w-10 h-10 grid place-items-center text-xl" aria-label="Back">‹</button>`:''}<h1 class="text-[25px] font-bold tracking-tight flex-1 truncate ${back?'':'gt'}">${t}</h1>${right||''}</div>`;
+   123→const delb=(t,id)=>`<button data-a="del" data-t="${t}" data-id="${id}" class="text-mute text-xl px-1.5" aria-label="Delete">×</button>`;
+   124→const row=(inner,k,x='')=>`<div class="card p-3.5"><div class="flex items-center gap-3">${inner}</div>${x}${chips(k)}</div>`;
+   125→const ibtn=(h,i)=>`<a href="${h}" target="_blank" rel="noopener" class="ib">${i}</a>`;
+   126→
+   127→function clist(){
+   128→  const q=R.q.toLowerCase();
+   129→  const L=S.c.filter(c=>(c.name+' '+c.f.map(f=>f.v).join(' ')).toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name));
+   130→  return L.length?L.map(c=>{const b=bal(c.id),p=c.f.find(f=>f.t==='ph');return `<div data-a="open" data-id="${c.id}" class="card p-3.5 flex items-center gap-3.5 active:scale-[.98] transition">${av(c.name)}<div class="flex-1 min-w-0"><div class="font-bold truncate">${esc(c.name)}</div><div class="text-xs text-mute truncate">${esc(p?p.v:c.f.length?c.f[0].v:'No details yet')}</div></div><div class="text-right"><div class="${bc(b)} font-extrabold">${b?MV(b):'—'}</div><div class="text-[10px] text-mute">${b>0?'owes you':b<0?'you owe':'settled'}</div></div></div>`}).join(''):`<div class="card p-10 text-center text-mute">No contacts yet.<br>Tap <b>+</b> to add one.</div>`;
+   131→}
+   132→function contacts(){
+   133→  let rec=0,pay=0;S.c.forEach(c=>{const b=bal(c.id);b>0?rec+=b:pay-=b});
+   134→  return head('Contacts',0,`<button data-a="sett" class="btn !p-0 w-11 h-11 grid place-items-center" aria-label="Settings">⚙️</button><button data-a="addc" class="grad w-11 h-11 rounded-full text-2xl shadow-card active:scale-90 transition" aria-label="Add contact">+</button>`)+
+   135→  `<div class="px-5 grid grid-cols-2 gap-3"><div class="card p-4" style="${tint('pos')}"><div class="text-xs font-semibold text-mute">You will receive</div><div class="text-pos font-extrabold text-xl mt-1">${MV(rec)}</div></div><div class="card p-4" style="${tint('neg')}"><div class="text-xs font-semibold text-mute">You will pay</div><div class="text-neg font-extrabold text-xl mt-1">${MV(pay)}</div></div></div>
+   136→  <div class="px-5 pt-4"><input id="q" value="${esc(R.q)}" placeholder="🔍  Search name, number, link…" class="inp shadow-card"></div><div id="cl" class="px-5 pt-3 space-y-2.5">${clist()}</div>`;
+   137→}
+   138→
+   139→function fieldRow(f){
+   140→  const d=digits(f.v),p=f.v.replace(/[^\d+]/g,'');let a='';
+   141→  if(f.t==='ph')a=ibtn('tel:'+p,'📞')+ibtn('sms:'+p,'💬')+ibtn('https://wa.me/'+d,'🟢')+ibtn('https://t.me/+'+d,'✈️');
+   142→  else if(f.t==='em')a=ibtn('mailto:'+f.v,'✉️');
+   143→  else if(f.t==='ln')a=ibtn(/^https?:/.test(f.v)?f.v:'https://'+f.v,'↗');
+   144→  else if(f.t==='ad')a=ibtn('https://maps.google.com/?q='+encodeURIComponent(f.v),'🗺️');
+   145→  else if(f.t==='sc'){const h=f.v.replace('@',''),L=(f.l||'').toLowerCase();a=ibtn(/^https?:/.test(f.v)?f.v:L.includes('insta')?'https://instagram.com/'+h:L.includes('tele')?'https://t.me/'+h:L.includes('twit')?'https://x.com/'+h:'https://'+f.v,'↗')}
+   146→  return `<div class="py-3 border-b border-line last:border-0"><div class="flex gap-3" data-a="editf" data-id="${f.id}"><div class="text-xl">${IC[f.t]}</div><div class="min-w-0 flex-1"><div class="text-[11px] font-semibold uppercase tracking-wider text-mute">${esc(f.l||TN[f.t])}</div><div class="font-semibold break-words">${esc(f.v)}</div></div></div><div class="flex gap-1.5 mt-2 pl-9">${a}<button data-a="copy" data-v="${esc(f.v)}" class="ib">⧉</button><button data-a="editf" data-id="${f.id}" class="ib">✎</button><button data-a="delf" data-id="${f.id}" class="ib text-neg">🗑</button></div>${chips('f:'+f.id)}</div>`;
+   147→}
+   148→function contactView(){
+   149→  const c=S.c.find(x=>x.id===R.cid);if(!c){R.cid=null;return contacts()}
+   150→  const b=bal(c.id),p=c.f.find(f=>f.t==='ph'),e=c.f.find(f=>f.t==='em');
+   151→  const q=(h,l)=>`<a href="${h}" target="_blank" rel="noopener" class="flex-1 rounded-2xl py-2.5 text-center text-sm font-bold" style="background:rgba(255,255,255,.2)">${l}</a>`;
+   152→  return head('',1,`<button data-a="renc" class="btn !p-0 w-10 h-10">✎</button><button data-a="delc" class="btn !p-0 w-10 h-10">🗑</button>`)+
+   153→  `<div class="px-5"><div class="grad rounded-[32px] p-6 text-center shadow-card"><div class="flex justify-center">${av(c.name,1)}</div><div class="text-2xl font-extrabold mt-3">${esc(c.name)}</div><div class="mt-1 font-semibold opacity-90">${b>0?'They owe you ':b<0?'You owe them ':'All settled'}<b class="text-lg">${b?MV(b):''}</b></div><div class="flex gap-2 mt-4">${p?q('tel:'+p.v.replace(/[^\d+]/g,''),'📞 Call')+q('https://wa.me/'+digits(p.v),'🟢 Chat')+q('sms:'+p.v.replace(/[^\d+]/g,''),'💬 SMS'):''}${e?q('mailto:'+e.v,'✉️ Mail'):''}</div></div>
+   154→  <div class="card px-4 py-2 mt-4"><div class="flex items-center justify-between pt-2"><div class="font-extrabold">Details</div><button data-a="addf" class="chip border-dashed">＋ Add phone, link, other…</button></div>${c.f.map(fieldRow).join('')||'<p class="text-mute text-sm py-4 text-center">No details yet.</p>'}<div class="pb-2">${chips('c:'+c.id)}</div></div></div><div class="mt-4">${body(c.id)}</div>`;
+   155→}
+   156→function general(){
+   157→  const b=bal(null);
+   158→  return head('General')+`<div class="px-5"><div class="card p-5 grad border-0"><div class="text-sm font-semibold opacity-90">Net · income minus expense</div><div class="text-3xl font-extrabold mt-1">${S.hide?'':b<0?'−':''}${MV(b)}</div></div></div><div class="mt-4">${body(null)}</div>`;
+   159→}
+   160→
+   161→function body(cid){
+   162→  const g=cid===null,tabs=[['ledger','Ledger'],['lists','Lists'],['notes','Notes'],['rem','Alarms'],['bank','Bank']];
+   163→  let h=`<div class="mx-5 p-1 rounded-full bg-line flex">${tabs.map(([k,n])=>`<button data-a="sub" data-id="${k}" class="flex-1 py-2 rounded-full text-[12px] font-bold transition ${R.sub===k?'bg-card text-pri shadow-card':'text-mute'}">${n}</button>`).join('')}</div><div class="px-5 pt-4 space-y-2.5">`;
+   164→  if(R.sub==='bank'){h+=bankTab(cid)}else if(R.sub==='ledger'){
+   165→    h+=`<div class="flex gap-2.5"><button data-a="credit" class="btn flex-1 text-pos">↗ ${g?'Income':'Credit'}</button><button data-a="debit" class="btn flex-1 text-neg">↘ ${g?'Expense':'Debit'}</button></div>`;
+   166→    S.l.filter(l=>l.cid===cid&&l.post&&l.k==='calc').forEach(l=>{h+=`<div data-a="openl" data-id="${l.id}" class="card p-3.5 flex items-center gap-3"><div class="w-11 h-11 rounded-2xl grid place-items-center text-lg" style="${tint('pri')}">🧮</div><div class="flex-1"><div class="font-bold">${esc(l.title)}</div><div class="text-xs text-mute">Pending from list</div></div><div class="text-pos font-extrabold">+${fmt(tot(l).q)}</div></div>`});
+   167→    const T=S.t.filter(t=>t.cid===cid).sort((a,b)=>b.d.localeCompare(a.d));
+   168→    h+=T.map(t=>{const cr=t.type==='credit';return row(`<div class="w-11 h-11 rounded-2xl grid place-items-center text-lg font-bold ${cr?'text-pos':'text-neg'}" style="${tint(cr?'pos':'neg')}">${cr?'↗':'↘'}</div><div class="flex-1 min-w-0"><div class="font-bold truncate">${esc(t.note||(cr?'Credit':'Debit'))}</div><div class="text-xs text-mute">${t.d}</div></div><div class="${cr?'text-pos':'text-neg'} font-extrabold">${cr?'+':'−'}${fmt(t.amt)}</div>${delb('t',t.id)}`,'t:'+t.id)}).join('');
+   169→    if(!T.length)h+=`<p class="text-center text-mute py-8">No entries yet.</p>`;
+   170→  }else if(R.sub==='lists'){
+   171→    h+=`<div class="flex gap-2.5"><button data-a="addl" data-k="calc" class="btn flex-1">🧮 Calculating</button><button data-a="addl" data-k="check" class="btn flex-1">☑️ Checklist</button></div>`;
+   172→    const L=S.l.filter(l=>l.cid===cid);
+   173→    h+=L.map(l=>{const t=tot(l),d=l.items.filter(i=>i.done).length,pc=l.k==='calc'?(t.t?t.p/t.t*100:0):(l.items.length?d/l.items.length*100:0);
+   174→      return `<div class="card p-3.5"><div class="flex items-center gap-3" data-a="openl" data-id="${l.id}"><div class="w-11 h-11 rounded-2xl grid place-items-center text-lg" style="${tint('pri')}">${l.k==='calc'?'🧮':'☑️'}</div><div class="flex-1 min-w-0"><div class="font-bold truncate">${esc(l.title)}</div><div class="text-xs text-mute">${l.k==='calc'?`Total ${fmt(t.t)} · Pending ${fmt(t.q)}`:`${d} of ${l.items.length} done`}</div></div>${delb('l',l.id)}</div><div class="h-1.5 rounded-full bg-line mt-3 overflow-hidden"><div class="grad h-full rounded-full" style="width:${pc}%"></div></div>${chips('l:'+l.id)}</div>`}).join('');
+   175→    if(!L.length)h+=`<p class="text-center text-mute py-8">No lists yet.</p>`;
+   176→  }else if(R.sub==='notes'){
+   177→    h+=`<button data-a="addn" class="btn w-full">📝 New note</button>`;
+   178→    h+=S.n.filter(n=>n.cid===cid).map(n=>`<div class="card p-4"><div class="flex"><div class="flex-1 min-w-0"><div class="font-bold">${esc(n.title)}</div><div class="text-sm text-mute whitespace-pre-wrap mt-1">${esc(n.body)}</div></div>${delb('n',n.id)}</div>${chips('n:'+n.id)}</div>`).join('');
+   179→  }else{
+   180→    h+=`<button data-a="addr" class="btn w-full">⏰ New reminder</button>`;
+   181→    h+=S.r.filter(r=>r.cid===cid).sort((a,b)=>a.at.localeCompare(b.at)).map(r=>remRow(r,0)).join('');
+   182→  }
+   183→  return h+'</div>';
+   184→}
+   185→function remRow(r,chip){
+   186→  const c=S.c.find(x=>x.id===r.cid),late=!r.done&&r.at<nowStr();
+   187→  return row(`<input type="checkbox" data-a="rdone" data-id="${r.id}" ${r.done?'checked':''} class="w-6 h-6 accent-[var(--pri)]"><div class="flex-1 min-w-0 ${r.done?'opacity-50 line-through':''}"><div class="font-bold truncate">${esc(r.title)}</div><div class="text-xs ${late?'text-neg font-semibold':'text-mute'}">${r.at.replace('T',' · ')}${r.rep?' · 🔁':''}${chip&&c?' · '+esc(c.name):''}</div></div>${delb('r',r.id)}`,'r:'+r.id);
+   188→}
+   189→function reminders(){
+   190→  const n=nowStr(),day=n.slice(0,10),P=S.r.filter(r=>!r.done).sort((a,b)=>a.at.localeCompare(b.at));
+   191→  const grp=(t,L)=>L.length?`<div class="text-xs font-extrabold text-mute uppercase tracking-widest pt-3">${t}</div>`+L.map(r=>remRow(r,1)).join(''):'';
+   192→  return head('Alarms')+`<div class="px-5 space-y-2.5">${grp('Overdue',P.filter(r=>r.at<n))}${grp('Today',P.filter(r=>r.at>=n&&r.at.slice(0,10)===day))}${grp('Upcoming',P.filter(r=>r.at.slice(0,10)>day))}${grp('Done',S.r.filter(r=>r.done))}${S.r.length?'':'<div class="card p-10 text-center text-mute">No reminders yet.<br>Add them from a contact or General.</div>'}</div>`;
+   193→}
+   194→
+   195→function listView(){
+   196→  const l=S.l.find(x=>x.id===R.lid);if(!l){R.lid=null;return contacts()}
+   197→  const c=S.c.find(x=>x.id===l.cid),calc=l.k==='calc',t=tot(l);
+   198→  let h=head(esc(l.title),1,`<button data-a="additem" class="grad rounded-full px-4 h-10 text-sm font-bold shadow-card">+ Item</button>`)+`<div class="px-5 space-y-2.5">`+`<div class="card p-3.5">${chips('l:'+l.id).replace('mt-3','')}</div>`;
+   199→  if(calc&&c)h+=`<label class="card p-3.5 flex items-center gap-3 text-sm font-semibold"><input type="checkbox" data-a="post" ${l.post?'checked':''} class="w-5 h-5 accent-[var(--pri)]"> Count pending in ${esc(c.name)}’s balance</label>`;
+   200→  h+=l.items.map(i=>{
+   201→    if(!calc)return row(`<input type="checkbox" data-a="done" data-id="${i.id}" ${i.done?'checked':''} class="w-6 h-6 accent-[var(--pri)]"><div class="flex-1 font-semibold ${i.done?'opacity-50 line-through':''}">${esc(i.name)}</div>${delb('i',i.id)}`,'i:'+i.id);
+   202→    const tl=lt(i),pv=pd(i),full=pv>=tl&&tl>0;
+   203→    return row(`<input type="checkbox" data-a="tick" data-id="${i.id}" ${full?'checked':''} class="w-6 h-6 accent-[var(--pri)]"><div class="flex-1 min-w-0"><div class="font-bold truncate ${full?'line-through opacity-60':''}">${esc(i.name)}</div><div class="text-xs text-mute">${i.qty} × ${fmt(i.price)}</div></div><div class="text-right"><div class="font-extrabold">${fmt(tl)}</div><div class="text-xs font-semibold ${pv?'text-pos':'text-mute'}">${full?'✓ Paid':pv?'Paid '+fmt(pv):'Unpaid'}</div></div>${delb('i',i.id)}`,'i:'+i.id,tl>0?hist(i,tl,pv):'')}).join('');
+   204→  if(!l.items.length)h+=`<p class="text-center text-mute py-8">No items yet. Tap + Item.</p>`;
+   205→  h+='</div>';
+   206→  if(calc)h+=`<div class="glass fixed inset-x-4 max-w-md mx-auto z-20 card p-3.5" style="bottom:calc(84px + env(safe-area-inset-bottom,0px))"><div class="grid grid-cols-3 text-center"><div><div class="text-[11px] font-semibold text-mute">TOTAL</div><div class="font-extrabold">${fmt(t.t)}</div></div><div><div class="text-[11px] font-semibold text-mute">PAID</div><div class="font-extrabold text-pos">${fmt(t.p)}</div></div><div><div class="text-[11px] font-semibold text-mute">PENDING</div><div class="font-extrabold text-neg">${fmt(t.q)}</div></div></div><div class="flex gap-2 mt-3"><button data-a="allpaid" class="btn flex-1 !px-2">All paid</button><button data-a="clrpaid" class="btn flex-1 !px-2">Clear</button>${c&&c.f.some(f=>f.t==='ph')?`<a href="https://wa.me/${digits(c.f.find(f=>f.t==='ph').v)}?text=${encodeURIComponent('Hi '+c.name+', pending for '+l.title+': '+fmt(t.q))}" target="_blank" rel="noopener" class="grad rounded-2xl px-3 py-2.5 text-sm font-bold flex-1 text-center">Remind</a>`:''}</div></div>`;
+   207→  return h;
+   208→}
+   209→
+   210→function render(){
+   211→  $('#app').innerHTML=R.lid?listView():R.cid&&R.tab==='c'?contactView():R.tab==='c'?contacts():R.tab==='g'?general():reminders();
+   212→  const late=S.r.filter(r=>!r.done&&r.at<nowStr()).length;
+   213→  $('#nav').innerHTML=[['c','👥','Contacts'],['g','🗂️','General'],['r','⏰','Alarms']].map(([k,i,n])=>`<button data-a="nav" data-id="${k}" class="flex-1 py-2 rounded-[22px] text-[11px] font-bold relative transition ${R.tab===k?'grad shadow-card':'text-mute'}"><div class="text-lg leading-tight">${i}</div>${n}${k==='r'&&late?`<span class="absolute top-1 right-[22%] rounded-full text-[10px] px-1.5 text-white" style="background:var(--neg)">${late}</span>`:''}</button>`).join('');
+   214→}
+   215→
+   216→const item=id=>S.l.find(x=>x.id===R.lid).items.find(i=>i.id===id);
+   217→const types=[['ph','📞 Phone'],['em','✉️ Email'],['ln','🔗 Link'],['ad','📍 Address'],['bd','🎂 Birthday (YYYY-MM-DD)'],['sc','@ Social handle'],['ot','📝 Other']];
+   218→const fsheet=(title,f,ok)=>sheet(title,[['t','','sel',f.t,types],['l','Label (Mobile, Work, Telegram…)','text',f.l],['v','Number, link, address…','text',f.v]],v=>{if(!v.v)return false;ok(v)});
+   219→const A={
+   220→  nav:d=>{R={tab:d.id,cid:null,sub:'ledger',lid:null,q:''}},
+   221→  back:()=>{R.lid?R.lid=null:R.cid=null},
+   222→  open:d=>{R.cid=d.id;R.sub='ledger'},
+   223→  sub:d=>{R.sub=d.id},
+   224→  openl:d=>{R.lid=d.id},
+   225→  go:d=>go(d.k),
+   226→  link:d=>picker(d.k),
+   227→  unlink:d=>ask('Remove link?','The two items stay, only the link is removed.','Remove',()=>{S.k=S.k.filter(p=>!(p.includes(d.k)&&p.includes(d.k2)))},'pri','🔗'),
+   228→  copy:d=>{try{navigator.clipboard.writeText(d.v);toast('Copied')}catch(e){toast('Copy not available')}},
+   229→  addc:()=>sheet('New contact',[['name','Name'],['v','First phone (optional)','tel']],v=>{if(!v.name)return false;const c={id:uid(),name:v.name,f:[]};if(v.v)c.f.push({id:uid(),t:'ph',l:'Mobile',v:v.v});S.c.push(c);R.cid=c.id}),
+   230→  renc:()=>{const c=S.c.find(x=>x.id===R.cid);sheet('Rename contact',[['name','Name','text',c.name]],v=>{if(!v.name)return false;c.name=v.name})},
+   231→  delc:()=>ask('Delete this contact?','Their entries, lists, notes and reminders will be deleted too.','Delete',()=>{kill('c',R.cid);R.cid=null}),
+   232→  addf:()=>fsheet('Add detail',{t:'ph',l:'',v:''},v=>{S.c.find(x=>x.id===R.cid).f.push({id:uid(),t:v.t,l:v.l,v:v.v})}),
+   233→  editf:d=>{const f=S.c.find(x=>x.id===R.cid).f.find(x=>x.id===d.id);fsheet('Edit detail',f,v=>{f.t=v.t;f.l=v.l;f.v=v.v})},
+   234→  delf:d=>ask('Delete this detail?','It will be removed from this contact.','Delete',()=>{const c=S.c.find(x=>x.id===R.cid);c.f=c.f.filter(x=>x.id!==d.id)}),
+   235→  credit:()=>tx('credit'),debit:()=>tx('debit'),
+   236→  addl:d=>sheet(d.k==='calc'?'New calculating list':'New checklist',[['title','List name']],v=>{if(!v.title)return false;const l={id:uid(),cid:cur(),k:d.k,title:v.title,post:false,items:[]};S.l.push(l);R.lid=l.id}),
+   237→  addn:()=>sheet('New note',[['title','Title'],['body','Note']],v=>{if(!v.title&&!v.body)return false;S.n.push({id:uid(),cid:cur(),title:v.title||'Note',body:v.body})}),
+   238→  addr:()=>{const t=new Date(Date.now()-new Date().getTimezoneOffset()*6e4+864e5);t.setUTCHours(9,0,0,0);sheet('New reminder',[['title','What to remember'],['at','','datetime-local',t.toISOString().slice(0,16)]],v=>{if(!v.title||!v.at)return false;S.r.push({id:uid(),cid:cur(),title:v.title,at:v.at,done:false})})},
+   239→  del:d=>ask('Delete this?','This cannot be undone. Its links will be removed too.','Delete',()=>kill(d.t,d.id)),
+   240→  rdone:d=>{const r=S.r.find(x=>x.id===d.id);r.done=!r.done},
+   241→  additem:()=>{const l=S.l.find(x=>x.id===R.lid);l.k==='calc'?sheet('Add item',[['name','Item name'],['qty','Quantity','number','1'],['price','Unit price','number']],v=>{if(!v.name)return false;l.items.push({id:uid(),name:v.name,qty:+v.qty||1,price:+v.price||0,paid:0})}):sheet('Add item',[['name','Item']],v=>{if(!v.name)return false;l.items.push({id:uid(),name:v.name,done:false})})},
+   242→  tick:d=>{const i=item(d.id);i.paid=(i.paid||0)>=lt(i)?0:lt(i)},
+   243→  done:d=>{const i=item(d.id);i.done=!i.done},
+   244→  part:d=>{const i=item(d.id);sheet('Paid so far for '+esc(i.name)+' (of '+fmt(lt(i))+')',[['amt','Amount','number',i.paid||'']],v=>{i.paid=Math.max(0,Math.min(+v.amt||0,lt(i)))})},
+   245→  allpaid:()=>ask('Mark everything paid?','Every row will be set to fully paid.','Mark all paid',()=>S.l.find(x=>x.id===R.lid).items.forEach(i=>i.paid=lt(i)),'pos','✅'),
+   246→  clrpaid:()=>ask('Clear all payments?','Every row will go back to unpaid.','Clear',()=>S.l.find(x=>x.id===R.lid).items.forEach(i=>i.paid=0),'neg','↩️'),
+   247→  post:()=>{const l=S.l.find(x=>x.id===R.lid);l.post=!l.post}
+   248→};
+   249→function tx(type){sheet(type==='credit'?'New credit':'New debit',[['amt','Amount','number'],['note','Note (optional)']],v=>{if(!(+v.amt>0))return false;S.t.push({id:uid(),cid:cur(),type,amt:+v.amt,note:v.note,d:nowStr().slice(0,10)})})}
+   250→
+   251→document.addEventListener('click',e=>{
+   252→  const el=e.target.closest('[data-a]');if(!el||el.closest('#sheet')||e.target.closest('a'))return;
+   253→  if(el.type==='checkbox'&&e.target!==el)return;
+   254→  const f=A[el.dataset.a];if(!f)return;
+   255→  f(el.dataset);if(!$('#sheet').innerHTML){save();render()}
+   256→});
+   257→document.addEventListener('input',e=>{if(e.target.id==='q'){R.q=e.target.value;$('#cl').innerHTML=clist()}});
+   258→/* ===== v3 additions ===== */
+   259→const today=()=>nowStr().slice(0,10);
+   260→const mig=()=>{S.b=S.b||[];S.a=S.a||[];S.x=S.x||[];S.m=S.m||[];if(!S.tp)S.tp=[{id:'tp1',title:'Payment reminder',body:'Hi {name}, a gentle reminder about {amount} due on {date}.'},{id:'tp2',title:'Thank you',body:'Hi {name}, thank you for your payment of {amount}.'}];S.set=S.set||{};if(!S.set.born)S.set.born=today();S.l.forEach(l=>l.items.forEach(i=>{if(!i.pays){i.pays=i.paid>0?[{id:uid(),amt:i.paid,d:today()}]:[];delete i.paid}}))};mig();
+   261→const applyTheme=()=>{const t=S.set.theme,r=document.documentElement;if(t&&t!=='auto')r.dataset.theme=t;else delete r.dataset.theme};applyTheme();
+   262→const hist=(i,tl,pv)=>`<div class="mt-3 rounded-2xl p-3" style="${tint('pri',8)}"><div class="flex items-center justify-between text-xs font-semibold"><span class="text-mute">💰 ${(i.pays||[]).length} payment${(i.pays||[]).length===1?'':'s'} · ${fmt(tl-pv)} left</span><button data-a="part" data-id="${i.id}" class="text-pri font-bold">＋ Add payment</button></div>${(i.pays||[]).map((p,n)=>`<div class="pt-2"><div class="flex items-center gap-2 text-sm"><span class="w-5 h-5 rounded-full grid place-items-center text-[10px] font-bold grad">${n+1}</span><span class="flex-1 text-mute">${p.d}</span><b class="text-pos">+${fmt(p.amt)}</b><button data-a="delpay" data-id="${i.id}" data-p="${p.id}" class="text-mute px-1" aria-label="Remove payment">×</button></div>${chipsM('p:'+p.id)}</div>`).join('')}<div class="h-1.5 rounded-full bg-line mt-3 overflow-hidden"><div class="grad h-full" style="width:${tl?pv/tl*100:0}%"></div></div></div>`;
+   263→const tick=d=>{const i=item(d.id),r=lt(i)-pd(i);if(r>0)(i.pays=i.pays||[]).push({id:uid(),amt:r,d:today()});else ask('Clear payments?','All payments for this item will be removed.','Clear',()=>{i.pays=[]},'neg','↩️')};
+   264→const part=d=>{const i=item(d.id),r=lt(i)-pd(i);if(r<=0)return toast('Already fully paid');sheet('Add payment · '+fmt(r)+' left',[['amt','Amount','number',r],['d','','date',today()]],v=>{const a=Math.min(+v.amt||0,r);if(a<=0)return false;(i.pays=i.pays||[]).push({id:uid(),amt:a,d:v.d||today()})})};
+   265→const delpay=d=>ask('Remove this payment?','The paid amount of this item will go down.','Remove',()=>{const i=item(d.id);i.pays=i.pays.filter(p=>p.id!==d.p)},'neg','↩️');
+   266→const allpaid=()=>ask('Mark everything paid?','Each unpaid balance is added as a payment dated today.','Mark all paid',()=>S.l.find(x=>x.id===R.lid).items.forEach(i=>{const r=lt(i)-pd(i);if(r>0)(i.pays=i.pays||[]).push({id:uid(),amt:r,d:today()})}),'pos','✅');
+   267→const clrpaid=()=>ask('Clear all payments?','Every payment on this list will be removed.','Clear',()=>S.l.find(x=>x.id===R.lid).items.forEach(i=>i.pays=[]),'neg','↩️');
+   268→const rdone=d=>{const r=S.r.find(x=>x.id===d.id);if(r.rep&&!r.done){const t=new Date(r.at);r.rep==='d'?t.setDate(t.getDate()+1):r.rep==='w'?t.setDate(t.getDate()+7):t.setMonth(t.getMonth()+1);r.at=new Date(t.getTime()-t.getTimezoneOffset()*6e4).toISOString().slice(0,16);r.n=0;toast('Next: '+r.at.replace('T',' '))}else r.done=!r.done};
+   269→const addr=()=>{const t=new Date(Date.now()-new Date().getTimezoneOffset()*6e4+864e5);t.setUTCHours(9,0,0,0);sheet('New reminder',[['title','What to remember'],['at','','datetime-local',t.toISOString().slice(0,16)],['rep','','sel','',[['','Does not repeat'],['d','Repeats daily'],['w','Repeats weekly'],['m','Repeats monthly']]]],v=>{if(!v.title||!v.at)return false;S.r.push({id:uid(),cid:cur(),title:v.title,at:v.at,rep:v.rep,done:false})})};
+   270→/* bank accounts */
+   271→const bsheet=(t,b,ok)=>sheet(t,[['label','Label (Savings, Business…)','text',b.label],['bank','Bank name','text',b.bank],['holder','Account holder','text',b.holder],['acc','Account number','text',b.acc],['ifsc','IFSC / SWIFT','text',b.ifsc],['upi','UPI ID','text',b.upi],['notes','Notes','text',b.notes]],v=>{if(!v.acc&&!v.upi&&!v.label)return false;ok(v)});
+   272→function bankTab(cid){
+   273→  const line=(l,v,cp)=>v?`<div class="flex items-center justify-between py-1.5"><div class="min-w-0"><div class="text-[11px] uppercase tracking-wider text-mute font-semibold">${l}</div><div class="font-semibold break-all">${esc(v)}</div></div><button data-a="copy" data-v="${esc(cp||v)}" class="ib shrink-0">⧉</button></div>`:'';
+   274→  return `<button data-a="addb" class="btn w-full">🏦 New bank account</button>`+S.b.filter(b=>b.cid===cid).map(b=>{const sh=R.rev===b.id;
+   275→    return `<div class="card p-4"><div class="flex items-center gap-2"><div class="w-11 h-11 rounded-2xl grid place-items-center text-lg" style="${tint('pri')}">🏦</div><div class="flex-1 min-w-0"><div class="font-bold truncate">${esc(b.label||b.bank||'Account')}</div><div class="text-xs text-mute truncate">${esc([b.bank,b.holder].filter(Boolean).join(' · '))}</div></div><button data-a="editb" data-id="${b.id}" class="ib">✎</button>${delb('b',b.id)}</div><div class="mt-2">${line('Account no.',b.acc&&(sh?b.acc:'•••• '+b.acc.slice(-4)),b.acc)}${b.acc?`<button data-a="rev" data-id="${b.id}" class="text-xs text-pri font-semibold">${sh?'Hide':'Show'} full number</button>`:''}${line('IFSC / SWIFT',b.ifsc)}${line('UPI',b.upi)}${line('Notes',b.notes)}</div><button data-a="shareb" data-id="${b.id}" class="btn w-full mt-2">Share details</button>${chips('b:'+b.id)}</div>`}).join('');
+   276→}
+   277→/* files and images (stored in IndexedDB) */
+   278→const DB=new Promise(r=>{try{const q=indexedDB.open('cl2f',1);q.onupgradeneeded=()=>q.result.createObjectStore('f');q.onsuccess=()=>r(q.result);q.onerror=()=>r(null)}catch(e){r(null)}});
+   279→const idb=async(m,k,v)=>{const d=await DB;if(!d)return;return new Promise(r=>{try{const s=d.transaction('f',m==='get'?'readonly':'readwrite').objectStore('f');const q=m==='put'?s.put(v,k):m==='del'?s.delete(k):s.get(k);q.onsuccess=()=>r(q.result);q.onerror=()=>r()}catch(e){r()}})};
+   280→const URLS={};let PK=null;
+   281→const furl=async id=>{if(!URLS[id]){const b=await idb('get',id);if(b)URLS[id]=URL.createObjectURL(b)}return URLS[id]};
+   282→const thumbs=async()=>{for(const im of document.querySelectorAll('img[data-fid]')){const u=await furl(im.dataset.fid);if(u)im.src=u}};
+   283→const fchip=a=>`<span class="chip"><span data-a="vf" data-id="${a.id}" class="truncate">${a.type.startsWith('image')?`<img data-fid="${a.id}" class="w-6 h-6 rounded object-cover inline align-middle" alt="">`:'📄'} ${esc(a.name)}</span><span data-a="delfile" data-id="${a.id}" class="text-mute pl-1">×</span></span>`;
+   284→const comp=f=>new Promise(r=>{if(!f.type.startsWith('image/')||f.type==='image/gif')return r(f);const im=new Image(),u=URL.createObjectURL(f);im.onload=()=>{const s=Math.min(1,1600/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=im.width*s;c.height=im.height*s;c.getContext('2d').drawImage(im,0,0,c.width,c.height);c.toBlob(b=>r(b||f),'image/jpeg',.82)};im.onerror=()=>r(f);im.src=u});
+   285→$('#fi').onchange=async e=>{const fs=[...e.target.files];e.target.value='';for(const f of fs){const b=await comp(f),id=uid();await idb('put',id,b);S.a.push({id,o:PK,name:f.name,type:b.type||f.type||'',size:b.size})}save();render();toast(fs.length+' file(s) attached')};
+   286→async function viewf(id){
+   287→  const a=S.a.find(x=>x.id===id),u=await furl(id);if(!a||!u)return toast('File not found');
+   288→  const m=a.type.startsWith('image')?`<img src="${u}" class="max-h-[68vh] mx-auto rounded-2xl" alt="">`:a.type==='application/pdf'?`<iframe src="${u}" class="w-full rounded-2xl" style="height:68vh"></iframe>`:`<div class="text-center py-8"><div class="text-5xl">📄</div><div class="font-bold mt-2 break-all">${esc(a.name)}</div><div class="text-sm text-mute">${Math.round(a.size/1024)} KB</div><a href="${u}" target="_blank" rel="noopener" class="btn inline-block mt-4">Open</a></div>`;
+   289→  $('#sheet').innerHTML=`<div class="fixed inset-0 bg-black/60 z-40 fade" id="sx"></div><div class="fixed inset-x-4 top-1/2 max-w-xl mx-auto z-50 card p-4 pop"><div class="flex items-center gap-2 mb-3"><div class="font-bold flex-1 truncate">${esc(a.name)}</div><button id="sc" class="btn !py-1.5">Close</button></div>${m}</div>`;
+   290→  $('#sx').onclick=$('#sc').onclick=close;
+   291→}
+   292→/* PIN lock */
+   293→const hp=async(p,s)=>{const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(p),'PBKDF2',false,['deriveBits']);const b=await crypto.subtle.deriveBits({name:'PBKDF2',salt:new TextEncoder().encode(s),iterations:100000,hash:'SHA-256'},k,256);return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')};
+   294→function lock(){
+   295→  if(!S.set.pin||$('#lk'))return;let e='';
+   296→  const o=document.createElement('div');o.id='lk';o.className='fixed inset-0 z-[70] grid place-items-center';o.style.background='var(--bg)';
+   297→  const draw=err=>{o.innerHTML=`<div class="text-center w-72"><div class="text-5xl mb-2">🔒</div><div class="text-2xl font-extrabold gt">Contact Ledger</div><div class="text-sm mt-1 ${err?'text-neg font-semibold':'text-mute'}">${err?'Wrong PIN, try again':'Enter your PIN'}</div><div class="flex justify-center gap-3 my-6">${[0,1,2,3].map(i=>`<div class="w-4 h-4 rounded-full ${i<e.length?'grad':'bg-line'}"></div>`).join('')}</div><div class="grid grid-cols-3 gap-3">${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(n=>n===''?'<div></div>':`<button data-n="${n}" class="card h-16 text-2xl font-bold active:scale-90 transition">${n}</button>`).join('')}</div></div>`};
+   298→  o.onclick=async ev=>{const b=ev.target.closest('[data-n]');if(!b)return;const n=b.dataset.n;e=n==='⌫'?e.slice(0,-1):e+n;if(e.length===4){const h=await hp(e,S.set.pin.s);if(h===S.set.pin.h){o.remove();return}e='';draw(1);return}draw()};
+   299→  draw();document.body.appendChild(o);
+   300→}
+   301→let HT=0;document.addEventListener('visibilitychange',()=>{if(document.hidden)HT=Date.now();else if(S.set.pin&&Date.now()-HT>(+(S.set.auto??1))*6e4)lock()});
+   302→function pinSheet(m){
+   303→  const f=[];if(m!=='set')f.push(['o','Current PIN','password']);if(m!=='remove'){f.push(['p','New 4-digit PIN','password']);f.push(['q','Repeat new PIN','password'])}
+   304→  sheet(m==='set'?'Set PIN':m==='change'?'Change PIN':'Remove PIN',f,v=>{
+   305→    if(m!=='remove'&&(!/^\d{4}$/.test(v.p)||v.p!==v.q)){toast('PINs must match (4 digits)');return false}
+   306→    (async()=>{if(m!=='set'&&await hp(v.o,S.set.pin.s)!==S.set.pin.h){toast('Wrong current PIN');return}
+   307→      if(m==='remove')S.set.pin=null;else{const s=uid()+uid();S.set.pin={s,h:await hp(v.p,s)}}
+   308→      save();render();toast('PIN updated')})();
+   309→  });
+   310→}
+   311→/* import / backup */
+   312→const impAsk=L=>{if(!L.length)return toast('No contacts found');ask('Import '+L.length+' contacts?','They will be added to your contacts.','Import',()=>{S.c.push(...L)},'pri','📥')};
+   313→function parseImp(t){
+   314→  const out=[];
+   315→  if(/BEGIN:VCARD/i.test(t)){t.split(/BEGIN:VCARD/i).slice(1).forEach(b=>{const c={id:uid(),name:'',f:[]};b.split(/\r?\n/).forEach(l=>{const m=l.match(/^([A-Z]+)[^:]*:(.*)$/i);if(!m)return;const k=m[1].toUpperCase(),v=m[2].trim();if(!v)return;if(k==='FN')c.name=v;else if(k==='TEL')c.f.push({id:uid(),t:'ph',l:'Mobile',v});else if(k==='EMAIL')c.f.push({id:uid(),t:'em',l:'Email',v});else if(k==='URL')c.f.push({id:uid(),t:'ln',l:'Link',v});else if(k==='ADR')c.f.push({id:uid(),t:'ad',l:'Address',v:v.replace(/;+/g,', ').replace(/^, |, $/g,'')})});if(c.name)out.push(c)})}
+   316→  else t.split(/\r?\n/).slice(1).forEach(l=>{const p=l.split(',').map(x=>x.replace(/^"|"$/g,'').trim());if(p[0]){const c={id:uid(),name:p[0],f:[]};if(p[1])c.f.push({id:uid(),t:'ph',l:'Mobile',v:p[1]});if(p[2])c.f.push({id:uid(),t:'em',l:'Email',v:p[2]});out.push(c)}});
+   317→  return out;
+   318→}
+   319→$('#vi').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(f)impAsk(parseImp(await f.text()))};
+   320→const b64=b=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result.split(',')[1]);f.readAsDataURL(b)});
+   321→$('#ri').onchange=async e=>{
+   322→  const f=e.target.files[0];e.target.value='';if(!f)return;let j;
+   323→  try{j=JSON.parse(await f.text());if(!j.S)throw 0}catch(x){return toast('Not a valid backup file')}
+   324→  ask('Restore this backup?','Everything on this device will be replaced.','Restore',()=>{S=j.S;mig();(j.fs||[]).forEach(x=>{const u=Uint8Array.from(atob(x.d),c=>c.charCodeAt(0));idb('put',x.id,new Blob([u],{type:x.t}))});R={tab:'c',cid:null,sub:'ledger',lid:null,q:''};applyTheme()},'pri','💾');
+   325→};
+   326→/* settings screen */
+   327→function settingsView(){
+   328→  const set=S.set,pin=!!set.pin,np=typeof Notification!=='undefined'?Notification.permission:'unsupported';
+   329→  const sec=(t,b)=>`<div class="card p-4 mt-3"><div class="font-extrabold mb-2">${t}</div>${b}</div>`;
+   330→  const bt=(a,l,x='')=>`<button data-a="${a}" ${x} class="btn w-full mt-2">${l}</button>`;
+   331→  return head('Settings',1)+`<div class="px-5">`+
+   332→  sec('🔒 Security',`<div class="text-sm text-mute">PIN is ${pin?'on':'off'}. It locks the screen only; stored data is not encrypted.</div>`+(pin?bt('pin','Change PIN','data-m="change"')+bt('pin','Remove PIN','data-m="remove"')+`<select id="auto" class="inp mt-2">${[[0,'Lock as soon as the app is left'],[1,'Lock after 1 minute'],[5,'Lock after 5 minutes']].map(o=>`<option value="${o[0]}" ${+(set.auto??1)===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>`:bt('pin','Set PIN','data-m="set"'))+`<label class="flex items-center gap-3 mt-3 text-sm font-semibold"><input type="checkbox" data-a="hide" ${S.hide?'checked':''} class="w-5 h-5 accent-[var(--pri)]"> Hide balances</label>`)+
+   333→  sec('🎨 Appearance',`<div class="flex gap-2">${['auto','light','dark'].map(t=>`<button data-a="theme" data-id="${t}" class="btn flex-1 capitalize ${(set.theme||'auto')===t?'grad !border-0':''}">${t}</button>`).join('')}</div>`)+
+   334→  sec('⏰ Alarms',`<div class="text-sm text-mute">Reminders alert you while the app is open (notification status: <b>${np}</b>). A web app cannot ring on time while fully closed.</div>`+(np==='default'?bt('notif','Enable notifications'):''))+
+   335→  sec('📥 Import contacts',bt('vcf','Import vCard (.vcf) or CSV file')+('contacts' in navigator?bt('pick','Pick from phone contacts'):'')+`<div class="text-xs text-mute mt-2">CSV columns: name, phone, email.</div>`)+
+   336→  sec('💾 Backup',bt('exp','Export backup (includes files)')+bt('imp','Restore from backup')+`<div class="text-xs text-mute mt-2">${S.c.length} contacts · ${S.a.length} files</div>`)+
+   337→  sec('📲 Install',`<div class="text-sm text-mute">Open your browser menu and choose <b>Add to Home Screen</b> (iPhone: Share → Add to Home Screen). For a full offline app, host the file together with manifest.json, sw.js and the icons.</div>`)+
+   338→  sec('⚠️ Danger zone',bt('wipe','Delete all data','style="color:var(--neg)"'))+`</div>`;
+   339→}
+   340→Object.assign(A,{
+   341→  back:()=>{R.set?R.set=0:R.lid?R.lid=null:R.cid=null},
+   342→  sett:()=>{R.set=1},pin:d=>pinSheet(d.m),hide:()=>{S.hide=!S.hide},
+   343→  theme:d=>{S.set.theme=d.id;applyTheme()},
+   344→  notif:()=>{try{Notification.requestPermission().then(render)}catch(e){toast('Not supported')}},
+   345→  vcf:()=>$('#vi').click(),imp:()=>$('#ri').click(),
+   346→  pick:async()=>{try{const r=await navigator.contacts.select(['name','tel','email'],{multiple:true});impAsk(r.filter(x=>x.name&&x.name[0]).map(x=>({id:uid(),name:x.name[0],f:[...(x.tel||[]).map(v=>({id:uid(),t:'ph',l:'Mobile',v})),...(x.email||[]).map(v=>({id:uid(),t:'em',l:'Email',v}))]})));render()}catch(e){toast('Cancelled')}},
+   347→  exp:async()=>{try{const D=window.claude&&await window.claude.use('downloads');if(!D)return toast('Saving files is not available here');toast('Preparing backup…');const fs=[];for(const a of S.a){const b=await idb('get',a.id);if(b)fs.push({id:a.id,t:b.type,d:await b64(b)})}await D.save({filename:'contact-ledger-backup-'+today()+'.json',data:JSON.stringify({v:3,S,fs})})}catch(e){if(!e||e.code!=='declined')toast('Export failed')}},
+   348→  wipe:()=>ask('Delete ALL data?','Contacts, entries, files and settings will be erased from this device.','Erase everything',()=>{S.a.forEach(a=>idb('del',a.id));S={c:[],t:[],l:[],n:[],r:[],k:[],b:[],a:[],set:{}};R={tab:'c',cid:null,sub:'ledger',lid:null,q:''};applyTheme()},'neg','⚠️'),
+   349→  attach:d=>{PK=d.k;$('#fi').click()},vf:d=>{viewf(d.id)},
+   350→  delfile:d=>ask('Remove file?','The file will be deleted from this device.','Remove',()=>{idb('del',d.id);S.a=S.a.filter(a=>a.id!==d.id)}),
+   351→  addb:()=>bsheet('New bank account',{},v=>{S.b.push({id:uid(),cid:cur(),...v})}),
+   352→  editb:d=>{const b=S.b.find(x=>x.id===d.id);bsheet('Edit account',b,v=>Object.assign(b,v))},
+   353→  rev:d=>{R.rev=R.rev===d.id?null:d.id},
+   354→  shareb:d=>{const b=S.b.find(x=>x.id===d.id),t=[b.label,b.bank,b.holder&&'Name: '+b.holder,b.acc&&'A/C: '+b.acc,b.ifsc&&'IFSC: '+b.ifsc,b.upi&&'UPI: '+b.upi].filter(Boolean).join('\n');try{navigator.share?navigator.share({text:t}):(navigator.clipboard.writeText(t),toast('Copied'))}catch(x){toast('Share not available')}},
+   355→  tick,part,delpay,allpaid,clrpaid,rdone,addr
+   356→});
+   357→document.addEventListener('change',e=>{if(e.target.id==='auto'){S.set.auto=+e.target.value;save()}});
+   358→const _r=render;render=function(){_r();if(R.set)$('#app').innerHTML=settingsView();thumbs()};
+   359→/* reminder alerts while the app is open */
+   360→const tickR=()=>{const n=nowStr();let ch=0;S.r.filter(r=>!r.done&&!r.n&&r.at<=n).forEach(r=>{r.n=1;ch=1;const c=S.c.find(x=>x.id===r.cid),m=r.title+(c?' · '+c.name:'');toast('⏰ '+m);try{if(Notification.permission==='granted')new Notification('Reminder',{body:m})}catch(e){}try{navigator.vibrate&&navigator.vibrate(200)}catch(e){}});if(ch){save();render()}};
+   361→setInterval(()=>tickR2(),20000);setTimeout(()=>tickR2(),1500);
+   362→try{navigator.serviceWorker&&navigator.serviceWorker.register('sw.js').catch(()=>{})}catch(e){}
+   363→/* ===== v4: Right Dialer style ===== */
+   364→S.rc=S.rc||[];
+   365→const C_=id=>S.c.find(c=>c.id===id);
+   366→const ph1=c=>c.f.find(f=>f.t==='ph');
+   367→const pnum=f=>f.v.replace(/[^\d+]/g,'');
+   368→const addRc=(id,k)=>{S.rc=S.rc.filter(r=>!(r.c===id&&r.k===k&&Date.now()-r.t<6e4));S.rc.unshift({c:id,k,t:Date.now()});S.rc=S.rc.slice(0,60);save()};
+   369→const rt=t=>{const d=new Date(t),n=new Date();return d.toDateString()===n.toDateString()?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString([],{day:'numeric',month:'short'})};
+   370→const chipsM=k=>chips(k).replace('🔗 Link','🔗').replace('📎 Attach','📎').replace('mt-3','mt-2');
+   371→/* details and payments can be linked / attached too */
+   372→const _look=look;look=k=>{const t=k[0],id=k.slice(2);
+   373→  if(t==='f'){for(const c of S.c){const f=c.f.find(x=>x.id===id);if(f)return{i:IC[f.t],l:(f.l||TN[f.t])+': '+f.v,s:c.name+' · Detail'}}return}
+   374→  if(t==='p'){for(const L of S.l)for(const i of L.items){const p=(i.pays||[]).find(x=>x.id===id);if(p)return{i:'💰',l:fmt(p.amt)+' · '+p.d,s:'Payment · '+i.name}}return}
+   375→  return _look(k)};
+   376→const _go=go;go=k=>{const t=k[0],id=k.slice(2);
+   377→  if(t==='f'){const c=S.c.find(c=>c.f.some(f=>f.id===id));if(c){R.q='';R.lid=null;R.tab='c';R.cid=c.id;R.sub='ledger'}return}
+   378→  if(t==='p'){const l=S.l.find(l=>l.items.some(i=>(i.pays||[]).some(p=>p.id===id)));if(l)_go('l:'+l.id);return}
+   379→  _go(k)};
+   380→/* contact rows with swipe panels */
+   381→function crow(c,sub){
+   382→  const p=ph1(c),b=bal(c.id),n=p?pnum(p):'',d=p?digits(p.v):'';
+   383→  const a=(h,bg,i,l,k)=>h?`<a href="${h}" target="_blank" rel="noopener" data-rc="${c.id}" data-k="${k}" class="w-16 grid place-items-center content-center text-white text-[11px] font-semibold ${bg}"><span class="text-xl leading-none">${i}</span>${l}</a>`:'';
+   384→  return `<div class="sw relative overflow-hidden" data-id="${c.id}"><div class="absolute inset-y-0 left-0 flex">${a(p&&'tel:'+n,'bg-[#16a085]','📞','Call','call')}${a(p&&'sms:'+n,'bg-[#6B75B5]','💬','SMS','sms')}</div><div class="absolute inset-y-0 right-0 flex">${a(p&&'https://wa.me/'+d,'bg-[#25d366]','🟢','Chat','wa')}<button data-m="${c.id}" class="w-16 grid place-items-center content-center bg-[#8b9a98] text-white text-[11px] font-semibold"><span class="text-xl leading-none">⋯</span>More</button></div><div class="row relative bg-card flex items-center gap-3 pl-4 pr-6 py-2.5 border-b border-line" style="touch-action:pan-y;transition:transform .2s">${av(c.name)}<div class="flex-1 min-w-0"><div class="font-semibold truncate">${esc(c.name)}${c.fav?' <span class="text-[#ff9f0a]">★</span>':''}</div><div class="text-xs text-mute truncate">${esc(sub||(p?p.v:c.f.length?c.f[0].v:'No details'))}</div></div>${b?`<div class="${bc(b)} font-bold text-sm">${MV(b)}</div>`:''}</div></div>`;
+   385→}
+   386→const LID=l=>l==='#'?'L_h':'L'+l;
+   387→function clist(){
+   388→  const q=R.q.toLowerCase();
+   389→  const L=S.c.filter(c=>(c.name+' '+c.f.map(f=>f.v).join(' ')).toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name));
+   390→  if(!L.length)return `<div class="card mx-4 p-10 text-center text-mute">No contacts yet.<br>Tap <b>+</b> to add one.</div>`;
+   391→  let h='',last='';
+   392→  L.forEach(c=>{const ch=(c.name[0]||'#').toUpperCase(),l=/[A-Z]/.test(ch)?ch:'#';if(l!==last){last=l;h+=`<div id="${LID(l)}" class="sticky top-0 z-10 px-4 py-0.5 text-xs font-bold text-mute border-b border-line" style="background:var(--bg)">${l}</div>`}h+=crow(c)});
+   393→  return `<div class="bg-card border-y border-line">${h}</div>`;
+   394→}
+   395→function contacts(){
+   396→  let rec=0,pay=0,late=S.r.filter(r=>!r.done&&r.at<nowStr()).length;S.c.forEach(c=>{const b=bal(c.id);b>0?rec+=b:pay-=b});
+   397→  return `<div class="px-4 pt-4 flex items-center"><button data-a="sett" class="text-pri text-2xl w-9 text-left" aria-label="Settings">⚙︎</button><div class="flex-1"></div><button data-a="nav" data-id="r" class="relative text-xl w-9" aria-label="Alarms">🔔${late?`<span class="absolute -top-0.5 right-0 rounded-full text-[10px] px-1.5 text-white" style="background:var(--neg)">${late}</span>`:''}</button><button data-a="addc" class="text-pri text-3xl leading-none w-9 text-right" aria-label="Add contact">+</button></div><h1 class="px-4 text-[34px] font-bold tracking-tight leading-tight">Contacts</h1><div class="px-4 text-sm font-semibold"><span class="text-pos">↗ ${MV(rec)}</span> <span class="text-mute">·</span> <span class="text-neg">↘ ${MV(pay)}</span></div><div class="px-4 mt-3 mb-2"><input id="q" value="${esc(R.q)}" placeholder="🔍  Search" class="inp !py-2.5 !rounded-xl"></div><div id="cl">${clist()}</div><div id="idx" class="fixed right-0.5 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center text-[10px] font-bold text-pri select-none" style="touch-action:none">${'ABCDEFGHIJKLMNOPQRSTUVWXYZ#'.split('').map(l=>`<div data-l="${l}" class="px-1.5 leading-[14px]">${l}</div>`).join('')}</div>`;
+   398→}
+   399→function favs(){
+   400→  const L=S.c.filter(c=>c.fav).sort((a,b)=>a.name.localeCompare(b.name));
+
+[showing lines 1-400 of 919; use offset=401 with limit to continue reading]

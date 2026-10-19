@@ -1,0 +1,2002 @@
+     1→"use client";
+     2→
+     3→import { useState } from "react";
+     4→import { AnimatePresence, motion } from "framer-motion";
+     5→import {
+     6→  ArrowDownLeft,
+     7→  ArrowUpRight,
+     8→  Bell,
+     9→  Bookmark,
+    10→  Calculator,
+    11→  CalendarClock,
+    12→  Check,
+    13→  ChevronDown,
+    14→  ChevronRight,
+    15→  CircleCheckBig,
+    16→  CircleDollarSign,
+    17→  Copy,
+    18→  Ellipsis,
+    19→  FileText,
+    20→  HandCoins,
+    21→  Inbox,
+    22→  List,
+    23→  ListChecks,
+    24→  ListPlus,
+    25→  MessageCircle,
+    26→  Pencil,
+    27→  Plus,
+    28→  Receipt,
+    29→  Repeat as RepeatIcon,
+    30→  RotateCcw,
+    31→  Share2,
+    32→  SquareCheckBig,
+    33→  Trash2,
+    34→  X,
+    35→} from "lucide-react";
+    36→import { useApp } from "@/lib/store";
+    37→import { useUI } from "@/lib/ui-store";
+    38→import type { ReactNode } from "react";
+    39→import {
+    40→  dueStatus,
+    41→  groupItems,
+    42→  itemPaid,
+    43→  itemRemaining,
+    44→  lineTotal,
+    45→  listTotals,
+    46→  r2,
+    47→} from "@/lib/calc";
+    48→import { copyText, displayName, downloadBlob, fd, fdShort, money, todayStr } from "@/lib/utils";
+    49→import { openExternal, primaryPhone, waLink } from "@/lib/share";
+    50→import { listShareText, listToPdfBlob } from "@/lib/pdf";
+    51→import {
+    52→  ENTRY_CATEGORIES,
+    53→  PAYMENT_METHODS,
+    54→  type CalcList,
+    55→  type ID,
+    56→  type LedgerEntry,
+    57→  type ListDiscount,
+    58→  type ListKind,
+    59→  type ListItem,
+    60→  type OwnerId,
+    61→  type Payment,
+    62→  type Repeat,
+    63→} from "@/lib/types";
+    64→import { AttachButton, AttachmentStrip } from "../kit/Attachments";
+    65→import { CalcButton } from "../kit/Calculator";
+    66→import { ContactPicker } from "../kit/ContactPicker";
+    67→import { useConfirm } from "../kit/Confirm";
+    68→import { BottomSheet, Sheet } from "../kit/Sheet";
+    69→import { SwipeRow } from "../kit/SwipeRow";
+    70→import { toastErr, toastOk, toastUndoLast } from "../kit/toast";
+    71→import {
+    72→  Avatar,
+    73→  Button,
+    74→  EmptyState,
+    75→  Field,
+    76→  IconButton,
+    77→  Money,
+    78→  ProgressBar,
+    79→  Segmented,
+    80→  cx,
+    81→  inputCls,
+    82→} from "../kit/primitives";
+    83→
+    84→/* ------------------------------------------------------------------ */
+    85→/* shared bits                                                          */
+    86→/* ------------------------------------------------------------------ */
+    87→
+    88→const KIND_META: Record<ListKind, { label: string; icon: typeof List; hint: string }> = {
+    89→  calculating: { label: "Calculating", icon: Calculator, hint: "Items with qty, price, payments & totals" },
+    90→  checklist: { label: "Checklist", icon: ListChecks, hint: "Tick things off — see done progress" },
+    91→  todo: { label: "To-do", icon: SquareCheckBig, hint: "Tasks with priority & due dates" },
+    92→  simple: { label: "Simple", icon: List, hint: "A plain list of things" },
+    93→};
+    94→
+    95→const REPEAT_LABEL: Record<Repeat, string> = {
+    96→  none: "No repeat",
+    97→  daily: "Daily",
+    98→  weekly: "Weekly",
+    99→  monthly: "Monthly",
+   100→  yearly: "Yearly",
+   101→};
+   102→
+   103→const PRIORITY_META: Record<NonNullable<ListItem["priority"]>, { label: string; cls: string }> = {
+   104→  low: { label: "Low", cls: "bg-surface2 text-mute" },
+   105→  medium: { label: "Medium", cls: "bg-amber/10 text-amber" },
+   106→  high: { label: "High", cls: "bg-negsoft text-neg" },
+   107→};
+   108→
+   109→const dueMs = (d: string) => new Date(`${d}T23:59:59`).getTime();
+   110→
+   111→const parseNum = (s: string): number => {
+   112→  const n = parseFloat(String(s).replace(/,/g, ""));
+   113→  return isNaN(n) ? 0 : n;
+   114→};
+   115→
+   116→const safeName = (s: string) => s.replace(/[\\/:*?"<>|]+/g, "-");
+   117→
+   118→/** Token-styled toggle switch. */
+   119→function Switch({
+   120→  checked,
+   121→  onChange,
+   122→  label,
+   123→  hint,
+   124→}: {
+   125→  checked: boolean;
+   126→  onChange: (v: boolean) => void;
+   127→  label: string;
+   128→  hint?: string;
+   129→}) {
+   130→  return (
+   131→    <button
+   132→      type="button"
+   133→      role="switch"
+   134→      aria-checked={checked}
+   135→      aria-label={label}
+   136→      onClick={() => onChange(!checked)}
+   137→      className="flex w-full items-center justify-between gap-3 py-1.5 text-left transition active:scale-[0.99]"
+   138→    >
+   139→      <span className="min-w-0">
+   140→        <span className="block text-[13px] font-semibold text-ink">{label}</span>
+   141→        {hint && <span className="mt-0.5 block text-[10.5px] leading-4 text-mute">{hint}</span>}
+   142→      </span>
+   143→      <span
+   144→        className={cx(
+   145→          "relative h-7 w-12 shrink-0 rounded-full transition-colors",
+   146→          checked ? "bg-brand" : "bg-line2"
+   147→        )}
+   148→        aria-hidden
+   149→      >
+   150→        <span
+   151→          className={cx(
+   152→            "absolute top-1 h-5 w-5 rounded-full bg-white shadow-key transition-all duration-200",
+   153→            checked ? "left-6" : "left-1"
+   154→          )}
+   155→        />
+   156→      </span>
+   157→    </button>
+   158→  );
+   159→}
+   160→
+   161→function DueBadge({ dueDate }: { dueDate: string }) {
+   162→  const st = dueStatus(dueMs(dueDate));
+   163→  return (
+   164→    <span
+   165→      className={cx(
+   166→        "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold",
+   167→        st === "overdue" ? "bg-negsoft text-neg" : st === "today" ? "bg-amber/15 text-amber" : "bg-surface2 text-mute"
+   168→      )}
+   169→    >
+   170→      <CalendarClock size={11} aria-hidden />
+   171→      {st === "overdue" ? "Overdue · " : st === "today" ? "Due today · " : "Due "}
+   172→      {fdShort(dueDate)}
+   173→    </span>
+   174→  );
+   175→}
+   176→
+   177→/** 44px touch target checkbox with a compact visual box. */
+   178→function TickCheckbox({
+   179→  checked,
+   180→  onChange,
+   181→  name,
+   182→}: {
+   183→  checked: boolean;
+   184→  onChange: (v: boolean) => void;
+   185→  name: string;
+   186→}) {
+   187→  return (
+   188→    <button
+   189→      type="button"
+   190→      role="checkbox"
+   191→      aria-checked={checked}
+   192→      aria-label={`Mark ${name} as paid`}
+   193→      onClick={() => onChange(!checked)}
+   194→      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition active:scale-90"
+   195→    >
+   196→      <span
+   197→        className={cx(
+   198→          "flex h-6 w-6 items-center justify-center rounded-[8px] border-2 transition",
+   199→          checked ? "border-brand bg-brand text-white" : "border-line2 bg-surface text-transparent"
+   200→        )}
+   201→        aria-hidden
+   202→      >
+   203→        <Check size={14} strokeWidth={3} />
+   204→      </span>
+   205→    </button>
+   206→  );
+   207→}
+   208→
+   209→/** Numeric input with local draft state — commits on blur, CalcButton optional. */
+   210→function NumField({
+   211→  value,
+   212→  onCommit,
+   213→  ariaLabel,
+   214→  placeholder,
+   215→  calc,
+   216→  className,
+   217→}: {
+   218→  value: number;
+   219→  onCommit: (n: number) => void;
+   220→  ariaLabel: string;
+   221→  placeholder?: string;
+   222→  calc?: boolean;
+   223→  className?: string;
+   224→}) {
+   225→  const [text, setText] = useState(value ? String(value) : "");
+   226→  return (
+   227→    <div className="flex w-full items-center gap-2">
+   228→      <input
+   229→        value={text}
+   230→        inputMode="decimal"
+   231→        placeholder={placeholder || "0"}
+   232→        aria-label={ariaLabel}
+   233→        onChange={(e) => setText(e.target.value)}
+   234→        onBlur={() => onCommit(parseNum(text))}
+   235→        className={cx(inputCls, "py-2.5 text-[13px] font-semibold tabular-nums", className)}
+   236→      />
+   237→      {calc && (
+   238→        <CalcButton
+   239→          onPick={(v) => {
+   240→            setText(v ? String(v) : "");
+   241→            onCommit(r2(v));
+   242→          }}
+   243→        />
+   244→      )}
+   245→    </div>
+   246→  );
+   247→}
+   248→
+   249→/** Bottom-sheet list action row. */
+   250→function ActionRow({
+   251→  icon: Icon,
+   252→  label,
+   253→  sub,
+   254→  danger,
+   255→  onClick,
+   256→}: {
+   257→  icon: typeof Bell;
+   258→  label: string;
+   259→  sub?: string;
+   260→  danger?: boolean;
+   261→  onClick: () => void;
+   262→}) {
+   263→  return (
+   264→    <button
+   265→      type="button"
+   266→      onClick={onClick}
+   267→      className={cx(
+   268→        "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition active:scale-[0.98]",
+   269→        danger ? "text-neg hover:bg-negsoft/50" : "hover:bg-surface2"
+   270→      )}
+   271→    >
+   272→      <Icon size={17} className={danger ? "text-neg" : "text-brand"} aria-hidden />
+   273→      <span className="min-w-0 flex-1">
+   274→        <span className="block text-[13px] font-semibold text-ink">{label}</span>
+   275→        {sub && <span className="block text-[10.5px] text-mute">{sub}</span>}
+   276→      </span>
+   277→    </button>
+   278→  );
+   279→}
+   280→
+   281→/** Footer quick action (44px target). */
+   282→function FooterAction({
+   283→  icon,
+   284→  label,
+   285→  onClick,
+   286→}: {
+   287→  icon: ReactNode;
+   288→  label: string;
+   289→  onClick: () => void;
+   290→}) {
+   291→  return (
+   292→    <button
+   293→      type="button"
+   294→      onClick={onClick}
+   295→      aria-label={label}
+   296→      className="flex h-11 flex-col items-center justify-center gap-0.5 rounded-2xl border border-line bg-surface text-[9px] font-bold text-mute shadow-key transition hover:bg-surface2 active:scale-95"
+   297→    >
+   298→      <span className="text-brand">{icon}</span>
+   299→      {label}
+   300→    </button>
+   301→  );
+   302→}
+   303→
+   304→/** Add-payment bottom sheet — shared by entry + item payment histories. */
+   305→function AddPaymentSheet({
+   306→  open,
+   307→  onClose,
+   308→  remaining,
+   309→  currency,
+   310→  onSubmit,
+   311→}: {
+   312→  open: boolean;
+   313→  onClose: () => void;
+   314→  remaining: number;
+   315→  currency: string;
+   316→  onSubmit: (p: { amount: number; date: string; note?: string; method?: string }) => void;
+   317→}) {
+   318→  const [amount, setAmount] = useState("");
+   319→  const [date, setDate] = useState(todayStr());
+   320→  const [note, setNote] = useState("");
+   321→  const [method, setMethod] = useState("cash");
+   322→  if (!open) return null;
+   323→
+   324→  const submit = () => {
+   325→    const amt = parseNum(amount);
+   326→    if (amt <= 0) {
+   327→      toastErr("Enter an amount greater than 0");
+   328→      return;
+   329→    }
+   330→    onSubmit({ amount: r2(amt), date: date || todayStr(), note: note.trim() || undefined, method });
+   331→  };
+   332→
+   333→  return (
+   334→    <BottomSheet open={open} onClose={onClose} title="Add payment">
+   335→      <Field label="Amount">
+   336→        <div className="flex w-full items-center gap-2">
+   337→          <input
+   338→            value={amount}
+   339→            onChange={(e) => setAmount(e.target.value)}
+   340→            inputMode="decimal"
+   341→            placeholder="0"
+   342→            aria-label="Payment amount"
+   343→            className={cx(inputCls, "text-lg font-bold tabular-nums")}
+   344→          />
+   345→          <CalcButton onPick={(v) => setAmount(String(v))} />
+   346→        </div>
+   347→      </Field>
+   348→      {remaining > 0.005 && (
+   349→        <button
+   350→          type="button"
+   351→          onClick={() => setAmount(String(remaining))}
+   352→          className="mt-2 flex items-center gap-1.5 rounded-full bg-brandsoft px-3 py-1.5 text-[11px] font-bold text-brand transition active:scale-95"
+   353→          aria-label="Fill full remaining amount"
+   354→        >
+   355→          <HandCoins size={12} aria-hidden /> Full remaining: <Money value={remaining} currency={currency} />
+   356→        </button>
+   357→      )}
+   358→      <div className="mt-3 grid grid-cols-2 gap-2">
+   359→        <Field label="Date">
+   360→          <input
+   361→            type="date"
+   362→            value={date}
+   363→            onChange={(e) => setDate(e.target.value)}
+   364→            aria-label="Payment date"
+   365→            className={inputCls}
+   366→          />
+   367→        </Field>
+   368→        <Field label="Method">
+   369→          <select
+   370→            value={method}
+   371→            onChange={(e) => setMethod(e.target.value)}
+   372→            aria-label="Payment method"
+   373→            className={inputCls}
+   374→          >
+   375→            {PAYMENT_METHODS.map((m) => (
+   376→              <option key={m} value={m}>
+   377→                {m[0].toUpperCase() + m.slice(1)}
+   378→              </option>
+   379→            ))}
+   380→          </select>
+   381→        </Field>
+   382→      </div>
+   383→      <Field label="Note" className="mt-3">
+   384→        <input
+   385→          value={note}
+   386→          onChange={(e) => setNote(e.target.value)}
+   387→          placeholder="Optional note"
+   388→          aria-label="Payment note"
+   389→          className={inputCls}
+   390→        />
+   391→      </Field>
+   392→      <Button variant="brand" size="lg" className="mt-4 w-full" onClick={submit}>
+   393→        <Plus size={15} /> Add payment
+   394→      </Button>
+   395→    </BottomSheet>
+   396→  );
+   397→}
+   398→
+   399→/* ------------------------------------------------------------------ */
+   400→/* Item payment history (numbered rows, progress, add)                  */
+   401→/* ------------------------------------------------------------------ */
+   402→
+   403→function ItemPayments({ listId, item, currency }: { listId: ID; item: ListItem; currency: string }) {
+   404→  const confirm = useConfirm();
+   405→  const addItemPayment = useApp((s) => s.addItemPayment);
+   406→  const removeItemPayment = useApp((s) => s.removeItemPayment);
+   407→  const [payOpen, setPayOpen] = useState(false);
+   408→
+   409→  const lt = lineTotal(item);
+   410→  const paid = itemPaid(item);
+   411→  const rem = itemRemaining(item);
+   412→  const n = item.payments.length;
+   413→
+   414→  const remove = async (p: Payment, idx: number) => {
+   415→    const ok = await confirm({
+   416→      title: `Remove payment ${idx + 1}?`,
+   417→      message: `Payment of ${money(p.amount, currency)} on ${fd(p.date)} will be removed.`,
+   418→      confirmLabel: "Remove",
+   419→      tone: "danger",
+   420→    });
+   421→    if (!ok) return;
+   422→    removeItemPayment(listId, item.id, p.id);
+   423→    toastOk("Payment removed");
+   424→  };
+   425→
+   426→  return (
+   427→    <div className="rounded-2xl bg-surface2 p-3">
+   428→      <p className="mb-2 text-[10px] font-bold uppercase tracking-[1.5px] text-mute">Payments</p>
+   429→      {n === 0 && <p className="pb-1 text-[11px] text-mute">No payments yet</p>}
+   430→      <ol className="space-y-1">
+   431→        {item.payments.map((p, i) => (
+   432→          <li key={p.id} className="flex items-center gap-2 rounded-xl bg-surface px-2.5 py-1.5 shadow-key">
+   433→            <span className="w-3.5 shrink-0 text-[10.5px] font-bold tabular-nums text-mute">{i + 1}.</span>
+   434→            <span className="shrink-0 text-[11px] text-mute">{fdShort(p.date)}</span>
+   435→            <span className="shrink-0 text-[12px] font-bold text-ink">
+   436→              <Money value={p.amount} currency={currency} />
+   437→            </span>
+   438→            {(p.note || p.auto) && (
+   439→              <span className="min-w-0 flex-1 truncate text-[10px] text-mute">
+   440→                {p.auto === "tick" ? "Ticked" : p.auto === "settle" ? "Settle up" : p.note}
+   441→              </span>
+   442→            )}
+   443→            <IconButton
+   444→              label={`Remove payment ${i + 1}`}
+   445→              className="h-9 w-9 shrink-0"
+   446→              onClick={() => void remove(p, i)}
+   447→            >
+   448→              <X size={13} />
+   449→            </IconButton>
+   450→          </li>
+   451→        ))}
+   452→      </ol>
+   453→      {lt > 0.005 && n > 0 && <ProgressBar className="mt-2" value={(paid / lt) * 100} />}
+   454→      <p className="mt-1.5 text-[10.5px] text-mute">
+   455→        {n} payment{n !== 1 ? "s" : ""} ·{" "}
+   456→        {rem > 0.005 ? (
+   457→          <>
+   458→            <Money value={rem} currency={currency} /> left
+   459→          </>
+   460→        ) : rem < -0.005 ? (
+   461→          "overpaid"
+   462→        ) : (
+   463→          "all paid ✓"
+   464→        )}
+   465→      </p>
+   466→      <Button size="sm" variant="soft" className="mt-2 w-full" onClick={() => setPayOpen(true)}>
+   467→        <Plus size={13} /> Add payment
+   468→      </Button>
+   469→      <AddPaymentSheet
+   470→        open={payOpen}
+   471→        onClose={() => setPayOpen(false)}
+   472→        remaining={Math.max(rem, 0)}
+   473→        currency={currency}
+   474→        onSubmit={(p) => {
+   475→          addItemPayment(listId, item.id, p);
+   476→          toastOk("Payment added");
+   477→          setPayOpen(false);
+   478→        }}
+   479→      />
+   480→    </div>
+   481→  );
+   482→}
+   483→
+   484→/* ------------------------------------------------------------------ */
+   485→/* Per-row discount editor                                              */
+   486→/* ------------------------------------------------------------------ */
+   487→
+   488→function ItemDiscountField({ listId, item }: { listId: ID; item: ListItem }) {
+   489→  const updateListItem = useApp((s) => s.updateListItem);
+   490→  const [type, setType] = useState<ListDiscount["type"]>(item.discount?.type ?? "pct");
+   491→
+   492→  const commit = (t: ListDiscount["type"], v: number) => {
+   493→    updateListItem(listId, item.id, v > 0 ? { discount: { type: t, value: r2(v) } } : { discount: undefined });
+   494→  };
+   495→
+   496→  return (
+   497→    <div className="flex w-full items-center gap-2">
+   498→      <Segmented
+   499→        className="w-[116px] shrink-0"
+   500→        options={[
+   501→          { value: "pct", label: "%" },
+   502→          { value: "amount", label: "Amt" },
+   503→        ]}
+   504→        value={type}
+   505→        onChange={(t) => {
+   506→          setType(t);
+   507→          commit(t, item.discount?.value ?? 0);
+   508→        }}
+   509→      />
+   510→      <NumField
+   511→        value={item.discount?.value ?? 0}
+   512→        ariaLabel="Row discount value"
+   513→        onCommit={(v) => commit(type, v)}
+   514→      />
+   515→    </div>
+   516→  );
+   517→}
+   518→
+   519→/* ------------------------------------------------------------------ */
+   520→/* Calculating item row                                                 */
+   521→/* ------------------------------------------------------------------ */
+   522→
+   523→function CalcItemRow({
+   524→  listId,
+   525→  item,
+   526→  expanded,
+   527→  onToggleExpand,
+   528→  currency,
+   529→}: {
+   530→  listId: ID;
+   531→  item: ListItem;
+   532→  expanded: boolean;
+   533→  onToggleExpand: () => void;
+   534→  currency: string;
+   535→}) {
+   536→  const confirm = useConfirm();
+   537→  const toggleItemChecked = useApp((s) => s.toggleItemChecked);
+   538→  const updateListItem = useApp((s) => s.updateListItem);
+   539→  const removeListItem = useApp((s) => s.removeListItem);
+   540→
+   541→  const lt = lineTotal(item);
+   542→  const paid = itemPaid(item);
+   543→  const rem = itemRemaining(item);
+   544→  const tickCount = item.payments.filter((p) => p.auto === "tick").length;
+   545→
+   546→  const onTick = async (checked: boolean) => {
+   547→    if (!checked && tickCount > 0) {
+   548→      const ok = await confirm({
+   549→        title: "Remove tick payments?",
+   550→        message: `Ticking added ${tickCount} payment${tickCount !== 1 ? "s" : ""}. Unticking will remove them.`,
+   551→        confirmLabel: "Remove",
+   552→        tone: "danger",
+   553→      });
+   554→      if (!ok) return; // checkbox stays checked — it is store-controlled
+   555→    }
+   556→    toggleItemChecked(listId, item.id, checked);
+   557→  };
+   558→
+   559→  const removeItem = async () => {
+   560→    const ok = await confirm({
+   561→      title: `Remove “${item.name}”?`,
+   562→      message: "The row and its payment history are removed from this list.",
+   563→      confirmLabel: "Remove",
+   564→      tone: "danger",
+   565→    });
+   566→    if (!ok) return;
+   567→    removeListItem(listId, item.id);
+   568→    toastOk("Item removed");
+   569→  };
+   570→
+   571→  return (
+   572→    <div className="rounded-2xl border border-line bg-surface shadow-key">
+   573→      {/* collapsed */}
+   574→      <div className="flex items-center gap-1 p-2.5 pl-1.5">
+   575→        <TickCheckbox checked={item.checked} onChange={(v) => void onTick(v)} name={item.name} />
+   576→        <button
+   577→          type="button"
+   578→          onClick={onToggleExpand}
+   579→          aria-expanded={expanded}
+   580→          aria-label={`${item.name}. Tap to toggle row details.`}
+   581→          className="min-w-0 flex-1 py-1 text-left"
+   582→        >
+   583→          <span className="flex items-baseline justify-between gap-2">
+   584→            <span
+   585→              className={cx(
+   586→                "truncate text-[12.5px] font-semibold text-ink",
+   587→                item.checked && "line-through decoration-line2"
+   588→              )}
+   589→            >
+   590→              {item.name}
+   591→            </span>
+   592→            <span className="shrink-0 text-[12.5px] font-bold text-ink">
+   593→              <Money value={lt} currency={currency} />
+   594→            </span>
+   595→          </span>
+   596→          <span className="mt-0.5 flex items-baseline justify-between gap-2">
+   597→            <span className="truncate text-[10.5px] tabular-nums text-mute">
+   598→              {item.qty}
+   599→              {item.unit ? ` ${item.unit}` : ""} × {item.unitPrice.toLocaleString("en-US")}
+   600→              {item.date ? ` · ${fdShort(item.date)}` : ""}
+   601→            </span>
+   602→            {paid > 0.005 && rem > 0.005 && (
+   603→              <span className="shrink-0 text-[10px] font-bold text-amber">
+   604→                Paid <Money value={paid} currency={currency} /> / <Money value={lt} currency={currency} />
+   605→              </span>
+   606→            )}
+   607→          </span>
+   608→          {paid > 0.005 && rem > 0.005 && (
+   609→            <span className="mt-1.5 block">
+   610→              <ProgressBar value={lt > 0.005 ? (paid / lt) * 100 : 0} />
+   611→            </span>
+   612→          )}
+   613→        </button>
+   614→        <button
+   615→          type="button"
+   616→          onClick={onToggleExpand}
+   617→          aria-label="Toggle item details"
+   618→          className="flex h-11 w-9 shrink-0 items-center justify-center rounded-xl text-mute transition hover:bg-surface2"
+   619→        >
+   620→          <ChevronDown size={16} className={cx("transition-transform", expanded && "rotate-180")} />
+   621→        </button>
+   622→      </div>
+   623→
+   624→      {/* badges */}
+   625→      {(rem <= 0.005 && lt > 0.005) || item.dueDate ? (
+   626→        <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2.5 pl-[54px]">
+   627→          {rem <= 0.005 && lt > 0.005 && (
+   628→            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brandsoft px-2 py-0.5 text-[10px] font-bold text-pos">
+   629→              Paid ✓
+   630→            </span>
+   631→          )}
+   632→          {rem < -0.005 && (
+   633→            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-negsoft px-2 py-0.5 text-[10px] font-bold text-neg">
+   634→              Overpaid by <Money value={-rem} currency={currency} />
+   635→            </span>
+   636→          )}
+   637→          {item.dueDate && <DueBadge dueDate={item.dueDate} />}
+   638→        </div>
+   639→      ) : null}
+   640→
+   641→      {/* expanded panel */}
+   642→      <AnimatePresence initial={false}>
+   643→        {expanded && (
+   644→          <motion.div
+   645→            initial={{ height: 0, opacity: 0 }}
+   646→            animate={{ height: "auto", opacity: 1 }}
+   647→            exit={{ height: 0, opacity: 0 }}
+   648→            transition={{ duration: 0.18, ease: "easeOut" }}
+   649→            className="overflow-hidden"
+   650→          >
+   651→            <div className="space-y-3 border-t border-line px-3 py-3">
+   652→              <div className="grid grid-cols-2 gap-2">
+   653→                <Field label="Name" className="col-span-2">
+   654→                  <input
+   655→                    value={item.name}
+   656→                    onChange={(e) => updateListItem(listId, item.id, { name: e.target.value })}
+   657→                    aria-label="Item name"
+   658→                    className={cx(inputCls, "py-2.5 text-[13px]")}
+   659→                  />
+   660→                </Field>
+   661→                <Field label="Row date">
+   662→                  <input
+   663→                    type="date"
+   664→                    value={item.date ?? ""}
+   665→                    onChange={(e) => updateListItem(listId, item.id, { date: e.target.value || undefined })}
+   666→                    aria-label="Row date"
+   667→                    className={cx(inputCls, "py-2.5 text-[13px]")}
+   668→                  />
+   669→                </Field>
+   670→                <Field label="Due date">
+   671→                  <input
+   672→                    type="date"
+   673→                    value={item.dueDate ?? ""}
+   674→                    onChange={(e) => updateListItem(listId, item.id, { dueDate: e.target.value || undefined })}
+   675→                    aria-label="Item due date"
+   676→                    className={cx(inputCls, "py-2.5 text-[13px]")}
+   677→                  />
+   678→                </Field>
+   679→                <Field label="Qty">
+   680→                  <NumField
+   681→                    value={item.qty}
+   682→                    ariaLabel="Quantity"
+   683→                    onCommit={(v) => updateListItem(listId, item.id, { qty: v })}
+   684→                  />
+   685→                </Field>
+   686→                <Field label="Unit">
+   687→                  <input
+   688→                    value={item.unit ?? ""}
+   689→                    onChange={(e) => updateListItem(listId, item.id, { unit: e.target.value || undefined })}
+   690→                    placeholder="pcs, kg…"
+   691→                    aria-label="Unit"
+   692→                    className={cx(inputCls, "py-2.5 text-[13px]")}
+   693→                  />
+   694→                </Field>
+   695→                <Field label="Unit price" className="col-span-2">
+   696→                  <NumField
+   697→                    calc
+   698→                    value={item.unitPrice}
+   699→                    ariaLabel="Unit price"
+   700→                    onCommit={(v) => updateListItem(listId, item.id, { unitPrice: r2(v) })}
+   701→                  />
+   702→                </Field>
+   703→                <Field label="Row discount" className="col-span-2">
+   704→                  <ItemDiscountField listId={listId} item={item} />
+   705→                </Field>
+   706→                <Field label="Tax %" className="col-span-2">
+   707→                  <NumField
+   708→                    value={item.taxPct ?? 0}
+   709→                    ariaLabel="Row tax percent"
+   710→                    onCommit={(v) => updateListItem(listId, item.id, { taxPct: v > 0 ? r2(v) : undefined })}
+   711→                  />
+   712→                </Field>
+   713→                <Field label="Note" className="col-span-2">
+   714→                  <input
+   715→                    value={item.note ?? ""}
+   716→                    onChange={(e) => updateListItem(listId, item.id, { note: e.target.value || undefined })}
+   717→                    placeholder="Optional note"
+   718→                    aria-label="Item note"
+   719→                    className={cx(inputCls, "py-2.5 text-[13px]")}
+   720→                  />
+   721→                </Field>
+   722→              </div>
+   723→
+   724→              <ItemPayments listId={listId} item={item} currency={currency} />
+   725→
+   726→              <Button
+   727→                variant="surface"
+   728→                size="sm"
+   729→                className="w-full text-neg"
+   730→                onClick={() => void removeItem()}
+   731→              >
+   732→                <Trash2 size={13} /> Remove item
+   733→              </Button>
+   734→            </div>
+   735→          </motion.div>
+   736→        )}
+   737→      </AnimatePresence>
+   738→    </div>
+   739→  );
+   740→}
+   741→
+   742→/* ------------------------------------------------------------------ */
+   743→/* Plain (non-calculating) items — checklist / todo / simple            */
+   744→/* ------------------------------------------------------------------ */
+   745→
+   746→function PlainItems({ list }: { list: CalcList }) {
+   747→  const confirm = useConfirm();
+   748→  const toggleItemChecked = useApp((s) => s.toggleItemChecked);
+   749→  const removeListItem = useApp((s) => s.removeListItem);
+   750→
+   751→  const done = list.items.filter((i) => i.checked).length;
+   752→  const total = list.items.length;
+   753→
+   754→  const onRemove = async (item: ListItem) => {
+   755→    const ok = await confirm({
+   756→      title: `Remove “${item.name}”?`,
+   757→      message: "The row is removed from this list.",
+   758→      confirmLabel: "Remove",
+   759→      tone: "danger",
+   760→    });
+   761→    if (!ok) return;
+   762→    removeListItem(list.id, item.id);
+   763→    toastOk("Item removed");
+   764→  };
+   765→
+   766→  const onTick = async (item: ListItem, checked: boolean) => {
+   767→    const tickCount = item.payments.filter((p) => p.auto === "tick").length;
+   768→    if (!checked && tickCount > 0) {
+   769→      const ok = await confirm({
+   770→        title: "Remove tick payments?",
+   771→        message: `Ticking added ${tickCount} payment${tickCount !== 1 ? "s" : ""}. Unticking will remove them.`,
+   772→        confirmLabel: "Remove",
+   773→        tone: "danger",
+   774→      });
+   775→      if (!ok) return;
+   776→    }
+   777→    toggleItemChecked(list.id, item.id, checked);
+   778→  };
+   779→
+   780→  return (
+   781→    <div className="space-y-2">
+   782→      {list.kind === "checklist" && total > 0 && (
+   783→        <div className="rounded-[22px] border border-line bg-surface p-4 shadow-key">
+   784→          <div className="flex items-center justify-between text-[11px] font-semibold text-mute">
+   785→            <span>
+   786→              {done} of {total} done
+   787→            </span>
+   788→            <span className="tabular-nums">{Math.round((done / total) * 100)}%</span>
+   789→          </div>
+   790→          <ProgressBar className="mt-2" value={(done / total) * 100} />
+   791→        </div>
+   792→      )}
+   793→
+   794→      {list.items.map((item) => (
+   795→        <div key={item.id} onContextMenu={(e) => { e.preventDefault(); void onRemove(item); }}>
+   796→          <SwipeRow onLongPress={() => void onRemove(item)} className="rounded-2xl">
+   797→            <div className="flex items-center gap-1 rounded-2xl border border-line bg-surface p-2.5 pl-1.5 shadow-key">
+   798→              <TickCheckbox checked={item.checked} onChange={(v) => void onTick(item, v)} name={item.name} />
+   799→              <div className="min-w-0 flex-1 py-1">
+   800→                <p
+   801→                  className={cx(
+   802→                    "truncate text-[12.5px] font-semibold text-ink",
+   803→                    item.checked && "line-through decoration-line2"
+   804→                  )}
+   805→                >
+   806→                  {item.name}
+   807→                </p>
+   808→                {item.note && <p className="truncate text-[10.5px] text-mute">{item.note}</p>}
+   809→                {list.kind === "todo" && (item.priority || item.dueDate) && (
+   810→                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+   811→                    {item.priority && (
+   812→                      <span
+   813→                        className={cx(
+   814→                          "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-bold",
+   815→                          PRIORITY_META[item.priority].cls
+   816→                        )}
+   817→                      >
+   818→                        {PRIORITY_META[item.priority].label}
+   819→                      </span>
+   820→                    )}
+   821→                    {item.dueDate && <DueBadge dueDate={item.dueDate} />}
+   822→                  </div>
+   823→                )}
+   824→              </div>
+   825→            </div>
+   826→          </SwipeRow>
+   827→        </div>
+   828→      ))}
+   829→
+   830→      {!total && (
+   831→        <EmptyState
+   832→          icon={<ListPlus size={20} />}
+   833→          title="No items yet"
+   834→          hint="Add the first item below — long-press any row to remove it."
+   835→        />
+   836→      )}
+   837→    </div>
+   838→  );
+   839→}
+   840→
+   841→/* ------------------------------------------------------------------ */
+   842→/* Add-item form                                                        */
+   843→/* ------------------------------------------------------------------ */
+   844→
+   845→function AddItemForm({ list }: { list: CalcList }) {
+   846→  const addListItem = useApp((s) => s.addListItem);
+   847→  const [open, setOpen] = useState(false);
+   848→  const [name, setName] = useState("");
+   849→  const [qty, setQty] = useState("1");
+   850→  const [unit, setUnit] = useState("");
+   851→  const [price, setPrice] = useState("");
+   852→  const [date, setDate] = useState(todayStr());
+   853→  const [note, setNote] = useState("");
+   854→  const [priority, setPriority] = useState<NonNullable<ListItem["priority"]>>("medium");
+   855→  const [dueDate, setDueDate] = useState("");
+   856→
+   857→  const isCalc = list.kind === "calculating";
+   858→  const isTodo = list.kind === "todo";
+   859→
+   860→  const submit = () => {
+   861→    if (!name.trim()) {
+   862→      toastErr("Give the item a name");
+   863→      return;
+   864→    }
+   865→    addListItem(list.id, {
+   866→      name: name.trim(),
+   867→      ...(isCalc
+   868→        ? {
+   869→            qty: parseNum(qty) > 0 ? r2(parseNum(qty)) : 1,
+   870→            unit: unit.trim() || undefined,
+   871→            unitPrice: r2(parseNum(price)),
+   872→            date: date || todayStr(),
+   873→          }
+   874→        : {}),
+   875→      note: note.trim() || undefined,
+   876→      ...(isTodo ? { priority, dueDate: dueDate || undefined } : {}),
+   877→    });
+   878→    toastOk("Item added");
+   879→    setName("");
+   880→    setNote("");
+   881→    setPrice("");
+   882→    setQty("1");
+   883→    setUnit("");
+   884→    setDueDate("");
+   885→    setPriority("medium");
+   886→  };
+   887→
+   888→  return (
+   889→    <div className="rounded-[22px] border border-line bg-surface shadow-key">
+   890→      <button
+   891→        type="button"
+   892→        onClick={() => setOpen((v) => !v)}
+   893→        aria-expanded={open}
+   894→        className="flex w-full items-center justify-between px-4 py-3.5 text-left"
+   895→      >
+   896→        <span className="flex items-center gap-2 text-[13px] font-bold text-brand">
+   897→          <Plus size={16} aria-hidden /> Add item
+   898→        </span>
+   899→        <ChevronDown size={16} className={cx("text-mute transition-transform", open && "rotate-180")} aria-hidden />
+   900→      </button>
+   901→      <AnimatePresence initial={false}>
+   902→        {open && (
+   903→          <motion.div
+   904→            initial={{ height: 0, opacity: 0 }}
+   905→            animate={{ height: "auto", opacity: 1 }}
+   906→            exit={{ height: 0, opacity: 0 }}
+   907→            transition={{ duration: 0.18, ease: "easeOut" }}
+   908→            className="overflow-hidden"
+   909→          >
+   910→            <div className="space-y-3 border-t border-line px-4 py-3.5">
+   911→              <Field label="Name">
+   912→                <input
+   913→                  value={name}
+   914→                  onChange={(e) => setName(e.target.value)}
+   915→                  placeholder="Item name"
+   916→                  aria-label="Item name"
+   917→                  className={inputCls}
+   918→                />
+   919→              </Field>
+   920→              {isCalc && (
+   921→                <>
+   922→                  <div className="grid grid-cols-[1fr_92px] gap-2">
+   923→                    <Field label="Qty">
+   924→                      <input
+   925→                        value={qty}
+   926→                        onChange={(e) => setQty(e.target.value)}
+   927→                        inputMode="decimal"
+   928→                        aria-label="Quantity"
+   929→                        className={inputCls}
+   930→                      />
+   931→                    </Field>
+   932→                    <Field label="Unit">
+   933→                      <input
+   934→                        value={unit}
+   935→                        onChange={(e) => setUnit(e.target.value)}
+   936→                        placeholder="kg"
+   937→                        aria-label="Unit"
+   938→                        className={inputCls}
+   939→                      />
+   940→                    </Field>
+   941→                  </div>
+   942→                  <Field label="Unit price">
+   943→                    <div className="flex w-full items-center gap-2">
+   944→                      <input
+   945→                        value={price}
+   946→                        onChange={(e) => setPrice(e.target.value)}
+   947→                        inputMode="decimal"
+   948→                        placeholder="0"
+   949→                        aria-label="Unit price"
+   950→                        className={inputCls}
+   951→                      />
+   952→                      <CalcButton onPick={(v) => setPrice(String(v))} />
+   953→                    </div>
+   954→                  </Field>
+   955→                  <Field label="Row date" hint="Same item can appear on different days at different prices">
+   956→                    <input
+   957→                      type="date"
+   958→                      value={date}
+   959→                      onChange={(e) => setDate(e.target.value)}
+   960→                      aria-label="Row date"
+   961→                      className={inputCls}
+   962→                    />
+   963→                  </Field>
+   964→                </>
+   965→              )}
+   966→              {isTodo && (
+   967→                <>
+   968→                  <Field label="Priority">
+   969→                    <Segmented
+   970→                      options={[
+   971→                        { value: "low", label: "Low" },
+   972→                        { value: "medium", label: "Medium" },
+   973→                        { value: "high", label: "High" },
+   974→                      ]}
+   975→                      value={priority}
+   976→                      onChange={setPriority}
+   977→                    />
+   978→                  </Field>
+   979→                  <Field label="Due date">
+   980→                    <input
+   981→                      type="date"
+   982→                      value={dueDate}
+   983→                      onChange={(e) => setDueDate(e.target.value)}
+   984→                      aria-label="Item due date"
+   985→                      className={inputCls}
+   986→                    />
+   987→                  </Field>
+   988→                </>
+   989→              )}
+   990→              <Field label="Note">
+   991→                <input
+   992→                  value={note}
+   993→                  onChange={(e) => setNote(e.target.value)}
+   994→                  placeholder="Optional note"
+   995→                  aria-label="Item note"
+   996→                  className={inputCls}
+   997→                />
+   998→              </Field>
+   999→              <Button variant="brand" size="lg" className="w-full" onClick={submit}>
+  1000→                <Plus size={15} /> Add item
+  1001→              </Button>
+  1002→            </div>
+  1003→          </motion.div>
+  1004→        )}
+  1005→      </AnimatePresence>
+  1006→    </div>
+  1007→  );
+  1008→}
+  1009→
+  1010→/* ------------------------------------------------------------------ */
+  1011→/* Totals & charges sheet                                               */
+  1012→/* ------------------------------------------------------------------ */
+  1013→
+  1014→function TotalsSheet({ open, onClose, list }: { open: boolean; onClose: () => void; list: CalcList }) {
+  1015→  const saveList = useApp((s) => s.saveList);
+  1016→  const settings = useApp((s) => s.settings);
+  1017→  const [dType, setDType] = useState<ListDiscount["type"]>(list.discount?.type ?? "pct");
+  1018→  const [dVal, setDVal] = useState(list.discount?.value ? String(list.discount.value) : "");
+  1019→  const [tax, setTax] = useState(list.taxPct ? String(list.taxPct) : "");
+  1020→  const [extra, setExtra] = useState(list.extraCharge ? String(list.extraCharge) : "");
+  1021→  if (!open) return null;
+  1022→
+  1023→  const dv = parseNum(dVal);
+  1024→  const tv = parseNum(tax);
+  1025→  const ev = parseNum(extra);
+  1026→  const currency = list.currency || settings.currency;
+  1027→  const preview = listTotals({
+  1028→    ...list,
+  1029→    discount: dv > 0 ? { type: dType, value: r2(dv) } : undefined,
+  1030→    taxPct: tv > 0 ? r2(tv) : undefined,
+  1031→    extraCharge: ev > 0 ? r2(ev) : undefined,
+  1032→  });
+  1033→
+  1034→  const apply = () => {
+  1035→    saveList({
+  1036→      id: list.id,
+  1037→      ownerId: list.ownerId,
+  1038→      title: list.title,
+  1039→      // zero-value discount object ≙ no discount (saveList keeps undefined as-is)
+  1040→      discount: dv > 0 ? { type: dType, value: r2(dv) } : { type: dType, value: 0 },
+  1041→      taxPct: tv > 0 ? r2(tv) : 0,
+  1042→      extraCharge: ev > 0 ? r2(ev) : 0,
+  1043→    });
+  1044→    toastOk("Totals updated");
+  1045→    onClose();
+  1046→  };
+  1047→
+  1048→  return (
+  1049→    <BottomSheet open={open} onClose={onClose} title="Totals & charges">
+  1050→      <Field label="List discount">
+  1051→        <div className="flex w-full items-center gap-2">
+  1052→          <Segmented
+  1053→            className="w-[116px] shrink-0"
+  1054→            options={[
+  1055→              { value: "pct", label: "%" },
+  1056→              { value: "amount", label: "Amt" },
+  1057→            ]}
+  1058→            value={dType}
+  1059→            onChange={setDType}
+  1060→          />
+  1061→          <input
+  1062→            value={dVal}
+  1063→            onChange={(e) => setDVal(e.target.value)}
+  1064→            inputMode="decimal"
+  1065→            placeholder="0"
+  1066→            aria-label="Discount value"
+  1067→            className={inputCls}
+  1068→          />
+  1069→          <CalcButton onPick={(v) => setDVal(String(v))} />
+  1070→        </div>
+  1071→      </Field>
+  1072→      <div className="mt-3 grid grid-cols-2 gap-2">
+  1073→        <Field label="Tax %">
+  1074→          <input
+  1075→            value={tax}
+  1076→            onChange={(e) => setTax(e.target.value)}
+  1077→            inputMode="decimal"
+  1078→            placeholder="0"
+  1079→            aria-label="Tax percent"
+  1080→            className={inputCls}
+  1081→          />
+  1082→        </Field>
+  1083→        <Field label="Extra charge">
+  1084→          <input
+  1085→            value={extra}
+  1086→            onChange={(e) => setExtra(e.target.value)}
+  1087→            inputMode="decimal"
+  1088→            placeholder="0"
+  1089→            aria-label="Extra charge"
+  1090→            className={inputCls}
+  1091→          />
+  1092→        </Field>
+  1093→      </div>
+  1094→
+  1095→      {/* live preview */}
+  1096→      <div className="mt-4 rounded-2xl bg-surface2 p-3.5">
+  1097→        <p className="mb-2 text-[10px] font-bold uppercase tracking-[1.5px] text-mute">Preview</p>
+  1098→        <div className="space-y-1.5 text-[11.5px] text-mute">
+  1099→          <div className="flex justify-between">
+  1100→            <span>Subtotal</span>
+  1101→            <span className="font-semibold text-ink">
+  1102→              <Money value={preview.subtotal} currency={currency} />
+  1103→            </span>
+  1104→          </div>
+  1105→          {preview.listDiscount > 0 && (
+  1106→            <div className="flex justify-between">
+  1107→              <span>Discount</span>
+  1108→              <span className="font-semibold text-pos">
+  1109→                − <Money value={preview.listDiscount} currency={currency} />
+  1110→              </span>
+  1111→            </div>
+  1112→          )}
+  1113→          {preview.listTax > 0 && (
+  1114→            <div className="flex justify-between">
+  1115→              <span>Tax</span>
+  1116→              <span className="font-semibold text-ink">
+  1117→                + <Money value={preview.listTax} currency={currency} />
+  1118→              </span>
+  1119→            </div>
+  1120→          )}
+  1121→          {preview.extra > 0 && (
+  1122→            <div className="flex justify-between">
+  1123→              <span>Extra</span>
+  1124→              <span className="font-semibold text-ink">
+  1125→                + <Money value={preview.extra} currency={currency} />
+  1126→              </span>
+  1127→            </div>
+  1128→          )}
+  1129→          <div className="flex justify-between border-t border-line pt-1.5 text-[12.5px] font-bold text-ink">
+  1130→            <span>Total</span>
+  1131→            <span>
+  1132→              <Money value={preview.grand} currency={currency} />
+  1133→            </span>
+  1134→          </div>
+  1135→          <div className="flex justify-between text-[10.5px]">
+  1136→            <span>Paid</span>
+  1137→            <span className="text-pos">
+  1138→              <Money value={preview.paid} currency={currency} />
+  1139→            </span>
+  1140→          </div>
+  1141→          <div className="flex justify-between text-[10.5px] font-bold">
+  1142→            <span>Pending</span>
+  1143→            <span className={preview.pending > 0.005 ? "text-neg" : "text-pos"}>
+  1144→              <Money value={preview.pending} currency={currency} />
+  1145→            </span>
+  1146→          </div>
+  1147→        </div>
+  1148→      </div>
+  1149→
+  1150→      <Button variant="brand" size="lg" className="mt-4 w-full" onClick={apply}>
+  1151→        <Check size={15} /> Apply
+  1152→      </Button>
+  1153→    </BottomSheet>
+  1154→  );
+  1155→}
+  1156→
+  1157→/* ================================================================== */
+  1158→/* ListDetail                                                           */
+  1159→/* ================================================================== */
+  1160→
+  1161→export function ListDetail({ listId }: { listId: ID }) {
+  1162→  const ui = useUI();
+  1163→  const confirm = useConfirm();
+  1164→  const list = useApp((s) => s.lists.find((l) => l.id === listId && !l.deletedAt));
+  1165→  const contacts = useApp((s) => s.contacts);
+  1166→  const settings = useApp((s) => s.settings);
+  1167→
+  1168→  const saveList = useApp((s) => s.saveList);
+  1169→  const deleteList = useApp((s) => s.deleteList);
+  1170→  const duplicateList = useApp((s) => s.duplicateList);
+  1171→  const moveEntity = useApp((s) => s.moveEntity);
+  1172→  const markAllPaid = useApp((s) => s.markAllPaid);
+  1173→  const clearPaid = useApp((s) => s.clearPaid);
+  1174→  const saveReminder = useApp((s) => s.saveReminder);
+  1175→  const logMessage = useApp((s) => s.logMessage);
+  1176→
+  1177→  const [menuOpen, setMenuOpen] = useState(false);
+  1178→  const [shareOpen, setShareOpen] = useState(false);
+  1179→  const [totalsOpen, setTotalsOpen] = useState(false);
+  1180→  const [ownerPickerOpen, setOwnerPickerOpen] = useState(false);
+  1181→  const [groupOn, setGroupOn] = useState(false);
+  1182→  const [openGroupId, setOpenGroupId] = useState<ID | null>(null);
+  1183→  const [expandedItemId, setExpandedItemId] = useState<ID | null>(null);
+  1184→
+  1185→  if (!list) {
+  1186→    return (
+  1187→      <Sheet title="List" onBack={() => ui.pop()}>
+  1188→        <div className="px-4 py-6">
+  1189→          <EmptyState icon={<List size={22} />} title="List not found" hint="It may have been deleted." />
+  1190→        </div>
+  1191→      </Sheet>
+  1192→    );
+  1193→  }
+  1194→
+  1195→  const isCalc = list.kind === "calculating";
+  1196→  const totals = listTotals(list);
+  1197→  const ownerContact = list.ownerId === "general" ? null : contacts.find((c) => c.id === list.ownerId) ?? null;
+  1198→  const ownerName = ownerContact ? displayName(ownerContact) : "General";
+  1199→  const phone = primaryPhone(ownerContact);
+  1200→  const currency = list.currency || settings.currency;
+  1201→  const KindIcon = KIND_META[list.kind].icon;
+  1202→
+  1203→  const shareText = () => listShareText(list, ownerContact, currency);
+  1204→
+  1205→  const onWhatsApp = () => {
+  1206→    if (!phone) {
+  1207→      toastErr(ownerContact ? "No phone number for this contact" : "General has no phone to send to");
+  1208→      return;
+  1209→    }
+  1210→    openExternal(waLink(phone, shareText()));
+  1211→    logMessage(list.ownerId, "whatsapp", shareText());
+  1212→  };
+  1213→  const onPdf = () => {
+  1214→    downloadBlob(listToPdfBlob(list, ownerContact, currency), `${safeName(list.title)}.pdf`);
+  1215→    toastOk("PDF downloaded");
+  1216→  };
+  1217→  const onCopy = async () => {
+  1218→    if (await copyText(shareText())) toastOk("Copied to clipboard");
+  1219→  };
+  1220→  const onReminder = () => {
+  1221→    const d = new Date();
+  1222→    d.setDate(d.getDate() + 1);
+  1223→    d.setHours(9, 0, 0, 0);
+  1224→    saveReminder({
+  1225→      ownerId: list.ownerId,
+  1226→      title: `Pending amount of ${list.title}`,
+  1227→      kind: "payment",
+  1228→      dueAt: d.getTime(),
+  1229→      links: [{ type: "list", id: list.id, label: list.title }],
+  1230→    });
+  1231→    toastOk("Reminder set for tomorrow 9:00");
+  1232→  };
+  1233→
+  1234→  const dupNextPeriod = () => {
+  1235→    const nid = duplicateList(list.id, { fresh: true });
+  1236→    if (nid) {
+  1237→      ui.open({ type: "list", listId: nid });
+  1238→      toastOk("Duplicated for next period");
+  1239→    }
+  1240→  };
+  1241→
+  1242→  const onClearPayments = async () => {
+  1243→    const ok = await confirm({
+  1244→      title: "Clear all payments?",
+  1245→      message: "Every payment row on every item is removed and ticks are reset.",
+  1246→      confirmLabel: "Clear",
+  1247→      tone: "danger",
+  1248→    });
+  1249→    if (!ok) return;
+  1250→    setMenuOpen(false);
+  1251→    clearPaid(list.id);
+  1252→    toastOk("Payments cleared");
+  1253→  };
+  1254→
+  1255→  const onDelete = async () => {
+  1256→    const ok = await confirm({
+  1257→      title: `Delete “${list.title}”?`,
+  1258→      message: "The list and its items move to Trash — you can undo from the toast.",
+  1259→      confirmLabel: "Delete",
+  1260→      tone: "danger",
+  1261→    });
+  1262→    if (!ok) return;
+  1263→    setMenuOpen(false);
+  1264→    deleteList(list.id);
+  1265→    toastUndoLast();
+  1266→    ui.pop();
+  1267→  };
+  1268→
+  1269→  const toggleExpand = (id: ID) => setExpandedItemId((cur) => (cur === id ? null : id));
+  1270→
+  1271→  const footer = (
+  1272→    <div>
+  1273→      {isCalc && (
+  1274→        <div className="flex items-baseline justify-between gap-2 px-0.5 pb-2">
+  1275→          <span className="text-[10px] font-bold uppercase tracking-[1px] text-mute">
+  1276→            Total{" "}
+  1277→            <span className="text-[13px] font-bold normal-case tracking-normal text-ink">
+  1278→              <Money value={totals.grand} currency={currency} />
+  1279→            </span>
+  1280→          </span>
+  1281→          <span className="text-[10px] font-bold uppercase tracking-[1px] text-mute">
+  1282→            Paid{" "}
+  1283→            <span className="text-[13px] font-bold normal-case tracking-normal text-pos">
+  1284→              <Money value={totals.paid} currency={currency} />
+  1285→            </span>
+  1286→          </span>
+  1287→          <span
+  1288→            className={cx(
+  1289→              "text-[13px] font-bold",
+  1290→              totals.pending > 0.005 ? "text-neg" : "text-pos"
+  1291→            )}
+  1292→          >
+  1293→            {totals.pending > 0.005 ? (
+  1294→              <>
+  1295→                Pending <Money value={totals.pending} currency={currency} />
+  1296→              </>
+  1297→            ) : (
+  1298→              "All settled ✓"
+  1299→            )}
+  1300→          </span>
+  1301→        </div>
+  1302→      )}
+  1303→      <div className="grid grid-cols-5 gap-1.5">
+  1304→        <FooterAction icon={<MessageCircle size={17} />} label="WhatsApp" onClick={onWhatsApp} />
+  1305→        <FooterAction icon={<FileText size={17} />} label="PDF" onClick={onPdf} />
+  1306→        <FooterAction icon={<Copy size={17} />} label="Copy" onClick={() => void onCopy()} />
+  1307→        <FooterAction icon={<Bell size={17} />} label="Remind" onClick={onReminder} />
+  1308→        <FooterAction icon={<Ellipsis size={17} />} label="More" onClick={() => setMenuOpen(true)} />
+  1309→      </div>
+  1310→    </div>
+  1311→  );
+  1312→
+  1313→  return (
+  1314→    <Sheet
+  1315→      title={list.title}
+  1316→      subtitle={`${KIND_META[list.kind].label} · ${ownerName}`}
+  1317→      onBack={() => ui.pop()}
+  1318→      actions={
+  1319→        <IconButton label="List actions" onClick={() => setMenuOpen(true)}>
+  1320→          <Ellipsis size={17} />
+  1321→        </IconButton>
+  1322→      }
+  1323→      footer={footer}
+  1324→    >
+  1325→      <div className="space-y-3 px-4 py-4 pb-8">
+  1326→        {/* sub-header card */}
+  1327→        <section className="rounded-[22px] border border-line bg-surface p-4 shadow-key" aria-label="List details">
+  1328→          <div className="flex flex-wrap items-center gap-1.5">
+  1329→            <button
+  1330→              type="button"
+  1331→              onClick={() => setOwnerPickerOpen(true)}
+  1332→              aria-label={`Owner: ${ownerName}. Tap to change.`}
+  1333→              className="flex items-center gap-1.5 rounded-full border border-line bg-surface2 py-1 pl-1.5 pr-2.5 text-[11px] font-semibold text-ink transition hover:bg-brandsoft active:scale-95"
+  1334→            >
+  1335→              {ownerContact ? (
+  1336→                <Avatar contact={ownerContact} size="xs" className="h-6 w-6 rounded-lg text-[9px]" />
+  1337→              ) : (
+  1338→                <Inbox size={12} className="text-mute" aria-hidden />
+  1339→              )}
+  1340→              {ownerName}
+  1341→              <ChevronRight size={12} className="text-mute" aria-hidden />
+  1342→            </button>
+  1343→            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brandsoft px-2.5 py-1 text-[10px] font-bold text-brand">
+  1344→              <KindIcon size={11} aria-hidden />
+  1345→              {KIND_META[list.kind].label}
+  1346→            </span>
+  1347→            {list.repeat !== "none" && (
+  1348→              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-surface2 px-2.5 py-1 text-[10px] font-bold text-mute">
+  1349→                <RepeatIcon size={11} aria-hidden /> {REPEAT_LABEL[list.repeat]}
+  1350→              </span>
+  1351→            )}
+  1352→            {isCalc && list.postToLedger && (
+  1353→              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber/10 px-2.5 py-1 text-[10px] font-bold text-amber">
+  1354→                <CircleDollarSign size={11} aria-hidden /> counts in balance
+  1355→              </span>
+  1356→            )}
+  1357→          </div>
+  1358→
+  1359→          {list.note && <p className="mt-2.5 text-[11.5px] leading-5 text-mute">{list.note}</p>}
+  1360→
+  1361→          {isCalc && (
+  1362→            <div className="mt-2.5 border-t border-line pt-1">
+  1363→              <Switch
+  1364→                checked={list.postToLedger}
+  1365→                onChange={(v) =>
+  1366→                  saveList({ id: list.id, ownerId: list.ownerId, title: list.title, postToLedger: v })
+  1367→                }
+  1368→                label={`Count pending in ${ownerName}'s balance`}
+  1369→                hint="The pending amount shows in the ledger balance"
+  1370→              />
+  1371→              {list.postToLedger && Math.abs(totals.pending) > 0.005 && (
+  1372→                <p className="mt-1 flex items-center gap-1 text-[10.5px] font-semibold text-amber">
+  1373→                  <CircleDollarSign size={12} className="shrink-0" aria-hidden />
+  1374→                  <span>
+  1375→                    Pending +<Money value={totals.pending} currency={currency} /> added to balance
+  1376→                  </span>
+  1377→                </p>
+  1378→              )}
+  1379→            </div>
+  1380→          )}
+  1381→
+  1382→          {list.repeat !== "none" && (
+  1383→            <Button variant="soft" size="sm" className="mt-3 w-full" onClick={dupNextPeriod}>
+  1384→              <RepeatIcon size={13} /> Duplicate for next period
+  1385→            </Button>
+  1386→          )}
+  1387→        </section>
+  1388→
+  1389→        {/* totals & charges */}
+  1390→        {isCalc && (
+  1391→          <section
+  1392→            className="cursor-pointer rounded-[22px] border border-line bg-surface p-4 shadow-key transition hover:bg-surface2 active:scale-[0.99]"
+  1393→            onClick={() => setTotalsOpen(true)}
+  1394→            aria-label="Totals and charges — tap to edit"
+  1395→            role="button"
+  1396→            tabIndex={0}
+  1397→            onKeyDown={(e) => {
+  1398→              if (e.key === "Enter" || e.key === " ") setTotalsOpen(true);
+  1399→            }}
+  1400→          >
+  1401→            <div className="flex items-center justify-between">
+  1402→              <p className="flex items-center gap-2 text-[12px] font-bold text-ink">
+  1403→                <Receipt size={15} className="text-brand" aria-hidden /> Totals &amp; charges
+  1404→              </p>
+  1405→              <span className="flex items-center gap-1 text-[10px] font-semibold text-mute">
+  1406→                Edit <ChevronRight size={13} aria-hidden />
+  1407→              </span>
+  1408→            </div>
+  1409→            <div className="mt-2.5 space-y-1 text-[11px] text-mute">
+  1410→              <div className="flex justify-between">
+  1411→                <span>Subtotal</span>
+  1412→                <span className="font-semibold text-ink">
+  1413→                  <Money value={totals.subtotal} currency={currency} />
+  1414→                </span>
+  1415→              </div>
+  1416→              {totals.listDiscount > 0 && (
+  1417→                <div className="flex justify-between">
+  1418→                  <span>Discount</span>
+  1419→                  <span className="font-semibold text-pos">
+  1420→                    − <Money value={totals.listDiscount} currency={currency} />
+  1421→                  </span>
+  1422→                </div>
+  1423→              )}
+  1424→              {totals.listTax > 0 && (
+  1425→                <div className="flex justify-between">
+  1426→                  <span>Tax</span>
+  1427→                  <span className="font-semibold text-ink">
+  1428→                    + <Money value={totals.listTax} currency={currency} />
+  1429→                  </span>
+  1430→                </div>
+  1431→              )}
+  1432→              {totals.extra > 0 && (
+  1433→                <div className="flex justify-between">
+  1434→                  <span>Extra charge</span>
+  1435→                  <span className="font-semibold text-ink">
+  1436→                    + <Money value={totals.extra} currency={currency} />
+  1437→                  </span>
+  1438→                </div>
+  1439→              )}
+  1440→              <div className="flex justify-between border-t border-line pt-1 text-[12px] font-bold text-ink">
+  1441→                <span>Total</span>
+  1442→                <span>
+  1443→                  <Money value={totals.grand} currency={currency} />
+  1444→                </span>
+  1445→              </div>
+  1446→            </div>
+  1447→          </section>
+  1448→        )}
+  1449→
+  1450→        {/* grouping toggle */}
+  1451→        {isCalc && (
+  1452→          <div className="rounded-[22px] border border-line bg-surface px-4 py-1.5 shadow-key">
+  1453→            <Switch
+  1454→              checked={groupOn}
+  1455→              onChange={(v) => {
+  1456→                setGroupOn(v);
+  1457→                if (!v) setOpenGroupId(null);
+  1458→              }}
+  1459→              label="Group same items"
+  1460→              hint="Combine rows with the same name & unit"
+  1461→            />
+  1462→          </div>
+  1463→        )}
+  1464→
+  1465→        {/* items */}
+  1466→        {isCalc ? (
+  1467→          <div className="space-y-2">
+  1468→            {groupOn
+  1469→              ? groupItems(list.items).map((group) => {
+  1470→                  const groupId = group[0].id;
+  1471→                  const gQty = group.reduce((s, i) => s + (+i.qty || 0), 0);
+  1472→                  const gTotal = r2(group.reduce((s, i) => s + lineTotal(i), 0));
+  1473→                  const gPaid = r2(group.reduce((s, i) => s + itemPaid(i), 0));
+  1474→                  const open = openGroupId === groupId;
+  1475→                  return (
+  1476→                    <div key={groupId} className="rounded-[22px] border border-line bg-surface2 p-2">
+  1477→                      <button
+  1478→                        type="button"
+  1479→                        onClick={() => setOpenGroupId(open ? null : groupId)}
+  1480→                        aria-expanded={open}
+  1481→                        className="flex w-full items-center gap-3 rounded-2xl px-2 py-2.5 text-left transition hover:bg-surface/60"
+  1482→                      >
+  1483→                        <span className="min-w-0 flex-1">
+  1484→                          <span className="block truncate text-[13px] font-bold text-ink">{group[0].name}</span>
+  1485→                          <span className="block truncate text-[10.5px] text-mute">
+  1486→                            {group.length} row{group.length !== 1 ? "s" : ""} · QTY {gQty}
+  1487→                            {group[0].unit ? ` ${group[0].unit}` : ""} · Paid{" "}
+  1488→                            <Money value={gPaid} currency={currency} />
+  1489→                          </span>
+  1490→                        </span>
+  1491→                        <span className="shrink-0 text-[13px] font-bold text-ink">
+  1492→                          <Money value={gTotal} currency={currency} />
+  1493→                        </span>
+  1494→                        <ChevronDown
+  1495→                          size={16}
+  1496→                          className={cx("shrink-0 text-mute transition-transform", open && "rotate-180")}
+  1497→                          aria-hidden
+  1498→                        />
+  1499→                      </button>
+  1500→                      <AnimatePresence initial={false}>
+  1501→                        {open && (
+  1502→                          <motion.div
+  1503→                            initial={{ height: 0, opacity: 0 }}
+  1504→                            animate={{ height: "auto", opacity: 1 }}
+  1505→                            exit={{ height: 0, opacity: 0 }}
+  1506→                            transition={{ duration: 0.18, ease: "easeOut" }}
+  1507→                            className="overflow-hidden"
+  1508→                          >
+  1509→                            <div className="space-y-2 px-1 pb-1 pt-1">
+  1510→                              {group.map((i) => (
+  1511→                                <CalcItemRow
+  1512→                                  key={i.id}
+  1513→                                  listId={list.id}
+  1514→                                  item={i}
+  1515→                                  expanded={expandedItemId === i.id}
+  1516→                                  onToggleExpand={() => toggleExpand(i.id)}
+  1517→                                  currency={currency}
+  1518→                                />
+  1519→                              ))}
+  1520→                            </div>
+  1521→                          </motion.div>
+  1522→                        )}
+  1523→                      </AnimatePresence>
+  1524→                    </div>
+  1525→                  );
+  1526→                })
+  1527→              : list.items.map((i) => (
+  1528→                  <CalcItemRow
+  1529→                    key={i.id}
+  1530→                    listId={list.id}
+  1531→                    item={i}
+  1532→                    expanded={expandedItemId === i.id}
+  1533→                    onToggleExpand={() => toggleExpand(i.id)}
+  1534→                    currency={currency}
+  1535→                  />
+  1536→                ))}
+  1537→            {list.items.length === 0 && (
+  1538→              <EmptyState
+  1539→                icon={<ListPlus size={20} />}
+  1540→                title="No items yet"
+  1541→                hint="Add the first item with the form below."
+  1542→              />
+  1543→            )}
+  1544→          </div>
+  1545→        ) : (
+  1546→          <PlainItems list={list} />
+  1547→        )}
+  1548→
+  1549→        {/* add item */}
+  1550→        <AddItemForm list={list} />
+  1551→
+  1552→        {/* attachments */}
+  1553→        <section className="rounded-[22px] border border-line bg-surface p-4 shadow-key" aria-label="Attachments">
+  1554→          <div className="flex items-center justify-between gap-2">
+  1555→            <p className="text-[10px] font-bold uppercase tracking-[1.5px] text-mute">Attachments</p>
+  1556→            <AttachButton
+  1557→              compact
+  1558→              parentType="list"
+  1559→              parentId={list.id}
+  1560→              onAttached={(meta) =>
+  1561→                saveList({
+  1562→                  id: list.id,
+  1563→                  ownerId: list.ownerId,
+  1564→                  title: list.title,
+  1565→                  attachments: [...list.attachments, meta.id],
+  1566→                })
+  1567→              }
+  1568→            />
+  1569→          </div>
+  1570→          <div className="mt-3">
+  1571→            {list.attachments.length > 0 ? (
+  1572→              <AttachmentStrip parentType="list" parentId={list.id} ids={list.attachments} />
+  1573→            ) : (
+  1574→              <p className="text-[10.5px] text-mute">Receipts or photos for this list — stored offline.</p>
+  1575→            )}
+  1576→          </div>
+  1577→        </section>
+  1578→      </div>
+  1579→
+  1580→      {/* ⋯ menu */}
+  1581→      <BottomSheet open={menuOpen} onClose={() => setMenuOpen(false)} title={list.title}>
+  1582→        <div className="space-y-1">
+  1583→          <ActionRow
+  1584→            icon={Pencil}
+  1585→            label="Rename / edit"
+  1586→            onClick={() => {
+  1587→              setMenuOpen(false);
+  1588→              ui.open({ type: "listEdit", listId: list.id, ownerId: list.ownerId });
+  1589→            }}
+  1590→          />
+  1591→          <ActionRow
+  1592→            icon={Copy}
+  1593→            label="Duplicate"
+  1594→            sub="Copy with payments as-is"
+  1595→            onClick={() => {
+  1596→              setMenuOpen(false);
+  1597→              const nid = duplicateList(list.id);
+  1598→              if (nid) {
+  1599→                ui.open({ type: "list", listId: nid });
+  1600→                toastOk("List duplicated");
+  1601→              }
+  1602→            }}
+  1603→          />
+  1604→          <ActionRow
+  1605→            icon={Bookmark}
+  1606→            label="Save as template"
+  1607→            onClick={() => {
+  1608→              duplicateList(list.id, { asTemplate: true });
+  1609→              setMenuOpen(false);
+  1610→              toastOk("Saved as template");
+  1611→            }}
+  1612→          />
+  1613→          {isCalc && (
+  1614→            <ActionRow
+  1615→              icon={CircleCheckBig}
+  1616→              label="All paid"
+  1617→              sub="Adds one payment per pending row"
+  1618→              onClick={() => {
+  1619→                setMenuOpen(false);
+  1620→                const n = markAllPaid(list.id);
+  1621→                toastOk(n > 0 ? `${n} item${n !== 1 ? "s" : ""} marked paid` : "Nothing pending");
+  1622→              }}
+  1623→            />
+  1624→          )}
+  1625→          {isCalc && (
+  1626→            <ActionRow
+  1627→              icon={RotateCcw}
+  1628→              label="Clear payments"
+  1629→              danger
+  1630→              onClick={() => void onClearPayments()}
+  1631→            />
+  1632→          )}
+  1633→          <ActionRow
+  1634→            icon={Share2}
+  1635→            label="Share…"
+  1636→            onClick={() => {
+  1637→              setMenuOpen(false);
+  1638→              setShareOpen(true);
+  1639→            }}
+  1640→          />
+  1641→          <ActionRow icon={Trash2} label="Delete list" danger onClick={() => void onDelete()} />
+  1642→        </div>
+  1643→      </BottomSheet>
+  1644→
+  1645→      {/* share sheet */}
+  1646→      <BottomSheet open={shareOpen} onClose={() => setShareOpen(false)} title="Share list">
+  1647→        <div className="space-y-1">
+  1648→          <ActionRow
+  1649→            icon={MessageCircle}
+  1650→            label="WhatsApp"
+  1651→            sub={phone ? `Send to ${ownerName}` : "No phone number available"}
+  1652→            onClick={onWhatsApp}
+  1653→          />
+  1654→          <ActionRow icon={FileText} label="PDF bill" sub="Download a clean bill" onClick={onPdf} />
+  1655→          <ActionRow icon={Copy} label="Copy text" sub="Paste it anywhere" onClick={() => void onCopy()} />
+  1656→        </div>
+  1657→      </BottomSheet>
+  1658→
+  1659→      {/* totals settings */}
+  1660→      {isCalc && <TotalsSheet open={totalsOpen} onClose={() => setTotalsOpen(false)} list={list} />}
+  1661→
+  1662→      {/* owner picker */}
+  1663→      <ContactPicker
+  1664→        open={ownerPickerOpen}
+  1665→        onClose={() => setOwnerPickerOpen(false)}
+  1666→        onPick={(id) => {
+  1667→          moveEntity("list", list.id, id as OwnerId);
+  1668→          toastOk("List moved");
+  1669→        }}
+  1670→      />
+  1671→    </Sheet>
+  1672→  );
+  1673→}
+  1674→
+  1675→/* ================================================================== */
+  1676→/* ListEdit                                                             */
+  1677→/* ================================================================== */
+  1678→
+  1679→export function ListEdit({
+  1680→  listId,
+  1681→  ownerId,
+  1682→  kind,
+  1683→}: {
+  1684→  listId?: ID;
+  1685→  ownerId: ID | "general";
+  1686→  kind?: ListKind;
+  1687→}) {
+  1688→  const ui = useUI();
+  1689→  const existing = useApp((s) => (listId ? s.lists.find((l) => l.id === listId && !l.deletedAt) : undefined));
+  1690→  const contacts = useApp((s) => s.contacts);
+  1691→  const saveList = useApp((s) => s.saveList);
+  1692→
+  1693→  const [title, setTitle] = useState(existing?.title ?? "");
+  1694→  const [note, setNote] = useState(existing?.note ?? "");
+  1695→  const [k, setK] = useState<ListKind>(kind ?? existing?.kind ?? "calculating");
+  1696→  const [repeat, setRepeat] = useState<Repeat>(existing?.repeat ?? "none");
+  1697→  const [asTemplate, setAsTemplate] = useState(existing?.isTemplate ?? false);
+  1698→  const [postToLedger, setPostToLedger] = useState(existing?.postToLedger ?? false);
+  1699→
+  1700→  const ownerContact = (existing?.ownerId ?? ownerId) === "general"
+  1701→    ? null
+  1702→    : contacts.find((c) => c.id === (existing?.ownerId ?? ownerId)) ?? null;
+  1703→  const ownerName = ownerContact ? displayName(ownerContact) : "General";
+  1704→  const kindFixed = !!listId || !!kind;
+  1705→
+  1706→  const save = () => {
+  1707→    if (!title.trim()) {
+  1708→      toastErr("Give the list a title");
+  1709→      return;
+  1710→    }
+  1711→    const saved = saveList({
+  1712→      ...(listId ? { id: listId } : {}),
+  1713→      ownerId: existing?.ownerId ?? ownerId,
+  1714→      title: title.trim(),
+  1715→      note: note.trim() || "",
+  1716→      kind: k,
+  1717→      repeat,
+  1718→      isTemplate: asTemplate,
+  1719→      ...(k === "calculating" ? { postToLedger } : {}),
+  1720→    });
+  1721→    toastOk(listId ? "List updated" : "List created");
+  1722→    if (!listId) {
+  1723→      ui.pop();
+  1724→      ui.open({ type: "list", listId: saved.id });
+  1725→    } else {
+  1726→      ui.pop();
+  1727→    }
+  1728→  };
+  1729→
+  1730→  return (
+  1731→    <Sheet
+  1732→      title={listId ? "Edit list" : "New list"}
+  1733→      subtitle={`${KIND_META[k].label} · ${ownerName}`}
+  1734→      onBack={() => ui.pop()}
+  1735→      footer={
+  1736→        <Button variant="brand" size="lg" className="w-full" onClick={save}>
+  1737→          <Check size={16} /> Save list
+  1738→        </Button>
+  1739→      }
+  1740→    >
+  1741→      <div className="space-y-4 px-4 py-4 pb-6">
+  1742→        <Field label="Title">
+  1743→          <input
+  1744→            autoFocus
+  1745→            value={title}
+  1746→            onChange={(e) => setTitle(e.target.value)}
+  1747→            placeholder="e.g. Grocery run, Rent…"
+  1748→            aria-label="List title"
+  1749→            className={cx(inputCls, "text-[15px] font-semibold")}
+  1750→          />
+  1751→        </Field>
+  1752→
+  1753→        {/* kind — fixed when passed / editing, selector when new without kind */}
+  1754→        <div>
+  1755→          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[1.5px] text-mute">Kind</p>
+  1756→          {kindFixed ? (
+  1757→            <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface2 px-3.5 py-3">
+  1758→              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface text-brand shadow-key" aria-hidden>
+  1759→                {(() => {
+  1760→                  const Icon = KIND_META[k].icon;
+  1761→                  return <Icon size={16} />;
+  1762→                })()}
+  1763→              </span>
+  1764→              <span className="min-w-0 flex-1">
+  1765→                <span className="block text-[13px] font-bold text-ink">{KIND_META[k].label}</span>
+  1766→                <span className="block text-[10.5px] text-mute">{KIND_META[k].hint}</span>
+  1767→              </span>
+  1768→            </div>
+  1769→          ) : (
+  1770→            <div className="grid grid-cols-2 gap-2">
+  1771→              {(Object.keys(KIND_META) as ListKind[]).map((opt) => {
+  1772→                const Icon = KIND_META[opt].icon;
+  1773→                return (
+  1774→                  <button
+  1775→                    key={opt}
+  1776→                    type="button"
+  1777→                    onClick={() => setK(opt)}
+  1778→                    aria-pressed={k === opt}
+  1779→                    className={cx(
+  1780→                      "flex items-center gap-2.5 rounded-2xl border p-3 text-left transition active:scale-[0.97]",
+  1781→                      k === opt ? "border-brand/50 bg-brandsoft shadow-key" : "border-line bg-surface"
+  1782→                    )}
+  1783→                  >
+  1784→                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface2 text-brand" aria-hidden>
+  1785→                      <Icon size={16} />
+  1786→                    </span>
+  1787→                    <span className="min-w-0 text-[12px] font-bold text-ink">{KIND_META[opt].label}</span>
+  1788→                  </button>
+  1789→                );
+  1790→              })}
+  1791→              <p className="col-span-2 text-[10px] text-mute">{KIND_META[k].hint}</p>
+  1792→            </div>
+  1793→          )}
+  1794→        </div>
+  1795→
+  1796→        <Field label="Note">
+  1797→          <textarea
+  1798→            value={note}
+  1799→            onChange={(e) => setNote(e.target.value)}
+  1800→            rows={2}
+  1801→            placeholder="Optional note"
+  1802→            aria-label="List note"
+  1803→            className={cx(inputCls, "resize-none")}
+  1804→          />
+  1805→        </Field>
+  1806→
+  1807→        <Field label="Repeat">
+  1808→          <select
+  1809→            value={repeat}
+  1810→            onChange={(e) => setRepeat(e.target.value as Repeat)}
+  1811→            aria-label="Repeat"
+  1812→            className={inputCls}
+  1813→          >
+  1814→            {(Object.keys(REPEAT_LABEL) as Repeat[]).map((r) => (
+  1815→              <option key={r} value={r}>
+  1816→                {REPEAT_LABEL[r]}
+  1817→              </option>
+  1818→            ))}
+  1819→          </select>
+  1820→        </Field>
+  1821→
+  1822→        <div className="space-y-1 rounded-[22px] border border-line bg-surface p-4 shadow-key">
+  1823→          <Switch
+  1824→            checked={asTemplate}
+  1825→            onChange={setAsTemplate}
+  1826→            label="Save as template"
+  1827→            hint="Reuse it for repeat bills"
+  1828→          />
+  1829→          {k === "calculating" && (
+  1830→            <div className="mt-1 border-t border-line pt-1">
+  1831→              <Switch
+  1832→                checked={postToLedger}
+  1833→                onChange={setPostToLedger}
+  1834→                label="Count pending in balance"
+  1835→                hint="Include this list pending amount in the owner balance"
+  1836→              />
+  1837→            </div>
+  1838→          )}
+  1839→        </div>
+  1840→      </div>
+  1841→    </Sheet>
+  1842→  );
+  1843→}
+  1844→
+  1845→/* ================================================================== */
+  1846→/* EntryEdit                                                            */
+  1847→/* ================================================================== */
+  1848→
+  1849→function TypeBtn({
+  1850→  active,
+  1851→  onClick,
+  1852→  icon: Icon,
+  1853→  label,
+  1854→  sub,
+  1855→  tone,
+  1856→}: {
+  1857→  active: boolean;
+  1858→  onClick: () => void;
+  1859→  icon: typeof ArrowDownLeft;
+  1860→  label: string;
+  1861→  sub: string;
+  1862→  tone: "pos" | "neg";
+  1863→}) {
+  1864→  return (
+  1865→    <button
+  1866→      type="button"
+  1867→      onClick={onClick}
+  1868→      aria-pressed={active}
+  1869→      className={cx(
+  1870→        "flex min-h-[56px] w-full items-center gap-2.5 rounded-2xl border px-3.5 py-3 text-left transition active:scale-[0.97]",
+  1871→        active
+  1872→          ? tone === "pos"
+  1873→            ? "border-brand/50 bg-brandsoft"
+  1874→            : "border-neg/40 bg-negsoft"
+  1875→          : "border-line bg-surface"
+  1876→      )}
+  1877→    >
+  1878→      <span
+  1879→        className={cx(
+  1880→          "flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px]",
+  1881→          active ? (tone === "pos" ? "bg-brand text-white" : "bg-neg text-white") : "bg-surface2 text-mute"
+  1882→        )}
+  1883→        aria-hidden
+  1884→      >
+  1885→        <Icon size={16} />
+  1886→      </span>
+  1887→      <span className="min-w-0">
+  1888→        <span className={cx("block truncate text-[13px] font-bold", active ? (tone === "pos" ? "text-pos" : "text-neg") : "text-ink")}>
+  1889→          {label}
+  1890→        </span>
+  1891→        <span className="block truncate text-[10px] text-mute">{sub}</span>
+  1892→      </span>
+  1893→    </button>
+  1894→  );
+  1895→}
+  1896→
+  1897→export function EntryEdit({
+  1898→  entryId,
+  1899→  ownerId,
+  1900→  entryType,
+  1901→}: {
+  1902→  entryId?: ID;
+  1903→  ownerId: ID | "general";
+  1904→  entryType?: "credit" | "debit";
+  1905→}) {
+  1906→  const ui = useUI();
+  1907→  const confirm = useConfirm();
+  1908→  const existing = useApp((s) => (entryId ? s.entries.find((e) => e.id === entryId && !e.deletedAt) : undefined));
+  1909→  const contacts = useApp((s) => s.contacts);
+  1910→  const settings = useApp((s) => s.settings);
+  1911→  const saveEntry = useApp((s) => s.saveEntry);
+  1912→  const deleteEntry = useApp((s) => s.deleteEntry);
+  1913→  const moveEntity = useApp((s) => s.moveEntity);
+  1914→  const saveReminder = useApp((s) => s.saveReminder);
+  1915→
+  1916→  const [type, setType] = useState<"credit" | "debit">(existing?.type ?? entryType ?? "credit");
+  1917→  const [amount, setAmount] = useState(existing && existing.amount > 0 ? String(existing.amount) : "");
+  1918→  const [date, setDate] = useState(existing?.date ?? todayStr());
+  1919→  const [dueOn, setDueOn] = useState(!!existing?.dueDate);
+  1920→  const [dueDate, setDueDate] = useState(existing?.dueDate ?? todayStr());
+  1921→  const [category, setCategory] = useState(existing?.category ?? "General");
+  1922→  const [method, setMethod] = useState(existing?.method ?? "cash");
+  1923→  const [note, setNote] = useState(existing?.note ?? "");
+  1924→  const [owner, setOwner] = useState<OwnerId>(existing?.ownerId ?? ownerId);
+  1925→  const [pickerOpen, setPickerOpen] = useState(false);
+  1926→
+  1927→  const ownerContact = owner === "general" ? null : contacts.find((c) => c.id === owner) ?? null;
+  1928→  const ownerName = ownerContact ? displayName(ownerContact) : "General";
+  1929→  const isGeneral = owner === "general";
+  1930→
+  1931→  const save = () => {
+  1932→    const amt = parseNum(amount);
+  1933→    if (amt <= 0) {
+  1934→      toastErr("Enter an amount greater than 0");
+  1935→      return;
+  1936→    }
+  1937→    const saved = saveEntry({
+  1938→      ...(entryId ? { id: entryId } : {}),
+  1939→      ownerId: owner,
+  1940→      type,
+  1941→      amount: r2(amt),
+  1942→      date,
+  1943→      // "" clears an existing due date (saveEntry keeps undefined as-is)
+  1944→      dueDate: dueOn && dueDate ? dueDate : "",
+  1945→      category,
+  1946→      method,
+  1947→      note: note.trim() || "",
+  1948→      ...(existing ? { attachments: existing.attachments } : {}),
+  1949→    });
+  1950→    if (entryId && owner !== existing?.ownerId) moveEntity("entry", saved.id, owner);
+  1951→    if (dueOn && dueDate && dueDate !== existing?.dueDate) {
+  1952→      saveReminder({
+  1953→        ownerId: owner,
+  1954→        title: `Payment due ${money(r2(amt), settings.currency)}`,
+  1955→        kind: "payment",
+  1956→        dueAt: new Date(`${dueDate}T09:00:00`).getTime(),
+  1957→        links: [{ type: "entry", id: saved.id, label: note.trim() || category }],
+  1958→      });
+  1959→    }
+  1960→    toastOk(entryId ? "Entry updated" : "Entry added");
+  1961→    ui.pop();
+  1962→  };
+  1963→
+  1964→  const remove = async () => {
+  1965→    const ok = await confirm({
+  1966→      title: "Delete entry?",
+  1967→      message: "The entry and its payment history move to Trash — you can undo from the toast.",
+  1968→      confirmLabel: "Delete",
+  1969→      tone: "danger",
+  1970→    });
+  1971→    if (!ok) return;
+  1972→    if (entryId) {
+  1973→      deleteEntry(entryId);
+  1974→      toastUndoLast();
+  1975→    }
+  1976→    ui.pop();
+  1977→  };
+  1978→
+  1979→  return (
+  1980→    <Sheet
+  1981→      title={
+  1982→        entryId
+  1983→          ? "Edit entry"
+  1984→          : type === "credit"
+  1985→            ? isGeneral
+  1986→              ? "New income"
+  1987→              : "New credit"
+  1988→            : isGeneral
+  1989→              ? "New expense"
+  1990→              : "New debit"
+  1991→      }
+  1992→      subtitle={`${ownerName} · ledger`}
+  1993→      onBack={() => ui.pop()}
+  1994→      footer={
+  1995→        <div className="flex gap-2.5">
+  1996→          {entryId && (
+  1997→            <Button variant="surface" size="lg" className="flex-1 text-neg" onClick={() => void remove()}>
+  1998→              <Trash2 size={15} /> Delete
+  1999→            </Button>
+  2000→          )}
+
+[showing lines 1-2000 of 2188; use offset=2001 with limit to continue reading]

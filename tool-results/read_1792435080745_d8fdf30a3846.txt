@@ -1,0 +1,1043 @@
+     1→"use client";
+     2→
+     3→/* =========================================================================
+     4→   dial. — Contacts views (Task 2-a)
+     5→   ContactsView · FavoritesView · RecentsView
+     6→   ========================================================================= */
+     7→
+     8→import { useMemo, useState } from "react";
+     9→import { motion } from "framer-motion";
+    10→import {
+    11→  ArrowDownLeft,
+    12→  ArrowDownUp,
+    13→  ArrowUpRight,
+    14→  Ban,
+    15→  ChevronRight,
+    16→  Copy,
+    17→  Grid3X3,
+    18→  MessageCircle,
+    19→  MoreVertical,
+    20→  Pencil,
+    21→  Phone,
+    22→  PhoneIncoming,
+    23→  PhoneMissed,
+    24→  Plus,
+    25→  Send,
+    26→  Share2,
+    27→  Star,
+    28→  Trash2,
+    29→  UserPlus,
+    30→  UserRound,
+    31→  Users,
+    32→} from "lucide-react";
+    33→import { useApp } from "@/lib/store";
+    34→import { useUI } from "@/lib/ui-store";
+    35→import { ownerFullBalance, r2 } from "@/lib/calc";
+    36→import { toVCard } from "@/lib/exporters";
+    37→import {
+    38→  copyText,
+    39→  dayGroup,
+    40→  displayName,
+    41→  downloadBlob,
+    42→  durationStr,
+    43→  ft,
+    44→  normalizePhone,
+    45→  prettyPhone,
+    46→} from "@/lib/utils";
+    47→import {
+    48→  openExternal,
+    49→  primaryPhone,
+    50→  shareText,
+    51→  smsLink,
+    52→  telegramHandle,
+    53→  tgLink,
+    54→  waLink,
+    55→} from "@/lib/share";
+    56→import type { CallLog, Contact, Settings } from "@/lib/types";
+    57→import {
+    58→  Avatar,
+    59→  BalancePill,
+    60→  Button,
+    61→  Chip,
+    62→  EmptyState,
+    63→  IconButton,
+    64→  Money,
+    65→  SearchInput,
+    66→  SectionCard,
+    67→  SectionLabel,
+    68→  cx,
+    69→} from "../kit/primitives";
+    70→import { BottomSheet } from "../kit/Sheet";
+    71→import { SwipeRow, type SwipeAction } from "../kit/SwipeRow";
+    72→import { useConfirm } from "../kit/Confirm";
+    73→import { toastErr, toastOk, toastUndoLast } from "../kit/toast";
+    74→
+    75→/* ------------------------------------------------------------------ */
+    76→/* Shared bits                                                          */
+    77→/* ------------------------------------------------------------------ */
+    78→
+    79→const SPEED_KEYS = ["2", "3", "4", "5", "6", "7", "8", "9"];
+    80→
+    81→/**
+    82→ * Speed-dial assignment per key. `settings.speedDial` wins; contacts that
+    83→ * still carry a legacy `speedDial` field act as a fallback (demo data).
+    84→ */
+    85→function speedDialAssignments(contacts: Contact[], settings: Settings): Record<string, string | undefined> {
+    86→  const out: Record<string, string | undefined> = {};
+    87→  contacts.forEach((c) => {
+    88→    if (c.speedDial) out[c.speedDial] = c.id;
+    89→  });
+    90→  const sd = (settings as Settings & { speedDial?: Record<string, string | undefined> }).speedDial ?? {};
+    91→  SPEED_KEYS.forEach((k) => {
+    92→    if (k in sd) out[k] = sd[k];
+    93→  });
+    94→  return out;
+    95→}
+    96→
+    97→/** Share a contact as a vCard — Web Share when available, copy / download otherwise. */
+    98→async function shareVCard(c: Contact) {
+    99→  const vcf = toVCard([c], true);
+   100→  const res = await shareText(`Contact · ${displayName(c)}`, vcf);
+   101→  if (res === "copied") {
+   102→    await copyText(vcf);
+   103→    toastOk("vCard copied to clipboard");
+   104→  } else if (res === "failed") {
+   105→    downloadBlob(new Blob([vcf], { type: "text/vcard" }), `${displayName(c)}.vcf`);
+   106→    toastOk("vCard downloaded");
+   107→  }
+   108→}
+   109→
+   110→/** A tappable action row for bottom-sheet menus. */
+   111→function ActionRow({
+   112→  icon,
+   113→  title,
+   114→  sub,
+   115→  onClick,
+   116→  danger,
+   117→}: {
+   118→  icon: React.ReactNode;
+   119→  title: string;
+   120→  sub?: string;
+   121→  onClick: () => void;
+   122→  danger?: boolean;
+   123→}) {
+   124→  return (
+   125→    <button
+   126→      type="button"
+   127→      onClick={onClick}
+   128→      className={cx(
+   129→        "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition active:scale-[0.98]",
+   130→        danger ? "text-neg" : "text-ink",
+   131→        "hover:bg-surface2"
+   132→      )}
+   133→    >
+   134→      <span
+   135→        className={cx(
+   136→          "flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px]",
+   137→          danger ? "bg-negsoft text-neg" : "bg-brandsoft text-brand"
+   138→        )}
+   139→      >
+   140→        {icon}
+   141→      </span>
+   142→      <span className="min-w-0 flex-1">
+   143→        <span className="block truncate text-[13px] font-semibold">{title}</span>
+   144→        {sub && <span className="block truncate text-[11px] text-mute">{sub}</span>}
+   145→      </span>
+   146→    </button>
+   147→  );
+   148→}
+   149→
+   150→function ViewHeader({
+   151→  title,
+   152→  subtitle,
+   153→  action,
+   154→}: {
+   155→  title: string;
+   156→  subtitle: string;
+   157→  action?: React.ReactNode;
+   158→}) {
+   159→  return (
+   160→    <div className="mb-4 flex items-start justify-between gap-3">
+   161→      <div>
+   162→        <h1 className="text-[25px] font-bold tracking-tight text-ink">{title}</h1>
+   163→        <p className="mt-0.5 text-[12px] text-mute">{subtitle}</p>
+   164→      </div>
+   165→      {action}
+   166→    </div>
+   167→  );
+   168→}
+   169→
+   170→/* ------------------------------------------------------------------ */
+   171→/* ContactsView                                                         */
+   172→/* ------------------------------------------------------------------ */
+   173→
+   174→type FilterKey = "all" | "owe-me" | "i-owe" | "settled" | "favorites";
+   175→type SortKey = "name" | "balance" | "recent";
+   176→
+   177→const SORT_LABEL: Record<SortKey, string> = { name: "A–Z", balance: "Balance", recent: "Recent" };
+   178→
+   179→function ContactRow({
+   180→  contact,
+   181→  balance,
+   182→  blocked,
+   183→  onOpen,
+   184→  onCall,
+   185→  onFavorite,
+   186→  onWhatsApp,
+   187→  onMessage,
+   188→  onDelete,
+   189→  onLongPress,
+   190→}: {
+   191→  contact: Contact;
+   192→  balance: number;
+   193→  blocked: boolean;
+   194→  onOpen: () => void;
+   195→  onCall: () => void;
+   196→  onFavorite: () => void;
+   197→  onWhatsApp: () => void;
+   198→  onMessage: () => void;
+   199→  onDelete: () => void;
+   200→  onLongPress: () => void;
+   201→}) {
+   202→  const phone = primaryPhone(contact);
+   203→  const sub = phone
+   204→    ? prettyPhone(phone)
+   205→    : contact.socials.some((s) => s.app === "telegram")
+   206→      ? "Telegram only"
+   207→      : contact.emails[0]?.address || "No phone number";
+   208→
+   209→  const left: SwipeAction[] = [
+   210→    { key: "call", icon: <Phone size={18} />, label: "Call", className: "bg-brand", onClick: onCall },
+   211→    {
+   212→      key: "fav",
+   213→      icon: <Star size={18} fill={contact.favorite ? "currentColor" : "none"} />,
+   214→      label: contact.favorite ? "Unfavorite" : "Favorite",
+   215→      className: "bg-brandink",
+   216→      onClick: onFavorite,
+   217→    },
+   218→  ];
+   219→  const right: SwipeAction[] = [
+   220→    {
+   221→      key: "wa",
+   222→      icon: <MessageCircle size={18} />,
+   223→      label: "WhatsApp",
+   224→      className: "bg-[#1faa53]",
+   225→      onClick: onWhatsApp,
+   226→    },
+   227→    { key: "sms", icon: <Send size={18} />, label: "Message", className: "bg-brandink", onClick: onMessage },
+   228→    { key: "del", icon: <Trash2 size={18} />, label: "Delete contact", className: "bg-neg", onClick: onDelete },
+   229→  ];
+   230→
+   231→  return (
+   232→    <SwipeRow className="mb-1.5" left={left} right={right} onTap={onOpen} onLongPress={onLongPress}>
+   233→      <div className="flex items-center gap-3 rounded-2xl bg-surface px-3.5 py-2.5 shadow-key">
+   234→        <Avatar contact={contact} size="md" />
+   235→        <div className="min-w-0 flex-1">
+   236→          <div className="flex items-center gap-1.5">
+   237→            <p className="truncate text-[13px] font-semibold text-ink">{displayName(contact)}</p>
+   238→            {contact.favorite && (
+   239→              <Star size={11} className="shrink-0 text-brand" fill="currentColor" aria-label="Favorite" />
+   240→            )}
+   241→            {blocked && (
+   242→              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-negsoft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-neg">
+   243→                <Ban size={9} /> blocked
+   244→              </span>
+   245→            )}
+   246→          </div>
+   247→          <p className="truncate text-[11px] text-mute">{sub}</p>
+   248→        </div>
+   249→        <div className="flex shrink-0 items-center gap-1">
+   250→          <BalancePill value={balance} size="sm" />
+   251→          <ChevronRight size={14} className="text-line2" />
+   252→        </div>
+   253→      </div>
+   254→    </SwipeRow>
+   255→  );
+   256→}
+   257→
+   258→export function ContactsView() {
+   259→  const app = useApp();
+   260→  const ui = useUI();
+   261→  const confirm = useConfirm();
+   262→  const [q, setQ] = useState("");
+   263→  const [filter, setFilter] = useState<FilterKey>("all");
+   264→  const [sort, setSort] = useState<SortKey>("name");
+   265→  const [menuFor, setMenuFor] = useState<Contact | null>(null);
+   266→
+   267→  const cc = app.settings.countryCode;
+   268→  const contacts = useMemo(() => app.contacts.filter((c) => !c.deletedAt), [app.contacts]);
+   269→
+   270→  const balances = useMemo(() => {
+   271→    const map = new Map<string, number>();
+   272→    contacts.forEach((c) => map.set(c.id, ownerFullBalance(app.entries, app.lists, c.id)));
+   273→    return map;
+   274→  }, [contacts, app.entries, app.lists]);
+   275→
+   276→  const lastActivity = useMemo(() => {
+   277→    const map = new Map<string, number>();
+   278→    contacts.forEach((c) => map.set(c.id, c.createdAt));
+   279→    app.entries.forEach((e) => {
+   280→      if (!e.deletedAt) map.set(e.ownerId, Math.max(map.get(e.ownerId) ?? 0, e.updatedAt));
+   281→    });
+   282→    app.lists.forEach((l) => {
+   283→      if (!l.deletedAt) map.set(l.ownerId, Math.max(map.get(l.ownerId) ?? 0, l.updatedAt));
+   284→    });
+   285→    app.recents.forEach((r) => {
+   286→      if (r.contactId) map.set(r.contactId, Math.max(map.get(r.contactId) ?? 0, r.at));
+   287→    });
+   288→    return map;
+   289→  }, [contacts, app.entries, app.lists, app.recents]);
+   290→
+   291→  const { toReceive, toPay, net } = useMemo(() => {
+   292→    let pos = 0;
+   293→    let neg = 0;
+   294→    contacts.forEach((c) => {
+   295→      const b = balances.get(c.id) ?? 0;
+   296→      if (b > 0) pos += b;
+   297→      if (b < 0) neg += b;
+   298→    });
+   299→    return { toReceive: r2(pos), toPay: r2(neg), net: r2(pos + neg) };
+   300→  }, [contacts, balances]);
+   301→
+   302→  const blockedSet = useMemo(() => new Set(app.settings.blockedNumbers), [app.settings.blockedNumbers]);
+   303→  const isBlocked = (c: Contact) => c.phones.some((p) => blockedSet.has(normalizePhone(p.number, cc)));
+   304→
+   305→  const filtered = useMemo(() => {
+   306→    const query = q.toLowerCase().trim();
+   307→    const digits = query.replace(/[^\d]/g, "");
+   308→    const list = contacts.filter((c) => {
+   309→      const b = balances.get(c.id) ?? 0;
+   310→      if (filter === "owe-me" && b <= 0.005) return false;
+   311→      if (filter === "i-owe" && b >= -0.005) return false;
+   312→      if (filter === "settled" && Math.abs(b) > 0.005) return false;
+   313→      if (filter === "favorites" && !c.favorite) return false;
+   314→      if (!query) return true;
+   315→      const hay = [
+   316→        displayName(c),
+   317→        c.nickname || "",
+   318→        c.company || "",
+   319→        c.jobTitle || "",
+   320→        c.note || "",
+   321→        c.pinnedNote || "",
+   322→        ...c.tags,
+   323→        ...c.phones.map((p) => p.number),
+   324→        ...c.emails.map((e) => e.address),
+   325→        ...c.socials.map((s) => s.handle),
+   326→      ]
+   327→        .join(" ")
+   328→        .toLowerCase();
+   329→      const numberHit =
+   330→        digits.length >= 2 && c.phones.some((p) => p.number.replace(/\D/g, "").includes(digits));
+   331→      return hay.includes(query) || numberHit;
+   332→    });
+   333→    return [...list].sort((a, b) => {
+   334→      if (sort === "balance")
+   335→        return (balances.get(b.id) ?? 0) - (balances.get(a.id) ?? 0) || displayName(a).localeCompare(displayName(b));
+   336→      if (sort === "recent")
+   337→        return (
+   338→          (lastActivity.get(b.id) ?? 0) - (lastActivity.get(a.id) ?? 0) ||
+   339→          displayName(a).localeCompare(displayName(b))
+   340→        );
+   341→      return displayName(a).localeCompare(displayName(b));
+   342→    });
+   343→  }, [contacts, q, filter, sort, balances, lastActivity]);
+   344→
+   345→  const groups = useMemo(() => {
+   346→    if (sort !== "name") return [{ letter: "", items: filtered }];
+   347→    const out: { letter: string; items: Contact[] }[] = [];
+   348→    filtered.forEach((c) => {
+   349→      const ch = (displayName(c)[0] || "#").toUpperCase();
+   350→      const letter = /[A-Z]/.test(ch) ? ch : "#";
+   351→      const last = out[out.length - 1];
+   352→      if (last && last.letter === letter) last.items.push(c);
+   353→      else out.push({ letter, items: [c] });
+   354→    });
+   355→    return out;
+   356→  }, [filtered, sort]);
+   357→
+   358→  /* ---- actions ---- */
+   359→  const call = (c: Contact) => {
+   360→    const p = primaryPhone(c);
+   361→    if (!p) {
+   362→      toastErr("No phone number for this contact");
+   363→      return;
+   364→    }
+   365→    ui.open({ type: "call", phone: p, contactId: c.id });
+   366→  };
+   367→  const whatsApp = (c: Contact) => {
+   368→    const p = primaryPhone(c);
+   369→    if (!p) {
+   370→      toastErr("No phone number on this contact");
+   371→      return;
+   372→    }
+   373→    openExternal(waLink(p, undefined, cc));
+   374→  };
+   375→  const message = (c: Contact) => {
+   376→    const p = primaryPhone(c);
+   377→    if (!p) {
+   378→      toastErr("No phone number on this contact");
+   379→      return;
+   380→    }
+   381→    openExternal(smsLink(p, undefined, cc));
+   382→  };
+   383→  const remove = async (c: Contact) => {
+   384→    const ok = await confirm({
+   385→      title: "Delete contact?",
+   386→      message: `“${displayName(c)}” will move to Trash. You can undo right after, and ledger history stays safe.`,
+   387→      confirmLabel: "Delete",
+   388→      tone: "danger",
+   389→    });
+   390→    if (!ok) return;
+   391→    app.deleteContact(c.id);
+   392→    toastUndoLast();
+   393→  };
+   394→  const toggleBlock = (c: Contact) => {
+   395→    const nums = c.phones.map((p) => normalizePhone(p.number, cc));
+   396→    if (!nums.length) {
+   397→      toastErr("No number to block");
+   398→      return;
+   399→    }
+   400→    const blocked = nums.every((n) => blockedSet.has(n));
+   401→    const next = blocked
+   402→      ? app.settings.blockedNumbers.filter((b) => !nums.includes(b))
+   403→      : [...new Set([...app.settings.blockedNumbers, ...nums])];
+   404→    app.updateSettings({ blockedNumbers: next });
+   405→    setMenuFor(null);
+   406→    toastOk(blocked ? "Number unblocked" : "Number blocked");
+   407→  };
+   408→  const cycleSort = () =>
+   409→    setSort((s) => (s === "name" ? "balance" : s === "balance" ? "recent" : "name"));
+   410→
+   411→  const menu = menuFor;
+   412→  const menuPhone = menu ? primaryPhone(menu) : undefined;
+   413→  const menuTg = menu ? telegramHandle(menu) : undefined;
+   414→
+   415→  return (
+   416→    <div className="tab-content">
+   417→      <ViewHeader title="Contacts" subtitle="The people who matter." />
+   418→
+   419→      <SearchInput value={q} onChange={setQ} placeholder="Search name, number, notes…" />
+   420→
+   421→      {/* summary strip — only when balances exist */}
+   422→      {(toReceive > 0.005 || toPay < -0.005) && (
+   423→        <div className="mt-3 grid grid-cols-3 gap-2">
+   424→          <div className="rounded-2xl border border-line bg-surface p-3 shadow-key">
+   425→            <p className="text-[9px] font-bold uppercase tracking-[1.5px] text-mute">To receive</p>
+   426→            <p className="mt-1 text-[13px] font-bold text-pos">
+   427→              <Money value={toReceive} signed />
+   428→            </p>
+   429→          </div>
+   430→          <div className="rounded-2xl border border-line bg-surface p-3 shadow-key">
+   431→            <p className="text-[9px] font-bold uppercase tracking-[1.5px] text-mute">To pay</p>
+   432→            <p className="mt-1 text-[13px] font-bold text-neg">
+   433→              <Money value={toPay} signed />
+   434→            </p>
+   435→          </div>
+   436→          <div className="rounded-2xl border border-line bg-surface p-3 shadow-key">
+   437→            <p className="text-[9px] font-bold uppercase tracking-[1.5px] text-mute">Net</p>
+   438→            <p
+   439→              className={cx(
+   440→                "mt-1 text-[13px] font-bold",
+   441→                net > 0.005 ? "text-pos" : net < -0.005 ? "text-neg" : "text-ink"
+   442→              )}
+   443→            >
+   444→              <Money value={net} signed />
+   445→            </p>
+   446→          </div>
+   447→        </div>
+   448→      )}
+   449→
+   450→      {/* filter chips */}
+   451→      <div className="app-scroll -mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1">
+   452→        <Chip className="py-2" active={filter === "all"} onClick={() => setFilter("all")}>
+   453→          All
+   454→        </Chip>
+   455→        <Chip className="py-2" active={filter === "owe-me"} onClick={() => setFilter("owe-me")}>
+   456→          They owe me
+   457→        </Chip>
+   458→        <Chip className="py-2" active={filter === "i-owe"} onClick={() => setFilter("i-owe")}>
+   459→          I owe them
+   460→        </Chip>
+   461→        <Chip className="py-2" active={filter === "settled"} onClick={() => setFilter("settled")}>
+   462→          Settled
+   463→        </Chip>
+   464→        <Chip className="py-2" active={filter === "favorites"} onClick={() => setFilter("favorites")}>
+   465→          Favorites
+   466→        </Chip>
+   467→      </div>
+   468→
+   469→      <div className="mt-4">
+   470→        <SectionLabel
+   471→          right={
+   472→            <div className="flex items-center gap-2">
+   473→              <button
+   474→                type="button"
+   475→                onClick={cycleSort}
+   476→                className="flex h-11 items-center gap-1.5 rounded-full border border-line2 bg-surface px-3.5 text-[10px] font-bold uppercase tracking-[1.2px] text-mute shadow-key transition active:scale-95"
+   477→                aria-label={`Sort by ${SORT_LABEL[sort]} — tap to change`}
+   478→              >
+   479→                <ArrowDownUp size={13} className="text-brand" />
+   480→                {SORT_LABEL[sort]}
+   481→              </button>
+   482→              <button
+   483→                type="button"
+   484→                onClick={() => ui.open({ type: "contactEdit" })}
+   485→                className="flex h-11 items-center gap-1 rounded-full bg-brandsoft px-3.5 text-[11px] font-bold text-brand transition active:scale-95"
+   486→                aria-label="Add new contact"
+   487→              >
+   488→                <Plus size={14} /> Add new
+   489→              </button>
+   490→            </div>
+   491→          }
+   492→        >
+   493→          {filtered.length === contacts.length
+   494→            ? `${contacts.length} contact${contacts.length === 1 ? "" : "s"}`
+   495→            : `${filtered.length} of ${contacts.length}`}
+   496→        </SectionLabel>
+   497→
+   498→        {filtered.length === 0 ? (
+   499→          <EmptyState
+   500→            icon={<Users size={22} />}
+   501→            title={q || filter !== "all" ? "No matching contacts" : "No contacts yet"}
+   502→            hint={
+   503→              q || filter !== "all"
+   504→                ? "Try a different search or filter."
+   505→                : "Add the people you call and settle with most."
+   506→            }
+   507→            action={
+   508→              contacts.length === 0 ? (
+   509→                <Button variant="brand" onClick={() => ui.open({ type: "contactEdit" })}>
+   510→                  <Plus size={15} /> Add contact
+   511→                </Button>
+   512→              ) : undefined
+   513→            }
+   514→          />
+   515→        ) : (
+   516→          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }}>
+   517→            {groups.map((g) => (
+   518→              <div key={g.letter || "all"}>
+   519→                {g.letter && (
+   520→                  <div className="sticky top-0 z-10 bg-canvas/95 px-1 pb-1.5 pt-2 backdrop-blur-sm">
+   521→                    <p className="text-[11px] font-bold uppercase tracking-[2px] text-brand">{g.letter}</p>
+   522→                  </div>
+   523→                )}
+   524→                {g.items.map((c) => (
+   525→                  <ContactRow
+   526→                    key={c.id}
+   527→                    contact={c}
+   528→                    balance={balances.get(c.id) ?? 0}
+   529→                    blocked={isBlocked(c)}
+   530→                    onOpen={() => ui.open({ type: "contact", contactId: c.id })}
+   531→                    onCall={() => call(c)}
+   532→                    onFavorite={() => {
+   533→                      app.toggleFavorite(c.id);
+   534→                      toastOk(c.favorite ? "Removed from favorites" : "Added to favorites");
+   535→                    }}
+   536→                    onWhatsApp={() => whatsApp(c)}
+   537→                    onMessage={() => message(c)}
+   538→                    onDelete={() => void remove(c)}
+   539→                    onLongPress={() => setMenuFor(c)}
+   540→                  />
+   541→                ))}
+   542→              </div>
+   543→            ))}
+   544→          </motion.div>
+   545→        )}
+   546→      </div>
+   547→
+   548→      {/* long-press context menu */}
+   549→      <BottomSheet
+   550→        open={!!menu}
+   551→        onClose={() => setMenuFor(null)}
+   552→        title={menu ? displayName(menu) : ""}
+   553→      >
+   554→        {menu && (
+   555→          <div className="space-y-0.5 pb-2">
+   556→            <ActionRow
+   557→              icon={<Phone size={17} />}
+   558→              title="Call"
+   559→              sub={menuPhone ? prettyPhone(menuPhone, cc) : "No phone number"}
+   560→              onClick={() => {
+   561→                setMenuFor(null);
+   562→                call(menu);
+   563→              }}
+   564→            />
+   565→            <ActionRow
+   566→              icon={<MessageCircle size={17} />}
+   567→              title="WhatsApp"
+   568→              sub={menuPhone ? prettyPhone(menuPhone, cc) : undefined}
+   569→              onClick={() => {
+   570→                setMenuFor(null);
+   571→                whatsApp(menu);
+   572→              }}
+   573→            />
+   574→            {menuTg && (
+   575→              <ActionRow
+   576→                icon={<Send size={17} />}
+   577→                title="Telegram"
+   578→                sub={`@${menuTg.replace(/^@/, "")}`}
+   579→                onClick={() => {
+   580→                  setMenuFor(null);
+   581→                  openExternal(tgLink(menuTg));
+   582→                }}
+   583→              />
+   584→            )}
+   585→            <ActionRow
+   586→              icon={<Pencil size={17} />}
+   587→              title="Edit contact"
+   588→              onClick={() => {
+   589→                setMenuFor(null);
+   590→                ui.open({ type: "contactEdit", contactId: menu.id });
+   591→              }}
+   592→            />
+   593→            <ActionRow
+   594→              icon={<Star size={17} fill={menu.favorite ? "currentColor" : "none"} />}
+   595→              title={menu.favorite ? "Remove from favorites" : "Add to favorites"}
+   596→              onClick={() => {
+   597→                app.toggleFavorite(menu.id);
+   598→                setMenuFor(null);
+   599→                toastOk(menu.favorite ? "Removed from favorites" : "Added to favorites");
+   600→              }}
+   601→            />
+   602→            <ActionRow
+   603→              icon={<Share2 size={17} />}
+   604→              title="Share vCard"
+   605→              onClick={() => {
+   606→                setMenuFor(null);
+   607→                void shareVCard(menu);
+   608→              }}
+   609→            />
+   610→            <ActionRow
+   611→              icon={<Ban size={17} />}
+   612→              title={isBlocked(menu) ? "Unblock number" : "Block number"}
+   613→              onClick={() => toggleBlock(menu)}
+   614→            />
+   615→            <ActionRow
+   616→              icon={<Trash2 size={17} />}
+   617→              title="Delete contact"
+   618→              danger
+   619→              onClick={() => {
+   620→                setMenuFor(null);
+   621→                void remove(menu);
+   622→              }}
+   623→            />
+   624→          </div>
+   625→        )}
+   626→      </BottomSheet>
+   627→    </div>
+   628→  );
+   629→}
+   630→
+   631→/* ------------------------------------------------------------------ */
+   632→/* FavoritesView                                                        */
+   633→/* ------------------------------------------------------------------ */
+   634→
+   635→export function FavoritesView() {
+   636→  const app = useApp();
+   637→  const ui = useUI();
+   638→
+   639→  const favorites = useMemo(
+   640→    () =>
+   641→      app.contacts
+   642→        .filter((c) => !c.deletedAt && c.favorite)
+   643→        .sort((a, b) => displayName(a).localeCompare(displayName(b))),
+   644→    [app.contacts]
+   645→  );
+   646→
+   647→  const sdContacts = useMemo(() => {
+   648→    const live = app.contacts.filter((c) => !c.deletedAt);
+   649→    const map = speedDialAssignments(live, app.settings);
+   650→    return SPEED_KEYS.map((k) => map[k])
+   651→      .filter((id): id is string => !!id)
+   652→      .map((id) => live.find((c) => c.id === id))
+   653→      .filter((c): c is Contact => !!c);
+   654→  }, [app.contacts, app.settings]);
+   655→
+   656→  return (
+   657→    <div className="tab-content">
+   658→      <ViewHeader title="Favorites" subtitle="Your closest connections, one tap away." />
+   659→
+   660→      {favorites.length === 0 ? (
+   661→        <EmptyState
+   662→          icon={<Star size={22} />}
+   663→          title="No favorites yet"
+   664→          hint="Star the people you reach for most and they'll live here — plus a speed-dial key."
+   665→          action={
+   666→            <Button variant="brand" onClick={() => ui.setTab("contacts")}>
+   667→              <Users size={15} /> Explore contacts
+   668→            </Button>
+   669→          }
+   670→        />
+   671→      ) : (
+   672→        <>
+   673→          <div className="grid grid-cols-2 gap-3">
+   674→            {favorites.map((c, i) => {
+   675→              const phone = primaryPhone(c);
+   676→              return (
+   677→                <motion.div
+   678→                  key={c.id}
+   679→                  initial={{ opacity: 0, y: 10 }}
+   680→                  animate={{ opacity: 1, y: 0 }}
+   681→                  transition={{ delay: i * 0.04, duration: 0.24 }}
+   682→                >
+   683→                  <SectionCard
+   684→                    className="flex flex-col items-center gap-2.5 text-center"
+   685→                    onClick={() => ui.open({ type: "contact", contactId: c.id })}
+   686→                  >
+   687→                    <div className="relative">
+   688→                      <Avatar contact={c} size="lg" />
+   689→                      <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-brand text-white shadow-key">
+   690→                        <Star size={11} fill="currentColor" />
+   691→                      </span>
+   692→                    </div>
+   693→                    <div className="w-full">
+   694→                      <p className="truncate text-[13px] font-semibold text-ink">{displayName(c)}</p>
+   695→                      <p className="truncate text-[11px] text-mute">
+   696→                        {phone ? prettyPhone(phone, app.settings.countryCode) : "Telegram only"}
+   697→                      </p>
+   698→                    </div>
+   699→                    {phone ? (
+   700→                      <Button
+   701→                        variant="brand"
+   702→                        size="sm"
+   703→                        className="w-full"
+   704→                        onClick={(e) => {
+   705→                          e.stopPropagation();
+   706→                          ui.open({ type: "call", phone, contactId: c.id });
+   707→                        }}
+   708→                      >
+   709→                        <Phone size={13} /> Call now
+   710→                      </Button>
+   711→                    ) : (
+   712→                      <Button
+   713→                        variant="soft"
+   714→                        size="sm"
+   715→                        className="w-full"
+   716→                        onClick={(e) => {
+   717→                          e.stopPropagation();
+   718→                          ui.open({ type: "contact", contactId: c.id });
+   719→                        }}
+   720→                      >
+   721→                        <UserRound size={13} /> Open profile
+   722→                      </Button>
+   723→                    )}
+   724→                  </SectionCard>
+   725→                </motion.div>
+   726→              );
+   727→            })}
+   728→          </div>
+   729→
+   730→          <div className="mt-5">
+   731→            <SectionLabel>Shortcuts</SectionLabel>
+   732→            <SectionCard
+   733→              className="flex items-center gap-3"
+   734→              onClick={() => ui.open({ type: "speedDial" })}
+   735→            >
+   736→              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-brandsoft text-brand">
+   737→                <Grid3X3 size={20} />
+   738→              </span>
+   739→              <div className="min-w-0 flex-1">
+   740→                <p className="text-[13px] font-bold text-ink">Speed dial</p>
+   741→                <p className="truncate text-[11px] text-mute">
+   742→                  {sdContacts.length > 0
+   743→                    ? `${sdContacts.length} contact${sdContacts.length === 1 ? "" : "s"} on keys 2–9`
+   744→                    : "Assign contacts to keys 2–9"}
+   745→                </p>
+   746→              </div>
+   747→              {sdContacts.length > 0 && (
+   748→                <div className="flex shrink-0 -space-x-2">
+   749→                  {sdContacts.slice(0, 4).map((c) => (
+   750→                    <Avatar
+   751→                      key={c.id}
+   752→                      contact={c}
+   753→                      size="xs"
+   754→                      className="border-2 border-surface"
+   755→                    />
+   756→                  ))}
+   757→                </div>
+   758→              )}
+   759→              <ChevronRight size={16} className="shrink-0 text-line2" />
+   760→            </SectionCard>
+   761→          </div>
+   762→        </>
+   763→      )}
+   764→    </div>
+   765→  );
+   766→}
+   767→
+   768→/* ------------------------------------------------------------------ */
+   769→/* RecentsView                                                          */
+   770→/* ------------------------------------------------------------------ */
+   771→
+   772→type RecentFilter = "all" | "missed" | "incoming" | "outgoing";
+   773→
+   774→const DIR_META: Record<CallLog["direction"], { label: string; icon: React.ReactNode }> = {
+   775→  outgoing: { label: "Outgoing", icon: <ArrowUpRight size={12} className="text-brand" /> },
+   776→  incoming: { label: "Incoming", icon: <ArrowDownLeft size={12} className="text-mute" /> },
+   777→  missed: { label: "Missed", icon: <PhoneMissed size={12} className="text-neg" /> },
+   778→};
+   779→
+   780→function RecentRow({
+   781→  call,
+   782→  contact,
+   783→  onOpen,
+   784→  onRedial,
+   785→}: {
+   786→  call: CallLog;
+   787→  contact?: Contact;
+   788→  onOpen: () => void;
+   789→  onRedial: () => void;
+   790→}) {
+   791→  const name = contact ? displayName(contact) : prettyPhone(call.phone);
+   792→  const dir = DIR_META[call.direction];
+   793→  return (
+   794→    <div className="mb-1.5 flex items-center gap-3 rounded-2xl bg-surface px-3.5 py-2.5 shadow-key">
+   795→      <button
+   796→        type="button"
+   797→        onClick={onOpen}
+   798→        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+   799→        aria-label={`Open ${name}`}
+   800→      >
+   801→        {contact ? <Avatar contact={contact} size="md" /> : <Avatar name="?" size="md" />}
+   802→        <span className="min-w-0 flex-1">
+   803→          <span
+   804→            className={cx(
+   805→              "block truncate text-[13px] font-semibold",
+   806→              call.direction === "missed" ? "text-neg" : "text-ink"
+   807→            )}
+   808→          >
+   809→            {name}
+   810→          </span>
+   811→          <span className="flex items-center gap-1.5 text-[11px] text-mute">
+   812→            {dir.icon}
+   813→            <span>{dir.label}</span>
+   814→            {call.duration > 0 && (
+   815→              <>
+   816→                <span className="text-line2">·</span>
+   817→                <span className="tabular-nums">{durationStr(call.duration)}</span>
+   818→              </>
+   819→            )}
+   820→          </span>
+   821→        </span>
+   822→      </button>
+   823→      <div className="flex shrink-0 flex-col items-end gap-1">
+   824→        <span className="text-[10px] font-medium text-mute">{ft(call.at)}</span>
+   825→        <IconButton label={`Call ${name}`} variant="surface" className="h-9 w-9" onClick={onRedial}>
+   826→          <Phone size={15} />
+   827→        </IconButton>
+   828→      </div>
+   829→    </div>
+   830→  );
+   831→}
+   832→
+   833→export function RecentsView() {
+   834→  const app = useApp();
+   835→  const ui = useUI();
+   836→  const confirm = useConfirm();
+   837→  const [q, setQ] = useState("");
+   838→  const [dir, setDir] = useState<RecentFilter>("all");
+   839→  const [menuOpen, setMenuOpen] = useState(false);
+   840→  const [unknownFor, setUnknownFor] = useState<CallLog | null>(null);
+   841→
+   842→  const cc = app.settings.countryCode;
+   843→  const contacts = useMemo(() => app.contacts.filter((c) => !c.deletedAt), [app.contacts]);
+   844→
+   845→  const contactFor = useMemo(() => {
+   846→    const byId = new Map(contacts.map((c) => [c.id, c] as const));
+   847→    const byPhone = new Map<string, Contact>();
+   848→    contacts.forEach((c) =>
+   849→      c.phones.forEach((p) => byPhone.set(normalizePhone(p.number, cc), c))
+   850→    );
+   851→    return (r: CallLog) => byId.get(r.contactId ?? "") ?? byPhone.get(normalizePhone(r.phone, cc));
+   852→  }, [contacts, cc]);
+   853→
+   854→  const recents = useMemo(() => [...app.recents].sort((a, b) => b.at - a.at), [app.recents]);
+   855→
+   856→  const groups = useMemo(() => {
+   857→    const query = q.toLowerCase().trim();
+   858→    const digits = query.replace(/[^\d]/g, "");
+   859→    const list = recents.filter((r) => {
+   860→      if (dir !== "all" && r.direction !== dir) return false;
+   861→      if (!query) return true;
+   862→      const c = contactFor(r);
+   863→      const hay = `${c ? displayName(c) : ""} ${r.phone}`.toLowerCase();
+   864→      return hay.includes(query) || (digits.length >= 2 && r.phone.replace(/\D/g, "").includes(digits));
+   865→    });
+   866→    const out: { label: string; items: CallLog[] }[] = [];
+   867→    list.forEach((r) => {
+   868→      const label = dayGroup(r.at);
+   869→      const last = out[out.length - 1];
+   870→      if (last && last.label === label) last.items.push(r);
+   871→      else out.push({ label, items: [r] });
+   872→    });
+   873→    return out;
+   874→  }, [recents, q, dir, contactFor]);
+   875→
+   876→  const missedCount = useMemo(() => recents.filter((r) => r.direction === "missed").length, [recents]);
+   877→
+   878→  const redial = (r: CallLog) => {
+   879→    const c = contactFor(r);
+   880→    ui.open({ type: "call", phone: r.phone, contactId: c?.id });
+   881→  };
+   882→
+   883→  const unknown = unknownFor;
+   884→
+   885→  return (
+   886→    <div className="tab-content">
+   887→      <ViewHeader
+   888→        title="Recent calls"
+   889→        subtitle="Your conversations at a glance."
+   890→        action={
+   891→          <IconButton
+   892→            label="Call history options"
+   893→            className="mt-1"
+   894→            onClick={() => setMenuOpen(true)}
+   895→          >
+   896→            <MoreVertical size={18} />
+   897→          </IconButton>
+   898→        }
+   899→      />
+   900→
+   901→      <SearchInput value={q} onChange={setQ} placeholder="Search calls…" />
+   902→
+   903→      <div className="app-scroll -mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1">
+   904→        <Chip className="py-2" active={dir === "all"} onClick={() => setDir("all")}>
+   905→          All
+   906→        </Chip>
+   907→        <Chip className="py-2" active={dir === "missed"} onClick={() => setDir("missed")}>
+   908→          Missed{missedCount > 0 ? ` · ${missedCount}` : ""}
+   909→        </Chip>
+   910→        <Chip className="py-2" active={dir === "incoming"} onClick={() => setDir("incoming")}>
+   911→          Incoming
+   912→        </Chip>
+   913→        <Chip className="py-2" active={dir === "outgoing"} onClick={() => setDir("outgoing")}>
+   914→          Outgoing
+   915→        </Chip>
+   916→      </div>
+   917→
+   918→      <div className="mt-4">
+   919→        {groups.length === 0 ? (
+   920→          <EmptyState
+   921→            icon={<PhoneMissed size={22} />}
+   922→            title={recents.length === 0 ? "No calls yet" : "No matching calls"}
+   923→            hint={
+   924→              recents.length === 0
+   925→                ? "Calls you make from dial. will appear here."
+   926→                : "Try a different search or filter."
+   927→            }
+   928→          />
+   929→        ) : (
+   930→          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }}>
+   931→            {groups.map((g) => (
+   932→              <div key={g.label} className="mb-2">
+   933→                <div className="sticky top-0 z-10 bg-canvas/95 px-1 pb-1.5 pt-2 backdrop-blur-sm">
+   934→                  <p className="text-[11px] font-bold uppercase tracking-[2px] text-brand">{g.label}</p>
+   935→                </div>
+   936→                {g.items.map((r) => (
+   937→                  <RecentRow
+   938→                    key={r.id}
+   939→                    call={r}
+   940→                    contact={contactFor(r)}
+   941→                    onOpen={() => {
+   942→                      const c = contactFor(r);
+   943→                      if (c) ui.open({ type: "contact", contactId: c.id });
+   944→                      else setUnknownFor(r);
+   945→                    }}
+   946→                    onRedial={() => redial(r)}
+   947→                  />
+   948→                ))}
+   949→              </div>
+   950→            ))}
+   951→          </motion.div>
+   952→        )}
+   953→      </div>
+   954→
+   955→      {/* history options */}
+   956→      <BottomSheet open={menuOpen} onClose={() => setMenuOpen(false)} title="Call history">
+   957→        <div className="space-y-0.5 pb-2">
+   958→          <ActionRow
+   959→            icon={<PhoneIncoming size={17} />}
+   960→            title="Simulate incoming call"
+   961→            sub="See how an incoming call feels"
+   962→            onClick={() => {
+   963→              setMenuOpen(false);
+   964→              ui.open({ type: "call", phone: "+251 900 000 000", direction: "incoming" });
+   965→            }}
+   966→          />
+   967→          <ActionRow
+   968→            icon={<Trash2 size={17} />}
+   969→            title="Clear call history"
+   970→            danger
+   971→            onClick={async () => {
+   972→              setMenuOpen(false);
+   973→              const ok = await confirm({
+   974→                title: "Clear call history?",
+   975→                message: "All recent calls will be removed. This cannot be undone.",
+   976→                confirmLabel: "Clear all",
+   977→                tone: "danger",
+   978→              });
+   979→              if (!ok) return;
+   980→              app.clearRecents();
+   981→              toastOk("Call history cleared");
+   982→            }}
+   983→          />
+   984→        </div>
+   985→      </BottomSheet>
+   986→
+   987→      {/* unknown number sheet */}
+   988→      <BottomSheet
+   989→        open={!!unknown}
+   990→        onClose={() => setUnknownFor(null)}
+   991→        title={unknown ? prettyPhone(unknown.phone) : ""}
+   992→      >
+   993→        {unknown && (
+   994→          <div className="space-y-0.5 pb-2">
+   995→            <ActionRow
+   996→              icon={<Phone size={17} />}
+   997→              title="Call"
+   998→              onClick={() => {
+   999→                setUnknownFor(null);
+  1000→                ui.open({ type: "call", phone: unknown.phone });
+  1001→              }}
+  1002→            />
+  1003→            <ActionRow
+  1004→              icon={<UserPlus size={17} />}
+  1005→              title="Add to contacts"
+  1006→              onClick={() => {
+  1007→                const phone = unknown.phone;
+  1008→                setUnknownFor(null);
+  1009→                ui.open({ type: "contactEdit", prefillPhone: phone });
+  1010→              }}
+  1011→            />
+  1012→            <ActionRow
+  1013→              icon={<Copy size={17} />}
+  1014→              title="Copy number"
+  1015→              onClick={() => {
+  1016→                void copyText(unknown.phone).then((ok) => toastOk(ok ? "Number copied" : "Couldn't copy"));
+  1017→                setUnknownFor(null);
+  1018→              }}
+  1019→            />
+  1020→            <ActionRow
+  1021→              icon={<Trash2 size={17} />}
+  1022→              title="Delete this log entry"
+  1023→              danger
+  1024→              onClick={async () => {
+  1025→                const ok = await confirm({
+  1026→                  title: "Delete log entry?",
+  1027→                  message: "This single call record will be removed.",
+  1028→                  confirmLabel: "Delete",
+  1029→                  tone: "danger",
+  1030→                });
+  1031→                if (!ok) return;
+  1032→                app.deleteRecent(unknown.id);
+  1033→                setUnknownFor(null);
+  1034→                toastOk("Call log entry deleted");
+  1035→              }}
+  1036→            />
+  1037→          </div>
+  1038→        )}
+  1039→      </BottomSheet>
+  1040→    </div>
+  1041→  );
+  1042→}
+  1043→
