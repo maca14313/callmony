@@ -1,5 +1,5 @@
-import { DialApp } from "@/components/app/App";
+import { CallmonyApp } from "@/components/app/App";
 
 export default function Home() {
-  return <DialApp />;
+  return <CallmonyApp />;
 }

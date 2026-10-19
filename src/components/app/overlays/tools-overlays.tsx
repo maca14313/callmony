@@ -613,7 +613,7 @@ export function ReminderEdit({
             ))}
           </div>
           <p className="mt-1.5 px-1 text-[10px] leading-4 text-mute">
-            Lead alerts fire before the due time, while dial. is open.
+            Lead alerts fire before the due time, while callmony is open.
           </p>
         </div>
 

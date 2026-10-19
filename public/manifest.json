@@ -1,6 +1,6 @@
 {
-  "name": "dial. — Contacts & Ledger",
-  "short_name": "dial.",
+  "name": "callmony — Contacts, Calls & Ledger",
+  "short_name": "callmony",
   "description": "Contacts, calls, money ledger, calculating lists, notes, reminders, bank accounts and files — offline-first.",
   "start_url": "/",
   "scope": "/",

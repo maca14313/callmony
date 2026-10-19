@@ -1,7 +1,7 @@
 "use client";
 
 /* =========================================================================
-   dial. — Contacts views (Task 2-a)
+   callmony — Contacts views (Task 2-a)
    ContactsView · FavoritesView · RecentsView
    ========================================================================= */
 
@@ -923,7 +923,7 @@ export function RecentsView() {
             title={recents.length === 0 ? "No calls yet" : "No matching calls"}
             hint={
               recents.length === 0
-                ? "Calls you make from dial. will appear here."
+                ? "Calls you make from callmony will appear here."
                 : "Try a different search or filter."
             }
           />

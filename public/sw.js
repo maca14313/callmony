@@ -1,8 +1,8 @@
-/* dial. service worker — offline-first app-shell cache.
+/* callmony service worker — offline-first app-shell cache.
    Plain JS, no build step. Bump VERSION to ship an update (old caches drop on activate). */
 
 const VERSION = "1.0.0";
-const CACHE = "dial-v-" + VERSION;
+const CACHE = "callmony-v-" + VERSION;
 
 /* Precached on install. Icons are generated after first deploy, so every entry is
    fetched independently and a missing file never breaks installation. */
@@ -119,7 +119,7 @@ self.addEventListener("fetch", (event) => {
         } catch (err) {
           const cachedPage = (await cache.match(req)) || (await cache.match("/"));
           if (cachedPage) return cachedPage;
-          return new Response("You are offline and the dial. app shell is not cached yet.", {
+          return new Response("You are offline and the callmony app shell is not cached yet.", {
             status: 503,
             headers: { "Content-Type": "text/plain; charset=utf-8" },
           });

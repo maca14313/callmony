@@ -1,7 +1,7 @@
 "use client";
 
 /* =========================================================================
-   dial. — Settings / Lock / Search / Import-Export / Backup / Storage / About
+   callmony — Settings / Lock / Search / Import-Export / Backup / Storage / About
    Owned by Task 2-d. Everything is local: IndexedDB store + Web APIs only.
    ========================================================================= */
 
@@ -162,7 +162,7 @@ const LIST_KIND_LABEL: Record<ListKind, string> = {
   todo: "To-do list",
 };
 
-const SEARCHES_KEY = "dial-searches";
+const SEARCHES_KEY = "callmony-searches";
 
 function readRecentSearches(): string[] {
   try {
@@ -198,7 +198,7 @@ const pad2 = (n: number) => String(n).padStart(2, "0");
 
 const backupFilename = (): string => {
   const d = new Date();
-  return `dial-backup-${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}.json`;
+  return `callmony-backup-${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}.json`;
 };
 
 async function buildBackupBlob(): Promise<{ blob: Blob; filename: string; files: number }> {
@@ -229,7 +229,7 @@ function exportVCardAll(): void {
   }
   downloadBlob(
     new Blob([toVCard(list)], { type: "text/vcard;charset=utf-8" }),
-    "dial-contacts.vcf"
+    "callmony-contacts.vcf"
   );
   toastOk(`${list.length} contacts exported (.vcf)`);
 }
@@ -243,7 +243,7 @@ function exportContactsCsvAll(): void {
   }
   downloadBlob(
     new Blob([contactsToCSV(list)], { type: "text/csv;charset=utf-8" }),
-    "dial-contacts.csv"
+    "callmony-contacts.csv"
   );
   toastOk(`${list.length} contacts exported (.csv)`);
 }
@@ -257,7 +257,7 @@ function exportEntriesCsvAll(): void {
   }
   downloadBlob(
     new Blob([entriesToCSV(list, s.contacts)], { type: "text/csv;charset=utf-8" }),
-    "dial-transactions.csv"
+    "callmony-transactions.csv"
   );
   toastOk(`${list.length} transactions exported (.csv)`);
 }
@@ -612,7 +612,7 @@ function PinFlow({ mode, onClose }: { mode: "set" | "change"; onClose: () => voi
         message:
           mode === "change"
             ? "Your screen-lock PIN will be updated."
-            : "You'll enter this PIN whenever dial. opens or unlocks.",
+            : "You'll enter this PIN whenever callmony opens or unlocks.",
         confirmLabel: mode === "change" ? "Change PIN" : "Enable lock",
       });
       if (!ok) {
@@ -700,7 +700,7 @@ function useNotifPermission(): {
       if (result === "granted") {
         toastOk("Notifications enabled");
         try {
-          new Notification("dial.", { body: "Reminders will now appear here." });
+          new Notification("callmony", { body: "Reminders will now appear here." });
         } catch {
           /* some platforms route through the service worker */
         }
@@ -729,7 +729,7 @@ function NotifStatusRow({
       <ActionRow
         icon={<CheckCircle2 size={18} />}
         label="Notifications enabled"
-        hint="Reminders will alert you, even with dial. in the background."
+        hint="Reminders will alert you, even with callmony in the background."
       />
     );
   }
@@ -755,7 +755,7 @@ function NotifStatusRow({
     <ActionRow
       icon={<Bell size={18} />}
       label="Allow notifications"
-      hint="Reminder alerts, even when dial. is in the background."
+      hint="Reminder alerts, even when callmony is in the background."
       right={
         <Button variant="soft" size="sm" onClick={onAsk}>
           Allow
@@ -809,7 +809,7 @@ function ImportContent({
       />
       <p className="px-1 text-[11px] leading-5 text-mute">
         {mode === "skip"
-          ? "Contacts whose phone number already exists in dial. are left untouched."
+          ? "Contacts whose phone number already exists in callmony are left untouched."
           : "New phone numbers and emails are added onto matching existing contacts."}
       </p>
       <Button variant="brand" size="lg" className="w-full" onClick={run}>
@@ -975,8 +975,8 @@ function useBackupExport(): {
       if (nav.share && nav.canShare?.({ files: [file] })) {
         try {
           await nav.share({
-            title: "dial. backup",
-            text: "Your dial. backup file is attached. Keep it somewhere safe — restore it from Settings → Backup & restore.",
+            title: "callmony backup",
+            text: "Your callmony backup file is attached. Keep it somewhere safe — restore it from Settings → Backup & restore.",
             files: [file],
           });
           useApp.getState().updateSettings({ lastBackupAt: Date.now() });
@@ -1589,7 +1589,7 @@ export function SettingsView() {
     const ok = await confirm({
       tone: "danger",
       title: "Remove PIN lock?",
-      message: "dial. will open without asking for a PIN again.",
+      message: "callmony will open without asking for a PIN again.",
       confirmLabel: "Remove",
     });
     if (!ok) return;
@@ -1704,7 +1704,7 @@ export function SettingsView() {
                 <ActionRow
                   icon={<LockOpen size={18} />}
                   label="Remove PIN"
-                  hint="Open dial. without asking for a PIN again."
+                  hint="Open callmony without asking for a PIN again."
                   danger
                   onClick={removePin}
                 />
@@ -1727,7 +1727,7 @@ export function SettingsView() {
               <ActionRow
                 icon={<Lock size={18} />}
                 label="Set PIN"
-                hint="Ask for a 4-digit PIN when dial. opens or unlocks."
+                hint="Ask for a 4-digit PIN when callmony opens or unlocks."
                 onClick={() => setPinSheet({ open: true, mode: "set" })}
               />
             )}
@@ -1745,7 +1745,7 @@ export function SettingsView() {
             <NotifStatusRow perm={notif.perm} onAsk={() => void notif.ask()} />
             <Note icon={<Info size={13} />}>
               Honest limits: browsers fully suspend apps they have closed. Reminders alert while
-              dial. is open or recent in the background — anything missed appears the next time you
+              callmony is open or recent in the background — anything missed appears the next time you
               open the app.
             </Note>
           </SectionCard>
@@ -1859,7 +1859,7 @@ export function SettingsView() {
               <div className="min-w-0 flex-1">
                 <p className="text-[13.5px] font-semibold text-ink">Round-trip, no accounts</p>
                 <p className="mt-0.5 text-[11px] leading-4 text-mute">
-                  dial. never connects to Gmail or Outlook. Instead: export vCard/CSV → import
+                  callmony never connects to Gmail or Outlook. Instead: export vCard/CSV → import
                   into your email contacts → export back anytime → import here. Reminder emails
                   can be sent from any contact or list.
                 </p>
@@ -1903,13 +1903,13 @@ export function SettingsView() {
               <ActionRow
                 icon={<CheckCircle2 size={18} />}
                 label="Installed on this device"
-                hint="dial. is running as an installed app."
+                hint="callmony is running as an installed app."
               />
             ) : canInstall ? (
               <ActionRow
                 icon={<Download size={18} />}
                 label="Install app"
-                hint="Add dial. to your home screen — it works offline."
+                hint="Add callmony to your home screen — it works offline."
                 onClick={() => void promptInstall()}
               />
             ) : isIOS ? (
@@ -1940,7 +1940,7 @@ export function SettingsView() {
           <SectionCard>
             <ActionRow
               icon={<Info size={18} />}
-              label="About dial."
+              label="About callmony"
               hint={`Version ${APP_VERSION} · offline-first`}
               onClick={() => openOverlay({ type: "about" })}
             />
@@ -1960,7 +1960,7 @@ export function SettingsView() {
               busy={wiping}
             />
             <Note icon={<Info size={13} />}>
-              Export a backup first if you want to keep anything. The demo data dial. started with
+              Export a backup first if you want to keep anything. The demo data callmony started with
               can be re-seeded later by clearing this site's data in your browser.
             </Note>
           </SectionCard>
@@ -1982,7 +1982,7 @@ export function SettingsView() {
             const parsed = await parseBackupFile(files[0]);
             setRestoreBackup(parsed);
           } catch {
-            toastErr("That doesn't look like a dial. backup file");
+            toastErr("That doesn't look like a callmony backup file");
           }
         }}
       />
@@ -2110,7 +2110,7 @@ export function LockScreen() {
           <PhoneCall size={28} strokeWidth={1.8} />
         </div>
         <p className="text-[22px] font-bold tracking-[-1px] text-ink">
-          dial<span className="text-brand">.</span>
+          call<span className="text-brand">mony</span>
         </p>
         <p className="mt-7 text-[15px] font-semibold text-ink">
           {busy ? "Checking…" : "Enter your PIN"}
@@ -2148,7 +2148,7 @@ export function ImportExportOverlay() {
   const csvInputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <Sheet title="Import & export" subtitle="Move contacts in and out of dial." onBack={pop}>
+    <Sheet title="Import & export" subtitle="Move contacts in and out of callmony" onBack={pop}>
       <div className="space-y-6 px-4 pb-14 pt-4">
         {contactsImport.canPickPhone && (
           <section aria-label="Import from this phone">
@@ -2223,7 +2223,7 @@ export function ImportExportOverlay() {
           <SectionLabel>Export</SectionLabel>
           <SectionCard className="space-y-3">
             <p className="px-1 text-[11px] leading-5 text-mute">
-              {contactsCount} contacts · {entriesCount} transactions in dial.
+              {contactsCount} contacts · {entriesCount} transactions in callmony
             </p>
             <div className="grid grid-cols-1 gap-2">
               <Button variant="soft" size="lg" onClick={exportVCardAll}>
@@ -2307,7 +2307,7 @@ export function BackupOverlay() {
             <ActionRow
               icon={<Upload size={18} />}
               label="Restore from backup"
-              hint={parsing ? "Reading file…" : "Pick a dial-backup .json file."}
+              hint={parsing ? "Reading file…" : "Pick a callmony-backup .json file."}
               onClick={() => restoreInputRef.current?.click()}
               busy={parsing}
             />
@@ -2326,7 +2326,7 @@ export function BackupOverlay() {
                   const parsed = await parseBackupFile(files[0]);
                   setBackup(parsed);
                 } catch {
-                  toastErr("Not a valid dial. backup file");
+                  toastErr("Not a valid callmony backup file");
                 }
                 setParsing(false);
               }}
@@ -2348,7 +2348,7 @@ export function BackupOverlay() {
                   : "You've never backed up"}
               </p>
               <p className="mt-0.5 text-[11px] leading-4 text-mute">
-                dial. keeps everything locally — a backup is the only way to move or recover it.
+                callmony keeps everything locally — a backup is the only way to move or recover it.
               </p>
             </div>
           </div>
@@ -2356,7 +2356,7 @@ export function BackupOverlay() {
 
         <Note icon={<AlertTriangle size={13} />}>
           Backups are only as safe as the place you keep them. Clearing this browser's site data
-          deletes dial. and everything in it — and on iOS, Safari may clear unused site data
+          deletes callmony and everything in it — and on iOS, Safari may clear unused site data
           automatically. Back up regularly and keep a copy off this device (email, cloud drive,
           USB).
         </Note>
@@ -2483,7 +2483,7 @@ export function StorageOverlay() {
     setPersisted(ok);
     toastOk(
       ok
-        ? "Storage is now persistent — the browser won't evict dial.'s data"
+        ? "Storage is now persistent — the browser won't evict callmony's data"
         : "Browser declined — data stays best-effort only"
     );
   };
@@ -2498,7 +2498,7 @@ export function StorageOverlay() {
   const totalSize = attachments.reduce((s, a) => s + a.size, 0);
 
   return (
-    <Sheet title="Storage" subtitle="Everything dial. keeps on this device" onBack={pop}>
+    <Sheet title="Storage" subtitle="Everything callmony keeps on this device" onBack={pop}>
       <div className="space-y-6 px-4 pb-14 pt-4">
         {/* browser storage */}
         <section aria-label="Browser storage">
@@ -2554,7 +2554,7 @@ export function StorageOverlay() {
               )}
             </div>
             <Note icon={<ShieldCheck size={13} />}>
-              Persistent storage asks the browser not to evict dial.'s data under space pressure.
+              Persistent storage asks the browser not to evict callmony's data under space pressure.
               It's granted automatically most of the time once you install the app.
             </Note>
           </SectionCard>
@@ -2700,7 +2700,7 @@ export function AboutOverlay() {
   );
 
   return (
-    <Sheet title="About dial." onBack={pop}>
+    <Sheet title="About callmony" onBack={pop}>
       <div className="space-y-6 px-4 pb-14 pt-6">
         <div className="flex flex-col items-center gap-3 text-center">
           <div className="flex h-[72px] w-[72px] items-center justify-center rounded-[24px] bg-brand text-white shadow-floating">
@@ -2708,13 +2708,13 @@ export function AboutOverlay() {
           </div>
           <div>
             <p className="text-[24px] font-bold tracking-[-1px] text-ink">
-              dial<span className="text-brand">.</span>
+              call<span className="text-brand">mony</span>
             </p>
             <p className="mt-0.5 text-[12px] text-mute">
-              Simple connections, better conversations.
+              Talk. Track. Settle up.
             </p>
             <p className="mt-1 text-[11px] font-semibold text-mute">
-              Contacts &amp; Ledger · v{APP_VERSION}
+              Contacts, Calls &amp; Ledger · v{APP_VERSION}
             </p>
           </div>
           <p className="rounded-full bg-brandsoft px-3.5 py-1.5 text-[11px] font-bold text-brand">
@@ -2747,7 +2747,7 @@ export function AboutOverlay() {
               <ActionRow
                 icon={<CheckCircle2 size={18} />}
                 label="Already installed"
-                hint="dial. is running as an installed app."
+                hint="callmony is running as an installed app."
               />
             ) : canInstall ? (
               <>
@@ -2766,7 +2766,7 @@ export function AboutOverlay() {
                 <div className="min-w-0 flex-1">
                   <p className="text-[13.5px] font-semibold text-ink">On iPhone &amp; iPad</p>
                   <p className="mt-0.5 text-[11px] leading-4 text-mute">
-                    Open dial. in Safari → tap the Share button → “Add to Home Screen”.
+                    Open callmony in Safari → tap the Share button → “Add to Home Screen”.
                   </p>
                 </div>
               </div>
@@ -2805,7 +2805,7 @@ export function AboutOverlay() {
         </section>
 
         <p className="pb-2 text-center text-[10.5px] text-mute">
-          Crafted with care · dial. v{APP_VERSION} · PWA ready
+          Crafted with care · callmony v{APP_VERSION} · PWA ready
         </p>
       </div>
     </Sheet>

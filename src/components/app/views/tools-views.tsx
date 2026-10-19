@@ -104,7 +104,7 @@ export function RemindersView() {
     toastOk(
       granted
         ? "Notifications on — you'll be alerted in the background"
-        : "No problem — alarms still work while dial. is open"
+        : "No problem — alarms still work while callmony is open"
     );
   };
 
@@ -176,7 +176,7 @@ export function RemindersView() {
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-bold text-ink">Turn on notifications</p>
               <p className="mt-0.5 text-[11px] leading-4 text-mute">
-                Alarms always work while dial. is open; notifications alert you while the app is in
+                Alarms always work while callmony is open; notifications alert you while the app is in
                 the background.
               </p>
               <div className="mt-2.5 flex items-center gap-1">
@@ -225,7 +225,7 @@ export function RemindersView() {
           <EmptyState
             icon={<BellRing size={21} />}
             title={kind === "all" ? "No reminders yet" : `No ${KIND_CHIPS.find((k) => k.id === kind)?.label.toLowerCase()}`}
-            hint="Payment due dates, follow-ups, birthdays — dial. will alarm you on time."
+            hint="Payment due dates, follow-ups, birthdays — callmony will alarm you on time."
             action={
               <Button
                 variant="brand"

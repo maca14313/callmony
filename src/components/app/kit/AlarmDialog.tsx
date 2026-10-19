@@ -41,7 +41,7 @@ function beep(times = 2) {
 export function notify(title: string, body: string) {
   try {
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-      new Notification(title, { body, icon: "/icons/icon-192.png", tag: "dial-reminder" });
+      new Notification(title, { body, icon: "/icons/icon-192.png", tag: "callmony-reminder" });
     }
   } catch {
     /* noop */
@@ -64,7 +64,7 @@ export function AlarmDialog({ reminder }: { reminder: Reminder }) {
     firedRef.current = true;
     beep(3);
     vibrate_([180, 120, 180, 120, 180]);
-    notify(reminder.title, reminder.notes || "Reminder from dial.");
+    notify(reminder.title, reminder.notes || "Reminder from callmony.");
   }, [reminder]);
 
   const link = reminder.links?.[0];

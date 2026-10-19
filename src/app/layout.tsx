@@ -11,10 +11,10 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "dial. — Contacts & Ledger",
+  title: "callmony — Contacts, Calls & Ledger",
   description:
     "A premium offline-first phone app: contacts, calls, money ledger, calculating lists, notes, reminders, bank accounts and files — all on your device.",
-  applicationName: "dial.",
+  applicationName: "callmony",
   manifest: "/manifest.json",
   icons: {
     icon: [
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "dial.",
+    title: "callmony",
   },
   formatDetection: {
     telephone: false,

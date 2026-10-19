@@ -187,3 +187,26 @@ Stage Summary:
   4. `kit/primitives.tsx` — `Button` doesn't spread rest props, so `aria-label`s passed in App.tsx's header (Search/Settings) are silently dropped (a11y gap; snapshot shows unnamed buttons).
   5. `/icons/icon-192.png`, `/icons/icon-512.png`, `/icons/maskable-512.png` still 404 — manifest/SW reference them by design; main agent generates them later.
 - Note: restore-REPLACE settings + attachment bytes only take effect after shared db.ts fix #1 (record writes already work — merge-restore verified end-to-end today).
+
+---
+Task ID: 3
+Agent: main (Z.ai Code)
+Task: Rebrand to callmony, verify end-to-end, build standalone admin console, package client+admin .tar builds, push to github.com/maca14313/callmony.
+
+Work Log:
+- Read full worklog + audited project state: Tasks 1, 2-a…2-d all complete; previously flagged shared bugs (db.ts v2 out-of-line meta/blobs stores, `cn` export, speedDial typing, calc.ts extraCharge) already fixed by prior session; `bun run lint` clean, `bunx tsc --noEmit` → 0 errors in src/ (remaining errors only in sandbox examples/ + skills/).
+- REBRAND dial. → callmony everywhere:
+  - App.tsx: splash + header logo `call`+teal`mony`, tagline "Talk. Track. Settle up.", rename DialApp→CallmonyApp, install-text, aria-label; page.tsx import updated.
+  - layout.tsx metadata (title/applicationName/appleWebApp.title), manifest.json (name/short_name), sw.js (cache `callmony-v-1.0.0`, offline message), pwa.ts (localStorage `callmony-sw-version`).
+  - pdf.ts share/PDF footers, exporters.ts (backup app id now "callmony"; parser accepts BOTH "callmony" and legacy "dial-ledger" backups), types.ts BackupFile app union, api/version app id.
+  - data-overlays.tsx (~45 strings incl. LockScreen/About logos, backup/export filenames `callmony-backup-*`, `callmony-contacts.vcf/csv`, `callmony-transactions.csv`, searches key), tools-overlays/tools-views/contacts-views/contacts-overlays comments + hints, AlarmDialog notification tag/body.
+  - Internal IndexedDB name `dial-ledger` kept on purpose (no data loss for existing preview data); backups stay cross-compatible.
+- Browser end-to-end verification (agent-browser): title callmony ✓, live reminder alarm fired (PAYMENT DUE modal w/ snooze/dismiss) ✓, Contacts list w/ balances + swipe actions ✓, ContactDetail 7 tabs ✓, Ledger tab entry + expandable numbered payment history (Remove payment 1/2, Add payment) ✓, CallScreen (Mute/Speaker/End/Open in dialer) → call logged atop Recents ✓, More sheet → General view Income/Expense ✓, zero page/console errors; VLM-verified screenshots (keypad/ledger): branding + premium teal design intact.
+- Admin console built (`admin/index.html`, standalone single file, zero deps, inline CSS, light/dark): open/drag-drop callmony backup OR load embedded sample data; dashboard stats (contacts, owes-you/you-owe, open-lists pending, overdue, banks, calls, files+bytes); 6 data-health checks (duplicates, broken cross-links, orphan/missing-bytes attachments, trash, overpaid entries, overdue reminders) with "Fix in export"; 8 tabs (Contacts/Ledger/Lists/Reminders/Banks/Calls/Notes/Files) with search, trash filter, CSV export per tab, image lightbox for embedded files; "Export cleaned backup" drops trashed records + orphan files + broken links. Fixed status-order bug (overpaid now reachable). Browser + VLM verified.
+- Packaging: builds/callmony-client-v1.0.0.tar (full client source, 127 entries, ~1.3MB — excludes node_modules/.next/skills/sandbox dirs/.env) + builds/callmony-admin-v1.0.0.tar (admin/) + SHA256SUMS.
+- Git: untracked junk (tool-results, download), updated .gitignore (tool-results/, agent-ctx/, /download/), committed and pushed to https://github.com/maca14313/callmony.git (main).
+
+Stage Summary:
+- App is 100% callmony-branded, offline-first PWA, browser-verified; admin console shipped as second artifact; both .tar builds + source on GitHub under the unique name "callmony" (never used before).
+- Backup format: app id "callmony" (legacy "dial-ledger" accepted on restore); SW cache callmony-v-1.0.0; version endpoint /api/version.
+- Admin console mirrors lib/calc.ts math exactly (entryRemaining/listTotals/ownerBalance) so audits match the app.

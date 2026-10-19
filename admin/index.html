@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>callmony admin — offline backup console</title>
+<meta name="description" content="Standalone, 100% local console for inspecting, auditing and cleaning callmony backup files. No network, no server." />
+<style>
+/* ============ callmony admin — inline design system (no external deps) ============ */
+:root{
+  --brand:#16a085; --brand-deep:#128c74; --brand-soft:#e2f4ef; --brand-ink:#0d6e5a;
+  --ink:#172b2a; --muted:#8b9a98; --canvas:#f7faf9; --surface:#ffffff; --surface2:#f0f5f3;
+  --line:#e3ecea; --line2:#d3e2de; --danger:#e05252; --danger-soft:#fdeaea;
+  --good:#16a085; --good-soft:#e2f4ef; --warn:#dd9a2b; --warn-soft:#fbf1de;
+  --shadow:0 2px 10px -4px rgba(23,43,42,.12); --shadow-lg:0 12px 28px -12px rgba(22,160,133,.35);
+  --radius:16px; --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+html.dark{
+  --brand:#2fc4a6; --brand-deep:#239c84; --brand-soft:#12312b; --brand-ink:#7fe0c8;
+  --ink:#eaf3f1; --muted:#8ba19d; --canvas:#0e1716; --surface:#152220; --surface2:#1b2b29;
+  --line:#243a37; --line2:#314e4a; --danger:#ef6a6a; --danger-soft:#3a1d1d;
+  --good:#2fc4a6; --good-soft:#12312b; --warn:#e8b45a; --warn-soft:#38290f;
+  --shadow:0 2px 10px -4px rgba(0,0,0,.5); --shadow-lg:0 12px 28px -12px rgba(22,160,133,.25);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  background:var(--canvas);color:var(--ink);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input{font:inherit;color:inherit}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--line2);border-radius:8px;border:2px solid var(--canvas)}
+::-webkit-scrollbar-track{background:transparent}
+
+/* layout */
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px 60px}
+header.top{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--canvas) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:14px 0}
+.top-in{max-width:1180px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-mark{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#18b394,#128d76);
+  display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:var(--shadow-lg)}
+.logo h1{font-size:17px;font-weight:800;letter-spacing:-.5px}
+.logo h1 b{color:var(--brand);font-weight:800}
+.logo small{display:block;font-size:10.5px;color:var(--muted);font-weight:600;letter-spacing:.4px}
+.spacer{flex:1}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border-radius:12px;font-weight:700;
+  font-size:12.5px;border:1px solid var(--line);background:var(--surface);box-shadow:var(--shadow);transition:.15s}
+.btn:hover{border-color:var(--brand);transform:translateY(-1px)}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--brand);border-color:transparent;color:#fff;box-shadow:var(--shadow-lg)}
+.btn.ghost{background:transparent;box-shadow:none;border-color:transparent;color:var(--muted)}
+.btn.ghost:hover{color:var(--ink);border-color:var(--line)}
+.btn.sm{padding:5px 10px;font-size:11.5px;border-radius:9px}
+.btn.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 35%,var(--line))}
+.btn.danger:hover{background:var(--danger-soft);border-color:var(--danger)}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+
+/* drop zone */
+.drop{margin-top:34px;border:2px dashed var(--line2);border-radius:22px;background:var(--surface);
+  padding:56px 28px;text-align:center;transition:.2s}
+.drop.hover{border-color:var(--brand);background:var(--brand-soft)}
+.drop .big-ic{width:64px;height:64px;border-radius:20px;background:var(--brand-soft);color:var(--brand);
+  display:flex;align-items:center;justify-content:center;margin:0 auto 16px}
+.drop h2{font-size:19px;font-weight:800;letter-spacing:-.4px}
+.drop p{color:var(--muted);font-size:12.5px;margin-top:6px;max-width:430px;margin-inline:auto}
+.drop .row{display:flex;gap:10px;justify-content:center;margin-top:22px;flex-wrap:wrap}
+.privacy{margin-top:18px;display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:700;
+  color:var(--brand-ink);background:var(--brand-soft);padding:6px 12px;border-radius:99px}
+
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:12px;margin-top:22px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow)}
+.stat .k{font-size:10.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
+.stat .v{font-size:22px;font-weight:800;letter-spacing:-.6px;margin-top:3px}
+.stat .s{font-size:11px;color:var(--muted);margin-top:2px}
+.stat.brand .v{color:var(--brand)}
+.stat.neg .v{color:var(--danger)}
+
+/* panels */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);margin-top:18px;overflow:hidden}
+.panel-head{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.panel-head h3{font-size:14px;font-weight:800;letter-spacing:-.3px}
+.panel-head .badge{font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:99px;background:var(--surface2);color:var(--muted)}
+.panel-head .badge.warn{background:var(--warn-soft);color:var(--warn)}
+.panel-head .badge.bad{background:var(--danger-soft);color:var(--danger)}
+.panel-head .badge.ok{background:var(--good-soft);color:var(--good)}
+
+/* health list */
+.health{list-style:none}
+.health li{display:flex;gap:12px;align-items:flex-start;padding:12px 18px;border-bottom:1px solid var(--line);font-size:12.5px}
+.health li:last-child{border-bottom:none}
+.health .ic{width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:800}
+.health .ic.ok{background:var(--good-soft);color:var(--good)}
+.health .ic.warn{background:var(--warn-soft);color:var(--warn)}
+.health .ic.bad{background:var(--danger-soft);color:var(--danger)}
+.health b{font-weight:700}
+.health .why{color:var(--muted);display:block;font-size:11.5px;margin-top:2px}
+.health .act{margin-left:auto;flex-shrink:0}
+
+/* tabs */
+.tabs{display:flex;gap:6px;margin-top:22px;flex-wrap:wrap}
+.tab{padding:8px 14px;border-radius:12px;font-weight:700;font-size:12.5px;color:var(--muted);
+  border:1px solid transparent;transition:.15s}
+.tab:hover{color:var(--ink);background:var(--surface)}
+.tab.active{background:var(--surface);color:var(--brand);border-color:var(--line);box-shadow:var(--shadow)}
+.tab .n{font-size:10px;font-weight:800;background:var(--surface2);border-radius:99px;padding:2px 7px;margin-left:6px;color:var(--muted)}
+.tab.active .n{background:var(--brand-soft);color:var(--brand-ink)}
+
+/* toolbar */
+.toolbar{display:flex;gap:10px;align-items:center;margin:14px 0 4px;flex-wrap:wrap}
+.search{flex:1;min-width:220px;display:flex;align-items:center;gap:9px;background:var(--surface);
+  border:1px solid var(--line);border-radius:12px;padding:9px 13px;box-shadow:var(--shadow)}
+.search input{border:none;outline:none;background:transparent;width:100%;font-size:13px}
+.search .kbd{font-size:10px;font-weight:800;color:var(--muted);border:1px solid var(--line2);border-radius:6px;padding:2px 6px;font-family:var(--mono)}
+select.sel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 12px;
+  font-size:12.5px;font-weight:700;box-shadow:var(--shadow);color:var(--ink);outline:none}
+
+/* table */
+.tblwrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{position:sticky;top:0;background:var(--surface2);text-align:left;font-size:10.5px;font-weight:800;
+  letter-spacing:.5px;text-transform:uppercase;color:var(--muted);padding:10px 14px;white-space:nowrap;z-index:2}
+td{padding:11px 14px;border-top:1px solid var(--line);vertical-align:middle;white-space:nowrap}
+tbody tr{transition:.1s}
+tbody tr:hover{background:color-mix(in srgb,var(--brand-soft) 45%,transparent)}
+td .sub{display:block;font-size:11px;color:var(--muted);margin-top:1px;white-space:normal}
+.money{font-family:var(--mono);font-weight:700;font-variant-numeric:tabular-nums}
+.money.pos{color:var(--good)} .money.neg{color:var(--danger)}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:99px}
+.pill.ok{background:var(--good-soft);color:var(--good)}
+.pill.bad{background:var(--danger-soft);color:var(--danger)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.mut{background:var(--surface2);color:var(--muted)}
+.pill.br{background:var(--brand-soft);color:var(--brand-ink)}
+.trashflag{color:var(--danger);font-weight:800;font-size:10.5px}
+.imgthumb{width:44px;height:44px;border-radius:10px;object-fit:cover;border:1px solid var(--line);cursor:zoom-in;display:block}
+.nodata{padding:40px;text-align:center;color:var(--muted);font-size:12.5px}
+.count-note{font-size:11px;color:var(--muted);padding:10px 18px;border-top:1px solid var(--line)}
+
+/* lightbox */
+#lightbox{position:fixed;inset:0;background:rgba(10,20,18,.86);z-index:90;display:none;
+  align-items:center;justify-content:center;padding:30px;cursor:zoom-out}
+#lightbox.on{display:flex}
+#lightbox img{max-width:94vw;max-height:92vh;border-radius:14px;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+
+/* toast */
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;
+  background:var(--ink);color:var(--canvas);font-size:12.5px;font-weight:700;padding:11px 18px;
+  border-radius:14px;box-shadow:0 14px 34px rgba(0,0,0,.28);z-index:99;transition:.25s;pointer-events:none;max-width:88vw}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+footer.foot{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);display:flex;gap:10px;
+  align-items:center;color:var(--muted);font-size:11px;flex-wrap:wrap}
+footer.foot b{color:var(--brand)}
+
+.meta-strip{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.meta-chip{font-size:11px;font-weight:700;background:var(--surface);border:1px solid var(--line);
+  border-radius:10px;padding:6px 11px;color:var(--muted)}
+.meta-chip b{color:var(--ink)}
+
+@media (max-width:640px){
+  .wrap{padding:0 12px 40px}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  th,td{padding:9px 10px}
+  .hide-sm{display:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="top-in">
+    <div class="logo">
+      <div class="logo-mark">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.96.36 1.9.7 2.8a2 2 0 0 1-.45 2.11L8.1 9.9a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.84.58 2.8.7A2 2 0 0 1 22 16.92z"/></svg>
+      </div>
+      <div>
+        <h1>call<b>mony</b> admin</h1>
+        <small>OFFLINE BACKUP CONSOLE · v1.0.0</small>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn" id="btn-theme" title="Toggle theme">
+      <svg id="ic-theme" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      Theme
+    </button>
+    <button class="btn" id="btn-open">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M8 13h8"/><path d="M12 9v8"/></svg>
+      Open backup
+    </button>
+    <input type="file" id="file" accept=".json,application/json" hidden />
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- welcome / drop zone -->
+  <section id="welcome">
+    <div class="drop" id="drop">
+      <div class="big-ic">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+      </div>
+      <h2>Drop a callmony backup file</h2>
+      <p>Exported from the app via <b>Settings → Backup &amp; restore</b>. Everything is parsed right here in this tab — the file never leaves your device.</p>
+      <div class="row">
+        <button class="btn primary" id="btn-open2">Choose backup file</button>
+        <button class="btn" id="btn-sample">Load sample data</button>
+      </div>
+      <div class="privacy">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        100% local · zero network requests
+      </div>
+    </div>
+  </section>
+
+  <!-- loaded state -->
+  <section id="main" hidden>
+    <div class="meta-strip" id="meta"></div>
+    <div class="stats" id="stats"></div>
+    <div class="panel" id="health-panel">
+      <div class="panel-head">
+        <h3>Data health</h3>
+        <span class="badge" id="health-badge">checking…</span>
+        <div class="spacer"></div>
+        <button class="btn sm" id="btn-clean">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v5h5"/></svg>
+          Export cleaned backup
+        </button>
+        <button class="btn sm" id="btn-reload">Close file</button>
+      </div>
+      <ul class="health" id="health"></ul>
+    </div>
+
+    <div class="tabs" id="tabs"></div>
+    <div class="toolbar">
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="q" placeholder="Filter this table…" />
+        <span class="kbd">/</span>
+      </div>
+      <select class="sel" id="trashsel">
+        <option value="hide">Hide trashed</option>
+        <option value="show">Show trashed</option>
+        <option value="only">Trashed only</option>
+      </select>
+      <div class="spacer"></div>
+      <button class="btn sm" id="btn-csv">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+        Export tab CSV
+      </button>
+    </div>
+    <div class="panel">
+      <div class="tblwrap" id="table"></div>
+      <div class="count-note" id="count-note"></div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <b>callmony</b> admin console · v1.0.0 · works fully offline · open a backup, audit it, export a cleaned copy.
+    <span style="margin-left:auto">Backups are plain JSON — keep them somewhere safe.</span>
+  </footer>
+</div>
+
+<div id="lightbox"><img alt="attachment preview" id="lightbox-img" /></div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ================= callmony admin — all logic below, zero dependencies ================= */
+
+const $ = (s) => document.querySelector(s);
+const state = { backup: null, filename: "", tab: "contacts", query: "", trash: "hide" };
+
+/* ---------- tiny utils ---------- */
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const r2 = (n) => Math.round((+n + Number.EPSILON) * 100) / 100;
+const sumPay = (pays) => r2((pays || []).reduce((s, p) => s + (+p.amount || 0), 0));
+const money = (n, cur = "ETB") => {
+  try { return new Intl.NumberFormat("en-US", { style: "currency", currency: cur, maximumFractionDigits: 2, minimumFractionDigits: 0 }).format(n || 0); }
+  catch { return `${(n || 0).toFixed(2)} ${cur}`; }
+};
+const bytes = (n) => !n ? "0 B" : n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+const fdate = (v) => { if (!v) return "—"; const d = v.length === 10 ? new Date(v + "T00:00:00") : new Date(+v || v); return isNaN(d) ? String(v) : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); };
+const ftime = (ms) => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const normPhone = (raw) => String(raw || "").replace(/\D/g, "").slice(-9);
+const cName = (c) => c ? `${c.firstName || ""} ${c.lastName || ""}`.trim() || c.nickname || c.company || "(no name)" : "Unknown";
+const initials = (c) => { const n = cName(c).split(/\s+/).filter(Boolean); return (n.slice(0, 2).map((p) => p[0]).join("") || "?").toUpperCase(); };
+const avatarColors = ["#16a085", "#5b8bd0", "#c2783a", "#8e6cc0", "#c05b78", "#4f9d69", "#3a8fa8", "#b58a3f"];
+const avColor = (c) => (c && c.color) ? c.color : avatarColors[(cName(c).charCodeAt(0) || 65) % avatarColors.length];
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), 2600); }
+function download(name, text, mime) {
+  const url = URL.createObjectURL(new Blob([text], { type: mime || "text/plain" }));
+  const a = document.createElement("a"); a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+}
+const toCsv = (rows) => rows.map((r) => r.map((cell) => { const s = String(cell ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(",")).join("\r\n");
+
+/* ---------- calc mirrors (same math as the app's lib/calc.ts) ---------- */
+const entryRemaining = (e) => r2((+e.amount || 0) - sumPay(e.payments));
+const entrySigned = (e) => r2((e.type === "credit" ? 1 : -1) * entryRemaining(e));
+const lineTotal = (i) => {
+  const base = r2((+i.qty || 0) * (+i.unitPrice || 0)); let t = base;
+  if (i.discount) t = r2(t - (i.discount.type === "pct" ? r2((base * i.discount.value) / 100) : i.discount.value));
+  if (i.taxPct) t = r2(t + r2((t * i.taxPct) / 100));
+  return Math.max(t, 0);
+};
+const itemPaid = (i) => sumPay(i.payments);
+const listTotals = (l) => {
+  const subtotal = r2(l.items.reduce((s, i) => s + lineTotal(i), 0));
+  let listDiscount = 0;
+  if (l.discount) listDiscount = l.discount.type === "pct" ? r2((subtotal * l.discount.value) / 100) : l.discount.value;
+  const after = r2(subtotal - listDiscount);
+  const listTax = l.taxPct ? r2((after * l.taxPct) / 100) : 0;
+  const extra = l.extraCharge || 0;
+  const grand = r2(after + listTax + extra);
+  const paid = r2(l.items.reduce((s, i) => s + itemPaid(i), 0));
+  return { subtotal, grand, paid, pending: r2(grand - paid), count: l.items.length, paidCount: l.items.filter((i) => lineTotal(i) > 0 ? r2(lineTotal(i) - itemPaid(i)) <= 0.005 : i.checked).length };
+};
+const ownerBalance = (entries, ownerId) => r2(entries.filter((e) => e.ownerId === ownerId && !e.deletedAt).reduce((s, e) => s + entrySigned(e), 0));
+const ownerName = (ownerId, contacts) => ownerId === "general" || !ownerId ? "General" : cName(contacts.find((c) => c.id === ownerId)) || "Unknown";
+
+/* ---------- data accessors ---------- */
+const D = () => state.backup.data || {};
+const live = (arr) => (arr || []).filter((x) => !x.deletedAt);
+const trashed = (arr) => (arr || []).filter((x) => !!x.deletedAt);
+const cur = () => { const s = D().settings || {}; return s.currency || "ETB"; };
+const blobOf = (id) => (state.backup.files || []).find((f) => f.id === id);
+
+/* ---------- load / parse ---------- */
+function loadBackupText(text, filename) {
+  let json;
+  try { json = JSON.parse(text); } catch { toast("Not valid JSON — is this a callmony backup?"); return; }
+  const app = json && json.app;
+  if (app !== "callmony" && app !== "dial-ledger") { toast("Not a callmony backup file (missing app tag)."); return; }
+  json.data = json.data || {};
+  ["contacts", "entries", "lists", "notes", "reminders", "banks", "recents", "messages", "attachments"].forEach((k) => { json.data[k] = json.data[k] || []; });
+  json.data.settings = json.data.settings || {};
+  state.backup = json; state.filename = filename || "backup.json"; state.tab = "contacts"; state.query = "";
+  $("#welcome").hidden = true; $("#main").hidden = false;
+  renderAll();
+  toast(`Loaded ${filename || "backup"} · ${live(D().contacts).length} contacts`);
+}
+
+function readFile(file) {
+  const r = new FileReader();
+  r.onload = () => loadBackupText(String(r.result), file.name);
+  r.onerror = () => toast("Could not read the file.");
+  r.readAsText(file);
+}
+
+/* ---------- sample data (so admins can explore without a backup) ---------- */
+function sampleData() {
+  const t = Date.now(), day = 86400000, iso = (d) => new Date(t - d * day).toISOString().slice(0, 10);
+  const mk = (id, first, last, phones, opts = {}) => ({ id, firstName: first, lastName: last, phones, emails: [], links: [], socials: [], addresses: [], customFields: [], tags: [], favorite: !!opts.fav, createdAt: t - 90 * day, updatedAt: t - day, ...opts });
+  const contacts = [
+    mk("c1", "Abel", "Tesfaye", [{ id: "p1", label: "mobile", number: "+251911234567", primary: true }, { id: "p2", label: "work", number: "+251115550123" }], { fav: true, company: "Tesfaye Trading", note: "Monthly rent partner" }),
+    mk("c2", "Daniel", "Bekele", [{ id: "p3", label: "mobile", number: "+251913456789", primary: true }]),
+    mk("c3", "Hana", "Alemu", [{ id: "p4", label: "mobile", number: "+251914567890", primary: true }], { fav: true }),
+    mk("c4", "Sara", "Mohammed", [{ id: "p5", label: "mobile", number: "+251912345678", primary: true }]),
+    mk("c5", "Yonas", "Girma", [{ id: "p6", label: "mobile", number: "+251915678901", primary: true }]),
+    mk("c6", "Sara", "Mohammed", [{ id: "p7", label: "mobile", number: "+251912345678", primary: true }]), // intentional duplicate
+  ];
+  const pay = (id, amt, d, auto) => ({ id, amount: amt, date: iso(d), createdAt: t - d * day, ...(auto ? { auto } : {}) });
+  const entries = [
+    { id: "e1", ownerId: "c1", type: "credit", amount: 5000, payments: [pay("y1", 1500, 12), pay("y2", 1000, 5)], date: iso(40), category: "Loan", attachments: [], createdAt: t - 40 * day, updatedAt: t - 5 * day },
+    { id: "e2", ownerId: "c2", type: "debit", amount: 2000, payments: [pay("y3", 2500, 3)], date: iso(20), attachments: [], createdAt: t - 20 * day, updatedAt: t - 3 * day }, // overpaid → flips
+    { id: "e3", ownerId: "general", type: "debit", amount: 900, payments: [], date: iso(2), category: "Utilities", attachments: [], createdAt: t - 2 * day, updatedAt: t - 2 * day },
+    { id: "e4", ownerId: "c5", type: "credit", amount: 1200, payments: [pay("y4", 1200, 9, "settle")], date: iso(30), attachments: [], createdAt: t - 30 * day, updatedAt: t - 9 * day },
+    { id: "e5", ownerId: "c3", type: "credit", amount: 950, payments: [], date: iso(6), dueDate: iso(-3), attachments: [], createdAt: t - 6 * day, updatedAt: t - 6 * day }, // overdue
+  ];
+  const li = (id, name, qty, price, pays = [], opts = {}) => ({ id, name, qty, unitPrice: price, payments: pays, checked: false, sortOrder: 0, createdAt: t, updatedAt: t, ...opts });
+  const lists = [
+    { id: "l1", ownerId: "c1", kind: "calculating", title: "Monthly groceries", items: [li("i1", "Coffee (kg)", 2, 850, [pay("ip1", 850, 4)]), li("i2", "Berenj (kg)", 5, 120, [], { discount: { type: "pct", value: 10 } }), li("i3", "Oil (L)", 3, 210)], taxPct: 0, isTemplate: false, postToLedger: true, repeat: "monthly", attachments: [], createdAt: t - 25 * day, updatedAt: t - 2 * day },
+    { id: "l2", ownerId: "general", kind: "checklist", title: "Landlord paperwork", items: [li("i4", "Contract copies", 1, 0, [], { checked: true }), li("i5", "ID scan", 1, 0)], isTemplate: false, postToLedger: false, repeat: "none", attachments: [], createdAt: t - 10 * day, updatedAt: t - 1 * day },
+    { id: "l3", ownerId: "general", kind: "calculating", title: "Rent template", items: [li("i6", "Rent", 1, 15000), li("i7", "Service", 1, 500)], isTemplate: true, postToLedger: true, repeat: "monthly", attachments: [], createdAt: t - 60 * day, updatedAt: t - 30 * day },
+  ];
+  const notes = [{ id: "n1", ownerId: "general", title: "Wifi passwords", body: "Cafe: 12345678\nOffice: strong-pass-9", tags: ["wifi"], pinned: true, links: [], attachments: [], createdAt: t - 15 * day, updatedAt: t - 15 * day }];
+  const reminders = [
+    { id: "r1", ownerId: "c1", title: "Collect remaining from Abel", kind: "payment", dueAt: t + 2 * day, repeat: "none", links: [{ type: "entry", id: "e1" }], done: false, attachments: [], createdAt: t - day, updatedAt: t - day },
+    { id: "r2", ownerId: "general", title: "Pay rent", kind: "payment", dueAt: t - 2 * day, repeat: "monthly", links: [], done: false, attachments: [], createdAt: t - 32 * day, updatedAt: t - 2 * day }, // overdue
+    { id: "r3", ownerId: "general", title: "Hana birthday", kind: "birthday", dueAt: t + 20 * day, repeat: "yearly", links: [], done: false, attachments: [], createdAt: t - 50 * day, updatedAt: t - 50 * day },
+  ];
+  const banks = [
+    { id: "b1", ownerId: "c1", label: "CBE main", bankName: "Commercial Bank of Ethiopia", holderName: "Abel Tesfaye", accountNumber: "1000123456789", balance: 24500, attachments: [], createdAt: t - 80 * day, updatedAt: t - 80 * day },
+    { id: "b2", ownerId: "general", label: "Telebirr", bankName: "Telebirr", accountNumber: "0911234567", balance: 320, attachments: [], createdAt: t - 70 * day, updatedAt: t - 70 * day },
+  ];
+  const recents = [
+    { id: "k1", phone: "+251 911 234 567", contactId: "c1", direction: "outgoing", at: t - 0.2 * day, duration: 145, via: "app", createdAt: t },
+    { id: "k2", phone: "+251 921 111 222", direction: "missed", at: t - 1 * day, duration: 0, via: "app", createdAt: t - day },
+    { id: "k3", phone: "+251 913 456 789", contactId: "c2", direction: "incoming", at: t - 2 * day, duration: 52, via: "tel", createdAt: t - 2 * day },
+  ];
+  const settings = { currency: "ETB", countryCode: "ET", hideBalances: false, pinHash: null, autolockMin: 5, notifAsked: true, blockedNumbers: [], speedDial: { 2: "c1" } };
+  return { app: "callmony", version: 1, exportedAt: t, data: { contacts, entries, lists, notes, reminders, banks, recents, messages: [], attachments: [], settings }, files: [] };
+}
+
+/* ---------- render ---------- */
+const TABS = [
+  ["contacts", "Contacts"], ["ledger", "Ledger"], ["lists", "Lists"], ["reminders", "Reminders"],
+  ["banks", "Bank accounts"], ["calls", "Call log"], ["notes", "Notes"], ["files", "Files"],
+];
+
+function renderAll() { renderMeta(); renderStats(); renderHealth(); renderTabs(); renderTable(); }
+
+function renderMeta() {
+  const b = state.backup, d = D();
+  const chips = [
+    ["File", esc(state.filename)], ["Exported", ftime(b.exportedAt || Date.now())],
+    ["Format", `${esc(b.app)} v${esc(b.version)}`],
+    ["Contacts", `${live(d.contacts).length}`], ["Entries", `${live(d.entries).length}`],
+    ["Lists", `${live(d.lists).length}`], ["Files in backup", `${(b.files || []).length}`],
+    ["Currency", esc(cur())],
+  ];
+  $("#meta").innerHTML = chips.map(([k, v]) => `<span class="meta-chip">${k}: <b>${v}</b></span>`).join("");
+}
+
+function renderStats() {
+  const d = D(), C = cur();
+  const contacts = live(d.contacts), entries = live(d.entries), lists = live(d.lists);
+  const reminders = live(d.reminders), banks = live(d.banks), recents = live(d.recents || []);
+  const owedToMe = r2(entries.filter((e) => e.type === "credit" && e.ownerId !== "general").reduce((s, e) => s + Math.max(entrySigned(e), 0), 0));
+  const iOwe = r2(Math.abs(entries.filter((e) => e.type === "debit" && e.ownerId !== "general").reduce((s, e) => s + Math.min(entrySigned(e), 0), 0)));
+  const pendingLists = r2(lists.filter((l) => l.postToLedger && !l.isTemplate).reduce((s, l) => s + listTotals(l).pending, 0));
+  const overdue = reminders.filter((r) => !r.done && r.dueAt < Date.now()).length;
+  const fileBytes = (state.backup.files || []).reduce((s, f) => s + Math.floor((f.d || "").length * 0.75), 0);
+  const stats = [
+    ["Contacts", contacts.length, `${contacts.filter((c) => c.favorite).length} favorites · ${trashed(d.contacts).length} in trash`, ""],
+    ["Owes you", money(owedToMe, C), "across open credits", "brand"],
+    ["You owe", money(iOwe, C), "across open debits", "neg"],
+    ["Open lists pending", money(pendingLists, C), `${lists.filter((l) => !l.isTemplate).length} active · ${lists.filter((l) => l.isTemplate).length} templates`, ""],
+    ["Reminders", reminders.length, overdue ? `${overdue} overdue` : `${reminders.filter((r) => r.done).length} done`, overdue ? "neg" : ""],
+    ["Bank accounts", banks.length, money(banks.reduce((s, b) => s + (+b.balance || 0), 0), C) + " total", ""],
+    ["Calls logged", recents.length, `${recents.filter((r) => r.direction === "missed").length} missed`, ""],
+    ["Files", (d.attachments || []).length, `${bytes(fileBytes)} embedded`, ""],
+  ];
+  $("#stats").innerHTML = stats.map(([k, v, s, cls]) =>
+    `<div class="stat ${cls}"><div class="k">${esc(k)}</div><div class="v">${esc(String(v))}</div><div class="s">${esc(s)}</div></div>`).join("");
+}
+
+/* ---------- health checks ---------- */
+function healthChecks() {
+  const d = D(), out = [];
+  const contacts = live(d.contacts), entries = live(d.entries), lists = live(d.lists),
+        notes = live(d.notes), reminders = live(d.reminders), banks = live(d.banks), attachments = d.attachments || [];
+  const allIds = {
+    contact: new Set(contacts.map((c) => c.id)), entry: new Set(entries.map((e) => e.id)),
+    list: new Set(lists.map((l) => l.id)), note: new Set(notes.map((n) => n.id)),
+    reminder: new Set(reminders.map((r) => r.id)), bank: new Set(banks.map((b) => b.id)),
+    item: new Set(lists.flatMap((l) => l.items.map((i) => i.id))),
+  };
+  // duplicates
+  const byPhone = new Map();
+  contacts.forEach((c) => (c.phones || []).forEach((p) => { const k = normPhone(p.number); if (k.length >= 7) { if (!byPhone.has(k)) byPhone.set(k, []); byPhone.get(k).push(c); } }));
+  const dupPhones = [...byPhone.values()].filter((arr) => arr.length > 1);
+  const byName = new Map(); contacts.forEach((c) => { const k = cName(c).toLowerCase(); byName.set(k, (byName.get(k) || 0) + 1); });
+  const dupNames = [...byName.values()].filter((n) => n > 1).length;
+  out.push(dupPhones.length || dupNames
+    ? { level: "warn", title: `${dupPhones.length} duplicate phone${dupPhones.length === 1 ? "" : "s"} · ${dupNames} duplicate name${dupNames === 1 ? "" : "s"}`, why: "Same contact saved twice — merge them inside the app (Contacts → ⋯ → Find duplicates), then re-export.", fix: null }
+    : { level: "ok", title: "No duplicate contacts", why: "No two active contacts share a phone number or full name.", fix: null });
+  // broken links
+  const broken = [];
+  [...notes, ...reminders].forEach((x) => (x.links || []).forEach((l) => { const set = allIds[l.type]; if (!set || !set.has(l.id)) broken.push(`${cName(x) ? esc(x.title || "") : ""} → ${l.type}:${l.id}`); }));
+  entries.forEach((e) => { if (e.listId && !allIds.list.has(e.listId)) broken.push(`entry → list:${e.listId}`); });
+  out.push(broken.length
+    ? { level: "warn", title: `${broken.length} broken link${broken.length === 1 ? "" : "s"}`, why: "Notes/reminders pointing at deleted records: " + broken.slice(0, 3).join(" · ") + (broken.length > 3 ? ` … (+${broken.length - 3})` : ""), fix: "clean" }
+    : { level: "ok", title: "All cross-links resolve", why: "Every note/reminder/entry link points at an existing record.", fix: null });
+  // orphan files
+  const referenced = new Set();
+  [...contacts.map((c) => c.photoId), ...entries, ...lists, ...notes, ...reminders, ...banks].forEach((x) => { if (!x) return; (x.attachments || []).forEach((id) => referenced.add(id)); if (x.photoId) referenced.add(x.photoId); });
+  const parentIds = new Set([contacts.map((c) => c.id), entries.map((e) => e.id), lists.map((l) => l.id), lists.flatMap((l) => l.items.map((i) => i.id)), notes.map((n) => n.id), reminders.map((r) => r.id), banks.map((b) => b.id)].flat());
+  const orphans = attachments.filter((a) => !parentIds.has(a.parentId));
+  const unbacked = attachments.filter((a) => !blobOf(a.id));
+  out.push(orphans.length || unbacked.length
+    ? { level: "warn", title: `${orphans.length} orphaned file${orphans.length === 1 ? "" : "s"} · ${unbacked.length} missing byte${unbacked.length === 1 ? "" : "s"}`, why: "Attachment metadata whose parent record is gone, or whose bytes were not embedded in this backup.", fix: "clean" }
+    : { level: "ok", title: "All files attached to live records", why: "Every attachment has a parent, and its bytes are inside the backup.", fix: null });
+  // trash
+  const trashCount = ["contacts", "entries", "lists", "notes", "reminders", "banks"].reduce((s, k) => s + trashed(d[k]).length, 0);
+  out.push(trashCount
+    ? { level: "warn", title: `${trashCount} record${trashCount === 1 ? "" : "s"} in trash`, why: "Soft-deleted items still inside the backup — a cleaned export drops them permanently.", fix: "clean" }
+    : { level: "ok", title: "Trash is empty", why: "No soft-deleted records in this backup.", fix: null });
+  // overpaid entries
+  const overpaid = entries.filter((e) => entryRemaining(e) < -0.005);
+  out.push(overpaid.length
+    ? { level: "warn", title: `${overpaid.length} overpaid entr${overpaid.length === 1 ? "y" : "ies"}`, why: "Payments exceed the amount — the app shows these as flipped balances. Intentional if you collected extra.", fix: null }
+    : { level: "ok", title: "No overpaid entries", why: "Every entry's payments stay within its amount.", fix: null });
+  // overdue reminders
+  const od = reminders.filter((r) => !r.done && r.dueAt < Date.now()).length;
+  out.push(od
+    ? { level: "bad", title: `${od} overdue reminder${od === 1 ? "" : "s"}`, why: "Past their due date and not done — restore the backup to snooze or complete them.", fix: null }
+    : { level: "ok", title: "No overdue reminders", why: "Everything upcoming is still in the future.", fix: null });
+  return out;
+}
+
+function renderHealth() {
+  const checks = healthChecks();
+  const bad = checks.filter((c) => c.level === "bad").length;
+  const warn = checks.filter((c) => c.level === "warn").length;
+  const badge = $("#health-badge");
+  badge.textContent = bad ? `${bad} issue${bad === 1 ? "" : "s"}` : warn ? `${warn} note${warn === 1 ? "" : "s"}` : "all clear ✓";
+  badge.className = "badge " + (bad ? "bad" : warn ? "warn" : "ok");
+  $("#health").innerHTML = checks.map((c) => `
+    <li>
+      <span class="ic ${c.level}">${c.level === "ok" ? "✓" : c.level === "warn" ? "!" : "✕"}</span>
+      <div><b>${esc(c.title)}</b><span class="why">${c.why}</span></div>
+      ${c.fix ? '<span class="act"><button class="btn sm" data-fix="' + c.fix + '">Fix in export</button></span>' : ""}
+    </li>`).join("");
+  $("#health").querySelectorAll("[data-fix]").forEach((b) => b.addEventListener("click", () => exportCleaned()));
+}
+
+function renderTabs() {
+  const d = D();
+  const counts = { contacts: live(d.contacts).length, ledger: live(d.entries).length, lists: live(d.lists).length, reminders: live(d.reminders).length, banks: live(d.banks).length, calls: live(d.recents || []).length, notes: live(d.notes).length, files: (d.attachments || []).length };
+  $("#tabs").innerHTML = TABS.map(([id, label]) =>
+    `<button class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}">${label}<span class="n">${counts[id] ?? 0}</span></button>`).join("");
+  $("#tabs").querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { state.tab = b.dataset.tab; renderTabs(); renderTable(); }));
+}
+
+const hit = (hay) => !state.query || hay.toLowerCase().includes(state.query.toLowerCase());
+
+function renderTable() {
+  const d = D(), C = cur(), trash = state.trash;
+  const pick = (arr) => arr.filter((x) => trash === "only" ? !!x.deletedAt : trash === "hide" ? !x.deletedAt : true);
+  const contacts = pick(d.contacts || []), entries = pick(d.entries || []), lists = pick(d.lists || []),
+        notes = pick(d.notes || []), reminders = pick(d.reminders || []), banks = pick(d.banks || []),
+        recents = pick(d.recents || []), attachments = d.attachments || [];
+  let head = [], rows = [], note = "";
+
+  if (state.tab === "contacts") {
+    head = ["Contact", "Phones", "Balance", "Flags", "Updated"];
+    rows = contacts.filter((c) => hit([cName(c), c.company, c.note, ...(c.phones || []).map((p) => p.number)].join(" ")))
+      .map((c) => {
+        const bal = r2(ownerBalance(d.entries || [], c.id) + (d.lists || []).filter((l) => l.ownerId === c.id && l.postToLedger && !l.isTemplate && !l.deletedAt).reduce((s, l) => s + listTotals(l).pending, 0));
+        return [
+          `<div style="display:flex;align-items:center;gap:10px"><span style="width:32px;height:32px;border-radius:10px;background:${avColor(c)};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800">${initials(c)}</span><div><b>${esc(cName(c))}</b><span class="sub">${esc(c.company || c.note || "")}</span></div></div>`,
+          (c.phones || []).map((p) => `${esc(p.number)}${p.primary ? " ★" : ""}`).join("<br>") || '<span class="pill mut">no phone</span>',
+          `<span class="money ${bal > 0 ? "pos" : bal < 0 ? "neg" : ""}">${money(bal, C)}</span>`,
+          [c.favorite ? '<span class="pill br">★ fav</span>' : "", c.speedDial ? `<span class="pill mut">key ${esc(c.speedDial)}</span>` : "", c.deletedAt ? '<span class="trashflag">TRASHED</span>' : ""].join(" ") || "—",
+          fdate(c.updatedAt),
+        ];
+      });
+    note = `${rows.length} of ${contacts.length} contacts shown`;
+  } else if (state.tab === "ledger") {
+    head = ["Owner", "Type", "Amount", "Paid", "Remaining", "Status", "Due", "Category"];
+    rows = entries.filter((e) => hit([ownerName(e.ownerId, d.contacts), e.note, e.category].join(" ")))
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+      .map((e) => {
+        const rem = entryRemaining(e);
+        const status = rem < -0.005 ? `<span class="pill warn">overpaid ${money(-rem, C)}</span>`
+          : rem <= 0.005 ? '<span class="pill ok">settled ✓</span>'
+          : e.dueDate && new Date(e.dueDate) < new Date() ? '<span class="pill bad">overdue</span>'
+          : `<span class="pill mut">${e.payments.length} payment${e.payments.length === 1 ? "" : "s"}</span>`;
+        return [
+          esc(ownerName(e.ownerId, d.contacts)),
+          e.type === "credit" ? '<span class="pill ok">credit</span>' : '<span class="pill bad">debit</span>',
+          `<span class="money">${money(e.amount, C)}</span>`,
+          `<span class="money">${money(sumPay(e.payments), C)}</span>`,
+          `<span class="money ${e.type === "credit" ? "pos" : "neg"}">${money(Math.abs(rem), C)}</span>`,
+          status + (e.deletedAt ? ' <span class="trashflag">TRASHED</span>' : ""),
+          fdate(e.dueDate),
+          esc(e.category || e.note || "—"),
+        ];
+      });
+    note = `${rows.length} of ${entries.length} entries shown`;
+  } else if (state.tab === "lists") {
+    head = ["List", "Owner", "Kind", "Items", "Grand total", "Paid", "Pending", "Flags"];
+    rows = lists.filter((l) => hit([l.title, ownerName(l.ownerId, d.contacts)].join(" ")))
+      .map((l) => {
+        const t = listTotals(l);
+        return [
+          `<b>${esc(l.title)}</b><span class="sub">${esc(l.note || "")}</span>`,
+          esc(ownerName(l.ownerId, d.contacts)),
+          `<span class="pill mut">${esc(l.kind)}</span>`,
+          `${t.paidCount}/${t.count}`,
+          `<span class="money">${money(t.grand, l.currency || C)}</span>`,
+          `<span class="money pos">${money(t.paid, l.currency || C)}</span>`,
+          `<span class="money ${t.pending > 0 ? "neg" : ""}">${money(t.pending, l.currency || C)}</span>`,
+          [l.isTemplate ? '<span class="pill br">template</span>' : "", l.postToLedger ? '<span class="pill warn">counts in balance</span>' : "", l.repeat !== "none" ? `<span class="pill mut">${esc(l.repeat)}</span>` : "", l.deletedAt ? '<span class="trashflag">TRASHED</span>' : ""].join(" ") || "—",
+        ];
+      });
+    note = `${rows.length} of ${lists.length} lists shown`;
+  } else if (state.tab === "reminders") {
+    head = ["Reminder", "Owner", "Kind", "Due", "Repeat", "Status"];
+    rows = reminders.filter((r) => hit([r.title, r.notes, ownerName(r.ownerId, d.contacts)].join(" ")))
+      .sort((a, b) => (a.dueAt || 0) - (b.dueAt || 0))
+      .map((r) => {
+        const eff = Math.max(r.dueAt || 0, r.snoozedUntil || 0);
+        const status = r.done ? '<span class="pill ok">done ✓</span>'
+          : eff < Date.now() ? '<span class="pill bad">overdue</span>'
+          : new Date(eff).toDateString() === new Date().toDateString() ? '<span class="pill warn">today</span>'
+          : '<span class="pill mut">upcoming</span>';
+        return [ `<b>${esc(r.title)}</b><span class="sub">${esc(r.notes || "")}</span>`, esc(ownerName(r.ownerId, d.contacts)),
+          `<span class="pill mut">${esc(r.kind)}</span>`, ftime(eff), r.repeat === "none" ? "—" : esc(r.repeat),
+          status + (r.deletedAt ? ' <span class="trashflag">TRASHED</span>' : "") ];
+      });
+    note = `${rows.length} of ${reminders.length} reminders shown`;
+  } else if (state.tab === "banks") {
+    head = ["Account", "Owner", "Bank", "Account №", "IBAN / SWIFT", "Balance"];
+    rows = banks.filter((b) => hit([b.label, b.bankName, b.holderName, ownerName(b.ownerId, d.contacts)].join(" ")))
+      .map((b) => [
+        `<b>${esc(b.label)}</b><span class="sub">${esc(b.holderName || "")}</span>`,
+        esc(ownerName(b.ownerId, d.contacts)), esc(b.bankName || "—"),
+        `<span class="money">•••• ${esc(String(b.accountNumber || "").slice(-4))}</span>`,
+        esc(b.swift || b.iban || "—"),
+        `<span class="money">${money(b.balance || 0, b.currency || C)}</span>` + (b.deletedAt ? ' <span class="trashflag">TRASHED</span>' : ""),
+      ]);
+    note = `${rows.length} of ${banks.length} accounts shown · numbers stay masked`;
+  } else if (state.tab === "calls") {
+    head = ["Phone", "Contact", "Direction", "When", "Duration", "Via"];
+    rows = recents.filter((r) => hit([r.phone, cName((d.contacts || []).find((c) => c.id === r.contactId))].join(" ")))
+      .sort((a, b) => (b.at || 0) - (a.at || 0))
+      .map((r) => [
+        `<span class="money">${esc(r.phone)}</span>`,
+        esc(r.contactId ? cName((d.contacts || []).find((c) => c.id === r.contactId)) : "—"),
+        r.direction === "missed" ? '<span class="pill bad">missed</span>' : r.direction === "incoming" ? '<span class="pill ok">incoming</span>' : '<span class="pill br">outgoing</span>',
+        ftime(r.at), r.duration ? `${Math.floor(r.duration / 60)}:${String(r.duration % 60).padStart(2, "0")}` : "—", esc(r.via || "app"),
+      ]);
+    note = `${rows.length} of ${recents.length} calls shown`;
+  } else if (state.tab === "notes") {
+    head = ["Note", "Owner", "Tags", "Links", "Updated"];
+    rows = notes.filter((n) => hit([n.title, n.body, n.tags.join(" ")].join(" ")))
+      .map((n) => [
+        `<b>${esc(n.title)}</b><span class="sub">${esc((n.body || "").slice(0, 90))}${(n.body || "").length > 90 ? "…" : ""}</span>`,
+        esc(ownerName(n.ownerId, d.contacts)),
+        n.tags.map((t) => `<span class="pill mut">${esc(t)}</span>`).join(" ") || "—",
+        (n.links || []).map((l) => `<span class="pill br">${esc(l.type)}</span>`).join(" ") || "—",
+        fdate(n.updatedAt) + (n.deletedAt ? ' <span class="trashflag">TRASHED</span>' : ""),
+      ]);
+    note = `${rows.length} of ${notes.length} notes shown`;
+  } else if (state.tab === "files") {
+    head = ["Preview", "File", "Kind", "Size", "Attached to", "Added"];
+    rows = attachments.filter((a) => hit([a.name, a.mimeType].join(" ")))
+      .map((a) => {
+        const f = blobOf(a.id);
+        const prev = f && a.kind === "image"
+          ? `<img class="imgthumb" src="${f.d}" alt="${esc(a.name)}" data-full="${f.d}" />`
+          : a.thumb ? `<img class="imgthumb" src="${a.thumb}" alt="${esc(a.name)}" />` : '<span class="pill mut">n/a</span>';
+        return [prev, `<b>${esc(a.name)}</b><span class="sub">${esc(a.mimeType)}</span>`,
+          `<span class="pill ${a.kind === "image" ? "br" : "mut"}">${esc(a.kind)}</span>`,
+          bytes(a.size), `${esc(a.parentType)}${f ? "" : ' <span class="trashflag">bytes missing</span>'}`, fdate(a.createdAt)];
+      });
+    note = `${rows.length} of ${attachments.length} files shown · ${(state.backup.files || []).length} with embedded bytes`;
+  }
+
+  $("#table").innerHTML = `<table><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${
+    rows.length ? rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${head.length}"><div class="nodata">Nothing to show here.</div></td></tr>`
+  }</tbody></table>`;
+  $("#count-note").textContent = note;
+  $("#table").querySelectorAll(".imgthumb").forEach((img) => img.addEventListener("click", () => {
+    $("#lightbox-img").src = img.dataset.full || img.src; $("#lightbox").classList.add("on");
+  }));
+}
+
+/* ---------- exports ---------- */
+function exportCleaned() {
+  const b = JSON.parse(JSON.stringify(state.backup));
+  const d = b.data;
+  const keptIds = {
+    contacts: new Set(live(d.contacts).map((c) => c.id)), entries: new Set(live(d.entries).map((e) => e.id)),
+    lists: new Set(live(d.lists).map((l) => l.id)), notes: new Set(live(d.notes).map((n) => n.id)),
+    reminders: new Set(live(d.reminders).map((r) => r.id)), banks: new Set(live(d.banks).map((x) => x.id)),
+  };
+  ["contacts", "entries", "lists", "notes", "reminders", "banks"].forEach((k) => { d[k] = live(d[k]); });
+  // drop links pointing at removed records
+  const valid = (l) => { const s = keptIds[l.type]; return s ? s.has(l.id) : l.type === "item" ? true : false; };
+  d.notes.forEach((n) => (n.links = (n.links || []).filter(valid)));
+  d.reminders.forEach((r) => (r.links = (r.links || []).filter(valid)));
+  d.entries.forEach((e) => { if (e.listId && !keptIds.lists.has(e.listId)) delete e.listId; });
+  // keep only attachments whose parent still exists
+  const parents = new Set();
+  [...d.contacts, ...d.entries, ...d.lists, ...d.notes, ...d.reminders, ...d.banks].forEach((x) => (x.attachments || []).forEach((id) => parents.add(id)));
+  d.contacts.forEach((c) => { if (c.photoId && !parents.has(c.photoId)) delete c.photoId; });
+  d.attachments = (d.attachments || []).filter((a) => parents.has(a.id));
+  b.files = (b.files || []).filter((f) => parents.has(f.id));
+  b.exportedAt = Date.now();
+  b.cleanedBy = "callmony admin";
+  const name = state.filename.replace(/\.json$/i, "").replace(/[^\w-]+/g, "_").slice(0, 40) || "backup";
+  download(`${name}-cleaned.json`, JSON.stringify(b), "application/json");
+  toast("Cleaned backup exported — restore it from the app's Settings.");
+}
+
+function exportTabCsv() {
+  const d = D();
+  let rows = [];
+  if (state.tab === "contacts") {
+    rows = [["Name", "Company", "Phones", "Emails", "Favorite", "Balance", "Created", "Trashed"]];
+    live(d.contacts).forEach((c) => rows.push([cName(c), c.company || "", (c.phones || []).map((p) => `${p.number}${p.primary ? "*" : ""}`).join(" | "), (c.emails || []).map((e) => e.address).join(" | "), c.favorite ? "yes" : "", ownerBalance(d.entries || [], c.id), fdate(c.createdAt), c.deletedAt ? "yes" : ""]));
+  } else if (state.tab === "ledger") {
+    rows = [["Owner", "Type", "Amount", "Paid", "Remaining", "Date", "Due", "Category", "Note", "Trashed"]];
+    live(d.entries).forEach((e) => rows.push([ownerName(e.ownerId, d.contacts), e.type, e.amount, sumPay(e.payments), entryRemaining(e), e.date, e.dueDate || "", e.category || "", e.note || "", e.deletedAt ? "yes" : ""]));
+  } else if (state.tab === "lists") {
+    rows = [["Title", "Owner", "Kind", "Items", "Subtotal", "Grand", "Paid", "Pending", "Template", "Repeat"]];
+    live(d.lists).forEach((l) => { const t = listTotals(l); rows.push([l.title, ownerName(l.ownerId, d.contacts), l.kind, t.count, t.subtotal, t.grand, t.paid, t.pending, l.isTemplate ? "yes" : "", l.repeat]); });
+  } else if (state.tab === "reminders") {
+    rows = [["Title", "Owner", "Kind", "Due", "Repeat", "Done"]];
+    live(d.reminders).forEach((r) => rows.push([r.title, ownerName(r.ownerId, d.contacts), r.kind, new Date(r.dueAt).toISOString(), r.repeat, r.done ? "yes" : ""]));
+  } else if (state.tab === "banks") {
+    rows = [["Label", "Owner", "Bank", "Holder", "Account", "IBAN", "SWIFT", "Balance"]];
+    live(d.banks).forEach((b) => rows.push([b.label, ownerName(b.ownerId, d.contacts), b.bankName || "", b.holderName || "", b.accountNumber || "", b.iban || "", b.swift || "", b.balance || 0]));
+  } else if (state.tab === "calls") {
+    rows = [["Phone", "Contact", "Direction", "At", "Duration s", "Via"]];
+    live(d.recents || []).forEach((r) => rows.push([r.phone, r.contactId ? cName((d.contacts || []).find((c) => c.id === r.contactId)) : "", r.direction, new Date(r.at).toISOString(), r.duration, r.via]));
+  } else if (state.tab === "notes") {
+    rows = [["Title", "Owner", "Body", "Tags", "Pinned"]];
+    live(d.notes).forEach((n) => rows.push([n.title, ownerName(n.ownerId, d.contacts), n.body, n.tags.join(" | "), n.pinned ? "yes" : ""]));
+  } else if (state.tab === "files") {
+    rows = [["Name", "Kind", "MIME", "Size", "Parent type", "Added"]];
+    (d.attachments || []).forEach((a) => rows.push([a.name, a.kind, a.mimeType, a.size, a.parentType, fdate(a.createdAt)]));
+  }
+  if (rows.length <= 1) { toast("Nothing to export in this tab."); return; }
+  download(`callmony-${state.tab}-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(rows), "text/csv;charset=utf-8");
+  toast(`Exported ${rows.length - 1} rows as CSV.`);
+}
+
+/* ---------- wiring ---------- */
+$("#btn-open").addEventListener("click", () => $("#file").click());
+$("#btn-open2").addEventListener("click", () => $("#file").click());
+$("#file").addEventListener("change", (e) => { const f = e.target.files[0]; if (f) readFile(f); e.target.value = ""; });
+$("#btn-sample").addEventListener("click", () => { state.backup = sampleData(); state.filename = "sample-data.json"; state.tab = "contacts"; $("#welcome").hidden = true; $("#main").hidden = false; renderAll(); toast("Sample data loaded — explore every tab."); });
+$("#btn-reload").addEventListener("click", () => location.reload());
+$("#btn-clean").addEventListener("click", exportCleaned);
+$("#btn-csv").addEventListener("click", exportTabCsv);
+$("#q").addEventListener("input", (e) => { state.query = e.target.value.trim(); renderTable(); });
+$("#trashsel").addEventListener("change", (e) => { state.trash = e.target.value; renderTable(); });
+$("#lightbox").addEventListener("click", () => $("#lightbox").classList.remove("on"));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "/" && document.activeElement !== $("#q") && !$("#main").hidden) { e.preventDefault(); $("#q").focus(); }
+  if (e.key === "Escape") $("#lightbox").classList.remove("on");
+});
+const drop = $("#drop");
+["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("hover"); }));
+["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("hover"); }));
+drop.addEventListener("drop", (e) => { const f = e.dataTransfer.files[0]; if (f) readFile(f); });
+
+/* theme: remembers in localStorage */
+const themeBtn = $("#btn-theme");
+const setTheme = (t) => { document.documentElement.classList.toggle("dark", t === "dark"); localStorage.setItem("callmony-admin-theme", t); };
+setTheme(localStorage.getItem("callmony-admin-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+themeBtn.addEventListener("click", () => setTheme(document.documentElement.classList.contains("dark") ? "light" : "dark"));
+</script>
+</body>
+</html>

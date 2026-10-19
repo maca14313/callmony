@@ -253,7 +253,7 @@ export async function buildBackup(
     files.push({ id: a.id, name: a.name, type: a.mimeType, d: await base64FromBlob(blob) });
   }
   const backup: BackupFile = {
-    app: "dial-ledger",
+    app: "callmony",
     version: 1,
     exportedAt: Date.now(),
     data: {
@@ -276,7 +276,8 @@ export async function buildBackup(
 export async function parseBackupFile(file: File): Promise<BackupFile> {
   const text = await file.text();
   const json = JSON.parse(text) as BackupFile;
-  if (json.app !== "dial-ledger") throw new Error("Not a dial. backup file");
+  if (json.app !== "callmony" && json.app !== "dial-ledger")
+    throw new Error("Not a callmony backup file");
   return json;
 }
 

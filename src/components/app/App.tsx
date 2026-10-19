@@ -69,8 +69,8 @@ function Splash() {
           <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.96.36 1.9.7 2.8a2 2 0 0 1-.45 2.11L8.1 9.9a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.84.58 2.8.7A2 2 0 0 1 22 16.92z" />
         </svg>
       </motion.div>
-      <p className="text-[22px] font-bold tracking-[-1px] text-ink">
-        dial<span className="text-brand">.</span>
+      <p className="text-[21px] font-bold tracking-[-1px] text-ink">
+        call<span className="text-brand">mony</span>
       </p>
       <p className="text-[11px] text-mute">Loading your data…</p>
     </div>
@@ -417,7 +417,7 @@ function MoreSheet() {
             </svg>
           </span>
           <span>
-            <span className="block text-[13px] font-bold text-ink">Install dial. on this device</span>
+            <span className="block text-[13px] font-bold text-ink">Install callmony on this device</span>
             <span className="block text-[11px] text-mute">Works offline like a native app</span>
           </span>
         </button>
@@ -465,10 +465,10 @@ function AppHeader() {
             </svg>
           </div>
           <h1 className="text-[23px] font-bold tracking-[-1.2px] text-ink">
-            dial<span className="text-brand">.</span>
+            call<span className="text-brand">mony</span>
           </h1>
         </div>
-        <p className="mt-1 pl-0.5 text-[12px] text-mute">Simple connections, better conversations.</p>
+        <p className="mt-1 pl-0.5 text-[12px] text-mute">Talk. Track. Settle up.</p>
       </div>
       <div className="flex gap-2">
         <Button
@@ -498,7 +498,7 @@ function AppHeader() {
 /* Main app                                                             */
 /* ------------------------------------------------------------------ */
 
-export function DialApp() {
+export function CallmonyApp() {
   // hydration-safe "is client" check without setState-in-effect
   const mounted = useSyncExternalStore(
     () => () => undefined,
@@ -571,7 +571,7 @@ export function DialApp() {
         <div
           className="relative mx-auto flex h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden bg-canvas shadow-2xl sm:h-[900px] sm:rounded-[34px]"
           role="application"
-          aria-label="dial. contacts and ledger app"
+          aria-label="callmony contacts and ledger app"
         >
           <StatusBar />
           <AppHeader />

@@ -1,0 +1,2 @@
+2a88311bf6f5fa3b570d99e664a5306fe1862f529e507649b5e42bbeba261f97  builds/callmony-admin-v1.0.0.tar
+061b725b664b5068907c94971f9babedf3fdbd7b71757758e614a94a6c6416f5  builds/callmony-client-v1.0.0.tar

@@ -1,7 +1,7 @@
 "use client";
 
 /* =========================================================================
-   dial. — Contacts & calls overlays (Task 2-a)
+   callmony — Contacts & calls overlays (Task 2-a)
    ContactDetail · ContactEdit · CallScreen · MergeOverlay · SpeedDialOverlay
    ========================================================================= */
 

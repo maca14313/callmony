@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------
-   dial. — data model
+   callmony — data model
    Every record: id, createdAt, updatedAt, deletedAt (soft delete)
    ownerId: contact id | 'general'  (null-ish = General space)
    Money: numbers in major currency units, rounded via r2()
@@ -276,7 +276,7 @@ export interface Settings {
 }
 
 export interface BackupFile {
-  app: "dial-ledger";
+  app: "callmony" | "dial-ledger"; // "dial-ledger" = pre-rename backups (accepted)
   version: number;
   exportedAt: number;
   data: {

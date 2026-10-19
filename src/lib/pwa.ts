@@ -32,11 +32,11 @@ export async function checkVersion(onUpdateReady: (v: string) => void) {
     const res = await fetch("/api/version", { cache: "no-store" });
     if (!res.ok) return;
     const json = (await res.json()) as { version: string };
-    const known = localStorage.getItem("dial-sw-version");
+    const known = localStorage.getItem("callmony-sw-version");
     if (known && known !== json.version) {
       onUpdateReady(json.version);
     }
-    localStorage.setItem("dial-sw-version", json.version);
+    localStorage.setItem("callmony-sw-version", json.version);
   } catch {
     /* offline */
   }
