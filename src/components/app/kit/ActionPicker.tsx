@@ -7,7 +7,7 @@ import { useUI, type ContactAction } from "@/lib/ui-store";
 import type { Contact, ID } from "@/lib/types";
 import { prettyPhone } from "@/lib/utils";
 import { mailtoLink, openExternal, smsLink, tgLink, waLink } from "@/lib/share";
-import { useT } from "@/lib/i18n";
+import { t as tNow, useT } from "@/lib/i18n";
 import { BottomSheet } from "./Sheet";
 import { Avatar, cx } from "./primitives";
 import { toastErr } from "./toast";
@@ -102,6 +102,9 @@ function runAction(contact: Contact, action: ContactAction, target: ActionTarget
  * • no target → error toast
  * • exactly one target → runs immediately
  * • several targets → opens the shared picker sheet (default marked)
+ *
+ * "call" stays opening the in-app call overlay — CallScreen performs the
+ * tel: handoff to the phone's default caller app from there.
  */
 export function useContactActions() {
   return useMemo(
@@ -114,10 +117,10 @@ export function useContactActions() {
         if (targets.length === 0) {
           toastErr(
             action === "email"
-              ? "No email address on this contact"
+              ? tNow("cd.noEmail")
               : action === "telegram"
-                ? "No Telegram on this contact"
-                : "No phone number on this contact"
+                ? tNow("cd.noTelegram")
+                : tNow("cd.noPhone")
           );
           return;
         }
@@ -176,7 +179,7 @@ export function ActionPickerHost() {
           <Icon size={16} className="text-brand" />
           {t(ACTION_LABEL_KEY[picker.action])}
           <span className="text-mute">·</span>
-          <span className="truncate">{contact.firstName || contact.lastName || "Contact"}</span>
+          <span className="truncate">{contact.firstName || contact.lastName || t("cd.contact")}</span>
         </span>
       }
       zIndex={80}

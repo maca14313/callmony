@@ -86,10 +86,15 @@ export interface Payment {
  * debit   = "you owe them" (−)  · for General: expense
  * remaining = amount − Σ payments; negative remaining flips direction.
  */
+
+/** How the entry type was chosen — display label (math: credit=+, debit=−). */
+export type EntryKind = "income" | "expense" | "credit" | "debit";
+
 export interface LedgerEntry {
   id: ID;
   ownerId: OwnerId;
   type: "credit" | "debit";
+  kind?: EntryKind; // income/expense/credit/debit — user's chosen label (both contexts)
   amount: number;
   payments: Payment[];
   date: string; // YYYY-MM-DD
@@ -284,6 +289,10 @@ export interface Settings {
   pinHash?: { hash: string; salt: string };
   autolockMin: number; // 0 = lock immediately on blur
   hideBalances: boolean;
+  /** outgoing calls: "dialer" = real call via the phone's default caller app (tel:), "demo" = in-app simulation */
+  callMode?: "dialer" | "demo";
+  /** user-added custom ledger categories (on top of the built-in ones) */
+  customCategories?: string[];
   startTab?: string;
   lastBackupAt?: number;
   notifAsked: boolean;

@@ -10,8 +10,9 @@ import { toastOk } from "./toast";
 import { useUI } from "@/lib/ui-store";
 
 /* Calculator engine + keypad — used as a sheet from amount fields and
-   anywhere quick math is needed. The running expression (e.g. "100 +")
-   is shown IN THE MAIN DISPLAY AREA, right above the current number. */
+   anywhere quick math is needed. The WHOLE calculation ("100 + 50 =")
+   renders in the MAIN display with big numbers; the result gets the
+   biggest line once "=" is pressed. */
 
 type Op = "+" | "−" | "×" | "÷";
 
@@ -116,6 +117,19 @@ export function Calculator({ onUse }: { onUse?: (value: number) => void }) {
     return grouped + (dec !== undefined ? "." + dec : "");
   })();
 
+  /* ------- the full calculation, rendered as the main big display ------- */
+  const afterEquals = expr.includes("=");
+  const fullExpr = afterEquals
+    ? expr // "100 + 50 ="
+    : cs.op && cs.acc !== null
+      ? `${fmt(cs.acc)} ${cs.op} ${cs.fresh ? "" : pretty}` // "100 + 50" while typing
+      : pretty; // plain number
+  const resultLine = afterEquals ? pretty : null;
+
+  /* static Tailwind buckets — arbitrary values must be static to be compiled */
+  const bucket = (len: number, sizes: [string, string, string, string]) =>
+    len <= 9 ? sizes[0] : len <= 14 ? sizes[1] : len <= 22 ? sizes[2] : sizes[3];
+
   const KEYS: { k: string; sub?: string; cls?: string; fn: () => void }[] = [
     { k: "C", cls: "func", fn: clearAll },
     { k: "±", cls: "func", fn: toggleSign },
@@ -172,23 +186,40 @@ export function Calculator({ onUse }: { onUse?: (value: number) => void }) {
         </div>
       </div>
 
-      {/* MAIN DISPLAY — expression + current number, both centered here */}
-      <div className="flex min-h-[92px] flex-col items-end justify-end px-4 pb-3 pt-2">
-        <p
-          className="min-h-[18px] max-w-full break-all text-right text-[15px] font-semibold tabular-nums tracking-wide text-mute"
-          aria-live="polite"
-        >
-          {expr}
-        </p>
-        <p
-          className={cx(
-            "max-w-full break-all text-right font-medium tabular-nums tracking-wide text-ink",
-            pretty.length > 9 ? "text-[28px]" : "text-[36px]"
-          )}
-          aria-live="polite"
-        >
-          {pretty}
-        </p>
+      {/* MAIN DISPLAY — the whole calculation in big numbers */}
+      <div className="flex min-h-[96px] flex-col items-end justify-end px-4 pb-3 pt-2">
+        {resultLine && (
+          <p
+            className={cx(
+              "max-w-full break-all text-right font-semibold tabular-nums tracking-wide text-mute",
+              bucket(fullExpr.length, ["text-[24px]", "text-[20px]", "text-[16px]", "text-[13px]"])
+            )}
+            aria-live="polite"
+          >
+            {fullExpr}
+          </p>
+        )}
+        {resultLine ? (
+          <p
+            className={cx(
+              "max-w-full break-all text-right font-bold tabular-nums tracking-wide text-ink",
+              bucket(resultLine.length, ["text-[42px]", "text-[34px]", "text-[26px]", "text-[20px]"])
+            )}
+            aria-live="polite"
+          >
+            {resultLine}
+          </p>
+        ) : (
+          <p
+            className={cx(
+              "max-w-full break-all text-right font-medium tabular-nums tracking-wide text-ink",
+              bucket(fullExpr.length, ["text-[38px]", "text-[30px]", "text-[24px]", "text-[18px]"])
+            )}
+            aria-live="polite"
+          >
+            {fullExpr}
+          </p>
+        )}
       </div>
 
       {/* history */}

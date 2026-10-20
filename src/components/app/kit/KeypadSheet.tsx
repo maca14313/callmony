@@ -83,7 +83,7 @@ export function KeypadSheet() {
 
   const addDigit = (d: string) => {
     if (number.length >= 24) {
-      toastOk("Maximum number length reached");
+      toastOk(t("kp.maxDigits"));
       return;
     }
     vibrate(8);
@@ -131,7 +131,7 @@ export function KeypadSheet() {
     if (contact) {
       const phone = contact.phones.find((p) => p.primary)?.number || contact.phones[0]?.number;
       if (phone) {
-        toastOk(`Speed dial · ${displayName(contact)}`);
+        toastOk(t("kp.speedDialOf", { name: displayName(contact) }));
         makeCall(phone, contact.id);
         return;
       }
@@ -180,7 +180,7 @@ export function KeypadSheet() {
                   setKeypadOpen(false);
                   ui.open({ type: "speedDial" });
                 }}
-                aria-label="Speed dial"
+                aria-label={t("kp.speedDial")}
                 className="absolute left-3 top-1.5 flex h-9 w-9 items-center justify-center rounded-full text-mute transition hover:bg-surface2"
               >
                 <Grid3X3 size={16} />
@@ -209,7 +209,7 @@ export function KeypadSheet() {
                       if (backspaceRef.current) clearTimeout(backspaceRef.current);
                     }}
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#93a29e] transition hover:bg-brandsoft hover:text-ink"
-                    aria-label="Delete last digit (hold to clear)"
+                    aria-label={t("kp.deleteDigit")}
                   >
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 4H8l-5 8 5 8h13a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1z" />
@@ -276,7 +276,7 @@ export function KeypadSheet() {
             {/* call controls */}
             <div className="mx-auto flex w-full max-w-[300px] shrink-0 items-center justify-between px-5 pb-[max(10px,env(safe-area-inset-bottom))] pt-[clamp(6px,1.4dvh,14px)]">
               <button
-                onClick={() => toastOk("Video calling is not connected in this demo")}
+                onClick={() => toastOk(t("kp.videoDemo"))}
                 className="flex h-11 w-11 items-center justify-center rounded-full border border-line2 bg-surface text-[#84938f] transition hover:bg-surface2 active:scale-95"
                 aria-label="Video call"
               >
@@ -286,7 +286,7 @@ export function KeypadSheet() {
               <button
                 onClick={() => makeCall()}
                 className="group flex h-[clamp(56px,8.5dvh,66px)] w-[clamp(56px,8.5dvh,66px)] items-center justify-center rounded-full bg-brand text-white shadow-floating transition duration-200 hover:scale-[1.04] hover:bg-brandink active:scale-95"
-                aria-label={`Call ${number || "number"}`}
+                aria-label={number ? t("kp.callNumber", { number }) : t("act.dial")}
               >
                 <PhoneCall size={26} />
               </button>

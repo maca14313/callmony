@@ -48,13 +48,14 @@ import { ReminderRow } from "../sections/RemindersSection";
 type StatusSeg = "overdue" | "today" | "upcoming" | "done" | "all";
 type KindFilter = "all" | ReminderKind;
 
-const KIND_CHIPS: { id: KindFilter; label: string }[] = [
-  { id: "all", label: "All kinds" },
-  { id: "payment", label: "Payments" },
-  { id: "todo", label: "To-dos" },
-  { id: "birthday", label: "Birthdays" },
-  { id: "followup", label: "Follow-ups" },
-  { id: "custom", label: "Custom" },
+/* Kind chips — labels use the rm.kind* catalog keys (singular forms). */
+const kindChips = (t: (k: string) => string): { id: KindFilter; label: string }[] => [
+  { id: "all", label: t("rm.allKinds") },
+  { id: "payment", label: t("rm.kindPayment") },
+  { id: "todo", label: t("rm.kindTodo") },
+  { id: "birthday", label: t("rm.kindBirthday") },
+  { id: "followup", label: t("rm.kindFollowup") },
+  { id: "custom", label: t("rm.kindCustom") },
 ];
 
 export function RemindersView() {
@@ -66,6 +67,7 @@ export function RemindersView() {
 
   const [seg, setSeg] = useState<StatusSeg>("all");
   const [kind, setKind] = useState<KindFilter>("all");
+  const chips = kindChips(t);
 
   const reminders = useMemo(() => remindersAll.filter((r) => !r.deletedAt), [remindersAll]);
   const filtered = useMemo(
@@ -89,8 +91,8 @@ export function RemindersView() {
 
   const stats =
     groups.overdue.length + groups.today.length + groups.upcoming.length === 0
-      ? "All clear — nothing pending"
-      : `${groups.overdue.length} overdue · ${groups.today.length} today · ${groups.upcoming.length} upcoming`;
+      ? t("rm.allClear")
+      : t("rm.statsLine", { o: groups.overdue.length, t: groups.today.length, u: groups.upcoming.length });
 
   /* notifications permission card — honest about what works when */
   const canNotify = typeof Notification !== "undefined";
@@ -104,11 +106,7 @@ export function RemindersView() {
       granted = false;
     }
     updateSettings({ notifAsked: true });
-    toastOk(
-      granted
-        ? "Notifications on — you'll be alerted in the background"
-        : "No problem — alarms still work while callmony is open"
-    );
+    toastOk(granted ? t("rm.notifGranted") : t("rm.notifDeclined"));
   };
 
   const renderGroup = (
@@ -165,7 +163,7 @@ export function RemindersView() {
           className="h-11 shrink-0"
           onClick={() => ui.open({ type: "reminderEdit", ownerId: "general" })}
         >
-          <Plus size={14} /> New reminder
+          <Plus size={14} /> {t("att.newReminder")}
         </Button>
       </div>
 
@@ -177,21 +175,18 @@ export function RemindersView() {
               <BellRing size={19} />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-bold text-ink">Turn on notifications</p>
-              <p className="mt-0.5 text-[11px] leading-4 text-mute">
-                Alarms always work while callmony is open; notifications alert you while the app is in
-                the background.
-              </p>
+              <p className="text-[13px] font-bold text-ink">{t("rm.turnOnNotifications")}</p>
+              <p className="mt-0.5 text-[11px] leading-4 text-mute">{t("rm.notifCardHint")}</p>
               <div className="mt-2.5 flex items-center gap-1">
                 <Button size="md" className="h-11" onClick={() => void askNotif()}>
-                  Turn on
+                  {t("rm.turnOn")}
                 </Button>
                 <button
                   type="button"
                   onClick={() => updateSettings({ notifAsked: true })}
                   className="flex h-11 items-center rounded-xl px-3 text-[11px] font-semibold text-mute transition hover:text-ink"
                 >
-                  Not now
+                  {t("rm.notNow")}
                 </button>
               </div>
             </div>
@@ -209,13 +204,13 @@ export function RemindersView() {
           { value: "today", label: t("rm.today"), badge: groups.today.length },
           { value: "upcoming", label: t("rm.upcoming"), badge: groups.upcoming.length },
           { value: "done", label: t("rm.done") },
-          { value: "all", label: "All" },
+          { value: "all", label: t("act.all") },
         ]}
       />
 
       {/* kind filter chips */}
       <div className="app-scroll mt-3 flex gap-1.5 overflow-x-auto pb-0.5">
-        {KIND_CHIPS.map((k) => (
+        {chips.map((k) => (
           <Chip key={k.id} active={kind === k.id} onClick={() => setKind(k.id)}>
             {k.label}
           </Chip>
@@ -227,20 +222,22 @@ export function RemindersView() {
         {filtered.length === 0 ? (
           <EmptyState
             icon={<BellRing size={21} />}
-            title={kind === "all" ? "No reminders yet" : `No ${KIND_CHIPS.find((k) => k.id === kind)?.label.toLowerCase()}`}
-            hint="Payment due dates, follow-ups, birthdays — callmony will alarm you on time."
+            title={kind === "all" ? t("rm.noReminders") : `No ${chips.find((k) => k.id === kind)?.label.toLowerCase()}`}
+            hint={t("rm.remindersGeneralHint")}
             action={
               <Button
                 variant="brand"
                 size="lg"
                 onClick={() => ui.open({ type: "reminderEdit", ownerId: "general" })}
               >
-                <Plus size={15} /> New reminder
+                <Plus size={15} /> {t("att.newReminder")}
               </Button>
             }
           />
         ) : (
           <>
+            {/* MISSING keys: rm.nothingOverdue ("Nothing overdue 🎉"), rm.nothingToday ("Nothing due today"),
+               rm.nothingUpcoming ("Nothing coming up"), rm.nothingDone ("Nothing completed yet") */}
             {renderGroup("overdue", t("rm.overdue"), groups.overdue, "Nothing overdue 🎉")}
             {renderGroup("today", t("rm.today"), groups.today, "Nothing due today")}
             {renderGroup("upcoming", t("rm.upcoming"), groups.upcoming, "Nothing coming up")}
@@ -270,15 +267,16 @@ interface TrashItem {
   purge: () => void;
 }
 
-const TAB_LABELS: Record<TrashTab, string> = {
-  all: "All",
-  contacts: "Contacts",
-  entries: "Entries",
-  groups: "Groups", // translated via t("lg.groups") in the UI
-  lists: "Lists",
-  notes: "Notes",
-  reminders: "Reminders",
-  banks: "Accounts",
+/* Trash segment labels, translated in-component. "Entries" has no catalog
+   key yet (MISSING: tr.entries "Entries"). */
+const TRASH_TAB_LABEL_KEY: Record<Exclude<TrashTab, "entries">, string> = {
+  all: "act.all",
+  contacts: "nav.contacts",
+  groups: "lg.groups",
+  lists: "tab.lists",
+  notes: "tab.notes",
+  reminders: "tab.reminders",
+  banks: "tab.accounts",
 };
 
 export function TrashView() {
@@ -316,15 +314,17 @@ export function TrashView() {
   }, [contacts]);
 
   const ownerLabel = (ownerId: string): string =>
-    ownerId === "general" ? "General" : displayName(contactById.get(ownerId));
+    ownerId === "general" ? t("misc.general") : displayName(contactById.get(ownerId));
 
+  /* MISSING key: tr.deletedAgo ("Deleted {time}") */
   const deletedSub = (ownerId: string | undefined, deletedAt: number): string => {
     const when = `Deleted ${relTime(deletedAt)}`;
     return ownerId ? `${ownerLabel(ownerId)} · ${when}` : when;
   };
 
-  /* translated label for a trash segment ("Groups" has an i18n key) */
-  const tabLabel = (x: TrashTab): string => (x === "groups" ? t("lg.groups") : TAB_LABELS[x]);
+  /* translated label for a trash segment */
+  const tabLabel = (x: TrashTab): string =>
+    x === "entries" ? "Entries" : t(TRASH_TAB_LABEL_KEY[x]);
 
   /* Derivation is cheap (filtering small local arrays) — computed per render
      so the React compiler can auto-memoize it reliably. */
@@ -340,6 +340,7 @@ export function TrashView() {
           icon: <Users size={17} />,
           iconCls: "bg-brandsoft text-brand",
           title: <span className="truncate">{displayName(c)}</span>,
+          /* "Deleted …" kept in English — MISSING key: tr.deletedAgo ("Deleted {time}") */
           sub: c.company ? `${c.company} · Deleted ${relTime(c.deletedAt)}` : `Deleted ${relTime(c.deletedAt)}`,
           deletedAt: c.deletedAt,
           restore: () => restoreContact(c.id),
@@ -350,7 +351,7 @@ export function TrashView() {
     if (tab === "all" || tab === "entries")
       entries.forEach((e: LedgerEntry) => {
         if (!e.deletedAt) return;
-        const name = `${e.type === "credit" ? "Credit" : "Debit"} ${fmtMoney(e.amount, currency)}`;
+        const name = `${e.type === "credit" ? t("lg.credit") : t("lg.debit")} ${fmtMoney(e.amount, currency)}`;
         out.push({
           key: `e-${e.id}`,
           name,
@@ -358,7 +359,7 @@ export function TrashView() {
           iconCls: "bg-brandsoft text-pos",
           title: (
             <span className="flex min-w-0 items-baseline gap-1.5 truncate">
-              <span className="shrink-0">{e.type === "credit" ? "Credit" : "Debit"}</span>
+              <span className="shrink-0">{e.type === "credit" ? t("lg.credit") : t("lg.debit")}</span>
               <Money value={e.amount} className="truncate" />
             </span>
           ),
@@ -394,7 +395,7 @@ export function TrashView() {
           icon: <ListChecks size={17} />,
           iconCls: "bg-brandsoft text-brand",
           title: <span className="truncate">{l.title}</span>,
-          sub: `${l.items.length} items · Deleted ${relTime(l.deletedAt)}`,
+          sub: `${l.items.length} ${t("ls.items")} · Deleted ${relTime(l.deletedAt)}`,
           deletedAt: l.deletedAt,
           restore: () => restoreList(l.id),
           purge: () => void purgeList(l.id),
@@ -404,6 +405,7 @@ export function TrashView() {
     if (tab === "all" || tab === "notes")
       notes.forEach((n) => {
         if (!n.deletedAt) return;
+        /* MISSING key: nt.untitled ("Untitled note") */
         out.push({
           key: `n-${n.id}`,
           name: n.title || "Untitled note",
@@ -466,6 +468,9 @@ export function TrashView() {
   );
 
   const purgeOne = async (it: TrashItem) => {
+    /* MISSING keys: tr.deleteForeverTitle ("Delete forever?"),
+       tr.deleteForeverMsg ("“{name}” will be permanently deleted. This cannot be undone."),
+       tr.deleteForeverLabel ("Delete forever") */
     const ok = await confirm({
       title: "Delete forever?",
       message: `“${it.name}” will be permanently deleted. This cannot be undone.`,
@@ -474,18 +479,21 @@ export function TrashView() {
     });
     if (!ok) return;
     it.purge();
-    toastOk("Deleted forever");
+    toastOk(t("tr.deletedForever"));
   };
 
   const restoreAll = () => {
     if (!items.length) return;
     items.forEach((it) => it.restore());
-    toastOk(`Restored ${items.length} item${items.length === 1 ? "" : "s"}`);
+    toastOk(t("tr.restoredN", { n: items.length }));
   };
 
   const emptyTrash = async () => {
     if (!items.length) return;
     const scope = tab === "all" ? `all ${items.length} items` : `the ${items.length} ${tabLabel(tab).toLowerCase()}`;
+    /* MISSING keys: tr.emptyTrashTitle ("Empty trash?"),
+       tr.emptyTrashMsg ("Permanently delete {scope} in trash? This cannot be undone."),
+       tr.emptyTrashLabel ("Empty trash") */
     const ok = await confirm({
       title: "Empty trash?",
       message: `Permanently delete ${scope} in trash? This cannot be undone.`,
@@ -494,7 +502,7 @@ export function TrashView() {
     });
     if (!ok) return;
     items.forEach((it) => it.purge());
-    toastOk("Trash emptied");
+    toastOk(t("tr.trashEmptied"));
   };
 
   return (
@@ -503,6 +511,8 @@ export function TrashView() {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-[25px] font-bold tracking-tight text-ink">{t("hdr.trash")}</h2>
+          {/* MISSING keys: tr.itemsStay ("deleted items stay until you empty the trash"),
+              tr.trashIntro ("Deleted items land here first") */}
           <p className="mt-0.5 text-xs font-medium text-mute">
             {items.length
               ? `${items.length} item${items.length === 1 ? "" : "s"} · deleted items stay until you empty the trash`
@@ -511,9 +521,11 @@ export function TrashView() {
         </div>
         {items.length > 0 && (
           <div className="flex shrink-0 gap-2">
+            {/* MISSING key: tr.restoreAll ("Restore all") */}
             <Button variant="surface" size="sm" className="h-10" onClick={restoreAll}>
               <RotateCcw size={13} /> Restore all
             </Button>
+            {/* MISSING key: tr.empty ("Empty") */}
             <Button variant="danger" size="sm" className="h-10" onClick={() => void emptyTrash()}>
               <Trash2 size={13} /> Empty
             </Button>
@@ -527,14 +539,14 @@ export function TrashView() {
         value={tab}
         onChange={setTab}
         options={[
-          { value: "all", label: TAB_LABELS.all, badge: items.length },
-          { value: "contacts", label: TAB_LABELS.contacts, badge: counts.contacts },
-          { value: "entries", label: TAB_LABELS.entries, badge: counts.entries },
-          { value: "groups", label: t("lg.groups"), badge: counts.groups },
-          { value: "lists", label: TAB_LABELS.lists, badge: counts.lists },
-          { value: "notes", label: TAB_LABELS.notes, badge: counts.notes },
-          { value: "reminders", label: TAB_LABELS.reminders, badge: counts.reminders },
-          { value: "banks", label: TAB_LABELS.banks, badge: counts.banks },
+          { value: "all", label: tabLabel("all"), badge: items.length },
+          { value: "contacts", label: tabLabel("contacts"), badge: counts.contacts },
+          { value: "entries", label: tabLabel("entries"), badge: counts.entries },
+          { value: "groups", label: tabLabel("groups"), badge: counts.groups },
+          { value: "lists", label: tabLabel("lists"), badge: counts.lists },
+          { value: "notes", label: tabLabel("notes"), badge: counts.notes },
+          { value: "reminders", label: tabLabel("reminders"), badge: counts.reminders },
+          { value: "banks", label: tabLabel("banks"), badge: counts.banks },
         ]}
       />
 
@@ -543,11 +555,11 @@ export function TrashView() {
         {items.length === 0 ? (
           <EmptyState
             icon={<Trash2 size={21} />}
-            title="Trash is empty 🎉"
+            title={t("tr.trashEmpty")}
             hint={
               tab === "all"
-                ? "Deleted contacts, entries, groups, lists, notes, reminders and accounts appear here."
-                : `No deleted ${tabLabel(tab).toLowerCase()} right now.`
+                ? t("tr.trashEmptyHint")
+                : t("tr.noDeletedX", { name: tabLabel(tab).toLowerCase() })
             }
           />
         ) : (
@@ -570,15 +582,16 @@ export function TrashView() {
                 <p className="truncate text-[11px] text-mute">{it.sub}</p>
               </div>
               <IconButton
-                label={`Restore ${it.name}`}
+                label={`${t("st.restore")} ${it.name}`}
                 variant="surface"
                 onClick={() => {
                   it.restore();
-                  toastOk("Restored");
+                  toastOk(t("tr.restored"));
                 }}
               >
                 <RotateCcw size={15} />
               </IconButton>
+              {/* MISSING key: tr.deleteForeverName ("Delete {name} forever") */}
               <IconButton
                 label={`Delete ${it.name} forever`}
                 variant="danger"

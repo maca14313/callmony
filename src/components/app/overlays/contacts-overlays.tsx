@@ -10,17 +10,21 @@ import { motion } from "framer-motion";
 import {
   ArrowDown,
   Ban,
+  Bell,
   Building2,
   Cake,
   Camera,
   Check,
   ChevronRight,
   Copy,
+  Eye,
+  EyeOff,
   GitMerge,
   Grid3X3,
   Info,
   Landmark,
   Link2,
+  ListChecks,
   Mail,
   MapPin,
   MessageCircle,
@@ -45,11 +49,12 @@ import {
   UserPlus,
   Volume2,
   VolumeX,
+  Wallet,
   X,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { useUI } from "@/lib/ui-store";
-import { useT } from "@/lib/i18n";
+import { t as tStatic, useT } from "@/lib/i18n";
 import { openListsPending, ownerFullBalance } from "@/lib/calc";
 import { toVCard } from "@/lib/exporters";
 import {
@@ -58,6 +63,7 @@ import {
   displayName,
   downloadBlob,
   fd,
+  maskAccount,
   money,
   normalizePhone,
   prettyPhone,
@@ -68,17 +74,18 @@ import {
   fillTemplate,
   mailtoLink,
   openExternal,
+  openTel,
   primaryEmail,
   primaryPhone,
   reminderTemplates,
   shareText,
   smsLink,
-  telLink,
   telegramHandle,
   tgLink,
   waLink,
 } from "@/lib/share";
 import type {
+  BankAccount,
   CallLog,
   Contact,
   ID,
@@ -136,10 +143,10 @@ async function shareVCard(c: Contact) {
   const res = await shareText(`Contact · ${displayName(c)}`, vcf);
   if (res === "copied") {
     await copyText(vcf);
-    toastOk("vCard copied to clipboard");
+    toastOk(tStatic("cd.vcardCopied"));
   } else if (res === "failed") {
     downloadBlob(new Blob([vcf], { type: "text/vcard" }), `${displayName(c)}.vcf`);
-    toastOk("vCard downloaded");
+    toastOk(tStatic("cd.vcardDownloaded"));
   }
 }
 
@@ -278,6 +285,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [phoneSheet, setPhoneSheet] = useState<PhoneT | null>(null);
+  const [bankSheetOpen, setBankSheetOpen] = useState(false);
 
   const contact = app.contacts.find((c) => c.id === contactId && !c.deletedAt);
   const cc = app.settings.countryCode;
@@ -291,14 +299,25 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
     [app.lists, contact]
   );
 
+  /* this contact's bank accounts — for the quick-grid Bank modal */
+  const banks = useMemo(
+    () =>
+      contact
+        ? app.banks
+            .filter((b) => b.ownerId === contact.id && !b.deletedAt)
+            .sort((a, b) => b.updatedAt - a.updatedAt)
+        : [],
+    [app.banks, contact]
+  );
+
   if (!contact) {
     return (
-      <Sheet title="Contact" onBack={ui.pop}>
+      <Sheet title={t("cd.contact")} onBack={ui.pop}>
         <div className="p-5">
           <EmptyState
             icon={<UserRound size={22} />}
-            title="Contact not found"
-            hint="It may have been deleted or merged into another contact."
+            title={t("cd.notFound")}
+            hint={t("cd.notFoundHint")}
           />
         </div>
       </Sheet>
@@ -328,9 +347,9 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
 
   const remove = async () => {
     const ok = await confirm({
-      title: "Delete contact?",
-      message: `“${name}” will move to Trash. Ledger history stays safe and can be re-linked later.`,
-      confirmLabel: "Delete",
+      title: t("cd.deleteTitle"),
+      message: t("cd.deleteMsg", { name }),
+      confirmLabel: t("act.delete"),
       tone: "danger",
     });
     if (!ok) return;
@@ -342,7 +361,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
   const setPrimaryPhone = (p: PhoneT) => {
     app.saveContact({ id: contact.id, phones: contact.phones.map((x) => ({ ...x, primary: x.id === p.id })) });
     setPhoneSheet(null);
-    toastOk("Primary number updated");
+    toastOk(t("cd.primaryUpdated"));
   };
 
   const birthdayIn = daysUntilBirthday(contact.birthday);
@@ -355,7 +374,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
       actions={
         <>
           <IconButton
-            label={contact.favorite ? "Remove from favorites" : "Add to favorites"}
+            label={contact.favorite ? t("cd.removeFavorite") : t("cd.addFavorite")}
             variant={contact.favorite ? "brand" : "ghost"}
             onClick={() => {
               app.toggleFavorite(contact.id);
@@ -364,7 +383,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
           >
             <Star size={17} fill={contact.favorite ? "currentColor" : "none"} />
           </IconButton>
-          <IconButton label="More actions" onClick={() => setMenuOpen(true)}>
+          <IconButton label={t("cd.moreActions")} onClick={() => setMenuOpen(true)}>
             <MoreVertical size={18} />
           </IconButton>
         </>
@@ -402,39 +421,72 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
           )}
         </div>
 
-        {/* quick actions — fixed 2×3 icon grid */}
-        <div className="mt-5 grid grid-cols-3 gap-2.5">
-          <GridAction
-            icon={<PhoneCall size={19} className="text-brand" />}
+        {/* quick actions — fixed 6×2 icon grid (12 compact tiles) */}
+        <div className="mt-5 grid grid-cols-6 gap-1">
+          {/* row 1 */}
+          <GridTile
+            icon={<PhoneCall size={17} className="text-brand" />}
             label={t("act.call")}
             disabled={!hasPhones}
             onClick={() => act(contact, "call")}
           />
-          <GridAction
-            icon={<MessageCircle size={19} />}
+          <GridTile
+            icon={<MessageCircle size={17} className="text-ink" />}
             label={t("act.sms")}
             disabled={!hasPhones}
             onClick={() => act(contact, "sms")}
           />
-          <GridAction
-            icon={<MessageCircle size={19} className="text-[#1faa53]" />}
+          <GridTile
+            icon={<MessageCircle size={17} className="text-[#1faa53]" />}
             label={t("act.whatsapp")}
             disabled={!hasPhones}
             onClick={() => act(contact, "whatsapp", { text: waReminder })}
           />
-          <GridAction
-            icon={<Landmark size={19} />}
-            label={t("tab.bank")}
-            onClick={() => setTab("bank")}
-          />
-          <GridAction
-            icon={<Send size={19} />}
+          <GridTile
+            icon={<Send size={17} className="text-ink" />}
             label={t("act.telegram")}
             disabled={!tg}
             onClick={() => act(contact, "telegram")}
           />
-          <GridAction
-            icon={<MoreVertical size={19} />}
+          <GridTile
+            icon={<Mail size={17} className="text-ink" />}
+            label={t("act.email")}
+            disabled={!email}
+            onClick={() => act(contact, "email")}
+          />
+          <GridTile
+            icon={<Wallet size={17} className="text-ink" />}
+            label={t("tab.ledger")}
+            onClick={() => setTab("ledger")}
+          />
+          {/* row 2 */}
+          <GridTile
+            icon={<Landmark size={17} className="text-ink" />}
+            label={t("tab.bank")}
+            onClick={() => setBankSheetOpen(true)}
+          />
+          <GridTile
+            icon={<ListChecks size={17} className="text-ink" />}
+            label={t("tab.lists")}
+            onClick={() => setTab("lists")}
+          />
+          <GridTile
+            icon={<StickyNote size={17} className="text-ink" />}
+            label={t("tab.notes")}
+            onClick={() => setTab("notes")}
+          />
+          <GridTile
+            icon={<Bell size={17} className="text-ink" />}
+            label={t("tab.reminders")}
+            onClick={() => setTab("reminders")}
+          />
+          <GridTile
+            icon={<Info size={17} className="text-ink" />}
+            label={t("tab.info")}
+            onClick={() => setTab("info")}
+          />
+          <GridTile
+            icon={<MoreVertical size={17} className="text-ink" />}
             label={t("act.more")}
             onClick={() => setMoreOpen(true)}
           />
@@ -463,7 +515,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
             {tab === "reminders" && <RemindersSection ownerId={contact.id} />}
             {tab === "reminders" && (
               <p className="text-center text-[10px] text-mute">
-                Reminders for {name} · birthdays fire automatically
+                {t("cd.remindersFor", { name })}
               </p>
             )}
 
@@ -477,7 +529,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                 {/* phones */}
                 {contact.phones.length > 0 && (
                   <section>
-                    <SectionLabel>Phones</SectionLabel>
+                    <SectionLabel>{t("cd.phones")}</SectionLabel>
                     <SectionCard className="divide-y divide-line p-0">
                       {contact.phones.map((p) => (
                         <div key={p.id} className="flex items-center gap-1 pr-3">
@@ -485,7 +537,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                             type="button"
                             onClick={() => setPhoneSheet(p)}
                             className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition active:bg-surface2"
-                            aria-label={`Options for ${prettyPhone(p.number, cc)}`}
+                            aria-label={t("ce.numberOptions", { number: prettyPhone(p.number, cc) })}
                           >
                             <LabelChip>{p.label}</LabelChip>
                             <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
@@ -499,11 +551,11 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                             <ChevronRight size={14} className="shrink-0 text-line2" />
                           </button>
                           <IconButton
-                            label={`Copy ${prettyPhone(p.number, cc)}`}
+                            label={`${t("act.copy")} ${prettyPhone(p.number, cc)}`}
                             variant="surface"
                             className="h-9 w-9"
                             onClick={() =>
-                              void copyText(p.number).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"))
+                              void copyText(p.number).then((ok) => toastOk(ok ? t("act.copied") : t("act.couldntCopy")))
                             }
                           >
                             <Copy size={14} />
@@ -517,7 +569,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                 {/* emails */}
                 {contact.emails.length > 0 && (
                   <section>
-                    <SectionLabel>Emails</SectionLabel>
+                    <SectionLabel>{t("cd.emails")}</SectionLabel>
                     <SectionCard className="divide-y divide-line p-0">
                       {contact.emails.map((e) => (
                         <div key={e.id} className="flex items-center gap-2 px-4 py-3">
@@ -526,18 +578,18 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                             type="button"
                             className="min-w-0 flex-1 truncate text-left text-[13px] font-semibold text-ink"
                             onClick={() => {
-                              void copyText(e.address).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"));
+                              void copyText(e.address).then((ok) => toastOk(ok ? t("act.copied") : t("act.couldntCopy")));
                             }}
-                            aria-label="Copy email address"
+                            aria-label={`${t("act.copy")} ${e.address}`}
                           >
                             {e.address}
                           </button>
                           <IconButton
-                            label={`Copy ${e.address}`}
+                            label={`${t("act.copy")} ${e.address}`}
                             variant="surface"
                             className="h-9 w-9"
                             onClick={() =>
-                              void copyText(e.address).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"))
+                              void copyText(e.address).then((ok) => toastOk(ok ? t("act.copied") : t("act.couldntCopy")))
                             }
                           >
                             <Copy size={14} />
@@ -559,7 +611,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                 {/* socials */}
                 {contact.socials.length > 0 && (
                   <section>
-                    <SectionLabel>Socials</SectionLabel>
+                    <SectionLabel>{t("cd.socials")}</SectionLabel>
                     <SectionCard className="divide-y divide-line p-0">
                       {contact.socials.map((s) => (
                         <div key={s.id} className="flex items-center gap-1 pr-3">
@@ -569,11 +621,11 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                               const url = socialUrl(s);
                               if (url) openExternal(url);
                               else {
-                                void copyText(s.handle).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"));
+                                void copyText(s.handle).then((ok) => toastOk(ok ? t("act.copied") : t("act.couldntCopy")));
                               }
                             }}
                             className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition active:bg-surface2"
-                            aria-label={`Open ${s.app}`}
+                            aria-label={`${t("act.open")} ${s.app}`}
                           >
                             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-brandsoft text-brand">
                               {SOCIAL_ICONS[s.app]}
@@ -587,11 +639,11 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                             <ChevronRight size={14} className="shrink-0 text-line2" />
                           </button>
                           <IconButton
-                            label={`Copy ${s.app} handle`}
+                            label={`${t("act.copy")} ${s.app}`}
                             variant="surface"
                             className="h-9 w-9"
                             onClick={() =>
-                              void copyText(s.handle).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"))
+                              void copyText(s.handle).then((ok) => toastOk(ok ? t("act.copied") : t("act.couldntCopy")))
                             }
                           >
                             <Copy size={14} />
@@ -605,7 +657,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                 {/* links */}
                 {contact.links.length > 0 && (
                   <section>
-                    <SectionLabel>Links</SectionLabel>
+                    <SectionLabel>{t("cd.links")}</SectionLabel>
                     <SectionCard className="divide-y divide-line p-0">
                       {contact.links.map((l) => (
                         <div key={l.id} className="flex items-center gap-1 pr-3">
@@ -613,7 +665,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                             type="button"
                             onClick={() => openExternal(l.url)}
                             className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition active:bg-surface2"
-                            aria-label={`Open ${l.label || l.url}`}
+                            aria-label={`${t("act.open")} ${l.label || l.url}`}
                           >
                             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-brandsoft text-brand">
                               <Link2 size={15} />
@@ -625,11 +677,11 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                             <ChevronRight size={14} className="shrink-0 text-line2" />
                           </button>
                           <IconButton
-                            label={`Copy ${l.label || l.url} link`}
+                            label={`${t("act.copy")} ${l.label || l.url}`}
                             variant="surface"
                             className="h-9 w-9"
                             onClick={() =>
-                              void copyText(l.url).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"))
+                              void copyText(l.url).then((ok) => toastOk(ok ? t("act.copied") : t("act.couldntCopy")))
                             }
                           >
                             <Copy size={14} />
@@ -643,17 +695,17 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                 {/* addresses */}
                 {contact.addresses.length > 0 && (
                   <section>
-                    <SectionLabel>Addresses</SectionLabel>
+                    <SectionLabel>{t("cd.addresses")}</SectionLabel>
                     <SectionCard className="divide-y divide-line p-0">
                       {contact.addresses.map((a) => (
                         <div key={a.id} className="flex items-center gap-1 pr-3">
                           <button
                             type="button"
                             onClick={() => {
-                              void copyText(a.text).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"));
+                              void copyText(a.text).then((ok) => toastOk(ok ? t("act.copied") : t("act.couldntCopy")));
                             }}
                             className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition active:bg-surface2"
-                            aria-label="Copy address"
+                            aria-label={`${t("act.copy")} ${a.text}`}
                           >
                             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-brandsoft text-brand">
                               <MapPin size={15} />
@@ -664,11 +716,11 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                             </span>
                           </button>
                           <IconButton
-                            label="Copy address"
+                            label={`${t("act.copy")} ${a.text}`}
                             variant="surface"
                             className="h-9 w-9"
                             onClick={() =>
-                              void copyText(a.text).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"))
+                              void copyText(a.text).then((ok) => toastOk(ok ? t("act.copied") : t("act.couldntCopy")))
                             }
                           >
                             <Copy size={14} />
@@ -682,7 +734,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                 {/* birthday */}
                 {contact.birthday && (
                   <section>
-                    <SectionLabel>Birthday</SectionLabel>
+                    <SectionLabel>{t("cd.birthday")}</SectionLabel>
                     <SectionCard className="flex items-center gap-3">
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-brandsoft text-brand">
                         <Cake size={17} />
@@ -692,10 +744,10 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                         {birthdayIn !== null && (
                           <p className="text-[11px] text-mute">
                             {birthdayIn === 0
-                              ? "Today — happy birthday!"
+                              ? t("cd.birthdayToday")
                               : birthdayIn === 1
-                                ? "Tomorrow"
-                                : `In ${birthdayIn} days`}
+                                ? t("cd.birthdayTomorrow")
+                                : t("cd.birthdayIn", { n: birthdayIn })}
                           </p>
                         )}
                       </div>
@@ -722,7 +774,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                 {/* custom fields */}
                 {contact.customFields.length > 0 && (
                   <section>
-                    <SectionLabel>Custom fields</SectionLabel>
+                    <SectionLabel>{t("cd.customFields")}</SectionLabel>
                     <SectionCard className="divide-y divide-line p-0">
                       {contact.customFields.map((f) => (
                         <div key={f.id} className="flex items-center gap-1 pr-3">
@@ -733,11 +785,11 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                             <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{f.value}</span>
                           </div>
                           <IconButton
-                            label={`Copy ${f.key}`}
+                            label={`${t("act.copy")} ${f.key}`}
                             variant="surface"
                             className="h-9 w-9"
                             onClick={() =>
-                              void copyText(f.value).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"))
+                              void copyText(f.value).then((ok) => toastOk(ok ? t("act.copied") : t("act.couldntCopy")))
                             }
                           >
                             <Copy size={14} />
@@ -751,7 +803,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                 {/* tags */}
                 {contact.tags.length > 0 && (
                   <section>
-                    <SectionLabel>Tags</SectionLabel>
+                    <SectionLabel>{t("ce.tags")}</SectionLabel>
                     <div className="flex flex-wrap gap-1.5">
                       {contact.tags.map((t) => (
                         <span
@@ -768,7 +820,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                 {/* notes */}
                 {(contact.pinnedNote || contact.note) && (
                   <section>
-                    <SectionLabel>Notes</SectionLabel>
+                    <SectionLabel>{t("cd.notesSection")}</SectionLabel>
                     <div className="space-y-2.5">
                       {contact.pinnedNote && (
                         <div className="flex gap-3 rounded-[22px] border border-brand/25 bg-brandsoft p-4">
@@ -798,7 +850,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
         <div className="space-y-0.5 pb-2">
           <ActionRow
             icon={<Pencil size={17} />}
-            title="Edit contact"
+            title={t("cd.editContact")}
             onClick={() => {
               setMenuOpen(false);
               ui.open({ type: "contactEdit", contactId: contact.id });
@@ -806,7 +858,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
           />
           <ActionRow
             icon={<Share2 size={17} />}
-            title="Share vCard"
+            title={t("cd.shareVcard")}
             onClick={() => {
               setMenuOpen(false);
               void shareVCard(contact);
@@ -814,8 +866,8 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
           />
           <ActionRow
             icon={<GitMerge size={17} />}
-            title="Merge duplicates"
-            sub="Scan for similar contacts"
+            title={t("spd.mergeDuplicates")}
+            sub={t("spd.scanSimilar")}
             onClick={() => {
               setMenuOpen(false);
               ui.open({ type: "merge" });
@@ -838,7 +890,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
         <div className="space-y-0.5 pb-2">
           <ActionRow
             icon={<Share2 size={17} />}
-            title="Share vCard"
+            title={t("cd.shareVcard")}
             onClick={() => {
               setMoreOpen(false);
               void shareVCard(contact);
@@ -856,10 +908,10 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
           {phone && (
             <ActionRow
               icon={<Copy size={17} />}
-              title="Copy number"
+              title={t("cd.copyNumber")}
               sub={prettyPhone(phone, cc)}
               onClick={() => {
-                void copyText(phone).then((ok) => toastOk(ok ? "Number copied" : "Couldn't copy"));
+                void copyText(phone).then((ok) => toastOk(ok ? t("act.copied") : t("act.couldntCopy")));
                 setMoreOpen(false);
               }}
             />
@@ -867,23 +919,66 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
           {phone && (
             <ActionRow
               icon={<Phone size={17} />}
-              title="Open in phone dialer"
+              title={t("cd.openInDialer")}
               onClick={() => {
                 setMoreOpen(false);
-                openExternal(telLink(phone, cc));
+                openTel(phone, cc);
               }}
             />
           )}
           {phone && (
             <ActionRow
               icon={<PhoneCall size={17} />}
-              title="Simulate incoming call"
+              title={t("cd.simulateIncoming")}
               onClick={() => {
                 setMoreOpen(false);
                 ui.open({ type: "call", phone, contactId: contact.id, direction: "incoming" });
               }}
             />
           )}
+        </div>
+      </BottomSheet>
+
+      {/* quick-grid Bank modal — this contact's accounts */}
+      <BottomSheet
+        open={bankSheetOpen}
+        onClose={() => setBankSheetOpen(false)}
+        title={t("bk.accountsOf", { name })}
+      >
+        {banks.length === 0 ? (
+          <div className="px-5 pb-2">
+            <EmptyState
+              icon={<Landmark size={21} />}
+              title={t("bk.noAccounts")}
+              hint={t("bk.noAccountsHint")}
+            />
+          </div>
+        ) : (
+          <div className="space-y-1.5 pb-1">
+            {banks.map((b) => (
+              <BankListRow
+                key={b.id}
+                bank={b}
+                onOpen={() => {
+                  setBankSheetOpen(false);
+                  ui.open({ type: "bankEdit", bankId: b.id, ownerId: contact.id });
+                }}
+              />
+            ))}
+          </div>
+        )}
+        <div className="pb-[max(14px,env(safe-area-inset-bottom))] pt-2">
+          <button
+            type="button"
+            onClick={() => {
+              setBankSheetOpen(false);
+              ui.open({ type: "bankEdit", ownerId: contact.id });
+            }}
+            aria-label={t("bk.addAccount")}
+            className="flex h-11 w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-line2 bg-surface2/60 text-[12px] font-semibold text-brand transition active:scale-[0.98]"
+          >
+            <Plus size={15} /> {t("bk.addAccount")}
+          </button>
         </div>
       </BottomSheet>
 
@@ -897,7 +992,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
           <div className="space-y-0.5 pb-2">
             <ActionRow
               icon={<Phone size={17} />}
-              title="Call"
+              title={t("act.call")}
               onClick={() => {
                 const p = phoneSheet.number;
                 setPhoneSheet(null);
@@ -906,7 +1001,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
             />
             <ActionRow
               icon={<MessageCircle size={17} />}
-              title="SMS"
+              title={t("act.sms")}
               onClick={() => {
                 openExternal(smsLink(phoneSheet.number, undefined, cc));
                 setPhoneSheet(null);
@@ -914,7 +1009,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
             />
             <ActionRow
               icon={<MessageCircle size={17} />}
-              title="WhatsApp"
+              title={t("act.whatsapp")}
               onClick={() => {
                 openExternal(waLink(phoneSheet.number, undefined, cc));
                 setPhoneSheet(null);
@@ -923,7 +1018,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
             {hasTelegramSocial && tg && (
               <ActionRow
                 icon={<Send size={17} />}
-                title="Telegram"
+                title={t("act.telegram")}
                 sub={`@${tg.replace(/^@/, "")}`}
                 onClick={() => {
                   openExternal(tgLink(tg));
@@ -933,16 +1028,16 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
             )}
             <ActionRow
               icon={<Copy size={17} />}
-              title="Copy number"
+              title={t("cd.copyNumber")}
               onClick={() => {
-                void copyText(phoneSheet.number).then((ok) => toastOk(ok ? "Number copied" : "Couldn't copy"));
+                void copyText(phoneSheet.number).then((ok) => toastOk(ok ? t("act.copied") : t("act.couldntCopy")));
                 setPhoneSheet(null);
               }}
             />
             {!phoneSheet.primary && (
               <ActionRow
                 icon={<Star size={17} />}
-                title="Set as primary"
+                title={t("ce.setPrimary")}
                 onClick={() => setPrimaryPhone(phoneSheet)}
               />
             )}
@@ -953,7 +1048,11 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
   );
 }
 
-function GridAction({
+/* ------------------------------------------------------------------ */
+/* quick-grid tile — plain 17px icon + 8px label, no card chrome       */
+/* ------------------------------------------------------------------ */
+
+function GridTile({
   icon,
   label,
   onClick,
@@ -965,17 +1064,72 @@ function GridAction({
   disabled?: boolean;
 }) {
   return (
-    <div className="flex flex-col items-center gap-1">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      aria-disabled={disabled}
+      className={cx(
+        "flex min-h-[44px] w-full flex-col items-center justify-center gap-1 rounded-xl px-0.5 py-1.5 transition active:scale-95 hover:bg-surface2",
+        disabled && "pointer-events-none opacity-40"
+      )}
+    >
+      {icon}
+      <span className="max-w-full truncate text-[8px] font-semibold text-mute">{label}</span>
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* bank row inside the quick-grid Bank modal                           */
+/* ------------------------------------------------------------------ */
+
+function BankListRow({ bank: b, onOpen }: { bank: BankAccount; onOpen: () => void }) {
+  const t = useT();
+  const [revealed, setRevealed] = useState(false);
+  const name = b.bankName || b.label;
+
+  return (
+    <div className="flex items-center gap-1.5 rounded-2xl border border-line bg-surface px-3.5 py-2.5">
       <button
         type="button"
-        onClick={onClick}
-        disabled={disabled}
-        aria-label={label}
-        className="flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-surface text-ink shadow-key transition active:scale-95 disabled:opacity-40"
+        onClick={onOpen}
+        className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+        aria-label={name}
       >
-        {icon}
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-brandsoft text-brand">
+          <Landmark size={15} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-semibold text-ink">{name}</span>
+          <span className="block truncate text-[11px] font-medium tabular-nums tracking-[0.6px] text-mute">
+            {b.accountNumber ? (revealed ? b.accountNumber : maskAccount(b.accountNumber)) : "—"}
+          </span>
+        </span>
       </button>
-      <span className="max-w-full truncate text-[9px] font-semibold text-mute">{label}</span>
+      {b.accountNumber && (
+        <>
+          <IconButton
+            label={revealed ? "Hide account number" : "Show account number"}
+            variant="ghost"
+            className="h-9 w-9"
+            onClick={() => setRevealed((v) => !v)}
+          >
+            {revealed ? <EyeOff size={15} /> : <Eye size={15} />}
+          </IconButton>
+          <IconButton
+            label={`${t("act.copy")} ${name}`}
+            variant="ghost"
+            className="h-9 w-9"
+            onClick={() =>
+              void copyText(b.accountNumber!).then((ok) => toastOk(ok ? t("act.copied") : t("act.couldntCopy")))
+            }
+          >
+            <Copy size={15} />
+          </IconButton>
+        </>
+      )}
     </div>
   );
 }
@@ -1008,6 +1162,7 @@ export function ContactEdit({
   const app = useApp();
   const ui = useUI();
   const confirm = useConfirm();
+  const t = useT();
   const existing = contactId ? app.contacts.find((c) => c.id === contactId && !c.deletedAt) : undefined;
 
   const existingThumb = existing?.photoId
@@ -1048,11 +1203,11 @@ export function ContactEdit({
 
   if (contactId && !existing) {
     return (
-      <Sheet title="Edit contact" onBack={ui.pop}>
+      <Sheet title={t("ce.editContact")} onBack={ui.pop}>
         <div className="p-5">
           <EmptyState
             icon={<UserRound size={22} />}
-            title="Contact not found"
+            title={t("cd.notFound")}
             hint="It may have been deleted. Try again from the contacts list."
           />
         </div>
@@ -1064,7 +1219,7 @@ export function ContactEdit({
     const hasName = !!(firstName.trim() || lastName.trim() || nickname.trim());
     const filledPhones = phones.filter((p) => p.number.trim());
     if (!hasName && filledPhones.length === 0) {
-      toastErr("Add at least a name or a phone number");
+      toastErr(t("ce.atLeastOne"));
       return;
     }
     setSaving(true);
@@ -1126,9 +1281,9 @@ export function ContactEdit({
   const remove = async () => {
     if (!existing) return;
     const ok = await confirm({
-      title: "Delete contact?",
+      title: t("cd.deleteTitle"),
       message: `“${displayName(existing)}” will move to Trash. You can undo right after.`,
-      confirmLabel: "Delete",
+      confirmLabel: t("act.delete"),
       tone: "danger",
     });
     if (!ok) return;
@@ -1139,14 +1294,14 @@ export function ContactEdit({
 
   return (
     <Sheet
-      title={contactId ? "Edit contact" : "New contact"}
+      title={contactId ? t("ce.editContact") : t("ce.newContact")}
       subtitle={existing ? displayName(existing) : prefillPhone ? prettyPhone(prefillPhone) : undefined}
       onBack={ui.pop}
       footer={
         <div className="flex gap-2.5">
           {contactId && (
             <Button variant="surface" size="lg" className="flex-1 text-neg" onClick={() => void remove()}>
-              <Trash2 size={16} /> Delete
+              <Trash2 size={16} /> {t("act.delete")}
             </Button>
           )}
           <Button variant="brand" size="lg" className="flex-[2]" disabled={saving} onClick={() => void save()}>
@@ -1162,7 +1317,7 @@ export function ContactEdit({
             type="button"
             onClick={() => fileRef.current?.click()}
             className="relative flex h-[84px] w-[84px] items-center justify-center overflow-hidden rounded-full border border-line2 bg-surface shadow-key transition active:scale-95"
-            aria-label="Set contact photo"
+            aria-label={t("ce.setPhoto")}
           >
             {photoPreview ? (
               <img src={photoPreview} alt="Contact photo" className="h-full w-full object-cover" />
@@ -1191,7 +1346,7 @@ export function ContactEdit({
 
         {/* names */}
         <div className="grid grid-cols-2 gap-2.5">
-          <Field label="First name">
+          <Field label={t("ce.firstName")}>
             <input
               className={inputCls}
               value={firstName}
@@ -1199,7 +1354,7 @@ export function ContactEdit({
               placeholder="Abel"
             />
           </Field>
-          <Field label="Last name">
+          <Field label={t("ce.lastName")}>
             <input
               className={inputCls}
               value={lastName}
@@ -1208,16 +1363,16 @@ export function ContactEdit({
             />
           </Field>
         </div>
-        <Field label="Nickname">
+        <Field label={t("ce.nickname")}>
           <input
             className={inputCls}
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
-            placeholder="What you call them"
+            placeholder={t("ce.whatYouCallThem")}
           />
         </Field>
         <div className="grid grid-cols-2 gap-2.5">
-          <Field label="Company">
+          <Field label={t("ce.company")}>
             <input
               className={inputCls}
               value={company}
@@ -1225,7 +1380,7 @@ export function ContactEdit({
               placeholder="Tesfaye Trading"
             />
           </Field>
-          <Field label="Job title">
+          <Field label={t("ce.jobTitle")}>
             <input
               className={inputCls}
               value={jobTitle}
@@ -1237,7 +1392,7 @@ export function ContactEdit({
 
         {/* phones — unlimited rows */}
         <section>
-          <SectionLabel>Phones</SectionLabel>
+          <SectionLabel>{t("cd.phones")}</SectionLabel>
           <div className="space-y-2">
             {phones.map((p, i) => (
               <div key={p.id} className="flex items-center gap-2">
@@ -1261,7 +1416,7 @@ export function ContactEdit({
                     setPhones((prev) => prev.map((x) => (x.id === p.id ? { ...x, number: e.target.value } : x)))
                   }
                   inputMode="tel"
-                  placeholder="+251 9…"
+                  placeholder={t("ce.phonePlaceholder")}
                   className={cx(inputCls, "min-w-0 flex-1 px-3 py-2.5 text-[13px]")}
                   aria-label={`Phone number ${i + 1}`}
                 />
@@ -1271,8 +1426,8 @@ export function ContactEdit({
                     setPhones((prev) => prev.map((x) => ({ ...x, primary: x.id === p.id })))
                   }
                   className={removeBtnCls}
-                  aria-label="Set as primary number"
-                  title="Set as primary"
+                  aria-label={t("ce.setPrimaryNumber")}
+                  title={t("ce.setPrimary")}
                 >
                   <Star size={16} className={p.primary ? "text-brand" : "text-line2"} fill={p.primary ? "currentColor" : "none"} />
                 </button>
@@ -1280,7 +1435,7 @@ export function ContactEdit({
                   type="button"
                   onClick={() => setPhones((prev) => prev.filter((x) => x.id !== p.id))}
                   className={removeBtnCls}
-                  aria-label="Remove phone"
+                  aria-label={t("ce.removePhone")}
                 >
                   <X size={16} />
                 </button>
@@ -1296,14 +1451,14 @@ export function ContactEdit({
               }
               className={addBtnCls}
             >
-              <Plus size={15} /> Add phone
+              <Plus size={15} /> {t("ce.addPhone")}
             </button>
           </div>
         </section>
 
         {/* emails */}
         <section>
-          <SectionLabel>Emails</SectionLabel>
+          <SectionLabel>{t("cd.emails")}</SectionLabel>
           <div className="space-y-2">
             {emails.map((e, i) => (
               <div key={e.id} className="flex items-center gap-2">
@@ -1327,7 +1482,7 @@ export function ContactEdit({
                     setEmails((prev) => prev.map((x) => (x.id === e.id ? { ...x, address: ev.target.value } : x)))
                   }
                   inputMode="email"
-                  placeholder="name@example.com"
+                  placeholder={t("ce.emailPlaceholder")}
                   className={cx(inputCls, "min-w-0 flex-1 px-3 py-2.5 text-[13px]")}
                   aria-label={`Email address ${i + 1}`}
                 />
@@ -1335,8 +1490,8 @@ export function ContactEdit({
                   type="button"
                   onClick={() => setEmails((prev) => prev.map((x) => ({ ...x, primary: x.id === e.id })))}
                   className={removeBtnCls}
-                  aria-label="Set as primary email"
-                  title="Set as primary"
+                  aria-label={t("ce.setPrimaryEmail")}
+                  title={t("ce.setPrimary")}
                 >
                   <Star size={16} className={e.primary ? "text-brand" : "text-line2"} fill={e.primary ? "currentColor" : "none"} />
                 </button>
@@ -1344,7 +1499,7 @@ export function ContactEdit({
                   type="button"
                   onClick={() => setEmails((prev) => prev.filter((x) => x.id !== e.id))}
                   className={removeBtnCls}
-                  aria-label="Remove email"
+                  aria-label={t("ce.removeEmail")}
                 >
                   <X size={16} />
                 </button>
@@ -1355,14 +1510,14 @@ export function ContactEdit({
               onClick={() => setEmails((prev) => [...prev, { id: uid(), label: "home", address: "", primary: prev.length === 0 }])}
               className={addBtnCls}
             >
-              <Plus size={15} /> Add email
+              <Plus size={15} /> {t("ce.addEmail")}
             </button>
           </div>
         </section>
 
         {/* socials */}
         <section>
-          <SectionLabel>Socials</SectionLabel>
+          <SectionLabel>{t("cd.socials")}</SectionLabel>
           <div className="space-y-2">
             {socials.map((s, i) => (
               <div key={s.id} className="flex items-center gap-2">
@@ -1387,7 +1542,7 @@ export function ContactEdit({
                   onChange={(e) =>
                     setSocials((prev) => prev.map((x) => (x.id === s.id ? { ...x, handle: e.target.value } : x)))
                   }
-                  placeholder="@username or number"
+                  placeholder={t("ce.socialPlaceholder")}
                   className={cx(inputCls, "min-w-0 flex-1 px-3 py-2.5 text-[13px]")}
                   aria-label={`Handle for social ${i + 1}`}
                 />
@@ -1395,7 +1550,7 @@ export function ContactEdit({
                   type="button"
                   onClick={() => setSocials((prev) => prev.filter((x) => x.id !== s.id))}
                   className={removeBtnCls}
-                  aria-label="Remove social"
+                  aria-label={t("ce.removeSocial")}
                 >
                   <X size={16} />
                 </button>
@@ -1406,14 +1561,14 @@ export function ContactEdit({
               onClick={() => setSocials((prev) => [...prev, { id: uid(), app: "telegram", handle: "" }])}
               className={addBtnCls}
             >
-              <Plus size={15} /> Add social
+              <Plus size={15} /> {t("ce.addSocial")}
             </button>
           </div>
         </section>
 
         {/* links */}
         <section>
-          <SectionLabel>Links</SectionLabel>
+          <SectionLabel>{t("cd.links")}</SectionLabel>
           <div className="space-y-2">
             {links.map((l, i) => (
               <div key={l.id} className="flex items-center gap-2">
@@ -1432,7 +1587,7 @@ export function ContactEdit({
                     setLinks((prev) => prev.map((x) => (x.id === l.id ? { ...x, url: e.target.value } : x)))
                   }
                   inputMode="url"
-                  placeholder="https://…"
+                  placeholder={t("ce.websitePlaceholder")}
                   className={cx(inputCls, "min-w-0 flex-1 px-3 py-2.5 text-[13px]")}
                   aria-label={`URL for link ${i + 1}`}
                 />
@@ -1440,7 +1595,7 @@ export function ContactEdit({
                   type="button"
                   onClick={() => setLinks((prev) => prev.filter((x) => x.id !== l.id))}
                   className={removeBtnCls}
-                  aria-label="Remove link"
+                  aria-label={t("ce.removeLink")}
                 >
                   <X size={16} />
                 </button>
@@ -1451,14 +1606,14 @@ export function ContactEdit({
               onClick={() => setLinks((prev) => [...prev, { id: uid(), label: "", url: "" }])}
               className={addBtnCls}
             >
-              <Plus size={15} /> Add link
+              <Plus size={15} /> {t("ce.addLink")}
             </button>
           </div>
         </section>
 
         {/* addresses */}
         <section>
-          <SectionLabel>Addresses</SectionLabel>
+          <SectionLabel>{t("cd.addresses")}</SectionLabel>
           <div className="space-y-2">
             {addresses.map((a, i) => (
               <div key={a.id} className="flex items-center gap-2">
@@ -1483,7 +1638,7 @@ export function ContactEdit({
                   onChange={(e) =>
                     setAddresses((prev) => prev.map((x) => (x.id === a.id ? { ...x, text: e.target.value } : x)))
                   }
-                  placeholder="Street, city…"
+                  placeholder={t("ce.addressPlaceholder")}
                   className={cx(inputCls, "min-w-0 flex-1 px-3 py-2.5 text-[13px]")}
                   aria-label={`Address ${i + 1}`}
                 />
@@ -1491,7 +1646,7 @@ export function ContactEdit({
                   type="button"
                   onClick={() => setAddresses((prev) => prev.filter((x) => x.id !== a.id))}
                   className={removeBtnCls}
-                  aria-label="Remove address"
+                  aria-label={t("ce.removeAddress")}
                 >
                   <X size={16} />
                 </button>
@@ -1502,14 +1657,14 @@ export function ContactEdit({
               onClick={() => setAddresses((prev) => [...prev, { id: uid(), label: "home", text: "" }])}
               className={addBtnCls}
             >
-              <Plus size={15} /> Add address
+              <Plus size={15} /> {t("ce.addAddress")}
             </button>
           </div>
         </section>
 
         {/* custom fields */}
         <section>
-          <SectionLabel>Custom fields</SectionLabel>
+          <SectionLabel>{t("cd.customFields")}</SectionLabel>
           <div className="space-y-2">
             {customFields.map((f, i) => (
               <div key={f.id} className="flex items-center gap-2">
@@ -1518,7 +1673,7 @@ export function ContactEdit({
                   onChange={(e) =>
                     setCustomFields((prev) => prev.map((x) => (x.id === f.id ? { ...x, key: e.target.value } : x)))
                   }
-                  placeholder="Field"
+                  placeholder={t("ce.field")}
                   className={cx(inputCls, "w-[110px] shrink-0 px-3 py-2.5 text-xs")}
                   aria-label={`Custom field name ${i + 1}`}
                 />
@@ -1527,7 +1682,7 @@ export function ContactEdit({
                   onChange={(e) =>
                     setCustomFields((prev) => prev.map((x) => (x.id === f.id ? { ...x, value: e.target.value } : x)))
                   }
-                  placeholder="Value"
+                  placeholder={t("ce.value")}
                   className={cx(inputCls, "min-w-0 flex-1 px-3 py-2.5 text-[13px]")}
                   aria-label={`Custom field value ${i + 1}`}
                 />
@@ -1535,7 +1690,7 @@ export function ContactEdit({
                   type="button"
                   onClick={() => setCustomFields((prev) => prev.filter((x) => x.id !== f.id))}
                   className={removeBtnCls}
-                  aria-label="Remove custom field"
+                  aria-label={t("ce.removeField")}
                 >
                   <X size={16} />
                 </button>
@@ -1546,29 +1701,29 @@ export function ContactEdit({
               onClick={() => setCustomFields((prev) => [...prev, { id: uid(), key: "", value: "" }])}
               className={addBtnCls}
             >
-              <Plus size={15} /> Add field
+              <Plus size={15} /> {t("ce.addField")}
             </button>
           </div>
         </section>
 
         {/* birthday + tags */}
         <div className="grid grid-cols-2 gap-2.5">
-          <Field label="Birthday">
+          <Field label={t("ce.birthdayLabel")}>
             <input
               type="date"
               value={birthday}
               onChange={(e) => setBirthday(e.target.value)}
               className={inputCls}
-              aria-label="Birthday"
+              aria-label={t("ce.birthdayLabel")}
             />
           </Field>
-          <Field label="Tags" hint="Comma separated">
+          <Field label={t("ce.tags")} hint={t("ce.tagsHint")}>
             <input
               value={tagsStr}
               onChange={(e) => setTagsStr(e.target.value)}
-              placeholder="supplier, vip"
+              placeholder={t("ce.tagsPlaceholder")}
               className={inputCls}
-              aria-label="Tags, comma separated"
+              aria-label={`${t("ce.tags")} · ${t("ce.tagsHint")}`}
             />
           </Field>
         </div>
@@ -1578,22 +1733,22 @@ export function ContactEdit({
           <div className="flex items-center gap-2.5">
             <Star size={16} className="text-brand" fill={favorite ? "currentColor" : "none"} />
             <div>
-              <p className="text-[13px] font-semibold text-ink">Favorite</p>
-              <p className="text-[10px] text-mute">Pin to your Favorites screen</p>
+              <p className="text-[13px] font-semibold text-ink">{t("cd.favorites")}</p>
+              <p className="text-[10px] text-mute">{t("cd.pinFavorites")}</p>
             </div>
           </div>
-          <SwitchToggle checked={favorite} onChange={setFavorite} label="Toggle favorite" />
+          <SwitchToggle checked={favorite} onChange={setFavorite} label={t("cd.favorites")} />
         </div>
 
         {/* note */}
-        <Field label="Note">
+        <Field label={t("ce.note")}>
           <textarea
             rows={3}
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Notes about this person…"
+            placeholder={t("ce.notePlaceholder")}
             className={cx(inputCls, "resize-none")}
-            aria-label="Note"
+            aria-label={t("ce.note")}
           />
         </Field>
       </div>
@@ -1605,7 +1760,7 @@ export function ContactEdit({
 /* CallScreen                                                           */
 /* ------------------------------------------------------------------ */
 
-type CallPhase = "incoming" | "dialing" | "connected" | "ended";
+type CallPhase = "incoming" | "dialing" | "connected" | "ended" | "handingoff" | "handedoff";
 
 function ControlButton({
   icon,
@@ -1662,6 +1817,10 @@ export function CallScreen({
   const t = useT();
   const cc = app.settings.countryCode;
 
+  /* real-call handoff: outgoing calls (dialer mode = default) continue in the
+     phone's default caller app; "demo" mode keeps the in-app simulation. */
+  const dialerHandoff = direction !== "incoming" && app.settings.callMode !== "demo";
+
   /* hide while another overlay sits on top of the call (e.g. adding a contact mid-call) */
   const stack = useUI((s) => s.overlayStack);
   const isTop = stack.length > 0 && stack[stack.length - 1].type === "call";
@@ -1677,7 +1836,9 @@ export function CallScreen({
     );
   }, [app.contacts, contactId, phone, cc]);
 
-  const [phase, setPhase] = useState<CallPhase>(direction === "incoming" ? "incoming" : "dialing");
+  const [phase, setPhase] = useState<CallPhase>(
+    direction === "incoming" ? "incoming" : dialerHandoff ? "handingoff" : "dialing"
+  );
   const [seconds, setSeconds] = useState(0);
   const [muted, setMuted] = useState(false);
   const [speaker, setSpeaker] = useState(false);
@@ -1685,12 +1846,13 @@ export function CallScreen({
   const [dtmf, setDtmf] = useState("");
   const [closePending, setClosePending] = useState(false);
   const finalizedRef = useRef(false);
+  const handoffFiredRef = useRef(false);
   const isTopRef = useRef(isTop);
   useEffect(() => {
     isTopRef.current = isTop;
   }, [isTop]);
 
-  /* dialing → connected after 1.5s */
+  /* dialing → connected after 1.5s (demo mode only) */
   useEffect(() => {
     if (phase !== "dialing") return;
     const t = setTimeout(() => setPhase("connected"), 1500);
@@ -1704,13 +1866,38 @@ export function CallScreen({
     return () => clearInterval(i);
   }, [phase]);
 
-  const logAndClose = (dur: number, dir: CallLog["direction"]) => {
+  /** Write the call log entry — guarded so a call is logged exactly once. */
+  const finalize = (dur: number, dir: CallLog["direction"]) => {
     if (finalizedRef.current) return;
     finalizedRef.current = true;
     app.addCall({ phone, contactId: contact?.id ?? contactId, direction: dir, duration: dur });
+  };
+
+  const closeScreen = () => {
     if (isTopRef.current) ui.pop();
     else setClosePending(true);
   };
+
+  const logAndClose = (dur: number, dir: CallLog["direction"]) => {
+    finalize(dur, dir);
+    closeScreen();
+  };
+
+  /* seamless handoff: let the in-app call screen slide in (~450ms), then hand
+     the call to the phone's default caller app exactly once and log it right
+     away (duration 0) so the outgoing call always lands in the call log. */
+  useEffect(() => {
+    if (phase !== "handingoff") return;
+    const t = setTimeout(() => {
+      if (!handoffFiredRef.current) {
+        handoffFiredRef.current = true;
+        openTel(phone, cc);
+      }
+      setPhase("handedoff");
+      finalize(0, direction ?? "outgoing");
+    }, 450);
+    return () => clearTimeout(t);
+  }, [phase]);
 
   /* "Call ended" shows briefly, then the screen closes */
   useEffect(() => {
@@ -1732,14 +1919,18 @@ export function CallScreen({
   const name = contact ? displayName(contact) : prettyPhone(phone, cc);
   const status =
     phase === "incoming"
-      ? "Incoming call…"
+      ? t("cl.incoming")
       : phase === "dialing"
-        ? "Calling…"
+        ? t("cl.calling")
         : phase === "connected"
           ? clockStr(seconds)
-          : direction === "incoming"
-            ? "Call declined"
-            : `Call ended · ${clockStr(seconds)}`;
+          : phase === "handingoff"
+            ? t("cl.handingOff")
+            : phase === "handedoff"
+              ? t("cl.continuedInDialer")
+              : direction === "incoming"
+                ? t("cl.callDeclined")
+                : `${t("cl.callEnded")} · ${clockStr(seconds)}`;
 
   const answer = () => {
     vibrate(15);
@@ -1754,6 +1945,12 @@ export function CallScreen({
     vibrate(20);
     if (phase === "incoming") {
       decline();
+      return;
+    }
+    if (phase === "handingoff" || phase === "handedoff") {
+      /* the call was already logged at handoff time — just close */
+      finalize(0, direction ?? "outgoing");
+      closeScreen();
       return;
     }
     setPhase("ended");
@@ -1779,7 +1976,12 @@ export function CallScreen({
       <div className="app-scroll relative z-[1] flex flex-1 flex-col items-center overflow-y-auto px-6 pb-[max(24px,env(safe-area-inset-bottom))] pt-[max(56px,env(safe-area-inset-top))]">
         {/* hero */}
         <div className="flex shrink-0 flex-col items-center pt-2">
-          <div className={cx("rounded-[26px]", (phase === "dialing" || phase === "incoming") && "pulse-ring")}>
+          <div
+            className={cx(
+              "rounded-[26px]",
+              (phase === "dialing" || phase === "incoming" || phase === "handingoff") && "pulse-ring"
+            )}
+          >
             <Avatar contact={contact} name={contact ? undefined : "?"} size="xl" />
           </div>
           <h2 className="mt-4 text-[24px] font-bold tracking-tight text-ink">{name}</h2>
@@ -1788,13 +1990,13 @@ export function CallScreen({
           </p>
           {!contact && phase !== "ended" && (
             <p className="mt-1.5 rounded-full bg-surface2 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-[1.5px] text-mute">
-              Unknown number
+              {t("cl.unknownNumber")}
             </p>
           )}
         </div>
 
         {/* in-call keypad (DTMF — cosmetic) */}
-        {keypadOn && phase !== "incoming" && phase !== "ended" && (
+        {keypadOn && phase !== "incoming" && phase !== "ended" && phase !== "handingoff" && phase !== "handedoff" && (
           <motion.div
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1802,7 +2004,7 @@ export function CallScreen({
             className="mt-6 w-full max-w-[280px] shrink-0"
           >
             <div className="mb-2.5 flex h-10 items-center justify-center rounded-2xl bg-surface2 text-[15px] font-semibold tracking-[3px] tabular-nums text-ink shadow-key">
-              {dtmf || <span className="text-[10px] tracking-[2px] text-mute">DTMF TONES</span>}
+              {dtmf || <span className="text-[10px] tracking-[2px] text-mute">{t("cl.dtmf")}</span>}
             </div>
             <div className="grid grid-cols-3 gap-2">
               {["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"].map((d) => (
@@ -1814,7 +2016,7 @@ export function CallScreen({
                     setDtmf((s) => (s + d).slice(0, 18));
                   }}
                   className="flex h-11 items-center justify-center rounded-2xl bg-surface text-lg font-semibold text-ink shadow-key transition active:scale-95"
-                  aria-label={`Keypad ${d}`}
+                  aria-label={d}
                 >
                   {d}
                 </button>
@@ -1827,8 +2029,8 @@ export function CallScreen({
         <div className="mt-auto flex w-full shrink-0 flex-col items-center gap-7 pt-8">
           {phase === "incoming" && (
             <div className="flex items-center gap-16">
-              <ControlButton big tone="neg" label="Decline" icon={<PhoneOff size={26} />} onClick={decline} />
-              <ControlButton big tone="pos" label="Answer" icon={<PhoneCall size={26} />} onClick={answer} />
+              <ControlButton big tone="neg" label={t("cl.decline")} icon={<PhoneOff size={26} />} onClick={decline} />
+              <ControlButton big tone="pos" label={t("cl.answer")} icon={<PhoneCall size={26} />} onClick={answer} />
             </div>
           )}
 
@@ -1836,19 +2038,19 @@ export function CallScreen({
             <>
               <div className="flex flex-wrap items-start justify-center gap-x-7 gap-y-4">
                 <ControlButton
-                  label={muted ? "Unmute" : "Mute"}
+                  label={muted ? t("cl.unmute") : t("cl.mute")}
                   active={muted}
                   icon={muted ? <MicOff size={20} /> : <Mic size={20} />}
                   onClick={() => setMuted((m) => !m)}
                 />
                 <ControlButton
-                  label="Keypad"
+                  label={t("cl.keypad")}
                   active={keypadOn}
                   icon={<Grid3X3 size={20} />}
                   onClick={() => setKeypadOn((k) => !k)}
                 />
                 <ControlButton
-                  label={speaker ? "Speaker off" : "Speaker"}
+                  label={speaker ? t("cl.speakerOff") : t("cl.speaker")}
                   active={speaker}
                   icon={speaker ? <Volume2 size={20} /> : <VolumeX size={20} />}
                   onClick={() => setSpeaker((s) => !s)}
@@ -1856,7 +2058,7 @@ export function CallScreen({
                 <ControlButton
                   label={t("act.message")}
                   icon={<MessageCircle size={20} />}
-                  onClick={() => toastOk("Messaging isn't available during a call in this demo")}
+                  onClick={() => toastOk(t("cl.messagingDemo"))}
                 />
                 {!contact && (
                   <ControlButton
@@ -1870,7 +2072,32 @@ export function CallScreen({
               <button
                 type="button"
                 onClick={end}
-                aria-label="End call"
+                aria-label={t("cl.endCall")}
+                className="mx-auto flex h-[68px] w-[68px] items-center justify-center rounded-full bg-neg text-white shadow-floating transition hover:bg-neg/90 active:scale-90"
+              >
+                <PhoneOff size={27} />
+              </button>
+            </>
+          )}
+
+          {/* dialer handoff — the call lives in the phone's caller app, so the
+              mute / speaker / DTMF controls stay hidden; add-contact remains. */}
+          {(phase === "handingoff" || phase === "handedoff") && (
+            <>
+              {!contact && (
+                <div className="flex flex-wrap items-start justify-center gap-x-7 gap-y-4">
+                  <ControlButton
+                    label={t("act.newContact")}
+                    icon={<UserPlus size={20} />}
+                    onClick={() => ui.open({ type: "contactEdit", prefillPhone: phone })}
+                  />
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={end}
+                aria-label={t("cl.endCall")}
                 className="mx-auto flex h-[68px] w-[68px] items-center justify-center rounded-full bg-neg text-white shadow-floating transition hover:bg-neg/90 active:scale-90"
               >
                 <PhoneOff size={27} />
@@ -1885,17 +2112,23 @@ export function CallScreen({
             <div className="flex items-center justify-center gap-2.5">
               <button
                 type="button"
-                onClick={() => openExternal(telLink(phone, cc))}
+                onClick={() => {
+                  /* fire (or re-fire) the dialer handoff; the guard stops the
+                     auto-timer from opening the dialer a second time. */
+                  handoffFiredRef.current = true;
+                  openTel(phone, cc);
+                }}
                 className="flex h-11 items-center gap-2 rounded-full border border-line2 bg-surface px-4 text-[11px] font-bold text-ink shadow-key transition active:scale-95"
-                aria-label="Open in phone dialer"
+                aria-label={phase === "handedoff" ? t("cl.openDialerAgain") : t("cl.phoneDialer")}
               >
-                <Phone size={14} className="text-brand" /> Phone dialer
+                <Phone size={14} className="text-brand" />{" "}
+                {phase === "handedoff" ? t("cl.openDialerAgain") : t("cl.phoneDialer")}
               </button>
               <button
                 type="button"
                 onClick={() => openExternal(waLink(phone, undefined, cc))}
                 className="flex h-11 items-center gap-2 rounded-full border border-line2 bg-surface px-4 text-[11px] font-bold text-ink shadow-key transition active:scale-95"
-                aria-label="Open WhatsApp"
+                aria-label={t("act.whatsapp")}
               >
                 <MessageCircle size={14} className="text-[#1faa53]" /> {t("act.whatsapp")}
               </button>
@@ -1915,6 +2148,7 @@ export function MergeOverlay() {
   const app = useApp();
   const ui = useUI();
   const confirm = useConfirm();
+  const t = useT();
   const [pairs, setPairs] = useState(() => app.findDuplicates());
   const [dismissed, setDismissed] = useState<string[]>([]);
 
@@ -1930,24 +2164,24 @@ export function MergeOverlay() {
     const dup = app.contacts.find((c) => c.id === dupId);
     if (!primary || !dup) return;
     const ok = await confirm({
-      title: "Merge contacts?",
-      message: `“${displayName(dup)}” will be merged into “${displayName(primary)}”. Phones, emails, tags and all history are combined.`,
+      title: t("spd.mergeTitle"),
+      message: t("spd.mergeMsg", { a: displayName(dup), b: displayName(primary) }),
       confirmLabel: "Merge",
       tone: "brand",
     });
     if (!ok) return;
     app.mergeContacts(primaryId, dupId);
-    toastOk("Contacts merged");
+    toastOk(t("spd.contactsMerged"));
     setPairs(app.findDuplicates());
   };
 
   return (
     <Sheet
-      title="Merge duplicates"
+      title={t("spd.mergeDuplicates")}
       subtitle={visible.length > 0 ? `${visible.length} pair${visible.length === 1 ? "" : "s"} found` : undefined}
       onBack={ui.pop}
       actions={
-        <IconButton label="Rescan for duplicates" onClick={rescan}>
+        <IconButton label={t("spd.rescan")} onClick={rescan}>
           <RefreshCw size={17} />
         </IconButton>
       }
@@ -1956,8 +2190,8 @@ export function MergeOverlay() {
         {visible.length === 0 ? (
           <EmptyState
             icon={<Sparkles size={22} />}
-            title="No duplicates found 🎉"
-            hint="Every contact looks unique — same phone number or same name + email would land here."
+            title={t("spd.noDuplicates")}
+            hint={t("spd.everyUnique")}
           />
         ) : (
           <div className="space-y-4">
@@ -2024,7 +2258,7 @@ export function MergeOverlay() {
               onClick={rescan}
               className="flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-line2 bg-surface2/60 text-[12px] font-semibold text-brand transition active:scale-[0.98]"
             >
-              <RefreshCw size={14} /> Rescan
+              <RefreshCw size={14} /> {t("spd.rescan")}
             </button>
           </div>
         )}
@@ -2040,6 +2274,7 @@ export function MergeOverlay() {
 export function SpeedDialOverlay() {
   const app = useApp();
   const ui = useUI();
+  const t = useT();
   const [pickKey, setPickKey] = useState<string | null>(null);
   const [menuKey, setMenuKey] = useState<string | null>(null);
 
@@ -2060,7 +2295,7 @@ export function SpeedDialOverlay() {
   const assign = (key: string, contactId: string) => {
     const patch: SettingsPatch = { speedDial: { ...sd, [key]: contactId } as Record<string, string> };
     app.updateSettings(patch);
-    toastOk(`Speed dial key ${key} set`);
+    toastOk(t("kp.speedDialSet", { key }));
     setPickKey(null);
     setMenuKey(null);
   };
@@ -2070,14 +2305,14 @@ export function SpeedDialOverlay() {
     delete next[key];
     const patch: SettingsPatch = { speedDial: next as Record<string, string> };
     app.updateSettings(patch);
-    toastOk(`Speed dial key ${key} cleared`);
+    toastOk(t("kp.speedDialCleared", { key }));
     setMenuKey(null);
   };
 
   const menuContact = menuKey ? contacts.find((c) => c.id === assigned[menuKey]) : undefined;
 
   return (
-    <Sheet title="Speed dial" subtitle="One long-press away" onBack={ui.pop}>
+    <Sheet title={t("spd.speedDial")} subtitle={t("spd.oneLongPress")} onBack={ui.pop}>
       <div className="px-5 pb-10 pt-4">
         <div className="grid grid-cols-4 gap-2.5">
           {SPEED_KEYS.map((k) => {
@@ -2137,12 +2372,12 @@ export function SpeedDialOverlay() {
             <ActionRow
               icon={<Phone size={17} />}
               title="Call now"
-              sub={primaryPhone(menuContact) ? prettyPhone(primaryPhone(menuContact)!) : "No phone number"}
+              sub={primaryPhone(menuContact) ? prettyPhone(primaryPhone(menuContact)!) : t("cd.noPhone")}
               onClick={() => {
                 const p = primaryPhone(menuContact);
                 setMenuKey(null);
                 if (!p) {
-                  toastErr("No phone number for this contact");
+                  toastErr(t("cd.noPhone"));
                   return;
                 }
                 ui.open({ type: "call", phone: p, contactId: menuContact.id });
@@ -2150,7 +2385,7 @@ export function SpeedDialOverlay() {
             />
             <ActionRow
               icon={<UserRound size={17} />}
-              title="Replace contact"
+              title={t("spd.replace")}
               onClick={() => {
                 const k = menuKey;
                 setMenuKey(null);

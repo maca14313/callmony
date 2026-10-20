@@ -56,8 +56,8 @@ export function BankSection({ ownerId }: { ownerId: OwnerId }) {
 
   const remove = async (b: BankAccount) => {
     const ok = await confirm({
-      title: "Delete account?",
-      message: `“${b.bankName || b.label}” will be moved to Trash — you can undo right after.`,
+      title: t("bk.deleteTitle"),
+      message: t("bk.deleteMsg", { name: b.bankName || b.label }),
       confirmLabel: t("act.delete"),
       tone: "danger",
     });
@@ -71,30 +71,30 @@ export function BankSection({ ownerId }: { ownerId: OwnerId }) {
     <button
       type="button"
       onClick={() => ui.open({ type: "bankEdit", ownerId })}
-      aria-label="Add bank account"
+      aria-label={t("bk.addAccount")}
       className="flex h-11 items-center gap-1 rounded-xl bg-brand px-3.5 text-[11px] font-semibold text-white shadow-key transition hover:bg-brandink active:scale-95"
     >
-      <Plus size={13} /> Add account
+      <Plus size={13} /> {t("bk.addAccount")}
     </button>
   );
 
   if (!banks.length) {
     return (
-      <section aria-label="Bank accounts">
-        <SectionLabel right={addBtn}>{t("tab.bank")} accounts</SectionLabel>
+      <section aria-label={t("bk.accountsTitle")}>
+        <SectionLabel right={addBtn}>{t("bk.accountsTitle")}</SectionLabel>
         <EmptyState
           icon={<Landmark size={21} />}
-          title="No accounts saved"
-          hint="Bank name and account number — masked until you reveal them."
+          title={t("bk.noAccounts")}
+          hint={t("bk.noAccountsHint")}
         />
       </section>
     );
   }
 
   return (
-    <section aria-label="Bank accounts" className="mt-1">
+    <section aria-label={t("bk.accountsTitle")} className="mt-1">
       <SectionLabel right={addBtn}>
-        {t("tab.bank")} accounts · {banks.length}
+        {t("bk.accountsTitle")} · {banks.length}
       </SectionLabel>
 
       <div>
@@ -107,7 +107,7 @@ export function BankSection({ ownerId }: { ownerId: OwnerId }) {
       <BottomSheet
         open={!!sheetFor}
         onClose={() => setSheetFor(null)}
-        title={sheetFor?.bankName || sheetFor?.label || "Account"}
+        title={sheetFor?.bankName || sheetFor?.label || t("tab.accounts")}
       >
         <div className="space-y-1.5 pb-2">
           <MenuRow
@@ -151,28 +151,31 @@ function BankCard({
 
   const name = b.bankName || b.label;
 
-  const detailsText = useMemo(() => bankDetailsText(b, holder), [b, holder]);
+  /* person owner → contact name; General account → its holder name */
+  const effectiveHolder = holder ?? b.holderName;
+
+  const detailsText = useMemo(() => bankDetailsText(b, effectiveHolder), [b, effectiveHolder]);
 
   const copyNumber = async () => {
     if (!b.accountNumber) return;
     const ok = await copyText(b.accountNumber);
-    toastOk(ok ? t("act.copied") : "Copy failed");
+    toastOk(ok ? t("act.copied") : t("act.couldntCopy"));
   };
 
   const shareAsText = async () => {
     const r = await shareText(name, detailsText);
     if (r === "copied") {
       const ok = await copyText(detailsText);
-      toastOk(ok ? "Copied — sharing not supported here" : "Copy failed");
+      toastOk(ok ? "Copied — sharing not supported here" : t("act.couldntCopy"));
     } else if (r === "shared") {
-      toastOk("Shared");
+      toastOk(t("bk.shared"));
     }
     setShareOpen(false);
   };
 
   const copyDetails = async () => {
     const ok = await copyText(detailsText);
-    toastOk(ok ? "Account details copied" : "Copy failed");
+    toastOk(ok ? "Account details copied" : t("act.couldntCopy"));
     setShareOpen(false);
   };
 
@@ -192,12 +195,19 @@ function BankCard({
               </span>
               <div className="min-w-0">
                 <p className="truncate text-[13.5px] font-bold leading-tight text-ink">{name}</p>
-                {holder && <p className="truncate text-[11px] text-mute">{holder}</p>}
+                {/* person owner → their name; General → holder line when set */}
+                {holder ? (
+                  <p className="truncate text-[11px] text-mute">{holder}</p>
+                ) : b.holderName ? (
+                  <p className="truncate text-[11px] font-semibold text-mute">
+                    {t("bk.holder")} · {b.holderName}
+                  </p>
+                ) : null}
               </div>
             </div>
             <button
               type="button"
-              aria-label={`Share ${name} details`}
+              aria-label={`${t("act.share")} ${name}`}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
@@ -253,10 +263,10 @@ function BankCard({
       </SwipeRow>
 
       {/* share sheet */}
-      <BottomSheet open={shareOpen} onClose={() => setShareOpen(false)} title={`Share “${name}”`}>
+      <BottomSheet open={shareOpen} onClose={() => setShareOpen(false)} title={`${t("act.share")} “${name}”`}>
         <div className="space-y-1.5 pb-2">
-          <MenuRow icon={<Share2 size={16} />} label="Share as text" onClick={() => void shareAsText()} />
-          <MenuRow icon={<Copy size={16} />} label="Copy details" onClick={() => void copyDetails()} />
+          <MenuRow icon={<Share2 size={16} />} label={t("bk.shareAsText")} onClick={() => void shareAsText()} />
+          <MenuRow icon={<Copy size={16} />} label={t("bk.copyDetails")} onClick={() => void copyDetails()} />
         </div>
         <pre className="mt-1 whitespace-pre-wrap rounded-2xl bg-surface2 p-3 text-[11px] leading-5 text-mute">
           {detailsText}

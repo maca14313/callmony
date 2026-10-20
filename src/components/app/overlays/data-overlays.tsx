@@ -13,7 +13,6 @@ import {
   ArrowLeftRight,
   Bell,
   BellOff,
-  Check,
   CheckCircle2,
   ChevronRight,
   CloudOff,
@@ -57,7 +56,7 @@ import {
 
 import { useApp } from "@/lib/store";
 import { useUI } from "@/lib/ui-store";
-import { LANGUAGES, useT } from "@/lib/i18n";
+import { LANGUAGES, useT, t } from "@/lib/i18n";
 import { APP_VERSION, requestPersistence, useInstallPrompt } from "@/lib/pwa";
 import {
   bytesStr,
@@ -112,6 +111,7 @@ import { BottomSheet, Sheet } from "../kit/Sheet";
 import { useConfirm } from "../kit/Confirm";
 import { toastErr, toastOk } from "../kit/toast";
 import { AttachmentViewer } from "../kit/Attachments";
+import { LanguageSheet } from "../kit/LanguageSheet";
 
 /* ================================================================== */
 /* Local types + constants                                              */
@@ -159,6 +159,8 @@ const COUNTRIES: { code: string; label: string }[] = [
 ];
 
 const LIST_KIND_LABEL: Record<ListKind, string> = {
+  /* MISSING keys: ls.kindCalculating ("Calculating list"), ls.kindSimple ("Simple list"),
+     ls.kindChecklist ("Checklist"), ls.kindTodo ("To-do list") */
   calculating: "Calculating list",
   simple: "Simple list",
   checklist: "Checklist",
@@ -228,42 +230,42 @@ async function buildBackupBlob(): Promise<{ blob: Blob; filename: string; files:
 function exportVCardAll(): void {
   const list = useApp.getState().contacts.filter((c) => !c.deletedAt);
   if (!list.length) {
-    toastErr("No contacts to export yet");
+    toastErr(t("ie.noContactsToExport"));
     return;
   }
   downloadBlob(
     new Blob([toVCard(list)], { type: "text/vcard;charset=utf-8" }),
     "callmony-contacts.vcf"
   );
-  toastOk(`${list.length} contacts exported (.vcf)`);
+  toastOk(t("ie.contactsExported", { n: list.length }));
 }
 
 function exportContactsCsvAll(): void {
   const s = useApp.getState();
   const list = s.contacts.filter((c) => !c.deletedAt);
   if (!list.length) {
-    toastErr("No contacts to export yet");
+    toastErr(t("ie.noContactsToExport"));
     return;
   }
   downloadBlob(
     new Blob([contactsToCSV(list)], { type: "text/csv;charset=utf-8" }),
     "callmony-contacts.csv"
   );
-  toastOk(`${list.length} contacts exported (.csv)`);
+  toastOk(t("ie.contactsExported", { n: list.length }));
 }
 
 function exportEntriesCsvAll(): void {
   const s = useApp.getState();
   const list = s.entries.filter((e) => !e.deletedAt);
   if (!list.length) {
-    toastErr("No transactions to export yet");
+    toastErr(t("ie.noTxToExport"));
     return;
   }
   downloadBlob(
     new Blob([entriesToCSV(list, s.contacts)], { type: "text/csv;charset=utf-8" }),
     "callmony-transactions.csv"
   );
-  toastOk(`${list.length} transactions exported (.csv)`);
+  toastOk(t("ie.txExported", { n: list.length }));
 }
 
 /** Replace = wipe IDB, then write every record from the backup directly to IDB. */
@@ -535,7 +537,7 @@ function PinPad({
               type="button"
               disabled={disabled}
               onClick={onDelete}
-              aria-label="Delete last digit"
+              aria-label={t("kp.deleteDigit")}
               className="flex h-16 items-center justify-center rounded-[18px] text-mute transition hover:bg-surface2 active:scale-95 disabled:opacity-40"
             >
               <DeleteIcon size={24} />
@@ -562,6 +564,7 @@ function PinPad({
 /** Set / change PIN flow: (verify old) → enter new → re-enter → confirm modal. */
 function PinFlow({ mode, onClose }: { mode: "set" | "change"; onClose: () => void }) {
   const confirm = useConfirm();
+  const t = useT();
   const updateSettings = useApp((s) => s.updateSettings);
   const hasPin = !!useApp((s) => s.settings.pinHash);
   const [stage, setStage] = useState<"verify" | "new" | "confirm">(
@@ -595,7 +598,7 @@ function PinFlow({ mode, onClose }: { mode: "set" | "change"; onClose: () => voi
           setDigits("");
           setStage("new");
         } else {
-          fail("Wrong PIN — try again");
+          fail(t("st.wrongPin"));
         }
         return;
       }
@@ -607,6 +610,7 @@ function PinFlow({ mode, onClose }: { mode: "set" | "change"; onClose: () => voi
       }
       /* confirm */
       if (pin !== firstPin) {
+        /* MISSING key: st.pinsDontMatch ("PINs don't match — start over") */
         fail("PINs don't match — start over");
         setStage("new");
         setFirstPin("");
@@ -614,6 +618,10 @@ function PinFlow({ mode, onClose }: { mode: "set" | "change"; onClose: () => voi
         return;
       }
       setBusy(true);
+      /* MISSING keys: st.changePinConfirm ("Change PIN?"), st.enablePinConfirm ("Turn on PIN lock?"),
+         st.changePinMsg ("Your screen-lock PIN will be updated."),
+         st.enablePinMsg ("You'll enter this PIN whenever callmony opens or unlocks."),
+         st.enableLock ("Enable lock"), st.pinChanged ("PIN changed"), st.pinEnabled ("PIN lock enabled") */
       const ok = await confirm({
         tone: "brand",
         icon: <Lock size={19} />,
@@ -622,7 +630,7 @@ function PinFlow({ mode, onClose }: { mode: "set" | "change"; onClose: () => voi
           mode === "change"
             ? "Your screen-lock PIN will be updated."
             : "You'll enter this PIN whenever callmony opens or unlocks.",
-        confirmLabel: mode === "change" ? "Change PIN" : "Enable lock",
+        confirmLabel: mode === "change" ? t("st.changePin") : "Enable lock",
       });
       if (!ok) {
         setBusy(false);
@@ -637,7 +645,7 @@ function PinFlow({ mode, onClose }: { mode: "set" | "change"; onClose: () => voi
       toastOk(mode === "change" ? "PIN changed" : "PIN lock enabled");
       onClose();
     },
-    [stage, firstPin, mode, confirm, updateSettings, onClose, fail]
+    [stage, firstPin, mode, confirm, updateSettings, onClose, fail, t]
   );
 
   const add = (d: string) => {
@@ -650,15 +658,16 @@ function PinFlow({ mode, onClose }: { mode: "set" | "change"; onClose: () => voi
 
   const stageText =
     stage === "verify"
-      ? "Enter your current PIN"
+      ? "Enter your current PIN" /* MISSING key: st.enterCurrentPin */
       : stage === "new"
         ? mode === "change"
-          ? "Enter a new 4-digit PIN"
-          : "Choose a 4-digit PIN"
-        : "Re-enter your new PIN";
+          ? "Enter a new 4-digit PIN" /* MISSING key: st.enterNewPin */
+          : "Choose a 4-digit PIN" /* MISSING key: st.choosePin */
+        : "Re-enter your new PIN"; /* MISSING key: st.reenterPin */
 
   return (
     <div className="flex flex-col items-center gap-5 pb-4 pt-2">
+      {/* MISSING key: st.checking ("Checking…") */}
       <p className="text-[13px] font-semibold text-ink">{busy ? "Checking…" : stageText}</p>
       <PinDots count={4} filled={digits.length} shakeKey={shakeKey} />
       <PinPad onDigit={add} onDelete={() => setDigits((d) => d.slice(0, -1))} disabled={busy} />
@@ -675,9 +684,10 @@ function SetPinSheet({
   mode: "set" | "change";
   onClose: () => void;
 }) {
+  const t = useT();
   /* PinFlow mounts fresh each time the sheet opens — its state resets itself. */
   return (
-    <BottomSheet open={open} onClose={onClose} title={mode === "change" ? "Change PIN" : "Set PIN"}>
+    <BottomSheet open={open} onClose={onClose} title={mode === "change" ? t("st.changePin") : t("st.setPin")}>
       {open ? <PinFlow mode={mode} onClose={onClose} /> : null}
     </BottomSheet>
   );
@@ -691,6 +701,7 @@ function useNotifPermission(): {
   perm: "default" | "granted" | "denied" | "unsupported";
   ask: () => Promise<void>;
 } {
+  const t = useT();
   const updateSettings = useApp((s) => s.updateSettings);
   /* overlays render client-side only (post-hydration), so a lazy read is safe */
   const [perm, setPerm] = useState<"default" | "granted" | "denied" | "unsupported">(() =>
@@ -699,7 +710,8 @@ function useNotifPermission(): {
 
   const ask = useCallback(async () => {
     if (typeof Notification === "undefined") {
-      toastErr("Notifications aren't supported in this browser");
+      /* MISSING key: st.notifUnsupportedBrowser ("Notifications aren't supported in this browser") */
+      toastErr(t("st.notifUnsupportedToast"));
       return;
     }
     try {
@@ -707,21 +719,26 @@ function useNotifPermission(): {
       setPerm(result);
       updateSettings({ notifAsked: true });
       if (result === "granted") {
-        toastOk("Notifications enabled");
+        /* MISSING keys: st.notificationsEnabled ("Notifications enabled"),
+           st.notifTestBody ("Reminders will now appear here.") */
+        toastOk(t("st.notifEnabledToast"));
         try {
           new Notification("callmony", { body: "Reminders will now appear here." });
         } catch {
           /* some platforms route through the service worker */
         }
       } else if (result === "denied") {
-        toastOk("Blocked — you can change it in this site's browser settings");
+        /* MISSING key: st.notifBlockedToast ("Blocked — you can change it in this site's browser settings") */
+        toastOk(t("st.notifBlockedToast"));
       } else {
-        toastOk("No worries — you can enable them anytime");
+        /* MISSING key: st.notifNoWorries ("No worries — you can enable them anytime") */
+        toastOk(t("st.notifNoWorries"));
       }
     } catch {
-      toastErr("Could not ask for permission");
+      /* MISSING key: st.notifAskFailed ("Could not ask for permission") */
+      toastErr(t("st.notifAskFailed"));
     }
-  }, [updateSettings]);
+  }, [updateSettings, t]);
 
   return { perm, ask };
 }
@@ -733,12 +750,14 @@ function NotifStatusRow({
   perm: "default" | "granted" | "denied" | "unsupported";
   onAsk: () => void;
 }) {
+  const t = useT();
   if (perm === "granted") {
     return (
       <ActionRow
         icon={<CheckCircle2 size={18} />}
-        label="Notifications enabled"
-        hint="Reminders will alert you, even with callmony in the background."
+        /* MISSING keys: st.notifEnabledHint ("Reminders will alert you, even with callmony in the background.") */
+        label={t("st.notificationsEnabled")}
+        hint={t("st.notifEnabledHint")}
       />
     );
   }
@@ -746,8 +765,10 @@ function NotifStatusRow({
     return (
       <ActionRow
         icon={<BellOff size={18} />}
-        label="Notifications blocked"
-        hint="Allow them from this site in your browser's site settings."
+        /* MISSING keys: st.notificationsBlocked ("Notifications blocked"),
+           st.notifBlockedHint ("Allow them from this site in your browser's site settings.") */
+        label={t("st.notificationsBlocked")}
+        hint={t("st.allowFromSite")}
       />
     );
   }
@@ -755,17 +776,21 @@ function NotifStatusRow({
     return (
       <ActionRow
         icon={<Bell size={18} />}
-        label="Notifications unsupported"
-        hint="This browser can't show reminder alerts."
+        /* MISSING keys: st.notificationsUnsupported ("Notifications unsupported"),
+           st.notifUnsupportedHint ("This browser can't show reminder alerts.") */
+        label={t("st.notificationsUnsupported")}
+        hint={t("st.notifUnsupportedHint")}
       />
     );
   }
   return (
     <ActionRow
       icon={<Bell size={18} />}
-      label="Allow notifications"
-      hint="Reminder alerts, even when callmony is in the background."
+      /* MISSING key: st.allowNotifications ("Allow notifications") */
+      label={t("st.allowNotifications")}
+      hint={t("st.notificationsHint")}
       right={
+        /* MISSING key: st.allow ("Allow") */
         <Button variant="soft" size="sm" onClick={onAsk}>
           Allow
         </Button>
@@ -787,6 +812,7 @@ function ImportContent({
   source: string;
   onClose: () => void;
 }) {
+  const t = useT();
   const importContacts = useApp((s) => s.importContacts);
   const [mode, setMode] = useState<"skip" | "merge">("skip");
 
@@ -795,7 +821,7 @@ function ImportContent({
 
   const run = () => {
     const res = importContacts(contacts, mode);
-    toastOk(`${res.added} added · ${res.merged} merged · ${res.skipped} skipped`);
+    toastOk(t("ie.importResult", { added: res.added, merged: res.merged, skipped: res.skipped }));
     onClose();
   };
 
@@ -803,11 +829,14 @@ function ImportContent({
     <div className="space-y-4 pb-2">
       <p className="px-1 text-[11px] text-mute">{source}</p>
       <div className="rounded-2xl bg-surface2 p-4">
+        {/* MISSING keys: ie.contactsDetected ("{n} contacts detected"),
+            ie.withPhoneEmail ("{n} with a phone number · {m} with an email") */}
         <p className="text-[13px] font-bold text-ink">{contacts.length} contacts detected</p>
         <p className="mt-1 text-[11px] leading-5 text-mute">
           {withPhone} with a phone number · {withEmail} with an email
         </p>
       </div>
+      {/* MISSING keys: ie.skipDuplicates ("Skip duplicates"), misc.merge ("Merge") */}
       <Segmented
         options={[
           { value: "skip", label: "Skip duplicates" },
@@ -816,6 +845,9 @@ function ImportContent({
         value={mode}
         onChange={setMode}
       />
+      {/* MISSING keys: ie.skipHint ("Contacts whose phone number already exists in callmony are left untouched."),
+          ie.mergeHint ("New phone numbers and emails are added onto matching existing contacts."),
+          ie.importN ("Import {n} contacts") */}
       <p className="px-1 text-[11px] leading-5 text-mute">
         {mode === "skip"
           ? "Contacts whose phone number already exists in callmony are left untouched."
@@ -844,6 +876,7 @@ function ImportChoiceSheet({
     <BottomSheet
       open={open && contacts.length > 0}
       onClose={onClose}
+      /* MISSING key: ie.importN ("Import {n} contacts") */
       title={`Import ${contacts.length} contacts`}
     >
       {contacts.length > 0 ? <ImportContent contacts={contacts} source={source} onClose={onClose} /> : null}
@@ -868,7 +901,7 @@ function useContactsImport(): {
 
   const start = (list: Partial<Contact>[], src: string) => {
     if (!list.length) {
-      toastErr("No importable contacts found in that file");
+      toastErr(t("ie.notImportable"));
       return;
     }
     setPending(list);
@@ -882,7 +915,7 @@ function useContactsImport(): {
         const text = await files[0].text();
         start(parseVCard(text), `${files[0].name} · vCard`);
       } catch {
-        toastErr("Could not read that file");
+        toastErr(t("ie.couldNotRead"));
       }
     })();
   };
@@ -893,7 +926,7 @@ function useContactsImport(): {
         const text = await files[0].text();
         start(parseContactsCSV(text), `${files[0].name} · CSV`);
       } catch {
-        toastErr("Could not read that file");
+        toastErr(t("ie.couldNotRead"));
       }
     })();
   };
@@ -901,7 +934,7 @@ function useContactsImport(): {
   const pickPhone = async () => {
     const api = getContactsPicker();
     if (!api || typeof api.select !== "function") {
-      toastErr("Contact picker not supported on this device");
+      toastErr(t("ie.pickerUnsupported"));
       return;
     }
     try {
@@ -926,14 +959,15 @@ function useContactsImport(): {
         };
       });
       if (!mapped.length) {
-        toastOk("No contacts selected");
+        toastOk(t("ie.noContactsSelected"));
         return;
       }
       setPending(mapped);
+      /* MISSING key: ie.pickedWith ("Picked with this phone's contact picker") */
       setSource("Picked with this phone's contact picker");
       setOpen(true);
     } catch {
-      toastOk("Contact picker cancelled");
+      toastOk(t("ie.pickerCancelled"));
     }
   };
 
@@ -959,6 +993,7 @@ function useBackupExport(): {
   busy: boolean;
   sharing: boolean;
 } {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [sharing, setSharing] = useState(false);
 
@@ -968,12 +1003,12 @@ function useBackupExport(): {
       const { blob, filename } = await buildBackupBlob();
       downloadBlob(blob, filename);
       useApp.getState().updateSettings({ lastBackupAt: Date.now() });
-      toastOk("Backup exported");
+      toastOk(t("bkp.backupExported"));
     } catch {
-      toastErr("Backup failed — try again");
+      toastErr(t("bkp.backupFailed"));
     }
     setBusy(false);
-  }, []);
+  }, [t]);
 
   const shareByEmail = useCallback(async () => {
     setSharing(true);
@@ -984,8 +1019,11 @@ function useBackupExport(): {
       if (nav.share && nav.canShare?.({ files: [file] })) {
         try {
           await nav.share({
-            title: "callmony backup",
-            text: "Your callmony backup file is attached. Keep it somewhere safe — restore it from Settings → Backup & restore.",
+            /* MISSING keys: bkp.shareTitle ("callmony backup"), bkp.shareText
+               ("Your callmony backup file is attached. Keep it somewhere safe — restore it from
+               Settings → Backup & restore.") */
+            title: t("bkp.shareTitle"),
+            text: t("bkp.shareBody"),
             files: [file],
           });
           useApp.getState().updateSettings({ lastBackupAt: Date.now() });
@@ -994,22 +1032,26 @@ function useBackupExport(): {
         }
       } else {
         downloadBlob(blob, filename);
-        toastOk("Backup downloaded — attach it to an email to send it");
+        toastOk(t("bkp.backupDownloaded"));
       }
     } catch {
-      toastErr("Could not build the backup");
+      /* MISSING key: bkp.buildFailed ("Could not build the backup") */
+      toastErr(t("bkp.buildFailed"));
     }
     setSharing(false);
-  }, []);
+  }, [t]);
 
   return { exportBackup, shareByEmail, busy, sharing };
 }
 
 function RestoreContent({ backup, onClose }: { backup: BackupFile; onClose: () => void }) {
   const confirm = useConfirm();
+  const t = useT();
   const [mode, setMode] = useState<"replace" | "merge">("merge");
   const [busy, setBusy] = useState(false);
 
+  /* MISSING keys: misc.nContacts ("{n} contacts"), misc.nNotes ("{n} notes"),
+     misc.nReminders ("{n} reminders"), misc.nAccounts ("{n} accounts"), misc.nFiles ("{n} files") */
   const counts = [
     `${backup.data.contacts.length} contacts`,
     `${backup.data.entries.length} entries`,
@@ -1023,21 +1065,27 @@ function RestoreContent({ backup, onClose }: { backup: BackupFile; onClose: () =
 
   const apply = async () => {
     if (busy) return;
+    /* MISSING keys: bkp.replaceTitle ("Replace everything?"),
+       bkp.replaceMsg ("All data currently on this device will be erased, then the backup will be
+       restored in its place. This cannot be undone."),
+       bkp.eraseAndRestore ("Erase & restore"), bkp.mergeTitle ("Merge backup in?"),
+       bkp.mergeMsg ("Only records that don't already exist here will be added. Nothing current is
+       deleted."), bkp.mergeIn ("Merge in") */
     const ok =
       mode === "replace"
         ? await confirm({
             tone: "danger",
-            title: "Replace everything?",
+            title: t("bkp.replaceTitle"),
             message:
               "All data currently on this device will be erased, then the backup will be restored in its place. This cannot be undone.",
-            confirmLabel: "Erase & restore",
+            confirmLabel: t("bkp.eraseAndRestore"),
           })
         : await confirm({
             tone: "brand",
-            title: "Merge backup in?",
+            title: t("bkp.mergeTitle"),
             message:
               "Only records that don't already exist here will be added. Nothing current is deleted.",
-            confirmLabel: "Merge in",
+            confirmLabel: t("bkp.mergeIn"),
           });
     if (!ok) return;
     setBusy(true);
@@ -1046,19 +1094,21 @@ function RestoreContent({ backup, onClose }: { backup: BackupFile; onClose: () =
       else await applyRestoreMerge(backup);
     } catch {
       setBusy(false);
-      toastErr("Restore failed — is the file complete?");
+      toastErr(t("bkp.restoreFailed"));
       return;
     }
-    toastOk("Restored — reloading…");
+    toastOk(t("bkp.restored"));
     setTimeout(() => window.location.reload(), 600);
   };
 
   return (
     <div className="space-y-4 pb-2">
       <div className="rounded-2xl bg-surface2 p-4">
+        {/* MISSING key: bkp.backupFrom ("Backup from {date}") */}
         <p className="text-[13px] font-bold text-ink">Backup from {fd(backup.exportedAt)}</p>
         <p className="mt-1 text-[11px] leading-5 text-mute">{counts.join(" · ")}</p>
       </div>
+      {/* MISSING keys: misc.merge ("Merge"), misc.replace ("Replace") */}
       <Segmented
         options={[
           { value: "merge", label: "Merge" },
@@ -1067,6 +1117,9 @@ function RestoreContent({ backup, onClose }: { backup: BackupFile; onClose: () =
         value={mode}
         onChange={setMode}
       />
+      {/* MISSING keys: bkp.mergeModeHint ("Adds anything missing. Existing records are left untouched."),
+         bkp.replaceModeHint ("Wipes this device first, then writes the backup in its place."),
+         bkp.eraseAndRestore / bkp.mergeIn (button labels) */}
       <p className="px-1 text-[11px] leading-5 text-mute">
         {mode === "merge"
           ? "Adds anything missing. Existing records are left untouched."
@@ -1095,10 +1148,11 @@ function RestoreChoiceSheet({
   backup: BackupFile | null;
   onClose: () => void;
 }) {
+  const t = useT();
   /* RestoreContent mounts fresh per backup — its state resets itself. */
   if (!backup) return null;
   return (
-    <BottomSheet open={open} onClose={onClose} title="Restore backup">
+    <BottomSheet open={open} onClose={onClose} title={t("bkp.restoreBackup")}>
       <RestoreContent key={`${backup.exportedAt}-${backup.files?.length ?? 0}`} backup={backup} onClose={onClose} />
     </BottomSheet>
   );
@@ -1188,6 +1242,7 @@ export function SearchOverlay({ query: initialQuery }: { query?: string }) {
   const pop = useUI((s) => s.pop);
   const open = useUI((s) => s.open);
   const setTab = useUI((s) => s.setTab);
+  const t = useT();
 
   const contacts = useApp((s) => s.contacts);
   const entries = useApp((s) => s.entries);
@@ -1214,39 +1269,46 @@ export function SearchOverlay({ query: initialQuery }: { query?: string }) {
       switch (a.parentType) {
         case "contact": {
           const c = contactById.get(a.parentId);
+          /* MISSING key: sr.removedContact ("removed contact") */
           return c ? displayName(c) : "removed contact";
         }
         case "entry": {
           const e = entries.find((x) => x.id === a.parentId);
-          return e ? `Ledger · ${e.note || e.category || "entry"}` : "ledger entry";
+          /* MISSING key: sr.ledgerEntry ("ledger entry") */
+          return e ? `${t("tab.ledger")} · ${e.note || e.category || "entry"}` : "ledger entry";
         }
         case "list": {
           const l = lists.find((x) => x.id === a.parentId);
-          return l ? `List · ${l.title}` : "list";
+          return l ? `${t("misc.list")} · ${l.title}` : t("misc.list").toLowerCase();
         }
         case "item": {
           const l = lists.find((x) => x.items.some((i) => i.id === a.parentId));
+          /* MISSING key: sr.itemInList ("Item in {name}") */
           return l ? `Item in ${l.title}` : "list item";
         }
         case "note": {
           const n = notes.find((x) => x.id === a.parentId);
-          return n ? `Note · ${n.title || "untitled"}` : "note";
+          /* MISSING keys: nt.untitled ("Untitled note"), sr.noteFallback ("note") */
+          return n ? `${t("misc.note")} · ${n.title || "untitled"}` : "note";
         }
         case "reminder": {
           const r = reminders.find((x) => x.id === a.parentId);
-          return r ? `Reminder · ${r.title}` : "reminder";
+          return r ? `${t("misc.reminder")} · ${r.title}` : t("misc.reminder").toLowerCase();
         }
         case "bank": {
           const b = banks.find((x) => x.id === a.parentId);
+          /* MISSING key: misc.account ("Account") */
           return b ? `Account · ${b.label}` : "account";
         }
         case "message":
+          /* MISSING key: sr.messageLog ("message log") */
           return "message log";
         default:
+          /* MISSING key: misc.file ("file") */
           return "file";
       }
     },
-    [contactById, entries, lists, notes, reminders, banks]
+    [contactById, entries, lists, notes, reminders, banks, t]
   );
 
   const groups = useMemo<SearchGroup[]>(() => {
@@ -1294,6 +1356,7 @@ export function SearchOverlay({ query: initialQuery }: { query?: string }) {
     const entryHits: SearchHit[] = [];
     for (const e of entries) {
       if (e.deletedAt) continue;
+      /* MISSING key: lg.ledgerEntry ("Ledger entry") */
       const title = e.note || e.category || "Ledger entry";
       const hit =
         title.toLowerCase().includes(ql) ||
@@ -1308,8 +1371,8 @@ export function SearchOverlay({ query: initialQuery }: { query?: string }) {
         sub: (
           <span className="inline-flex items-center gap-1.5">
             <Money value={e.amount} />
-            <span>· {e.type === "credit" ? "they owe you" : "you owe"}</span>
-            <span>· {owner ? displayName(owner) : "General"}</span>
+            <span>· {e.type === "credit" ? t("cd.theyOweYou") : t("cd.youOweThem")}</span>
+            <span>· {owner ? displayName(owner) : t("misc.general")}</span>
           </span>
         ),
         onGo: () => {
@@ -1331,6 +1394,7 @@ export function SearchOverlay({ query: initialQuery }: { query?: string }) {
       listHits.push({
         key: l.id,
         title: l.title,
+        /* MISSING key: sr.itemOf ("Item: {name}") — kept English for now */
         sub: item
           ? `Item: ${item.name}`
           : noteHit
@@ -1357,10 +1421,11 @@ export function SearchOverlay({ query: initialQuery }: { query?: string }) {
           : undefined;
       noteHits.push({
         key: n.id,
+        /* MISSING key: nt.untitled ("Untitled note") */
         title: n.title || "Untitled note",
         sub:
           snippet ||
-          (tagHit ? `#${n.tags.find((t) => t.toLowerCase().includes(ql)) ?? ""}` : undefined),
+          (tagHit ? `#${n.tags.find((tag) => tag.toLowerCase().includes(ql)) ?? ""}` : undefined),
         icon: <StickyNote size={16} />,
         onGo: () => open({ type: "noteEdit", noteId: n.id, ownerId: n.ownerId }),
       });
@@ -1377,9 +1442,10 @@ export function SearchOverlay({ query: initialQuery }: { query?: string }) {
       reminderHits.push({
         key: r.id,
         title: r.title,
+        /* MISSING key: rm.due ("Due") — kept English for now */
         sub: titleHit
           ? r.done
-            ? `Done · ${fdShort(r.dueAt)}`
+            ? `${t("rm.done")} · ${fdShort(r.dueAt)}`
             : `Due ${fdShort(r.dueAt)}`
           : (r.notes || "").slice(0, 60) || `Due ${fdShort(r.dueAt)}`,
         icon: <Bell size={16} />,
@@ -1438,6 +1504,7 @@ export function SearchOverlay({ query: initialQuery }: { query?: string }) {
     open,
     setTab,
     parentLabel,
+    t,
   ]);
 
   const go = (hit: SearchHit) => {
@@ -1448,20 +1515,44 @@ export function SearchOverlay({ query: initialQuery }: { query?: string }) {
 
   const totalHits = groups.reduce((s, g) => s + g.hits.length, 0);
 
+  /* Group headings resolved at render time (reactive to language switches).
+     "Entries" / "Files" have no catalog keys yet
+     (MISSING: sr.groupEntries "Entries", sr.groupFiles "Files"). */
+  const groupLabel = (g: SearchGroup): string => {
+    switch (g.key) {
+      case "contacts":
+        return t("nav.contacts");
+      case "entries":
+        return "Entries";
+      case "lists":
+        return t("tab.lists");
+      case "notes":
+        return t("tab.notes");
+      case "reminders":
+        return t("tab.reminders");
+      case "banks":
+        return t("tab.accounts");
+      case "files":
+        return "Files";
+      default:
+        return g.label;
+    }
+  };
+
   return (
-    <Sheet title="Search" onBack={pop}>
+    <Sheet title={t("sr.search")} onBack={pop}>
       <div className="px-4 pb-12">
         <div className="sticky top-0 z-10 -mx-4 bg-canvas/95 px-4 py-3 backdrop-blur">
           <SearchInput
             autoFocus
             value={query}
             onChange={setQuery}
-            placeholder="Search everything…"
+            placeholder={t("sr.placeholder")}
           />
         </div>
 
         {q.length === 0 ? (
-          <section aria-label="Recent searches" className="pt-2">
+          <section aria-label={t("sr.recentSearches")} className="pt-2">
             <SectionLabel
               right={
                 recents.length > 0 ? (
@@ -1476,14 +1567,15 @@ export function SearchOverlay({ query: initialQuery }: { query?: string }) {
                       setRecents([]);
                     }}
                     className="text-[11px] font-semibold text-mute transition hover:text-neg"
-                    aria-label="Clear recent searches"
+                    aria-label={t("sr.clearRecent")}
                   >
+                    {/* MISSING key: sr.clear ("Clear") */}
                     Clear
                   </button>
                 ) : undefined
               }
             >
-              Recent searches
+              {t("sr.recentSearches")}
             </SectionLabel>
             {recents.length ? (
               <div className="flex flex-wrap gap-2">
@@ -1494,6 +1586,8 @@ export function SearchOverlay({ query: initialQuery }: { query?: string }) {
                 ))}
               </div>
             ) : (
+              /* MISSING key: sr.everythingHint ("Search across contacts, ledger entries, lists, notes,
+                 reminders, bank accounts and files — all at once.") */
               <p className="rounded-[18px] border border-dashed border-line2 px-4 py-6 text-center text-[11px] leading-5 text-mute">
                 Search across contacts, ledger entries, lists, notes, reminders, bank accounts and
                 files — all at once.
@@ -1501,13 +1595,14 @@ export function SearchOverlay({ query: initialQuery }: { query?: string }) {
             )}
           </section>
         ) : q.length < 2 ? (
-          <p className="pt-8 text-center text-[11px] text-mute">Keep typing — at least 2 characters</p>
+          <p className="pt-8 text-center text-[11px] text-mute">{t("sr.keepTyping")}</p>
         ) : totalHits === 0 ? (
           <div className="pt-6">
             <EmptyState
               icon={<SearchX size={22} />}
+              /* MISSING key: sr.noResultsFor ("No results for “{q}””) */
               title={`No results for “${q}”`}
-              hint="Try a name, phone number, word from a note, or an amount."
+              hint={t("sr.tryHint")}
             />
           </div>
         ) : (
@@ -1516,9 +1611,9 @@ export function SearchOverlay({ query: initialQuery }: { query?: string }) {
               const shown = expanded.has(g.key) ? g.hits : g.hits.slice(0, 5);
               const more = g.hits.length - shown.length;
               return (
-                <section key={g.key} aria-label={g.label}>
+                <section key={g.key} aria-label={groupLabel(g)}>
                   <SectionLabel right={<span className="text-[10px] text-mute">{g.hits.length}</span>}>
-                    {g.label}
+                    {groupLabel(g)}
                   </SectionLabel>
                   <div className="space-y-2">
                     {shown.map((h) => (
@@ -1536,6 +1631,7 @@ export function SearchOverlay({ query: initialQuery }: { query?: string }) {
                         }
                         className="w-full rounded-2xl border border-dashed border-line2 py-3 text-[11px] font-semibold text-mute transition hover:border-brand hover:text-brand"
                       >
+                        {/* MISSING key: sr.moreN ("{n} more…") */}
                         {more} more…
                       </button>
                     )}
@@ -1598,37 +1694,45 @@ export function SettingsView() {
   };
 
   const removePin = async () => {
+    /* MISSING keys: st.removePinConfirm ("Remove PIN lock?"),
+       st.removePinMsg ("callmony will open without asking for a PIN again.") */
     const ok = await confirm({
       tone: "danger",
-      title: "Remove PIN lock?",
-      message: "callmony will open without asking for a PIN again.",
-      confirmLabel: "Remove",
+      title: t("st.removePinConfirm"),
+      message: t("st.removePinMsg"),
+      confirmLabel: t("act.remove"),
     });
     if (!ok) return;
     updateSettings({ pinHash: undefined });
-    toastOk("PIN lock removed");
+    toastOk(t("st.pinRemoved"));
   };
 
   const deleteAll = async () => {
+    /* MISSING keys: st.deleteAllTitle ("Delete ALL data?"), st.deleteAllMsg ("Every contact, ledger
+       entry, list, note, reminder, bank account and file on this device will be permanently
+       deleted."), st.deleteEverything ("Delete everything"), st.reallyDeleteTitle ("Really delete
+       everything?"), st.reallyDeleteMsg ("This is the point of no return. If you might want any of
+       it back, export a backup first."), st.wipeMyData ("Yes, wipe my data"),
+       st.allDataDeleted ("All data deleted") */
     const first = await confirm({
       tone: "danger",
-      title: "Delete ALL data?",
+      title: t("st.deleteAllTitle"),
       message:
         "Every contact, ledger entry, list, note, reminder, bank account and file on this device will be permanently deleted.",
-      confirmLabel: "Delete everything",
+      confirmLabel: t("st.deleteEverything"),
     });
     if (!first) return;
     const second = await confirm({
       tone: "danger",
-      title: "Really delete everything?",
+      title: t("st.reallyDeleteTitle"),
       message:
         "This is the point of no return. If you might want any of it back, export a backup first.",
-      confirmLabel: "Yes, wipe my data",
+      confirmLabel: t("st.wipeMyData"),
     });
     if (!second) return;
     setWiping(true);
     await wipeAll();
-    toastOk("All data deleted");
+    toastOk(t("st.allDataDeleted"));
     setTimeout(() => window.location.reload(), 800);
   };
 
@@ -1639,15 +1743,8 @@ export function SettingsView() {
 
   const activeLang = LANGUAGES.find((l) => l.code === settings.language) ?? LANGUAGES[0];
 
-  const pickLang = (code: string) => {
-    updateSettings({ language: code as Settings["language"] });
-    const lang = LANGUAGES.find((l) => l.code === code);
-    toastOk(`Language set to ${lang?.native ?? code}`);
-    setLangSheet(false);
-  };
-
   return (
-    <Sheet title="Settings" onBack={pop}>
+    <Sheet title={t("hdr.settings")} onBack={pop}>
       <div className="space-y-6 px-4 pb-14 pt-4">
         {/* Appearance */}
         <section aria-label={t("st.appearance")}>
@@ -1674,23 +1771,42 @@ export function SettingsView() {
             <ToggleRow
               icon={<EyeOff size={17} />}
               label={t("st.hideBalances")}
-              hint="Blur money amounts everywhere until you turn this off."
+              hint={t("st.hideBalancesHint")}
               checked={settings.hideBalances}
               onToggle={() => updateSettings({ hideBalances: !settings.hideBalances })}
             />
           </SectionCard>
         </section>
 
-        {/* Region */}
-        <section aria-label="Region">
-          <SectionLabel>Region</SectionLabel>
+        {/* Calls — real dialer vs in-app demo (Agent 9-a's CallScreen consumes this) */}
+        <section aria-label={t("st.calls")}>
+          <SectionLabel>{t("st.calls")}</SectionLabel>
           <SectionCard className="space-y-4">
-            <Field label="Currency">
+            <div>
+              <p className="mb-2 text-[13px] font-semibold text-ink">{t("st.callMode")}</p>
+              <Segmented
+                options={[
+                  { value: "dialer", label: t("st.phoneDialer") },
+                  { value: "demo", label: t("st.inAppDemo") },
+                ]}
+                value={settings.callMode ?? "dialer"}
+                onChange={(mode) => updateSettings({ callMode: mode })}
+              />
+            </div>
+            <Note icon={<PhoneCall size={13} />}>{t("st.callModeHint")}</Note>
+          </SectionCard>
+        </section>
+
+        {/* Region */}
+        <section aria-label={t("st.region")}>
+          <SectionLabel>{t("st.region")}</SectionLabel>
+          <SectionCard className="space-y-4">
+            <Field label={t("st.currency")}>
               <select
                 className={inputCls}
                 value={settings.currency}
                 onChange={(e) => updateSettings({ currency: e.target.value })}
-                aria-label="Currency"
+                aria-label={t("st.currency")}
               >
                 {CURRENCIES.map((c) => (
                   <option key={c.code} value={c.code}>
@@ -1699,12 +1815,12 @@ export function SettingsView() {
                 ))}
               </select>
             </Field>
-            <Field label="Default country code" hint="Used when adding phone numbers">
+            <Field label={t("st.countryCode")} hint={t("st.countryCodeHint")}>
               <select
                 className={inputCls}
                 value={settings.countryCode}
                 onChange={(e) => updateSettings({ countryCode: e.target.value })}
-                aria-label="Default country code"
+                aria-label={t("st.countryCode")}
               >
                 {COUNTRIES.map((c) => (
                   <option key={c.code} value={c.code}>
@@ -1724,28 +1840,29 @@ export function SettingsView() {
               <>
                 <ActionRow
                   icon={<KeyRound size={18} />}
-                  label="Change PIN"
-                  hint="Verify the current one, then set a new 4-digit PIN."
+                  label={t("st.changePin")}
+                  hint={t("st.changePinHint")}
                   onClick={() => setPinSheet({ open: true, mode: "change" })}
                 />
                 <ActionRow
                   icon={<LockOpen size={18} />}
-                  label="Remove PIN"
-                  hint="Open callmony without asking for a PIN again."
+                  label={t("st.removePin")}
+                  /* MISSING key: st.removePinHint ("Open callmony without asking for a PIN again.") */
+                  hint={t("st.removePinHint")}
                   danger
                   onClick={removePin}
                 />
                 <div className="pt-3">
-                  <Field label="Auto-lock">
+                  <Field label={t("st.autolock")}>
                     <select
                       className={inputCls}
                       value={String(settings.autolockMin)}
                       onChange={(e) => updateSettings({ autolockMin: Number(e.target.value) })}
-                      aria-label="Auto-lock timing"
+                      aria-label={t("st.autolockTiming")}
                     >
-                      <option value="0">Immediately when the app is left</option>
-                      <option value="1">After 1 minute</option>
-                      <option value="5">After 5 minutes</option>
+                      <option value="0">{t("st.immediately")}</option>
+                      <option value="1">{t("st.after1")}</option>
+                      <option value="5">{t("st.after5")}</option>
                     </select>
                   </Field>
                 </div>
@@ -1753,15 +1870,12 @@ export function SettingsView() {
             ) : (
               <ActionRow
                 icon={<Lock size={18} />}
-                label="Set PIN"
-                hint="Ask for a 4-digit PIN when callmony opens or unlocks."
+                label={t("st.setPin")}
+                hint={t("st.pinHint")}
                 onClick={() => setPinSheet({ open: true, mode: "set" })}
               />
             )}
-            <Note icon={<ShieldCheck size={13} />}>
-              The PIN locks the screen — your data stays on this device, unencrypted, so a
-              forgotten PIN can be safely reset. Nothing is ever lost.
-            </Note>
+            <Note icon={<ShieldCheck size={13} />}>{t("st.pinNote")}</Note>
           </SectionCard>
         </section>
 
@@ -1770,11 +1884,7 @@ export function SettingsView() {
           <SectionLabel>{t("st.notifications")}</SectionLabel>
           <SectionCard>
             <NotifStatusRow perm={notif.perm} onAsk={() => void notif.ask()} />
-            <Note icon={<Info size={13} />}>
-              Honest limits: browsers fully suspend apps they have closed. Reminders alert while
-              callmony is open or recent in the background — anything missed appears the next time you
-              open the app.
-            </Note>
+            <Note icon={<Info size={13} />}>{t("st.notifHonestNote")}</Note>
           </SectionCard>
         </section>
 
@@ -1784,21 +1894,24 @@ export function SettingsView() {
           <SectionCard className="space-y-1">
             <ActionRow
               icon={<Archive size={18} />}
-              label="Export backup"
-              hint="One JSON file with everything — including attached files."
+              label={t("bkp.exportBackup")}
+              hint={t("bkp.exportBackupHint")}
               onClick={() => void backupExport.exportBackup()}
               busy={backupExport.busy}
             />
             <ActionRow
               icon={<Upload size={18} />}
-              label="Restore from backup"
-              hint="Replace everything, or merge in what's missing."
+              label={t("bkp.restoreBackup")}
+              hint={t("bkp.restoreHint")}
               onClick={() => restoreInputRef.current?.click()}
             />
             {backupStale ? (
               <div className="mt-2 flex items-start gap-3 rounded-2xl border border-amber/30 bg-surface p-3.5">
                 <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber" />
                 <div className="min-w-0 flex-1">
+                  {/* MISSING keys: bkp.stale ("It's been over a month since your last backup"),
+                      bkp.never ("You've never backed up"),
+                      bkp.staleHint ("Your data lives only on this device — keep a copy somewhere safe.") */}
                   <p className="text-[12px] font-semibold text-ink">
                     {lastBackupAt
                       ? "It's been over a month since your last backup"
@@ -1819,10 +1932,12 @@ export function SettingsView() {
                   ) : (
                     <Archive size={13} />
                   )}
+                  {/* MISSING key: bkp.backUpNow ("Back up") */}
                   Back up
                 </Button>
               </div>
             ) : (
+              /* MISSING key: bkp.lastBackup ("Last backup") */
               <p className="px-1 pt-2 text-[11px] text-mute">
                 Last backup · {lastBackupAt ? relTime(lastBackupAt) : "—"}
               </p>
@@ -1831,44 +1946,46 @@ export function SettingsView() {
         </section>
 
         {/* Import & export contacts */}
-        <section aria-label="Import and export contacts">
-          <SectionLabel>Import &amp; export contacts</SectionLabel>
+        <section aria-label={t("ie.importExportHint")}>
+          <SectionLabel>{t("ie.importExport")}</SectionLabel>
           <SectionCard>
             {contactsImport.canPickPhone && (
               <ActionRow
                 icon={<Smartphone size={18} />}
-                label="Import from phone"
-                hint="Pick contacts with this phone's contact picker."
+                label={t("ie.fromPhone")}
+                hint={t("ie.fromPhoneHint")}
                 onClick={() => void contactsImport.pickPhone()}
               />
             )}
             <ActionRow
               icon={<FileUp size={18} />}
-              label="Import vCard (.vcf)"
-              hint="From iOS, Android, Outlook and most apps."
+              label={t("ie.importVcard")}
+              hint={t("ie.importVcardHint")}
               onClick={() => vcardInputRef.current?.click()}
             />
             <ActionRow
               icon={<Table size={18} />}
-              label="Import CSV"
-              hint="Google Contacts export format supported."
+              label={t("ie.importCsv")}
+              hint={t("ie.importCsvHint")}
               onClick={() => csvInputRef.current?.click()}
             />
             <ActionRow
               icon={<FileDown size={18} />}
-              label="Export all contacts (.vcf)"
+              label={t("ie.exportVcf")}
+              /* MISSING key: misc.nContacts ("{n} contacts") */
               hint={`${contactsCount} contacts`}
               onClick={exportVCardAll}
             />
             <ActionRow
               icon={<FileSpreadsheet size={18} />}
-              label="Export contacts (.csv)"
-              hint="For Excel and Google Sheets."
+              label={t("ie.exportCsv")}
+              hint={t("ie.forExcel")}
               onClick={exportContactsCsvAll}
             />
             <ActionRow
               icon={<Receipt size={18} />}
-              label="Export transactions (.csv)"
+              label={t("ie.exportTx")}
+              /* MISSING key: ie.nLedgerEntries ("{n} ledger entries") */
               hint={`${entriesCount} ledger entries`}
               onClick={exportEntriesCsvAll}
             />
@@ -1876,20 +1993,17 @@ export function SettingsView() {
         </section>
 
         {/* Email sync (honest) */}
-        <section aria-label="Email sync">
-          <SectionLabel>Email sync</SectionLabel>
+        {/* MISSING key: st.emailSync ("Email sync") */}
+        <section aria-label={t("st.emailSync")}>
+          <SectionLabel>{t("st.emailSync")}</SectionLabel>
           <SectionCard className="space-y-3">
             <div className="flex items-start gap-3 pt-1">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] bg-brandsoft text-brand">
                 <Mail size={18} />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-[13.5px] font-semibold text-ink">Round-trip, no accounts</p>
-                <p className="mt-0.5 text-[11px] leading-4 text-mute">
-                  callmony never connects to Gmail or Outlook. Instead: export vCard/CSV → import
-                  into your email contacts → export back anytime → import here. Reminder emails
-                  can be sent from any contact or list.
-                </p>
+                <p className="text-[13.5px] font-semibold text-ink">{t("bkp.roundTrip")}</p>
+                <p className="mt-0.5 text-[11px] leading-4 text-mute">{t("st.emailSyncNote")}</p>
               </div>
             </div>
             <Button
@@ -1904,7 +2018,8 @@ export function SettingsView() {
               ) : (
                 <Share2 size={14} />
               )}
-              Share backup by email
+              {/* MISSING key: bkp.shareByEmail ("Share backup by email") */}
+              {t("bkp.shareByEmail")}
             </Button>
           </SectionCard>
         </section>
@@ -1916,6 +2031,7 @@ export function SettingsView() {
             <ActionRow
               icon={<HardDrive size={18} />}
               label={t("st.storage")}
+              /* MISSING key: sto.filesSize ("{n} files · {size}") */
               hint={`${attachments.length} files · ${bytesStr(filesTotal)}`}
               onClick={() => openOverlay({ type: "storage" })}
             />
@@ -1923,20 +2039,25 @@ export function SettingsView() {
         </section>
 
         {/* Install */}
-        <section aria-label="Install">
-          <SectionLabel>Install</SectionLabel>
+        {/* MISSING key: st.install ("Install") */}
+        <section aria-label={t("st.install")}>
+          <SectionLabel>{t("st.install")}</SectionLabel>
           <SectionCard>
             {standalone ? (
               <ActionRow
                 icon={<CheckCircle2 size={18} />}
-                label="Installed on this device"
-                hint="callmony is running as an installed app."
+                /* MISSING keys: st.installedOnDevice ("Installed on this device"),
+                   st.installedHint ("callmony is running as an installed app.") */
+                label={t("st.installedOnDevice")}
+                hint={t("st.installedHint")}
               />
             ) : canInstall ? (
               <ActionRow
                 icon={<Download size={18} />}
-                label="Install app"
-                hint="Add callmony to your home screen — it works offline."
+                /* MISSING keys: st.installAppRow ("Install app"),
+                   st.installAppRowHint ("Add callmony to your home screen — it works offline.") */
+                label={t("st.installAppRow")}
+                hint={t("st.addHomeHint")}
                 onClick={() => void promptInstall()}
               />
             ) : isIOS ? (
@@ -1945,17 +2066,19 @@ export function SettingsView() {
                   <Smartphone size={18} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13.5px] font-semibold text-ink">Install on iPhone</p>
-                  <p className="mt-0.5 text-[11px] leading-4 text-mute">
-                    Tap the Share button in Safari, then “Add to Home Screen”.
-                  </p>
+                  {/* MISSING keys: st.installIphone ("Install on iPhone"),
+                      st.installIphoneHint ("Tap the Share button in Safari, then “Add to Home Screen”.") */}
+                  <p className="text-[13.5px] font-semibold text-ink">{t("st.installIphone")}</p>
+                  <p className="mt-0.5 text-[11px] leading-4 text-mute">{t("st.installIphoneHint")}</p>
                 </div>
               </div>
             ) : (
               <ActionRow
                 icon={<Smartphone size={18} />}
-                label="Add to home screen"
-                hint="Use your browser menu → “Install app” or “Add to Home screen”."
+                /* MISSING keys: st.addToHomeScreen ("Add to home screen"),
+                   st.addToHomeScreenHint ("Use your browser menu → “Install app” or “Add to Home screen”.") */
+                label={t("st.addToHomeScreen")}
+                hint={t("st.addToHomeScreenHint")}
               />
             )}
           </SectionCard>
@@ -1967,7 +2090,8 @@ export function SettingsView() {
           <SectionCard>
             <ActionRow
               icon={<Info size={18} />}
-              label="About callmony"
+              /* MISSING key: st.aboutApp ("About callmony") */
+              label={t("st.aboutApp")}
               hint={`Version ${APP_VERSION} · offline-first`}
               onClick={() => openOverlay({ type: "about" })}
             />
@@ -1975,21 +2099,20 @@ export function SettingsView() {
         </section>
 
         {/* Data — danger zone */}
-        <section aria-label="Data">
-          <SectionLabel>Data</SectionLabel>
+        <section aria-label={t("st.data")}>
+          <SectionLabel>{t("st.data")}</SectionLabel>
           <SectionCard>
             <ActionRow
               danger
               icon={<Trash2 size={18} />}
-              label="Delete all data"
-              hint="Erase everything on this device and start fresh."
+              /* MISSING keys: st.deleteAllData ("Delete all data"),
+                 st.deleteAllHint ("Erase everything on this device and start fresh.") */
+              label={t("st.deleteAllData")}
+              hint={t("st.deleteAllHint")}
               onClick={() => void deleteAll()}
               busy={wiping}
             />
-            <Note icon={<Info size={13} />}>
-              Export a backup first if you want to keep anything. The demo data callmony started with
-              can be re-seeded later by clearing this site's data in your browser.
-            </Note>
+            <Note icon={<Info size={13} />}>{t("st.deleteAllNote")}</Note>
           </SectionCard>
         </section>
       </div>
@@ -2009,7 +2132,7 @@ export function SettingsView() {
             const parsed = await parseBackupFile(files[0]);
             setRestoreBackup(parsed);
           } catch {
-            toastErr("That doesn't look like a callmony backup file");
+            toastErr(t("bkp.notValidBackup"));
           }
         }}
       />
@@ -2044,40 +2167,8 @@ export function SettingsView() {
         onClose={() => setPinSheet((p) => ({ ...p, open: false }))}
       />
 
-      {/* language picker */}
-      <BottomSheet open={langSheet} onClose={() => setLangSheet(false)} title={t("st.language")}>
-        <div className="space-y-1.5 pb-2">
-          {LANGUAGES.map((l) => {
-            const active = settings.language === l.code;
-            return (
-              <button
-                key={l.code}
-                type="button"
-                onClick={() => pickLang(l.code)}
-                aria-pressed={active}
-                className={cx(
-                  "flex h-12 w-full items-center gap-3 rounded-2xl px-3 text-left transition active:scale-[0.98]",
-                  active ? "border border-brand/40 bg-brandsoft" : "hover:bg-surface2"
-                )}
-              >
-                <span
-                  className={cx(
-                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] text-[13px] font-bold",
-                    active ? "bg-brand text-white" : "bg-surface2 text-mute"
-                  )}
-                >
-                  {l.code.toUpperCase()}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13.5px] font-semibold text-ink">{l.native}</span>
-                  <span className="block truncate text-[11px] text-mute">{l.label}</span>
-                </span>
-                {active && <Check size={17} className="shrink-0 text-brand" />}
-              </button>
-            );
-          })}
-        </div>
-      </BottomSheet>
+      {/* language picker — shared component (same sheet as the More tab) */}
+      <LanguageSheet open={langSheet} onClose={() => setLangSheet(false)} />
       <RestoreChoiceSheet
         open={!!restoreBackup}
         backup={restoreBackup}
@@ -2096,6 +2187,7 @@ export function LockScreen() {
   const updateSettings = useApp((s) => s.updateSettings);
   const setLocked = useUI((s) => s.setLocked);
   const confirm = useConfirm();
+  const t = useT();
 
   const [digits, setDigits] = useState("");
   const [shakeKey, setShakeKey] = useState(0);
@@ -2118,10 +2210,10 @@ export function LockScreen() {
         vibrate(60);
         setShakeKey((k) => k + 1);
         setDigits("");
-        toastErr("Wrong PIN");
+        toastErr(t("st.wrongPin"));
       }
     },
-    [setLocked]
+    [setLocked, t]
   );
 
   const add = (d: string) => {
@@ -2144,9 +2236,12 @@ export function LockScreen() {
   });
 
   const forgot = async () => {
+    /* MISSING keys: st.resetPinConfirm ("Reset PIN?"),
+       st.resetPinMsg ("Your data is safe and stays on this device. The screen lock will be removed."),
+       st.resetLock ("Reset lock") */
     const ok = await confirm({
       tone: "danger",
-      title: "Reset PIN?",
+      title: t("st.resetPinConfirm"),
       message:
         "Your data is safe and stays on this device. The screen lock will be removed.",
       confirmLabel: "Reset lock",
@@ -2154,7 +2249,7 @@ export function LockScreen() {
     if (!ok) return;
     updateSettings({ pinHash: undefined });
     setLocked(false);
-    toastOk("Screen lock removed");
+    toastOk(t("st.pinRemoved"));
   };
 
   return (
@@ -2165,7 +2260,7 @@ export function LockScreen() {
       transition={{ duration: 0.2 }}
       className="absolute inset-0 z-[85] flex flex-col bg-canvas"
       role="dialog"
-      aria-label="Locked — enter your PIN"
+      aria-label={t("st.lockedTitle")}
     >
       <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6">
         <div className="flex h-16 w-16 items-center justify-center rounded-[22px] bg-brand text-white shadow-floating">
@@ -2174,6 +2269,7 @@ export function LockScreen() {
         <p className="text-[22px] font-bold tracking-[-1px] text-ink">
           call<span className="text-brand">mony</span>
         </p>
+        {/* MISSING key: st.enterPin ("Enter your PIN") */}
         <p className="mt-7 text-[15px] font-semibold text-ink">
           {busy ? "Checking…" : "Enter your PIN"}
         </p>
@@ -2185,6 +2281,7 @@ export function LockScreen() {
         </div>
       </div>
       <div className="flex flex-col items-center gap-3 pb-[max(28px,env(safe-area-inset-bottom))]">
+        {/* MISSING key: st.forgotPin ("Forgot PIN?") */}
         <button
           type="button"
           onClick={() => void forgot()}
@@ -2203,30 +2300,34 @@ export function LockScreen() {
 
 export function ImportExportOverlay() {
   const pop = useUI((s) => s.pop);
+  const t = useT();
   const contactsImport = useContactsImport();
   const contactsCount = useApp((s) => s.contacts.filter((c) => !c.deletedAt).length);
   const entriesCount = useApp((s) => s.entries.filter((e) => !e.deletedAt).length);
   const [dragOver, setDragOver] = useState(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
 
+  /* MISSING key: ie.subtitle ("Move contacts in and out of callmony") */
   return (
-    <Sheet title="Import & export" subtitle="Move contacts in and out of callmony" onBack={pop}>
+    <Sheet title={t("ie.importExport")} subtitle={t("ie.subtitle")} onBack={pop}>
       <div className="space-y-6 px-4 pb-14 pt-4">
         {contactsImport.canPickPhone && (
-          <section aria-label="Import from this phone">
-            <SectionLabel>From this phone</SectionLabel>
+          /* MISSING key: ie.fromThisPhone ("From this phone") */
+          <section aria-label={t("ie.fromThisPhone")}>
+            <SectionLabel>{t("ie.fromThisPhone")}</SectionLabel>
             <SectionCard>
               <ActionRow
                 icon={<Smartphone size={18} />}
-                label="Pick contacts"
-                hint="Use the system contact picker — nothing is read without your choice."
+                label={t("ie.pickContacts")}
+                hint={t("ie.fromPhoneHint")}
                 onClick={() => void contactsImport.pickPhone()}
               />
             </SectionCard>
           </section>
         )}
 
-        <section aria-label="Import vCard">
+        <section aria-label={t("ie.importVcard")}>
+          {/* MISSING key: ie.vcardLabel ("vCard (.vcf)") */}
           <SectionLabel>vCard (.vcf)</SectionLabel>
           <SectionCard className="space-y-3">
             <div
@@ -2245,25 +2346,28 @@ export function ImportExportOverlay() {
                 "flex flex-col items-center gap-1.5 rounded-2xl border-2 border-dashed px-4 py-7 text-center transition",
                 dragOver ? "border-brand bg-brandsoft" : "border-line2 bg-surface2"
               )}
-              aria-label="Drop a vCard file here"
+              aria-label={t("ie.dropHere")}
             >
               <FileUp size={22} className="text-brand" />
-              <p className="text-[12.5px] font-semibold text-ink">Drop a .vcf file here</p>
-              <p className="text-[10.5px] text-mute">iOS, Android, Outlook & most apps export vCard</p>
+              {/* MISSING keys: ie.dropVcfHere ("Drop a .vcf file here"),
+                  ie.vcardAppsHint ("iOS, Android, Outlook & most apps export vCard") */}
+              <p className="text-[12.5px] font-semibold text-ink">{t("ie.dropVcfHere")}</p>
+              <p className="text-[10.5px] text-mute">iOS, Android, Outlook &amp; most apps export vCard</p>
             </div>
             <FilePickButton accept=".vcf,text/vcard,text/directory" onFiles={contactsImport.pickVCard}>
-              <FileUp size={14} /> Choose .vcf file
+              {/* MISSING key: ie.chooseVcf ("Choose .vcf file") */}
+              <FileUp size={14} /> {t("ie.chooseVcf")}
             </FilePickButton>
           </SectionCard>
         </section>
 
-        <section aria-label="Import CSV">
+        <section aria-label={t("ie.importCsv")}>
           <SectionLabel>CSV</SectionLabel>
           <SectionCard>
             <ActionRow
               icon={<Table size={18} />}
-              label="Import CSV file"
-              hint="Google Contacts export format is supported."
+              label={t("ie.importCsv")}
+              hint={t("ie.importCsvHint")}
               onClick={() => csvInputRef.current?.click()}
             />
             <input
@@ -2281,26 +2385,31 @@ export function ImportExportOverlay() {
           </SectionCard>
         </section>
 
-        <section aria-label="Export">
-          <SectionLabel>Export</SectionLabel>
+        <section aria-label={t("ie.export")}>
+          <SectionLabel>{t("ie.export")}</SectionLabel>
           <SectionCard className="space-y-3">
+            {/* MISSING key: ie.countsLine ("{n} contacts · {m} transactions in callmony") */}
             <p className="px-1 text-[11px] leading-5 text-mute">
               {contactsCount} contacts · {entriesCount} transactions in callmony
             </p>
             <div className="grid grid-cols-1 gap-2">
+              {/* MISSING keys: ie.contactsVcf ("Contacts (.vcf)"), ie.contactsCsv ("Contacts (.csv)"),
+                  ie.transactionsCsv ("Transactions (.csv)") */}
               <Button variant="soft" size="lg" onClick={exportVCardAll}>
-                <FileDown size={15} /> Contacts (.vcf)
+                <FileDown size={15} /> {t("ie.contactsVcf")}
               </Button>
               <Button variant="surface" size="lg" onClick={exportContactsCsvAll}>
-                <FileSpreadsheet size={15} /> Contacts (.csv)
+                <FileSpreadsheet size={15} /> {t("ie.contactsCsv")}
               </Button>
               <Button variant="surface" size="lg" onClick={exportEntriesCsvAll}>
-                <Receipt size={15} /> Transactions (.csv)
+                <Receipt size={15} /> {t("ie.transactionsCsv")}
               </Button>
             </div>
           </SectionCard>
         </section>
 
+        {/* MISSING key: ie.duplicatesNote ("Duplicates are matched by phone number. “Skip” leaves
+            existing contacts untouched; “Merge” adds new numbers and emails onto them.") */}
         <Note icon={<Info size={13} />}>
           Duplicates are matched by phone number. “Skip” leaves existing contacts untouched;
           “Merge” adds new numbers and emails onto them.
@@ -2317,6 +2426,7 @@ export function ImportExportOverlay() {
 
 export function BackupOverlay() {
   const pop = useUI((s) => s.pop);
+  const t = useT();
   const settings = useApp((s) => s.settings);
   const attachments = useApp((s) => s.attachments);
   const contactsCount = useApp((s) => s.contacts.filter((c) => !c.deletedAt).length);
@@ -2332,17 +2442,20 @@ export function BackupOverlay() {
   const lastBackupAt = settings.lastBackupAt;
   const backupStale = !lastBackupAt || Date.now() - lastBackupAt > 30 * 24 * 60 * 60 * 1000;
 
+  /* MISSING key: bkp.subtitle ("One file with everything, on your terms.") */
   return (
-    <Sheet title="Backup & restore" subtitle="One file with everything, on your terms." onBack={pop}>
+    <Sheet title={t("st.backup")} subtitle={t("bkp.subtitle")} onBack={pop}>
       <div className="space-y-6 px-4 pb-14 pt-4">
         {/* export */}
-        <section aria-label="Export backup">
-          <SectionLabel>Export</SectionLabel>
+        <section aria-label={t("ie.export")}>
+          <SectionLabel>{t("ie.export")}</SectionLabel>
           <SectionCard className="space-y-1">
             <ActionRow
               icon={<Archive size={18} />}
-              label="Export backup"
+              label={t("bkp.exportBackup")}
               hint={
+                /* MISSING keys: bkp.building ("Building backup…"), bkp.exportCounts
+                   ("{n} contacts · {m} entries · {k} lists · {f} files ({size})") */
                 backupExport.busy
                   ? "Building backup…"
                   : `${contactsCount} contacts · ${entriesCount} entries · ${listsCount} lists · ${attachments.length} files (${bytesStr(filesSize)})`
@@ -2350,11 +2463,14 @@ export function BackupOverlay() {
               onClick={() => void backupExport.exportBackup()}
               busy={backupExport.busy}
             />
+            {/* MISSING key: bkp.includesNote ("Includes contacts, ledger, lists, notes, reminders,
+                bank accounts, settings and every attached file — as one .json you can keep anywhere.") */}
             <Note icon={<ShieldCheck size={13} />}>
               Includes contacts, ledger, lists, notes, reminders, bank accounts, settings and every
               attached file — as one .json you can keep anywhere.
             </Note>
             {lastBackupAt && !backupStale && (
+              /* MISSING key: bkp.lastBackup ("Last backup") */
               <p className="px-1 pt-2 text-[11px] text-mute">
                 Last backup · {relTime(lastBackupAt)} ({fd(lastBackupAt)})
               </p>
@@ -2363,12 +2479,14 @@ export function BackupOverlay() {
         </section>
 
         {/* restore */}
-        <section aria-label="Restore backup">
-          <SectionLabel>Restore</SectionLabel>
+        <section aria-label={t("st.restore")}>
+          <SectionLabel>{t("st.restore")}</SectionLabel>
           <SectionCard>
             <ActionRow
               icon={<Upload size={18} />}
-              label="Restore from backup"
+              label={t("bkp.restoreBackup")}
+              /* MISSING keys: bkp.readingFile ("Reading file…"),
+                 bkp.pickFile ("Pick a callmony-backup .json file.") */
               hint={parsing ? "Reading file…" : "Pick a callmony-backup .json file."}
               onClick={() => restoreInputRef.current?.click()}
               busy={parsing}
@@ -2388,11 +2506,13 @@ export function BackupOverlay() {
                   const parsed = await parseBackupFile(files[0]);
                   setBackup(parsed);
                 } catch {
-                  toastErr("Not a valid callmony backup file");
+                  toastErr(t("bkp.notValidBackup"));
                 }
                 setParsing(false);
               }}
             />
+            {/* MISSING key: bkp.mergeReplaceNote ("“Merge” adds only what's missing. “Replace” wipes
+                this device first — export a fresh backup before replacing.") */}
             <Note icon={<Info size={13} />}>
               “Merge” adds only what's missing. “Replace” wipes this device first — export a
               fresh backup before replacing.
@@ -2404,6 +2524,10 @@ export function BackupOverlay() {
           <div className="flex items-start gap-3 rounded-[22px] border border-amber/30 bg-surface p-4 shadow-key">
             <AlertTriangle size={17} className="mt-0.5 shrink-0 text-amber" />
             <div className="min-w-0 flex-1">
+              {/* MISSING keys: bkp.stale ("It's been over a month since your last backup"),
+                  bkp.never ("You've never backed up"),
+                  bkp.staleLocalHint ("callmony keeps everything locally — a backup is the only way to
+                  move or recover it.") */}
               <p className="text-[12.5px] font-semibold text-ink">
                 {lastBackupAt
                   ? "It's been over a month since your last backup"
@@ -2416,6 +2540,10 @@ export function BackupOverlay() {
           </div>
         )}
 
+        {/* MISSING key: bkp.safetyNote ("Backups are only as safe as the place you keep them.
+            Clearing this browser's site data deletes callmony and everything in it — and on iOS,
+            Safari may clear unused site data automatically. Back up regularly and keep a copy off
+            this device (email, cloud drive, USB).") */}
         <Note icon={<AlertTriangle size={13} />}>
           Backups are only as safe as the place you keep them. Clearing this browser's site data
           deletes callmony and everything in it — and on iOS, Safari may clear unused site data
@@ -2435,6 +2563,7 @@ export function BackupOverlay() {
 
 export function StorageOverlay() {
   const pop = useUI((s) => s.pop);
+  const t = useT();
   const confirm = useConfirm();
   const attachments = useApp((s) => s.attachments);
   const contacts = useApp((s) => s.contacts);
@@ -2510,39 +2639,48 @@ export function StorageOverlay() {
   }, [attachments, contacts, entries, lists, notes, reminders, banks, messages]);
 
   const removeFile = async (a: AttachmentMeta) => {
+    /* MISSING keys: sto.deleteFileTitle ("Delete this file?"),
+       sto.deleteFileMsg ("{name} ({size}) will be permanently removed."),
+       sto.fileRemoved ("File removed") */
     const ok = await confirm({
       tone: "danger",
-      title: "Delete this file?",
+      title: t("sto.deleteFileTitle"),
       message: `${a.name} (${bytesStr(a.size)}) will be permanently removed.`,
-      confirmLabel: "Delete",
+      confirmLabel: t("act.delete"),
     });
     if (!ok) return;
     await removeAttachment(a.id);
-    toastOk("File removed");
+    toastOk(t("sto.fileRemoved"));
   };
 
   const cleanFiles = async (list: AttachmentMeta[], label: string) => {
     if (!list.length) {
-      toastOk("Nothing to clean");
+      /* MISSING key: sto.nothingToClean ("Nothing to clean") */
+      toastOk(t("sto.nothingToClean"));
       return;
     }
     const total = list.reduce((s, a) => s + a.size, 0);
+    /* MISSING keys: sto.removeNTitle ("Remove {n} {label}?"),
+       sto.cleanMsg ("{size} of storage will be freed. These files are deleted permanently — the
+       records themselves stay.") */
     const ok = await confirm({
       tone: "danger",
       title: `Remove ${list.length} ${label}?`,
       message: `${bytesStr(total)} of storage will be freed. These files are deleted permanently — the records themselves stay.`,
-      confirmLabel: "Remove",
+      confirmLabel: t("act.remove"),
     });
     if (!ok) return;
     setCleaning(true);
     for (const a of list) await removeAttachment(a.id);
     setCleaning(false);
-    toastOk(`${list.length} files removed · ${bytesStr(total)} freed`);
+    toastOk(t("sto.orphansRemoved", { n: list.length, size: bytesStr(total) }));
   };
 
   const makePersistent = async () => {
     const ok = await requestPersistence();
     setPersisted(ok);
+    /* MISSING keys: sto.nowPersistent ("Storage is now persistent — the browser won't evict
+       callmony's data"), sto.declined ("Browser declined — data stays best-effort only") */
     toastOk(
       ok
         ? "Storage is now persistent — the browser won't evict callmony's data"
@@ -2550,6 +2688,7 @@ export function StorageOverlay() {
     );
   };
 
+  /* MISSING keys: sto.images ("Images"), sto.pdfs ("PDFs"), sto.otherFiles ("Other files") */
   const kindRows = [
     { key: "image" as const, label: "Images", icon: <Images size={16} /> },
     { key: "pdf" as const, label: "PDFs", icon: <FileText size={16} /> },
@@ -2560,10 +2699,10 @@ export function StorageOverlay() {
   const totalSize = attachments.reduce((s, a) => s + a.size, 0);
 
   return (
-    <Sheet title="Storage" subtitle="Everything callmony keeps on this device" onBack={pop}>
+    <Sheet title={t("st.storage")} subtitle={t("sto.everything")} onBack={pop}>
       <div className="space-y-6 px-4 pb-14 pt-4">
         {/* browser storage */}
-        <section aria-label="Browser storage">
+        <section aria-label={t("sto.browserStorage")}>
           <SectionLabel
             right={
               <button
@@ -2572,19 +2711,20 @@ export function StorageOverlay() {
                   setChecking(true);
                   void refresh();
                 }}
-                aria-label="Refresh storage info"
+                aria-label={t("sto.refresh")}
                 className="flex h-8 w-8 items-center justify-center rounded-full text-mute transition hover:bg-surface2 hover:text-brand"
               >
                 <RefreshCw size={14} className={checking ? "animate-spin" : ""} />
               </button>
             }
           >
-            Browser storage
+            {t("sto.browserStorage")}
           </SectionLabel>
           <SectionCard className="space-y-3">
             {estimate ? (
               <>
                 <div className="flex items-end justify-between">
+                  {/* MISSING keys: sto.used ("{size} used"), sto.ofAllowed ("of {size} allowed") */}
                   <p className="text-[13px] font-semibold text-ink">
                     {bytesStr(estimate.usage)} used
                   </p>
@@ -2597,9 +2737,10 @@ export function StorageOverlay() {
                 />
               </>
             ) : (
-              <p className="text-[11px] text-mute">Measuring…</p>
+              <p className="text-[11px] text-mute">{t("sto.measuring")}</p>
             )}
             <div className="flex flex-wrap items-center gap-2 pt-1">
+              {/* MISSING keys: sto.persistent ("Persistent"), sto.bestEffort ("Best-effort") */}
               <span
                 className={cx(
                   "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold",
@@ -2610,11 +2751,15 @@ export function StorageOverlay() {
                 {persisted ? "Persistent" : "Best-effort"}
               </span>
               {!persisted && (
+                /* MISSING key: sto.makePersistent ("Make storage persistent") */
                 <Button variant="soft" size="sm" onClick={() => void makePersistent()}>
                   Make storage persistent
                 </Button>
               )}
             </div>
+            {/* MISSING key: sto.persistentNote ("Persistent storage asks the browser not to evict
+                callmony's data under space pressure. It's granted automatically most of the time once
+                you install the app.") */}
             <Note icon={<ShieldCheck size={13} />}>
               Persistent storage asks the browser not to evict callmony's data under space pressure.
               It's granted automatically most of the time once you install the app.
@@ -2623,8 +2768,9 @@ export function StorageOverlay() {
         </section>
 
         {/* breakdown */}
-        <section aria-label="Files breakdown">
-          <SectionLabel>Files</SectionLabel>
+        <section aria-label={t("sto.filesBreakdown")}>
+          {/* MISSING key: sto.files ("Files") */}
+          <SectionLabel>{t("sto.files")}</SectionLabel>
           <SectionCard>
             <div className="divide-y divide-line">
               {kindRows.map((k) => (
@@ -2640,7 +2786,8 @@ export function StorageOverlay() {
               ))}
             </div>
             <div className="flex items-center justify-between pt-3">
-              <p className="text-[12px] font-bold text-ink">Total</p>
+              <p className="text-[12px] font-bold text-ink">{t("sto.total")}</p>
+              {/* MISSING key: sto.filesSize ("{n} files · {size}") */}
               <p className="text-[12px] font-bold text-brand">
                 {totalFiles} files · {bytesStr(totalSize)}
               </p>
@@ -2649,8 +2796,8 @@ export function StorageOverlay() {
         </section>
 
         {/* largest files */}
-        <section aria-label="Largest files">
-          <SectionLabel>Largest files</SectionLabel>
+        <section aria-label={t("sto.largestFiles")}>
+          <SectionLabel>{t("sto.largestFiles")}</SectionLabel>
           {biggest.length ? (
             <SectionCard className="divide-y divide-line">
               {biggest.map((a) => (
@@ -2677,7 +2824,7 @@ export function StorageOverlay() {
                     </p>
                   </div>
                   <IconButton
-                    label={`Delete ${a.name}`}
+                    label={`${t("act.delete")} ${a.name}`}
                     variant="danger"
                     onClick={() => void removeFile(a)}
                   >
@@ -2689,20 +2836,24 @@ export function StorageOverlay() {
           ) : (
             <EmptyState
               icon={<Paperclip size={22} />}
-              title="No files yet"
-              hint="Attach photos, receipts or PDFs to any contact, entry, list, note or reminder."
+              title={t("sto.noFiles")}
+              /* MISSING key: sto.noFilesHint ("Attach photos, receipts or PDFs to any contact, entry,
+                 list, note or reminder.") */
+              hint={t("sto.noFilesHint")}
             />
           )}
         </section>
 
         {/* cleanup */}
-        <section aria-label="Cleanup">
-          <SectionLabel>Cleanup</SectionLabel>
+        <section aria-label={t("sto.cleanup")}>
+          <SectionLabel>{t("sto.cleanup")}</SectionLabel>
           <SectionCard>
             <ActionRow
               icon={<Trash2 size={18} />}
-              label="Empty trash files"
+              label={t("sto.emptyTrashFiles")}
               hint={
+                /* MISSING keys: sto.trashedFilesHint ("{n} files belong to trashed items · {size}"),
+                   sto.noTrashedFiles ("No files belonging to trashed items") */
                 orphans.trashed.length
                   ? `${orphans.trashed.length} files belong to trashed items · ${bytesStr(
                       orphans.trashed.reduce((s, a) => s + a.size, 0)
@@ -2714,8 +2865,10 @@ export function StorageOverlay() {
             />
             <ActionRow
               icon={<Unlink size={18} />}
-              label="Remove orphaned files"
+              label={t("sto.removeOrphans")}
               hint={
+                /* MISSING keys: sto.orphanedFilesHint ("{n} files have no owner record · {size}"),
+                   sto.noOrphanedFiles ("No orphaned files") */
                 orphans.orphaned.length
                   ? `${orphans.orphaned.length} files have no owner record · ${bytesStr(
                       orphans.orphaned.reduce((s, a) => s + a.size, 0)
@@ -2725,6 +2878,9 @@ export function StorageOverlay() {
               onClick={() => void cleanFiles(orphans.orphaned, "orphaned files")}
               busy={cleaning}
             />
+            {/* MISSING key: sto.cleanupNote ("Trash files belong to items sitting in Trash; orphaned
+                files lost their owner record entirely (e.g. after restores or merges). Cleaning never
+                touches live records.") */}
             <Note icon={<Info size={13} />}>
               Trash files belong to items sitting in Trash; orphaned files lost their owner record
               entirely (e.g. after restores or merges). Cleaning never touches live records.
@@ -2740,19 +2896,21 @@ export function StorageOverlay() {
 /* About overlay                                                        */
 /* ================================================================== */
 
-const ABOUT_FEATURES: { icon: ReactNode; label: string; text: string }[] = [
-  { icon: <Users size={16} />, label: "Contacts & calls", text: "Unlimited phones, emails, links, tags" },
-  { icon: <Wallet size={16} />, label: "Money ledger", text: "Who owes whom, payments, statements" },
-  { icon: <ListChecks size={16} />, label: "Calculating lists", text: "Quotes, checklists & bills with tax" },
-  { icon: <StickyNote size={16} />, label: "Notes", text: "Pinned, tagged, linkable to anything" },
-  { icon: <Bell size={16} />, label: "Reminders", text: "One-off & repeating, with alarms" },
-  { icon: <Landmark size={16} />, label: "Bank accounts", text: "Masked numbers, UPI, IBAN, SWIFT" },
-  { icon: <Paperclip size={16} />, label: "Files", text: "Receipts & photos on any record" },
-  { icon: <CloudOff size={16} />, label: "Offline", text: "Works with zero connection" },
+/* About feature grid — translated at render time via the about.* keys. */
+const ABOUT_FEATURES: { icon: ReactNode; labelKey: string; textKey: string }[] = [
+  { icon: <Users size={16} />, labelKey: "about.contactsCalls", textKey: "about.contactsCallsText" },
+  { icon: <Wallet size={16} />, labelKey: "about.moneyLedger", textKey: "about.moneyLedgerText" },
+  { icon: <ListChecks size={16} />, labelKey: "about.calcLists", textKey: "about.calcListsText" },
+  { icon: <StickyNote size={16} />, labelKey: "tab.notes", textKey: "about.notesText" },
+  { icon: <Bell size={16} />, labelKey: "tab.reminders", textKey: "about.remindersText" },
+  { icon: <Landmark size={16} />, labelKey: "bk.accountsTitle", textKey: "about.banksText" },
+  { icon: <Paperclip size={16} />, labelKey: "sto.files", textKey: "about.filesText" },
+  { icon: <CloudOff size={16} />, labelKey: "about.offline", textKey: "about.offlineText" },
 ];
 
 export function AboutOverlay() {
   const pop = useUI((s) => s.pop);
+  const t = useT();
   const { canInstall, promptInstall, isIOS } = useInstallPrompt();
   const notif = useNotifPermission();
   const [standalone] = useState(() =>
@@ -2761,8 +2919,9 @@ export function AboutOverlay() {
       : false
   );
 
+  /* MISSING key: st.aboutApp ("About callmony") */
   return (
-    <Sheet title="About callmony" onBack={pop}>
+    <Sheet title={t("st.aboutApp")} onBack={pop}>
       <div className="space-y-6 px-4 pb-14 pt-6">
         <div className="flex flex-col items-center gap-3 text-center">
           <div className="flex h-[72px] w-[72px] items-center justify-center rounded-[24px] bg-brand text-white shadow-floating">
@@ -2773,50 +2932,55 @@ export function AboutOverlay() {
               call<span className="text-brand">mony</span>
             </p>
             <p className="mt-0.5 text-[12px] text-mute">
-              Talk. Track. Settle up.
+              {t("hdr.tagline")}
             </p>
             <p className="mt-1 text-[11px] font-semibold text-mute">
-              Contacts, Calls &amp; Ledger · v{APP_VERSION}
+              {t("st.aboutSubtitle")} · v{APP_VERSION}
             </p>
           </div>
           <p className="rounded-full bg-brandsoft px-3.5 py-1.5 text-[11px] font-bold text-brand">
-            100% offline · your data never leaves this device
+            {t("st.offlinePromise")}
           </p>
         </div>
 
-        <section aria-label="What's inside">
-          <SectionLabel>What&rsquo;s inside</SectionLabel>
+        <section aria-label={t("bkp.whatsInside")}>
+          <SectionLabel>{t("bkp.whatsInside")}</SectionLabel>
           <div className="grid grid-cols-2 gap-2.5">
             {ABOUT_FEATURES.map((f) => (
               <div
-                key={f.label}
+                key={f.labelKey}
                 className="rounded-[18px] border border-line bg-surface p-3.5 shadow-key"
               >
                 <span className="flex h-8 w-8 items-center justify-center rounded-[11px] bg-brandsoft text-brand">
                   {f.icon}
                 </span>
-                <p className="mt-2 text-[12px] font-bold text-ink">{f.label}</p>
-                <p className="mt-0.5 text-[10.5px] leading-4 text-mute">{f.text}</p>
+                <p className="mt-2 text-[12px] font-bold text-ink">{t(f.labelKey)}</p>
+                <p className="mt-0.5 text-[10.5px] leading-4 text-mute">{t(f.textKey)}</p>
               </div>
             ))}
           </div>
         </section>
 
-        <section aria-label="Install on your device">
-          <SectionLabel>Install on your device</SectionLabel>
+        {/* MISSING key: st.installDevice ("Install on your device") */}
+        <section aria-label={t("st.installDevice")}>
+          <SectionLabel>{t("st.installDevice")}</SectionLabel>
           <SectionCard className="space-y-3">
             {standalone ? (
               <ActionRow
                 icon={<CheckCircle2 size={18} />}
-                label="Already installed"
-                hint="callmony is running as an installed app."
+                /* MISSING keys: st.alreadyInstalled ("Already installed"),
+                   st.installedHint ("callmony is running as an installed app.") */
+                label={t("st.alreadyInstalled")}
+                hint={t("st.installedHint")}
               />
             ) : canInstall ? (
               <>
                 <ActionRow
                   icon={<Download size={18} />}
-                  label="Install app"
-                  hint="Home-screen icon, full-screen, works offline."
+                  /* MISSING keys: st.installAppRow ("Install app"),
+                     st.installAppFullHint ("Home-screen icon, full-screen, works offline.") */
+                  label={t("st.installAppRow")}
+                  hint={t("st.homeIconHint")}
                   onClick={() => void promptInstall()}
                 />
               </>
@@ -2826,7 +2990,9 @@ export function AboutOverlay() {
                   <Smartphone size={18} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13.5px] font-semibold text-ink">On iPhone &amp; iPad</p>
+                  {/* MISSING keys: st.onIphoneIpad ("On iPhone & iPad"),
+                      st.iosShareHint ("Open callmony in Safari → tap the Share button → “Add to Home Screen”.") */}
+                  <p className="text-[13.5px] font-semibold text-ink">{t("st.onIphoneIpad")}</p>
                   <p className="mt-0.5 text-[11px] leading-4 text-mute">
                     Open callmony in Safari → tap the Share button → “Add to Home Screen”.
                   </p>
@@ -2838,7 +3004,9 @@ export function AboutOverlay() {
                   <Download size={18} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13.5px] font-semibold text-ink">On Android &amp; desktop</p>
+                  {/* MISSING keys: st.onAndroidDesktop ("On Android & desktop"),
+                      st.menuInstallHint ("Open your browser menu → “Install app” / “Add to Home screen”.") */}
+                  <p className="text-[13.5px] font-semibold text-ink">{t("st.onAndroidDesktop")}</p>
                   <p className="mt-0.5 text-[11px] leading-4 text-mute">
                     Open your browser menu → “Install app” / “Add to Home screen”.
                   </p>
@@ -2848,16 +3016,19 @@ export function AboutOverlay() {
           </SectionCard>
         </section>
 
-        <section aria-label="Notifications">
-          <SectionLabel>Notifications</SectionLabel>
+        <section aria-label={t("st.notifications")}>
+          <SectionLabel>{t("st.notifications")}</SectionLabel>
           <SectionCard>
             <NotifStatusRow perm={notif.perm} onAsk={() => void notif.ask()} />
           </SectionCard>
         </section>
 
-        <section aria-label="Privacy">
-          <SectionLabel>Privacy</SectionLabel>
+        <section aria-label={t("sto.privacy")}>
+          <SectionLabel>{t("sto.privacy")}</SectionLabel>
           <SectionCard>
+            {/* MISSING key: sto.privacyNote ("No accounts. No servers. No analytics, no trackers, no
+                cloud. Everything you create lives in this browser, on this device — export a backup
+                any time to move or keep it safe.") */}
             <Note icon={<ShieldCheck size={13} />}>
               No accounts. No servers. No analytics, no trackers, no cloud. Everything you create
               lives in this browser, on this device — export a backup any time to move or keep it
@@ -2867,7 +3038,7 @@ export function AboutOverlay() {
         </section>
 
         <p className="pb-2 text-center text-[10.5px] text-mute">
-          Crafted with care · callmony v{APP_VERSION} · PWA ready
+          {t("st.craftedFooter", { v: APP_VERSION })}
         </p>
       </div>
     </Sheet>

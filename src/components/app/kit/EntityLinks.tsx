@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import {
   Bell,
   Check,
+  ChevronDown,
   Landmark,
   Link2,
   ListChecks,
@@ -16,13 +17,13 @@ import {
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { useUI } from "@/lib/ui-store";
-import type { LinkRef } from "@/lib/types";
+import type { LinkRef, OwnerId } from "@/lib/types";
 import { useT } from "@/lib/i18n";
 import { openExternal } from "@/lib/share";
-import { displayName } from "@/lib/utils";
+import { displayName, uid } from "@/lib/utils";
 import { BottomSheet } from "./Sheet";
 import { Button, cx, inputCls, SearchInput, Segmented } from "./primitives";
-import { toastOk } from "./toast";
+import { toastErr, toastOk } from "./toast";
 
 /* ------------------------------------------------------------------ */
 /* Entity links — attach banks, lists, notes, reminders, owners        */
@@ -158,23 +159,25 @@ export function EntityRefChips({
           </span>
         );
       })}
-      {onChange && refs.length === 0 && <span className="text-[10px] text-mute">{t("misc.attached")}</span>}
+      {onChange && refs.length === 0 && <span className="text-[10px] text-mute">{t("att.attached")}</span>}
     </div>
   );
 }
 
-/**
- * Attach button + chips + picker sheet.
- * Usage: <AttachEntities refs={refs} onChange={setRefs} />
- */
+/** Attach button + chips + picker sheet.
+ *  Usage: <AttachEntities refs={refs} onChange={setRefs} ownerId={ownerId} />
+ *  ownerId (default "general") is where newly created lists / notes / reminders
+ *  / banks land when using the "Create new" affordance inside the picker. */
 export function AttachEntities({
   refs,
   onChange,
   compact,
+  ownerId = "general",
 }: {
   refs: LinkRef[];
   onChange: (refs: LinkRef[]) => void;
   compact?: boolean;
+  ownerId?: OwnerId;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -188,18 +191,21 @@ export function AttachEntities({
         className="flex items-center gap-1.5 rounded-full border border-dashed border-brand/50 bg-brandsoft/60 px-3 py-1.5 text-[11px] font-semibold text-brand transition active:scale-95"
       >
         <Paperclip size={12} />
-        {t("misc.attach")}
+        {t("att.attach")}
       </button>
-      <EntityPickerSheet
-        open={open}
-        onClose={() => setOpen(false)}
-        refs={refs}
-        onDone={(next) => {
-          onChange(next);
-          setOpen(false);
-          toastOk(t("misc.attached"));
-        }}
-      />
+      {open && (
+        <EntityPickerSheet
+          open
+          onClose={() => setOpen(false)}
+          refs={refs}
+          ownerId={ownerId}
+          onDone={(next) => {
+            onChange(next);
+            setOpen(false);
+            toastOk(t("att.attached"));
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -212,11 +218,13 @@ function EntityPickerSheet({
   open,
   onClose,
   refs,
+  ownerId = "general",
   onDone,
 }: {
   open: boolean;
   onClose: () => void;
   refs: LinkRef[];
+  ownerId?: OwnerId;
   onDone: (refs: LinkRef[]) => void;
 }) {
   const t = useT();
@@ -225,11 +233,44 @@ function EntityPickerSheet({
   const notes = useApp((s) => s.notes);
   const reminders = useApp((s) => s.reminders);
   const banks = useApp((s) => s.banks);
+  const saveContact = useApp((s) => s.saveContact);
+  const saveList = useApp((s) => s.saveList);
+  const saveNote = useApp((s) => s.saveNote);
+  const saveReminder = useApp((s) => s.saveReminder);
+  const saveBank = useApp((s) => s.saveBank);
   const [tab, setTab] = useState<PickTab>("contacts");
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<LinkRef[]>(refs);
   const [linkLabel, setLinkLabel] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
+  /* "Create new" inline mini-form state */
+  const [createOpen, setCreateOpen] = useState(false);
+  const [cName, setCName] = useState("");
+  const [cPhone, setCPhone] = useState("");
+  const [cTitle, setCTitle] = useState("");
+  const [cBody, setCBody] = useState("");
+  const [cNumber, setCNumber] = useState("");
+  const [cHolder, setCHolder] = useState("");
+
+  const newLabel =
+    tab === "contacts"
+      ? t("att.newContact")
+      : tab === "lists"
+        ? t("att.newList")
+        : tab === "notes"
+          ? t("att.newNote")
+          : tab === "reminders"
+            ? t("att.newReminder")
+            : t("att.newBank");
+
+  const resetCreateForm = () => {
+    setCName("");
+    setCPhone("");
+    setCTitle("");
+    setCBody("");
+    setCNumber("");
+    setCHolder("");
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -278,12 +319,87 @@ function EntityPickerSheet({
     setLinkUrl("");
   };
 
+  /** Create a brand-new entity for the current tab and immediately pick it
+   *  so Done attaches it to the parent (entry / group / payment / list…). */
+  const createAndPick = () => {
+    let ref: LinkRef | null = null;
+    if (tab === "contacts") {
+      const firstName = cName.trim();
+      const number = cPhone.trim();
+      if (!firstName && !number) {
+        toastErr(t("ce.atLeastOne"));
+        return;
+      }
+      const c = saveContact({
+        firstName,
+        phones: number ? [{ id: uid(), label: "mobile", number }] : [],
+      });
+      ref = { type: "contact", id: c.id, label: displayName(c) };
+    } else if (tab === "lists") {
+      const title = cTitle.trim();
+      if (!title) {
+        toastErr(t("ls.giveListTitle"));
+        return;
+      }
+      const l = saveList({ ownerId, title, kind: "simple" });
+      ref = { type: "list", id: l.id, label: l.title };
+    } else if (tab === "notes") {
+      const title = cTitle.trim();
+      if (!title) {
+        toastErr(t("nt.titleRequired"));
+        return;
+      }
+      const n = saveNote({ ownerId, title, body: cBody.trim() });
+      ref = { type: "note", id: n.id, label: n.title };
+    } else if (tab === "reminders") {
+      const title = cTitle.trim();
+      if (!title) {
+        toastErr(t("nt.titleRequired"));
+        return;
+      }
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      d.setHours(9, 0, 0, 0);
+      const r = saveReminder({ ownerId, title, kind: "custom", dueAt: d.getTime() });
+      ref = { type: "reminder", id: r.id, label: r.title };
+    } else if (tab === "banks") {
+      const bankName = cTitle.trim();
+      const accountNumber = cNumber.trim();
+      if (!bankName) {
+        toastErr(t("bk.bankNameRequired"));
+        return;
+      }
+      if (!accountNumber) {
+        toastErr(t("bk.accountNumberRequired"));
+        return;
+      }
+      const b = saveBank({
+        ownerId,
+        label: bankName,
+        bankName,
+        accountNumber,
+        holderName: cHolder.trim() || undefined,
+      });
+      ref = { type: "bank", id: b.id, label: b.bankName || b.label };
+    }
+    if (ref) {
+      setPicked((p) => (p.some((x) => sameRef(x, ref)) ? p : [...p, ref]));
+      toastOk(t("att.attached"));
+    }
+    resetCreateForm();
+    setCreateOpen(false);
+  };
+
   return (
-    <BottomSheet open={open} onClose={onClose} title={t("misc.attach")} zIndex={75}>
+    <BottomSheet open={open} onClose={onClose} title={t("att.attach")} zIndex={75}>
       <div className="space-y-3 pb-2">
         <Segmented
           value={tab}
-          onChange={(v) => setTab(v as PickTab)}
+          onChange={(v) => {
+            setTab(v as PickTab);
+            setCreateOpen(false);
+            resetCreateForm();
+          }}
           options={[
             { value: "contacts", label: <Users size={13} /> },
             { value: "lists", label: <ListChecks size={13} /> },
@@ -296,6 +412,113 @@ function EntityPickerSheet({
 
         {tab !== "link" ? (
           <>
+            {/* create a brand-new entity of this tab's type and attach it */}
+            <button
+              type="button"
+              onClick={() => setCreateOpen((v) => !v)}
+              aria-expanded={createOpen}
+              className="flex w-full items-center gap-2.5 rounded-2xl border border-dashed border-brand/50 bg-brandsoft/40 px-3 py-2.5 text-left transition active:scale-[0.98]"
+            >
+              <span className="flex h-8 w-8 items-center justify-center rounded-[12px] bg-brand text-white" aria-hidden>
+                <Plus size={15} />
+              </span>
+              <span className="flex-1 text-[13px] font-semibold text-brand">{newLabel}</span>
+              <ChevronDown
+                size={15}
+                className={cx("shrink-0 text-brand transition-transform", createOpen && "rotate-180")}
+                aria-hidden
+              />
+            </button>
+            {createOpen && (
+              <div className="space-y-2 rounded-2xl border border-line bg-surface p-3">
+                {tab === "contacts" && (
+                  <>
+                    <input
+                      className={inputCls}
+                      placeholder={t("ce.firstName")}
+                      value={cName}
+                      onChange={(e) => setCName(e.target.value)}
+                      aria-label={t("ce.firstName")}
+                    />
+                    <input
+                      className={inputCls}
+                      placeholder={t("ce.phonePlaceholder")}
+                      inputMode="tel"
+                      value={cPhone}
+                      onChange={(e) => setCPhone(e.target.value)}
+                      aria-label={t("ce.phonePlaceholder")}
+                    />
+                  </>
+                )}
+                {tab === "lists" && (
+                  <input
+                    className={inputCls}
+                    placeholder={t("ls.listTitle")}
+                    value={cTitle}
+                    onChange={(e) => setCTitle(e.target.value)}
+                    aria-label={t("ls.listTitle")}
+                  />
+                )}
+                {tab === "notes" && (
+                  <>
+                    <input
+                      className={inputCls}
+                      placeholder={t("nt.noteTitle")}
+                      value={cTitle}
+                      onChange={(e) => setCTitle(e.target.value)}
+                      aria-label={t("nt.noteTitle")}
+                    />
+                    <textarea
+                      className={cx(inputCls, "resize-none")}
+                      rows={2}
+                      placeholder={t("nt.writeAnything")}
+                      value={cBody}
+                      onChange={(e) => setCBody(e.target.value)}
+                      aria-label={t("nt.noteBody")}
+                    />
+                  </>
+                )}
+                {tab === "reminders" && (
+                  <input
+                    className={inputCls}
+                    placeholder={t("rm.reminderTitle")}
+                    value={cTitle}
+                    onChange={(e) => setCTitle(e.target.value)}
+                    aria-label={t("rm.reminderTitle")}
+                  />
+                )}
+                {tab === "banks" && (
+                  <>
+                    <input
+                      className={inputCls}
+                      placeholder={t("bk.bankPlaceholder")}
+                      value={cTitle}
+                      onChange={(e) => setCTitle(e.target.value)}
+                      aria-label={t("bk.bankName")}
+                    />
+                    <input
+                      className={inputCls}
+                      placeholder={t("bk.numberPlaceholder")}
+                      inputMode="numeric"
+                      value={cNumber}
+                      onChange={(e) => setCNumber(e.target.value)}
+                      aria-label={t("bk.accountNumber")}
+                    />
+                    <input
+                      className={inputCls}
+                      placeholder={t("bk.holderName")}
+                      value={cHolder}
+                      onChange={(e) => setCHolder(e.target.value)}
+                      aria-label={t("bk.holderName")}
+                    />
+                  </>
+                )}
+                <Button variant="brand" size="sm" className="w-full" onClick={createAndPick}>
+                  <Plus size={14} /> {t("att.createAndAttach")}
+                </Button>
+              </div>
+            )}
+
             <SearchInput value={query} onChange={setQuery} placeholder={t("misc.searchPlaceholder")} />
             <div className="app-scroll max-h-64 overflow-y-auto">
               {tab === "contacts" && (
@@ -347,16 +570,18 @@ function EntityPickerSheet({
           <div className="space-y-2.5 rounded-2xl border border-line bg-surface p-3">
             <input
               className={inputCls}
-              placeholder="Label (e.g. Receipt portal)"
+              placeholder={t("att.labelPlaceholder")}
               value={linkLabel}
               onChange={(e) => setLinkLabel(e.target.value)}
+              aria-label={t("att.labelPlaceholder")}
             />
             <input
               className={inputCls}
-              placeholder="https://…"
+              placeholder={t("att.urlPlaceholder")}
               inputMode="url"
               value={linkUrl}
               onChange={(e) => setLinkUrl(e.target.value)}
+              aria-label={t("att.urlPlaceholder")}
             />
             <Button variant="brand" size="sm" className="w-full" onClick={addLink}>
               <Plus size={14} /> {t("act.add")}
@@ -367,7 +592,7 @@ function EntityPickerSheet({
         {picked.length > 0 && (
           <div className="rounded-2xl border border-line bg-surface2/60 p-2.5">
             <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-[1.5px] text-mute">
-              {t("misc.attached")} · {picked.length}
+              {t("att.attached")} · {picked.length}
             </p>
             <div className="flex flex-wrap gap-1.5">
               {picked.map((ref) => {

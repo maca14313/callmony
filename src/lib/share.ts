@@ -6,6 +6,19 @@ import type { Contact } from "./types";
 export const telLink = (number: string, countryCode = "ET") =>
   `tel:+${normalizePhone(number, countryCode)}`;
 
+/**
+ * Hand a call off to the phone's default caller app.
+ * location.href is far more reliable than window.open for tel: URIs
+ * on mobile browsers / installed PWAs (no popup blocker involved).
+ */
+export const openTel = (number: string, countryCode = "ET") => {
+  try {
+    window.location.href = telLink(number, countryCode);
+  } catch {
+    /* noop */
+  }
+};
+
 export const smsLink = (number: string, text?: string, countryCode = "ET") =>
   `sms:+${normalizePhone(number, countryCode)}${text ? `?body=${encodeURIComponent(text)}` : ""}`;
 

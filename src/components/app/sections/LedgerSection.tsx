@@ -11,6 +11,7 @@ import {
   Check,
   ChevronDown,
   Copy,
+  CreditCard,
   Ellipsis,
   FileDown,
   FileText,
@@ -23,6 +24,7 @@ import {
   Plus,
   Scale,
   Share2,
+  Tag,
   Trash2,
   UserRound,
   X,
@@ -46,6 +48,7 @@ import { entriesToCSV } from "@/lib/exporters";
 import {
   PAYMENT_METHODS,
   type Contact,
+  type EntryKind,
   type ID,
   type LedgerEntry,
   type LedgerGroup,
@@ -99,6 +102,14 @@ export const takePendingEntryGroup = (): { ownerId: OwnerId; groupId: ID } | nul
 
 type LedgerFilter = "all" | "credit" | "debit" | "unpaid" | "overdue";
 
+/** i18n key per entry kind label */
+const KIND_KEYS: Record<EntryKind, string> = {
+  income: "lg.kindIncome",
+  expense: "lg.kindExpense",
+  credit: "lg.kindCredit",
+  debit: "lg.kindDebit",
+};
+
 const dueMs = (d: string) => new Date(`${d}T23:59:59`).getTime();
 
 const parseNum = (s: string): number => {
@@ -108,6 +119,7 @@ const parseNum = (s: string): number => {
 
 /** Due-date chip — red when overdue, amber when today. */
 function DueBadge({ dueDate }: { dueDate: string }) {
+  const t = useT();
   const st = dueStatus(dueMs(dueDate));
   return (
     <span
@@ -117,7 +129,7 @@ function DueBadge({ dueDate }: { dueDate: string }) {
       )}
     >
       <CalendarClock size={11} aria-hidden />
-      {st === "overdue" ? "Overdue · " : st === "today" ? "Due today · " : "Due "}
+      {st === "overdue" ? `${t("rm.overdue")} · ` : st === "today" ? "Due today · " : "Due "}
       {fdShort(dueDate)}
     </span>
   );
@@ -157,11 +169,13 @@ function AddPaymentSheet({
   open,
   onClose,
   remaining,
+  ownerId = "general",
   onSubmit,
 }: {
   open: boolean;
   onClose: () => void;
   remaining: number;
+  ownerId?: OwnerId;
   onSubmit: (p: { amount: number; date: string; note?: string; method?: string; refs: LinkRef[] }) => void;
 }) {
   const t = useT();
@@ -175,7 +189,7 @@ function AddPaymentSheet({
   const submit = () => {
     const amt = parseNum(amount);
     if (amt <= 0) {
-      toastErr("Enter an amount greater than 0");
+      toastErr(t("lg.amountGreaterThanZero"));
       return;
     }
     onSubmit({ amount: r2(amt), date: date || todayStr(), note: note.trim() || undefined, method, refs });
@@ -183,14 +197,14 @@ function AddPaymentSheet({
 
   return (
     <BottomSheet open={open} onClose={onClose} title={t("lg.addPayment")}>
-      <Field label="Amount">
+      <Field label={t("lg.amount")}>
         <div className="flex w-full items-center gap-2">
           <input
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             inputMode="decimal"
             placeholder="0"
-            aria-label="Payment amount"
+            aria-label={t("lg.paymentAmount")}
             className={cx(inputCls, "text-lg font-bold tabular-nums")}
           />
           <CalcButton onPick={(v) => setAmount(String(v))} />
@@ -201,26 +215,26 @@ function AddPaymentSheet({
           type="button"
           onClick={() => setAmount(String(remaining))}
           className="mt-2 flex items-center gap-1.5 rounded-full bg-brandsoft px-3 py-1.5 text-[11px] font-bold text-brand transition active:scale-95"
-          aria-label="Fill full remaining amount"
+          aria-label={t("lg.fillRemaining")}
         >
           <HandCoins size={12} aria-hidden /> Full remaining: <Money value={remaining} />
         </button>
       )}
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <Field label="Date">
+        <Field label={t("lg.date")}>
           <input
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            aria-label="Payment date"
+            aria-label={t("lg.paymentDate")}
             className={inputCls}
           />
         </Field>
-        <Field label="Method">
+        <Field label={t("lg.method")}>
           <select
             value={method}
             onChange={(e) => setMethod(e.target.value)}
-            aria-label="Payment method"
+            aria-label={t("lg.paymentMethod")}
             className={inputCls}
           >
             {PAYMENT_METHODS.map((m) => (
@@ -231,18 +245,18 @@ function AddPaymentSheet({
           </select>
         </Field>
       </div>
-      <Field label="Note" className="mt-3">
+      <Field label={t("lg.note")} className="mt-3">
         <input
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="Optional note"
-          aria-label="Payment note"
+          placeholder={t("lg.optionalNote")}
+          aria-label={t("lg.paymentNote")}
           className={inputCls}
         />
       </Field>
       {/* attached entities — banks, lists, notes, reminders, contacts & links */}
       <div className="mt-3">
-        <AttachEntities refs={refs} onChange={setRefs} />
+        <AttachEntities refs={refs} onChange={setRefs} ownerId={ownerId} />
       </div>
       <Button variant="brand" size="lg" className="mt-4 w-full" onClick={submit}>
         <Plus size={15} /> {t("lg.addPayment")}
@@ -321,22 +335,36 @@ function EntryCard({
   );
   const ownerLabel = contact ? displayName(contact) : "General";
 
+  /* display label: the user-chosen kind, else the classic income/expense (general)
+     or credit/debit (person) derived from the math direction */
+  const kindLabel = entry.kind
+    ? t(KIND_KEYS[entry.kind])
+    : credit
+      ? isGeneral
+        ? t("lg.income")
+        : t("lg.credit")
+      : isGeneral
+        ? t("lg.expense")
+        : t("lg.debit");
+  const KindIcon =
+    entry.kind === "credit" ? HandCoins : entry.kind === "debit" ? CreditCard : credit ? ArrowDownLeft : ArrowUpRight;
+
   const removePay = async (p: Payment, idx: number) => {
     const ok = await confirm({
       title: `Remove payment ${idx + 1}?`,
       message: `Payment of ${money(p.amount, settings.currency)} on ${fd(p.date)} will be removed.`,
-      confirmLabel: "Remove",
+      confirmLabel: t("act.remove"),
       tone: "danger",
     });
     if (!ok) return;
     removePayment(entry.id, p.id);
-    toastOk("Payment removed");
+    toastOk(t("lg.paymentRemoved"));
   };
 
   const onDelete = async () => {
     const ok = await confirm({
       title: "Delete entry?",
-      message: `“${entry.note || entry.category || (credit ? "Credit" : "Debit")}” and its payment history move to Trash.`,
+      message: `“${entry.note || entry.category || kindLabel}” and its payment history move to Trash.`,
       confirmLabel: t("act.delete"),
       tone: "danger",
     });
@@ -383,7 +411,7 @@ function EntryCard({
             onClick: () => {
               setMenuOpen(false);
               moveEntity("entry", entry.id, "general");
-              toastOk("Moved to General");
+              toastOk(t("lg.movedToGeneral"));
             },
           },
         ]
@@ -391,7 +419,7 @@ function EntryCard({
     {
       key: "share",
       icon: Share2,
-      label: "Share statement…",
+      label: t("lg.shareStatement"),
       onClick: () => {
         setMenuOpen(false);
         setShareOpen(true);
@@ -413,20 +441,17 @@ function EntryCard({
           )}
           aria-hidden
         >
-          {credit ? <ArrowDownLeft size={18} /> : <ArrowUpRight size={18} />}
+          <KindIcon size={18} />
         </span>
         <button
           type="button"
           className="min-w-0 flex-1 text-left"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          aria-label={`Entry: ${entry.category || (credit ? "Credit" : "Debit")}. Tap to toggle payment history.`}
+          aria-label={`Entry: ${kindLabel}. Tap to toggle payment history.`}
         >
           <span className="flex items-baseline justify-between gap-2">
-            <span className="truncate text-[13px] font-semibold text-ink">
-              {entry.category ||
-                (credit ? (isGeneral ? t("lg.income") : t("lg.credit")) : isGeneral ? t("lg.expense") : t("lg.debit"))}
-            </span>
+            <span className="truncate text-[13px] font-semibold text-ink">{kindLabel}</span>
             <span className="shrink-0 text-[15px] font-bold">
               <Money value={credit ? entry.amount : -entry.amount} signed />
             </span>
@@ -442,7 +467,7 @@ function EntryCard({
           </span>
         </button>
         <IconButton
-          label="Entry actions"
+          label={t("lg.entryActions")}
           className="h-10 w-10 shrink-0"
           onClick={() => setMenuOpen(true)}
         >
@@ -454,6 +479,11 @@ function EntryCard({
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5 pl-[52px]">
         <RemainingChip entry={entry} />
         {entry.dueDate && <DueBadge dueDate={entry.dueDate} />}
+        {entry.category && (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-surface2 px-2 py-0.5 text-[10px] font-semibold text-mute">
+            <Tag size={11} aria-hidden /> {entry.category}
+          </span>
+        )}
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-surface2 px-2 py-0.5 text-[10px] font-semibold text-mute">
           <ChevronDown
             size={11}
@@ -484,7 +514,7 @@ function EntryCard({
           >
             <div className="mt-3 border-t border-line pt-3">
               <p className="mb-2 text-[10px] font-bold uppercase tracking-[1.5px] text-mute">{t("lg.paymentHistory")}</p>
-              {nPayments === 0 && <p className="pb-1 text-[11px] text-mute">No payments yet</p>}
+              {nPayments === 0 && <p className="pb-1 text-[11px] text-mute">{t("lg.noPaymentsYet")}</p>}
               <ol className="space-y-1.5">
                 {entry.payments.map((p, i) => (
                   <li key={p.id} className="rounded-xl bg-surface2 px-2.5 py-1.5">
@@ -496,7 +526,7 @@ function EntryCard({
                       </span>
                       {(p.note || p.method || p.auto) && (
                         <span className="min-w-0 flex-1 truncate text-[10px] text-mute">
-                          {p.auto === "tick" ? "Ticked" : p.auto === "settle" ? "Settle up" : p.note || p.method}
+                          {p.auto === "tick" ? "Ticked" : p.auto === "settle" ? t("lg.settleUp") : p.note || p.method}
                         </span>
                       )}
                       <IconButton
@@ -544,7 +574,7 @@ function EntryCard({
       </AnimatePresence>
 
       {/* ⋯ menu */}
-      <BottomSheet open={menuOpen} onClose={() => setMenuOpen(false)} title={entry.note || entry.category || "Entry"}>
+      <BottomSheet open={menuOpen} onClose={() => setMenuOpen(false)} title={entry.note || entry.category || t("misc.entry")}>
         <div className="space-y-1">
           {menuActions.map((a) => {
             const Icon = a.icon;
@@ -572,18 +602,18 @@ function EntryCard({
         onClose={() => setPickerOpen(false)}
         onPick={(id) => {
           moveEntity("entry", entry.id, id as OwnerId);
-          toastOk("Entry moved");
+          toastOk(t("lg.entryMoved"));
         }}
       />
 
       {/* share statement */}
-      <BottomSheet open={shareOpen} onClose={() => setShareOpen(false)} title="Share statement">
+      <BottomSheet open={shareOpen} onClose={() => setShareOpen(false)} title={t("lg.shareStatement")}>
         <div className="space-y-1">
           <button
             type="button"
             onClick={() => {
               if (!phone) {
-                toastErr(contact ? "No phone number for this contact" : "General has no phone to send to");
+                toastErr(contact ? t("cd.noPhone") : "General has no phone to send to");
                 return;
               }
               openExternal(waLink(phone, statementShareText(ownerEntries, contact, settings.currency)));
@@ -595,7 +625,7 @@ function EntryCard({
           >
             <MessageCircle size={17} className="text-brand" aria-hidden />
             <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-semibold text-ink">WhatsApp</span>
+              <span className="block text-[13px] font-semibold text-ink">{t("act.whatsapp")}</span>
               <span className="block text-[10.5px] text-mute">
                 {phone ? `Send to ${ownerLabel}` : "No phone number available"}
               </span>
@@ -608,29 +638,29 @@ function EntryCard({
                 statementToPdfBlob(ownerEntries, contact, settings.currency),
                 `${ownerLabel.replace(/[\\/:*?"<>|]+/g, "-")}-statement.pdf`
               );
-              toastOk("Statement PDF downloaded");
+              toastOk(t("lg.pdfDownloaded"));
             }}
             className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-surface2 active:scale-[0.98]"
           >
             <FileText size={17} className="text-brand" aria-hidden />
             <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-semibold text-ink">PDF statement</span>
-              <span className="block text-[10.5px] text-mute">Download — entries with running balance</span>
+              <span className="block text-[13px] font-semibold text-ink">{t("lg.pdfStatement")}</span>
+              <span className="block text-[10.5px] text-mute">{t("lg.runningBalance")}</span>
             </span>
           </button>
           <button
             type="button"
             onClick={async () => {
               if (await copyText(statementShareText(ownerEntries, contact, settings.currency))) {
-                toastOk("Statement copied");
+                toastOk(t("lg.statementCopied"));
               }
             }}
             className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-surface2 active:scale-[0.98]"
           >
             <Copy size={17} className="text-brand" aria-hidden />
             <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-semibold text-ink">Copy text</span>
-              <span className="block text-[10.5px] text-mute">Paste it anywhere</span>
+              <span className="block text-[13px] font-semibold text-ink">{t("lg.copyText")}</span>
+              <span className="block text-[10.5px] text-mute">{t("lg.pasteAnywhere")}</span>
             </span>
           </button>
           <button
@@ -641,14 +671,14 @@ function EntryCard({
                 new Blob([csv], { type: "text/csv;charset=utf-8" }),
                 `${ownerLabel.replace(/[\\/:*?"<>|]+/g, "-")}-ledger.csv`
               );
-              toastOk("CSV exported");
+              toastOk(t("lg.csvExported"));
             }}
             className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-surface2 active:scale-[0.98]"
           >
             <FileDown size={17} className="text-brand" aria-hidden />
             <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-semibold text-ink">Export CSV</span>
-              <span className="block text-[10.5px] text-mute">Spreadsheet-friendly</span>
+              <span className="block text-[13px] font-semibold text-ink">{t("lg.exportCsv")}</span>
+              <span className="block text-[10.5px] text-mute">{t("lg.spreadsheet")}</span>
             </span>
           </button>
         </div>
@@ -660,9 +690,10 @@ function EntryCard({
           open
           onClose={() => setPayOpen(false)}
           remaining={Math.max(remaining, 0)}
+          ownerId={ownerId}
           onSubmit={(p) => {
             addPayment(entry.id, p);
-            toastOk("Payment added");
+            toastOk(t("lg.paymentAdded"));
             setPayOpen(false);
           }}
         />
@@ -711,19 +742,22 @@ function GroupCard({
   const saveRename = () => {
     const title = renameTitle.trim();
     if (!title) {
-      toastErr("Give the group a name");
+      toastErr(t("lg.giveGroupName"));
       return;
     }
     saveGroup({ id: group.id, ownerId, title });
-    toastOk("Group renamed");
+    toastOk(t("lg.groupRenamed"));
     setRenameOpen(false);
   };
 
-  /** "Add entry" — opens EntryEdit with this group preselected via the pending-group hand-off. */
+  /** "Add entry" — opens EntryEdit with this group preselected via the pending-group hand-off.
+   *  No kind/entryType passed: the default kind follows the ledger context
+   *  (income/expense in General, credit/debit for a person) — all four kinds
+   *  remain selectable inside the sheet. */
   const addEntryToGroup = () => {
     setMenuOpen(false);
     setPendingEntryGroup(ownerId, group.id);
-    ui.open({ type: "entryEdit", ownerId, entryType: "credit" });
+    ui.open({ type: "entryEdit", ownerId });
   };
 
   const onDelete = async () => {
@@ -743,7 +777,7 @@ function GroupCard({
     {
       key: "add",
       icon: Plus,
-      label: "Add entry",
+      label: t("lg.addEntry"),
       onClick: addEntryToGroup,
     },
     {
@@ -759,7 +793,7 @@ function GroupCard({
     {
       key: "attach",
       icon: Paperclip,
-      label: t("misc.attach"),
+      label: t("att.attach"),
       onClick: () => {
         setMenuOpen(false);
         setAttachOpen(true);
@@ -807,7 +841,7 @@ function GroupCard({
           </span>
           <span className="mt-0.5 flex items-baseline justify-between gap-2">
             <span className="truncate text-[11px] text-mute">
-              {totals.count} entr{totals.count !== 1 ? "ies" : "y"}
+              {totals.count === 1 ? t("lg.oneEntry") : t("lg.entriesCount", { n: totals.count })}
               {totals.remaining > 0.005 ? (
                 <>
                   {" · "}
@@ -830,7 +864,7 @@ function GroupCard({
           </span>
         </button>
         <IconButton
-          label="Group actions"
+          label={t("lg.groupActions")}
           className="h-10 w-10 shrink-0"
           onClick={() => setMenuOpen(true)}
         >
@@ -880,13 +914,13 @@ function GroupCard({
                   />
                 ))}
                 {!memberRows.length && (
-                  <p className="px-2 py-1.5 text-[11px] text-mute">No entries in this group yet — add one below.</p>
+                  <p className="px-2 py-1.5 text-[11px] text-mute">{t("lg.noGroupEntries")}</p>
                 )}
               </div>
 
               <div className="mt-2.5 flex flex-wrap gap-2">
                 <Button variant="soft" size="sm" onClick={addEntryToGroup}>
-                  <Plus size={13} /> Add entry
+                  <Plus size={13} /> {t("lg.addEntry")}
                 </Button>
                 <Button
                   variant="surface"
@@ -895,7 +929,7 @@ function GroupCard({
                     setAttachOpen(true);
                   }}
                 >
-                  <Paperclip size={13} /> {t("misc.attach")}
+                  <Paperclip size={13} /> {t("att.attach")}
                 </Button>
               </div>
             </div>
@@ -934,8 +968,8 @@ function GroupCard({
               autoFocus
               value={renameTitle}
               onChange={(e) => setRenameTitle(e.target.value)}
-              placeholder="e.g. Shop restock"
-              aria-label="Group title"
+              placeholder={t("lg.groupPlaceholder")}
+              aria-label={t("lg.groupTitle")}
               className={inputCls}
             />
           </Field>
@@ -946,12 +980,13 @@ function GroupCard({
       )}
 
       {/* attach entities — banks, lists, notes, reminders, contacts & links */}
-      <BottomSheet open={attachOpen} onClose={() => setAttachOpen(false)} title={t("misc.attach")} zIndex={70}>
+      <BottomSheet open={attachOpen} onClose={() => setAttachOpen(false)} title={t("att.attach")} zIndex={70}>
         <p className="pb-2 text-[11px] text-mute">
           Banks, lists, notes, reminders, contacts &amp; web links for this group.
         </p>
         <AttachEntities
           refs={group.refs}
+          ownerId={ownerId}
           onChange={(next) => saveGroup({ id: group.id, ownerId, title: group.title, refs: next })}
         />
       </BottomSheet>
@@ -963,7 +998,7 @@ function GroupCard({
         allowGeneral
         onPick={(id) => {
           moveEntity("group", group.id, id as OwnerId);
-          toastOk("Group moved");
+          toastOk(t("lg.groupMoved"));
         }}
       />
     </div>
@@ -988,6 +1023,10 @@ export function LedgerSection({ ownerId }: { ownerId: OwnerId }) {
   const [filter, setFilter] = useState<LedgerFilter>("all");
   const [newGroupOpen, setNewGroupOpen] = useState(false);
   const [newGroupTitle, setNewGroupTitle] = useState("");
+  /* section-level collapse toggles — default expanded (group cards keep their
+     own internal collapse independent of this one) */
+  const [groupsOpen, setGroupsOpen] = useState(true);
+  const [singlesOpen, setSinglesOpen] = useState(true);
 
   const isGeneral = ownerId === "general";
   const contact = useMemo(
@@ -1047,40 +1086,55 @@ export function LedgerSection({ ownerId }: { ownerId: OwnerId }) {
   }, [ungroupedRows, filter]);
 
   const filterLabels: Record<LedgerFilter, string> = {
-    all: "All",
-    credit: isGeneral ? t("lg.income") : t("lg.credit"),
-    debit: isGeneral ? t("lg.expense") : t("lg.debit"),
-    unpaid: "Unpaid",
-    overdue: "Overdue",
+    all: t("lg.filterAll"),
+    credit: t("lg.kindCredit"),
+    debit: t("lg.kindDebit"),
+    unpaid: t("lg.filterUnpaid"),
+    overdue: t("lg.filterOverdue"),
   };
 
-  const openEntry = (entryType: "credit" | "debit") =>
-    ui.open({ type: "entryEdit", ownerId, entryType });
+  /** open EntryEdit pre-labelled with one of the four kinds — available in
+      BOTH the General and person ledgers (income/expense/credit/debit). */
+  const openEntry = (kind: EntryKind) =>
+    ui.open({
+      type: "entryEdit",
+      ownerId,
+      kind,
+      entryType: kind === "income" || kind === "credit" ? "credit" : "debit",
+    });
+
+  /** quick-add buttons: kind label + icon + tone */
+  const quickAdds: { kind: EntryKind; label: string; icon: typeof Plus; tone: string }[] = [
+    { kind: "income", label: t("lg.kindIncome"), icon: ArrowDownLeft, tone: "text-pos" },
+    { kind: "expense", label: t("lg.kindExpense"), icon: ArrowUpRight, tone: "text-neg" },
+    { kind: "credit", label: t("lg.kindCredit"), icon: HandCoins, tone: "text-pos" },
+    { kind: "debit", label: t("lg.kindDebit"), icon: CreditCard, tone: "text-neg" },
+  ];
 
   const onSettleUp = async () => {
     const ok = await confirm({
       title: `${t("lg.settleUp")}?`,
       message: isGeneral
-        ? "Adds payments dated today that bring the balance to zero."
-        : `Adds payments dated today that bring the balance with ${ownerName} to zero.`,
+        ? t("lg.settleConfirmGeneral")
+        : t("lg.settleConfirmPerson", { name: ownerName }),
       confirmLabel: t("lg.settleUp"),
       tone: "brand",
     });
     if (!ok) return;
     const applied = settleUp(ownerId);
-    toastOk(applied > 0 ? "Settled ✓" : "Already settled up");
+    toastOk(applied > 0 ? t("lg.settledDone") : t("lg.alreadySettled"));
   };
 
   const createGroup = () => {
     const title = newGroupTitle.trim();
     if (!title) {
-      toastErr("Give the group a name");
+      toastErr(t("lg.giveGroupName"));
       return;
     }
     saveGroup({ ownerId, title });
     setNewGroupTitle("");
     setNewGroupOpen(false);
-    toastOk("Group created");
+    toastOk(t("lg.groupCreated"));
   };
 
   return (
@@ -1088,11 +1142,11 @@ export function LedgerSection({ ownerId }: { ownerId: OwnerId }) {
       <SectionLabel
         right={
           <span className="text-[10px] font-semibold text-mute">
-            {rows.length} entr{rows.length !== 1 ? "ies" : "y"}
+            {rows.length === 1 ? t("lg.oneEntry") : t("lg.entriesCount", { n: rows.length })}
           </span>
         }
       >
-        {isGeneral ? "Income & Expense" : t("tab.ledger")}
+        {isGeneral ? t("lg.incomeExpense") : t("tab.ledger")}
       </SectionLabel>
 
       {/* summary strip */}
@@ -1116,116 +1170,178 @@ export function LedgerSection({ ownerId }: { ownerId: OwnerId }) {
         </p>
       )}
 
-      {/* actions */}
+      {/* actions — settle up, all four entry kinds, new group */}
       <div className="mt-3 flex flex-wrap gap-2">
         <Button variant="surface" size="sm" onClick={() => void onSettleUp()}>
           <Scale size={13} /> {t("lg.settleUp")}
         </Button>
-        <Button variant="soft" size="sm" className="text-pos" onClick={() => openEntry("credit")}>
-          <ArrowDownLeft size={13} /> {isGeneral ? `+ ${t("lg.income")}` : `+ ${t("lg.credit")}`}
-        </Button>
-        <Button variant="surface" size="sm" className="text-neg" onClick={() => openEntry("debit")}>
-          <ArrowUpRight size={13} /> {isGeneral ? `+ ${t("lg.expense")}` : `+ ${t("lg.debit")}`}
-        </Button>
+        {quickAdds.map(({ kind, label, icon: Icon, tone }) => (
+          <Button
+            key={kind}
+            variant={kind === "income" || kind === "credit" ? "soft" : "surface"}
+            size="sm"
+            className={tone}
+            onClick={() => openEntry(kind)}
+          >
+            <Icon size={13} /> + {label}
+          </Button>
+        ))}
         <Button variant="surface" size="sm" onClick={() => setNewGroupOpen(true)}>
           <FolderPlus size={13} /> {t("lg.newGroup")}
         </Button>
       </div>
 
-      {/* GROUPS — rendered first, above the single entries */}
+      {/* GROUPS — rendered first, above the single entries; header collapses the whole section */}
       {ownerGroups.length > 0 && (
         <div className="mt-4">
-          <SectionLabel
-            right={
-              <span className="text-[10px] font-semibold text-mute">
-                {ownerGroups.length} group{ownerGroups.length !== 1 ? "s" : ""}
-              </span>
-            }
+          <button
+            type="button"
+            onClick={() => setGroupsOpen((v) => !v)}
+            aria-expanded={groupsOpen}
+            aria-label={t("lg.groups")}
+            className="mb-3 mt-1 flex w-full items-center justify-between"
           >
-            {t("lg.groups")}
-          </SectionLabel>
-          <div className="space-y-2.5">
-            {ownerGroups.map((g) => (
-              <GroupCard
-                key={g.id}
-                group={g}
-                rows={rows}
-                totals={totalsByGroup.get(g.id) ?? { count: 0, net: 0, remaining: 0, paid: 0 }}
-                isGeneral={isGeneral}
-                contact={contact}
+            <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[1.7px] text-mute">
+              {t("lg.groups")}
+              <ChevronDown
+                size={13}
+                className={cx("transition-transform", groupsOpen && "rotate-180")}
+                aria-hidden
               />
-            ))}
-          </div>
+            </span>
+            <span className="text-[10px] font-semibold text-mute">
+              {ownerGroups.length === 1 ? t("lg.oneGroup") : t("lg.groupsCount", { n: ownerGroups.length })}
+            </span>
+          </button>
+          <AnimatePresence initial={false}>
+            {groupsOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="overflow-hidden"
+              >
+                <div className="space-y-2.5">
+                  {ownerGroups.map((g) => (
+                    <GroupCard
+                      key={g.id}
+                      group={g}
+                      rows={rows}
+                      totals={totalsByGroup.get(g.id) ?? { count: 0, net: 0, remaining: 0, paid: 0 }}
+                      isGeneral={isGeneral}
+                      contact={contact}
+                    />
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
 
-      {/* single (ungrouped) entries */}
+      {/* single (ungrouped) entries — header collapses filters + cards */}
       <div className="mt-4">
-        {ownerGroups.length > 0 && <SectionLabel>{t("lg.ungrouped")}</SectionLabel>}
-
-        {/* filters */}
-        <div className="app-scroll flex gap-1.5 overflow-x-auto pb-1" role="group" aria-label="Ledger filters">
-          {(Object.keys(filterLabels) as LedgerFilter[]).map((f) => (
-            <Chip key={f} active={filter === f} onClick={() => setFilter(f)}>
-              {filterLabels[f]}
-            </Chip>
-          ))}
-        </div>
-
-        {/* entries */}
-        <div className="mt-3 space-y-2.5">
-          {filtered.map(({ entry, running }) => (
-            <EntryCard
-              key={entry.id}
-              entry={entry}
-              running={running}
-              isGeneral={isGeneral}
-              ownerId={ownerId}
-              contact={contact}
+        <button
+          type="button"
+          onClick={() => setSinglesOpen((v) => !v)}
+          aria-expanded={singlesOpen}
+          aria-label={t("lg.ungrouped")}
+          className="mb-3 mt-1 flex w-full items-center justify-between"
+        >
+          <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[1.7px] text-mute">
+            {t("lg.ungrouped")}
+            <ChevronDown
+              size={13}
+              className={cx("transition-transform", singlesOpen && "rotate-180")}
+              aria-hidden
             />
-          ))}
+          </span>
+          <span className="text-[10px] font-semibold text-mute">
+            {ungroupedRows.length === 1 ? t("lg.oneEntry") : t("lg.entriesCount", { n: ungroupedRows.length })}
+          </span>
+        </button>
 
-          {!filtered.length && ungroupedRows.length > 0 && (
-            <EmptyState
-              icon={<Banknote size={20} />}
-              title="Nothing matches this filter"
-              hint="Try another filter to see more entries."
-              action={
-                <Button variant="soft" size="sm" onClick={() => setFilter("all")}>
-                  Show all
-                </Button>
-              }
-            />
-          )}
+        <AnimatePresence initial={false}>
+          {singlesOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="overflow-hidden"
+            >
+              {/* filters */}
+              <div className="app-scroll flex gap-1.5 overflow-x-auto pb-1" role="group" aria-label={t("lg.ledgerFilters")}>
+                {(Object.keys(filterLabels) as LedgerFilter[]).map((f) => (
+                  <Chip key={f} active={filter === f} onClick={() => setFilter(f)}>
+                    {filterLabels[f]}
+                  </Chip>
+                ))}
+              </div>
 
-          {!ungroupedRows.length && rows.length > 0 && (
-            <p className="rounded-2xl bg-surface2 px-3 py-2.5 text-center text-[11px] text-mute">
-              All {rows.length} entr{rows.length !== 1 ? "ies" : "y"} are inside groups
-            </p>
-          )}
+              {/* entries */}
+              <div className="mt-3 space-y-2.5">
+                {filtered.map(({ entry, running }) => (
+                  <EntryCard
+                    key={entry.id}
+                    entry={entry}
+                    running={running}
+                    isGeneral={isGeneral}
+                    ownerId={ownerId}
+                    contact={contact}
+                  />
+                ))}
 
-          {!rows.length && (
-            <EmptyState
-              icon={<Banknote size={22} />}
-              title={isGeneral ? "No income or expenses yet" : "No ledger entries yet"}
-              hint={
-                isGeneral
-                  ? "Track money in and out — everything stays on this device."
-                  : `Track what you and ${ownerName} owe each other. Settle up anytime.`
-              }
-              action={
-                <div className="flex gap-2">
-                  <Button variant="soft" size="sm" className="text-pos" onClick={() => openEntry("credit")}>
-                    <Plus size={13} /> {isGeneral ? t("lg.income") : t("lg.credit")}
-                  </Button>
-                  <Button variant="surface" size="sm" className="text-neg" onClick={() => openEntry("debit")}>
-                    <Plus size={13} /> {isGeneral ? t("lg.expense") : t("lg.debit")}
-                  </Button>
-                </div>
-              }
-            />
+                {!filtered.length && ungroupedRows.length > 0 && (
+                  <EmptyState
+                    icon={<Banknote size={20} />}
+                    title={t("lg.noMatch")}
+                    hint={t("lg.noMatchHint")}
+                    action={
+                      <Button variant="soft" size="sm" onClick={() => setFilter("all")}>
+                        {t("act.showAll")}
+                      </Button>
+                    }
+                  />
+                )}
+
+                {!ungroupedRows.length && rows.length > 0 && (
+                  <p className="rounded-2xl bg-surface2 px-3 py-2.5 text-center text-[11px] text-mute">
+                    {t("lg.allInGroups", { n: rows.length })}
+                  </p>
+                )}
+
+                {!rows.length && (
+                  <EmptyState
+                    icon={<Banknote size={22} />}
+                    title={isGeneral ? t("lg.noEntriesGeneral") : t("lg.noEntries")}
+                    hint={
+                      isGeneral
+                        ? t("lg.noEntriesGeneralHint")
+                        : t("lg.noEntriesHint", { name: ownerName })
+                    }
+                    action={
+                      <div className="flex flex-wrap justify-center gap-2">
+                        {quickAdds.map(({ kind, label, icon: Icon, tone }) => (
+                          <Button
+                            key={kind}
+                            variant={kind === "income" || kind === "credit" ? "soft" : "surface"}
+                            size="sm"
+                            className={tone}
+                            onClick={() => openEntry(kind)}
+                          >
+                            <Plus size={13} /> {label}
+                          </Button>
+                        ))}
+                      </div>
+                    }
+                  />
+                )}
+              </div>
+            </motion.div>
           )}
-        </div>
+        </AnimatePresence>
       </div>
 
       {/* new group */}
@@ -1235,8 +1351,8 @@ export function LedgerSection({ ownerId }: { ownerId: OwnerId }) {
             autoFocus
             value={newGroupTitle}
             onChange={(e) => setNewGroupTitle(e.target.value)}
-            placeholder="e.g. Shop restock, Rent…"
-            aria-label="Group title"
+            placeholder={t("lg.groupPlaceholder")}
+            aria-label={t("lg.groupTitle")}
             className={inputCls}
           />
         </Field>

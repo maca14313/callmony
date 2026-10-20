@@ -8,6 +8,7 @@ import {
   Clock3,
   Grid3X3,
   Inbox,
+  Languages,
   RotateCcw,
   Search,
   Settings,
@@ -15,19 +16,21 @@ import {
   Bell,
   Info,
   Users,
+  Wallet,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { useUI, type Overlay } from "@/lib/ui-store";
 import { dueStatus } from "@/lib/calc";
 import { checkVersion, registerSW, useInstallPrompt, useTick } from "@/lib/pwa";
-import { useLang, useT } from "@/lib/i18n";
+import { useLang, useT, LANGUAGES } from "@/lib/i18n";
 import { ConfirmProvider } from "./kit/Confirm";
-import { BottomSheet, Sheet } from "./kit/Sheet";
+import { BottomSheet } from "./kit/Sheet";
 import { Button, cx } from "./kit/primitives";
 import { AlarmDialog } from "./kit/AlarmDialog";
 import { CalculatorSheet } from "./kit/Calculator";
 import { KeypadSheet } from "./kit/KeypadSheet";
 import { ActionPickerHost } from "./kit/ActionPicker";
+import { LanguageSheet } from "./kit/LanguageSheet";
 
 import { ContactsView, RecentsView } from "./views/contacts-views";
 import { GeneralView } from "./views/money-views";
@@ -73,45 +76,6 @@ function Splash() {
         call<span className="text-brand">mony</span>
       </p>
       <p className="text-[11px] text-mute">Loading your data…</p>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Status bar (device chrome)                                          */
-/* ------------------------------------------------------------------ */
-
-function StatusBar() {
-  const [time, setTime] = useState("");
-  useEffect(() => {
-    const update = () =>
-      setTime(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
-    update();
-    const i = setInterval(update, 20000);
-    return () => clearInterval(i);
-  }, []);
-  return (
-    <div className="flex shrink-0 items-center justify-between px-7 pt-[max(14px,env(safe-area-inset-top))] pb-1 text-[12px] font-semibold tracking-wide text-ink">
-      <span>{time || "9:41"}</span>
-      <div className="flex items-center gap-1.5" aria-hidden>
-        <svg width="17" height="13" viewBox="0 0 17 13" fill="currentColor">
-          <rect x="0" y="7" width="3" height="6" rx="1" />
-          <rect x="4.5" y="5" width="3" height="8" rx="1" />
-          <rect x="9" y="2.5" width="3" height="10.5" rx="1" />
-          <rect x="13.5" y="0" width="3" height="13" rx="1" />
-        </svg>
-        <svg width="16" height="13" viewBox="0 0 24 20" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-          <path d="M2 6C7-0.2 17-0.2 22 6" />
-          <path d="M5.5 10C9-0.1 15-0.1 18.5 10" />
-          <path d="M9.5 14C11 12.5 13 12.5 14.5 14" />
-          <circle cx="12" cy="17" r="1" fill="currentColor" stroke="none" />
-        </svg>
-        <svg width="23" height="13" viewBox="0 0 25 14" fill="none">
-          <rect x="1" y="1" width="20" height="12" rx="3" stroke="currentColor" strokeWidth="1.4" />
-          <rect x="3.2" y="3.2" width="15.5" height="7.6" rx="1.5" fill="currentColor" />
-          <path d="M23 5V9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-      </div>
     </div>
   );
 }
@@ -170,7 +134,12 @@ function OverlayItem({ overlay, depth }: { overlay: Overlay; depth: number }) {
       return <ListEdit listId={overlay.listId} ownerId={overlay.ownerId} kind={overlay.kind} />;
     case "entryEdit":
       return (
-        <EntryEdit entryId={overlay.entryId} ownerId={overlay.ownerId} entryType={overlay.entryType} />
+        <EntryEdit
+          entryId={overlay.entryId}
+          ownerId={overlay.ownerId}
+          entryType={overlay.entryType}
+          kind={overlay.kind}
+        />
       );
     case "noteEdit":
       return <NoteEdit noteId={overlay.noteId} ownerId={overlay.ownerId} linkTo={overlay.linkTo} />;
@@ -290,7 +259,9 @@ function AutolockWatcher() {
 
 /* ------------------------------------------------------------------ */
 /* Bottom navigation — ALWAYS visible (except while on a call).        */
-/* Recents · Contacts · Keypad (opens half-modal) · Calculator · More  */
+/* Recents · Contacts · Keypad (half-modal) · Calculator · General ·   */
+/* More. Works while the keypad sheet is open — tapping any item       */
+/* closes the keypad (closeAll) and switches tabs.                     */
 /* ------------------------------------------------------------------ */
 
 function BottomNav() {
@@ -341,8 +312,14 @@ function BottomNav() {
       icon: Grid3X3,
       active: keypadOpen,
       onClick: () => {
-        closeAll();
-        setKeypadOpen(true);
+        /* toggle: tapping Keypad while the sheet is open closes it */
+        if (keypadOpen) {
+          closeAll();
+          setKeypadOpen(false);
+        } else {
+          closeAll();
+          setKeypadOpen(true);
+        }
       },
     },
     {
@@ -355,14 +332,24 @@ function BottomNav() {
         openCalculator();
       },
     },
+    {
+      key: "general",
+      label: t("nav.general"),
+      icon: Wallet,
+      active: tab === "general",
+      onClick: () => {
+        closeAll();
+        setTab("general");
+      },
+    },
   ];
 
   return (
     <nav
-      className="relative z-20 shrink-0 border-t border-line bg-surface/95 px-3 pb-[max(14px,env(safe-area-inset-bottom))] pt-2.5 backdrop-blur-xl"
+      className="relative z-20 shrink-0 border-t border-line bg-surface/95 px-2 pb-[max(12px,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl"
       aria-label="Main navigation"
     >
-      <div className="mx-auto flex max-w-[380px] items-center justify-around">
+      <div className="mx-auto flex max-w-[400px] items-center justify-around">
         {items.map((n) => {
           const Icon = n.icon;
           const isKeypad = n.key === "keypad";
@@ -373,7 +360,7 @@ function BottomNav() {
               aria-label={n.label}
               aria-current={n.active ? "page" : undefined}
               className={cx(
-                "nav-item flex min-w-[58px] flex-col items-center gap-1 transition",
+                "nav-item flex min-w-[52px] flex-col items-center gap-1 transition",
                 n.active ? "text-brand" : "text-[#a3b0ac] dark:text-mute"
               )}
             >
@@ -389,9 +376,12 @@ function BottomNav() {
           );
         })}
         <button
-          onClick={() => setMoreOpen(true)}
+          onClick={() => {
+            setKeypadOpen(false);
+            setMoreOpen(true);
+          }}
           aria-label={t("nav.more")}
-          className="nav-item relative flex min-w-[58px] flex-col items-center gap-1 text-[#a3b0ac] transition dark:text-mute"
+          className="nav-item relative flex min-w-[52px] flex-col items-center gap-1 text-[#a3b0ac] transition dark:text-mute"
         >
           <span className="relative">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -408,7 +398,7 @@ function BottomNav() {
           <span className="text-[10px] font-medium">{t("nav.more")}</span>
         </button>
       </div>
-      <div className="mx-auto mt-2.5 h-[4px] w-[105px] rounded-full bg-line2" aria-hidden />
+      <div className="mx-auto mt-2 h-[4px] w-[105px] rounded-full bg-line2" aria-hidden />
     </nav>
   );
 }
@@ -420,7 +410,10 @@ function BottomNav() {
 function MoreSheet() {
   const ui = useUI();
   const t = useT();
+  const [langOpen, setLangOpen] = useState(false);
   const { canInstall, promptInstall, isIOS } = useInstallPrompt();
+  const language = useApp((s) => s.settings.language);
+  const activeLang = LANGUAGES.find((l) => l.code === language) ?? LANGUAGES[0];
   const trashCount = useApp(
     (s) =>
       s.contacts.filter((c) => c.deletedAt).length +
@@ -435,10 +428,12 @@ function MoreSheet() {
     (s) => s.reminders.filter((r) => !r.deletedAt && !r.done && dueStatus(r.dueAt) === "overdue").length
   );
 
-  const items: { label: string; icon: typeof Inbox; badge?: number; onClick: () => void }[] = [
-    { label: t("hdr.general"), icon: Inbox, onClick: () => ui.setTab("general") },
+  /* General + Calculator live in the bottom nav now — the More sheet holds
+     Language (visible right here, per user request), Reminders, Search,
+     Trash, Settings and About. */
+  const items: { label: string; icon: typeof Inbox; badge?: number; sub?: string; onClick: () => void }[] = [
+    { label: t("st.language"), icon: Languages, sub: activeLang.native, onClick: () => setLangOpen(true) },
     { label: t("tab.reminders"), icon: Bell, badge: overdue, onClick: () => ui.setTab("reminders") },
-    { label: t("nav.calculator"), icon: CalcIcon, onClick: () => ui.openCalculator() },
     { label: t("act.search"), icon: Search, onClick: () => ui.open({ type: "search" }) },
     { label: t("hdr.trash"), icon: Trash2, badge: trashCount || undefined, onClick: () => ui.setTab("trash") },
     { label: t("hdr.settings"), icon: Settings, onClick: () => ui.open({ type: "settings" }) },
@@ -458,6 +453,7 @@ function MoreSheet() {
             >
               <Icon size={20} className="text-brand" />
               <span className="text-[11px] font-semibold text-ink">{it.label}</span>
+              {it.sub && <span className="-mt-1.5 text-[9px] text-mute">{it.sub}</span>}
               {!!it.badge && (
                 <span className="absolute right-2 top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-neg px-1 text-[9px] font-bold text-white">
                   {it.badge > 9 ? "9+" : it.badge}
@@ -471,10 +467,7 @@ function MoreSheet() {
         <button
           onClick={async () => {
             if (canInstall) await promptInstall();
-            else
-              toast("Install on iPhone: Share → Add to Home Screen", {
-                duration: 5000,
-              });
+            else toast(t("st.installPhone"), { duration: 5000 });
           }}
           className="mt-1 flex w-full items-center gap-3 rounded-[20px] bg-brandsoft px-4 py-3.5 text-left transition active:scale-[0.98]"
         >
@@ -484,11 +477,12 @@ function MoreSheet() {
             </svg>
           </span>
           <span>
-            <span className="block text-[13px] font-bold text-ink">Install callmony on this device</span>
-            <span className="block text-[11px] text-mute">Works offline like a native app</span>
+            <span className="block text-[13px] font-bold text-ink">{t("st.installApp")}</span>
+            <span className="block text-[11px] text-mute">{t("st.installHint")}</span>
           </span>
         </button>
       )}
+      <LanguageSheet open={langOpen} onClose={() => setLangOpen(false)} />
     </BottomSheet>
   );
 }
@@ -500,8 +494,10 @@ function MoreSheet() {
 function AppHeader() {
   const t = useT();
   const ui = useUI();
+  /* General is a main nav tab now — only Reminders and Trash (opened from
+     the More sheet) get the secondary back-header. */
   const secondary =
-    ui.tab === "general" ? t("hdr.general") : ui.tab === "reminders" ? t("tab.reminders") : ui.tab === "trash" ? t("hdr.trash") : undefined;
+    ui.tab === "reminders" ? t("tab.reminders") : ui.tab === "trash" ? t("hdr.trash") : undefined;
 
   if (secondary) {
     return (
@@ -519,7 +515,7 @@ function AppHeader() {
   }
 
   return (
-    <header className="flex shrink-0 items-center justify-between px-6 pb-3 pt-4">
+    <header className="flex shrink-0 items-center justify-between px-6 pb-3 pt-[max(16px,env(safe-area-inset-top))]">
       <div>
         <div className="flex items-center gap-2">
           <div className="flex h-9 w-9 items-center justify-center rounded-[13px] bg-brand text-white shadow-[0_5px_14px_rgba(22,160,133,0.2)]">
@@ -618,7 +614,13 @@ export function CallmonyApp() {
   if (!mounted || !hydrated) {
     return (
       <div className="min-h-[100dvh] w-full bg-appbg sm:py-6">
-        <div className="relative mx-auto flex h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden bg-canvas shadow-2xl sm:h-[min(900px,calc(100dvh-48px))] sm:rounded-[34px]">
+        {/* suppressHydrationWarning: a cached (older) app-shell from the service
+            worker can hydrate against a newer bundle — attribute diffs on this
+            frame div must not crash the tree. */}
+        <div
+          suppressHydrationWarning
+          className="relative mx-auto flex h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden bg-canvas shadow-2xl sm:h-[min(900px,calc(100dvh-48px))] sm:rounded-[34px]"
+        >
           <Splash />
         </div>
       </div>
@@ -630,17 +632,17 @@ export function CallmonyApp() {
       <div className="min-h-[100dvh] w-full bg-appbg sm:py-6">
         <div
           dir={dir}
+          suppressHydrationWarning
           className="relative mx-auto flex h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden bg-canvas shadow-2xl sm:h-[min(900px,calc(100dvh-48px))] sm:rounded-[34px]"
           role="application"
           aria-label="callmony contacts and ledger app"
         >
-          <StatusBar />
           <AppHeader />
 
           {/* Content area — views + overlay sheets live here, ABOVE the nav.
               Sheets (absolute inset-0 of this container) never cover the nav. */}
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-            <main className="app-scroll flex-1 overflow-y-auto overscroll-contain px-5 pb-10">
+            <main className="app-scroll flex-1 overflow-y-auto overscroll-contain px-5 pb-14">
               {view}
             </main>
             <OverlayHost />

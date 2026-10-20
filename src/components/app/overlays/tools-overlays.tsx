@@ -18,6 +18,7 @@ import {
   Pin,
   Repeat,
   Trash2,
+  UserRound,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { useUI } from "@/lib/ui-store";
@@ -48,12 +49,15 @@ const hhmm = (epoch: number) => {
   return `${p2(d.getHours())}:${p2(d.getMinutes())}`;
 };
 
-/** "In Abel Tesfaye" / "In General" */
+/** "in Abel Tesfaye" / "in General" */
 function useOwnerLabel(ownerId: OwnerId): string {
+  const t = useT();
   const contact = useApp((s) =>
     ownerId === "general" ? undefined : s.contacts.find((c) => c.id === ownerId && !c.deletedAt)
   );
-  return ownerId === "general" ? "In General" : `In ${displayName(contact)}`;
+  return ownerId === "general"
+    ? `${t("misc.in")} ${t("misc.general")}`
+    : `${t("misc.in")} ${displayName(contact)}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -95,7 +99,7 @@ export function NoteEdit({
 
   const save = () => {
     if (!title.trim() && !body.trim()) {
-      toastErr("Add a title or some text first");
+      toastErr(t("nt.addTitleFirst"));
       return;
     }
     saveNote({
@@ -128,7 +132,7 @@ export function NoteEdit({
 
   return (
     <Sheet
-      title={noteId ? "Edit note" : "New note"}
+      title={noteId ? t("nt.editNote") : t("nt.newNote")}
       subtitle={ownerLabel}
       onBack={ui.pop}
       footer={
@@ -146,34 +150,34 @@ export function NoteEdit({
       }
     >
       <div className="space-y-4 p-4 pb-10">
-        <Field label="Title">
+        <Field label={t("nt.noteTitle")}>
           <input
             className={inputCls}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Note title"
+            placeholder={t("nt.noteTitle")}
             autoFocus={!noteId}
-            aria-label="Note title"
+            aria-label={t("nt.noteTitle")}
           />
         </Field>
 
-        <Field label="Body">
+        <Field label={t("nt.body")}>
           <textarea
             className={cx(inputCls, "min-h-[160px] resize-y leading-relaxed")}
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="Write anything…"
-            aria-label="Note body"
+            placeholder={t("nt.writeAnything")}
+            aria-label={t("nt.noteBody")}
           />
         </Field>
 
-        <Field label="Tags" hint="Comma separated — e.g. work, invoice, todo">
+        <Field label={t("nt.noteTags")} hint={t("nt.tagsPlaceholder")}>
           <input
             className={inputCls}
             value={tagsStr}
             onChange={(e) => setTagsStr(e.target.value)}
             placeholder="work, invoice"
-            aria-label="Note tags"
+            aria-label={t("nt.noteTags")}
           />
         </Field>
 
@@ -182,15 +186,15 @@ export function NoteEdit({
           <div className="flex items-center gap-2.5">
             <Pin size={15} className={pinned ? "fill-current text-amber" : "text-mute"} />
             <div>
-              <p className="text-[13px] font-semibold text-ink">Pinned</p>
-              <p className="text-[10px] text-mute">Pinned notes stay on top of the section</p>
+              <p className="text-[13px] font-semibold text-ink">{t("nt.pinned")}</p>
+              <p className="text-[10px] text-mute">{t("nt.pinnedHint")}</p>
             </div>
           </div>
           <button
             type="button"
             role="switch"
             aria-checked={pinned}
-            aria-label="Pin note"
+            aria-label={t("nt.pinned")}
             onClick={() => setPinned((v) => !v)}
             className={cx(
               "flex h-8 w-[54px] items-center rounded-full px-1 transition",
@@ -207,13 +211,13 @@ export function NoteEdit({
         </div>
 
         {/* color dots */}
-        <Field label="Color">
+        <Field label={t("nt.color")}>
           <div className="flex items-center gap-2.5">
             {NOTE_COLORS.map((c) => (
               <button
                 key={c}
                 type="button"
-                aria-label={`Note color ${c}`}
+                aria-label={`${t("nt.color")} ${c}`}
                 aria-pressed={color === c}
                 onClick={() => setColor(color === c ? undefined : c)}
                 style={{ background: c }}
@@ -229,7 +233,7 @@ export function NoteEdit({
                 onClick={() => setColor(undefined)}
                 className="ml-1 h-10 px-3 text-[10px] font-bold uppercase tracking-wide text-mute hover:text-ink"
               >
-                None
+                {t("act.none")}
               </button>
             )}
           </div>
@@ -237,10 +241,10 @@ export function NoteEdit({
 
         {/* entity links */}
         <div>
-          <SectionLabel>Links</SectionLabel>
+          <SectionLabel>{t("ee.links")}</SectionLabel>
           <div className="space-y-2">
             {links.length > 0 && <LinkChips links={links} onChange={setLinks} onOpen={openLink} />}
-            <AddLinkButton links={links} onChange={setLinks} label="Link to contact, entry, list…" />
+            <AddLinkButton links={links} onChange={setLinks} label={t("nt.linkTo")} />
           </div>
         </div>
       </div>
@@ -252,12 +256,12 @@ export function NoteEdit({
 /* ReminderEdit                                                         */
 /* ------------------------------------------------------------------ */
 
-const KINDS: { id: ReminderKind; label: string }[] = [
-  { id: "payment", label: "Payment" },
-  { id: "todo", label: "To-do" },
-  { id: "birthday", label: "Birthday" },
-  { id: "followup", label: "Follow-up" },
-  { id: "custom", label: "Custom" },
+const KINDS: { id: ReminderKind; labelKey: string }[] = [
+  { id: "payment", labelKey: "rm.kindPayment" },
+  { id: "todo", labelKey: "rm.kindTodo" },
+  { id: "birthday", labelKey: "rm.kindBirthday" },
+  { id: "followup", labelKey: "rm.kindFollowup" },
+  { id: "custom", labelKey: "rm.kindCustom" },
 ];
 
 const REPEATS: { id: RepeatKind; label: string }[] = [
@@ -316,7 +320,7 @@ export function ReminderEdit({
   const ownerContact = useApp((s) =>
     owner === "general" ? undefined : s.contacts.find((c) => c.id === owner && !c.deletedAt)
   );
-  const ownerName = owner === "general" ? "General" : displayName(ownerContact);
+  const ownerName = owner === "general" ? t("misc.general") : displayName(ownerContact);
 
   const dueAt = useMemo(() => {
     const d = new Date(`${date || todayStr()}T${time || "09:00"}`);
@@ -327,11 +331,11 @@ export function ReminderEdit({
   const save = async () => {
     const trimmed = title.trim();
     if (!trimmed) {
-      toastErr("Title is required");
+      toastErr(t("nt.titleRequired"));
       return;
     }
     if (isNaN(dueAt)) {
-      toastErr("Pick a valid date and time");
+      toastErr(t("rm.validDateTime"));
       return;
     }
     if (repeat === "none" && dueAt < Date.now()) {
@@ -360,7 +364,7 @@ export function ReminderEdit({
   const remove = async () => {
     if (!reminderId) return;
     const ok = await confirm({
-      title: "Delete reminder?",
+      title: t("rm.deleteReminder"),
       message: `“${reminder?.title || ""}” will be moved to Trash — you can undo right after.`,
       confirmLabel: t("act.delete"),
       tone: "danger",
@@ -376,12 +380,12 @@ export function ReminderEdit({
 
   /** "Every month on the 1st" — monthly repeat, day pinned to the 1st, 9:00. */
   const presetMonthlyFirst = () => {
-    const t = new Date();
-    const d = new Date(t.getFullYear(), t.getMonth() + 1, 1, 9, 0, 0, 0);
+    const now = new Date();
+    const d = new Date(now.getFullYear(), now.getMonth() + 1, 1, 9, 0, 0, 0);
     setRepeat("monthly");
     setDate(dateStr(d));
     setTime("09:00");
-    toastOk("Repeats every month on the 1st");
+    toastOk(t("rm.monthlyFirst"));
   };
 
   const duePreview = isNaN(dueAt)
@@ -392,7 +396,7 @@ export function ReminderEdit({
 
   return (
     <Sheet
-      title={reminderId ? "Edit reminder" : "New reminder"}
+      title={reminderId ? t("rm.editReminder") : "New reminder"}
       subtitle={duePreview}
       onBack={ui.pop}
       footer={
@@ -410,24 +414,24 @@ export function ReminderEdit({
       }
     >
       <div className="space-y-4 p-4 pb-10">
-        <Field label="Title">
+        <Field label={t("rm.reminderTitle")}>
           <input
             className={inputCls}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="What should remind you?"
+            placeholder={t("rm.whatShouldRemind")}
             autoFocus={!reminderId}
-            aria-label="Reminder title"
+            aria-label={t("rm.reminderTitle")}
           />
         </Field>
 
-        <Field label="Notes">
+        <Field label={t("rm.reminderNotes")}>
           <textarea
             className={cx(inputCls, "min-h-[90px] resize-y")}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Optional details…"
-            aria-label="Reminder notes"
+            placeholder={t("nt.optionalDetails")}
+            aria-label={t("rm.reminderNotes")}
           />
         </Field>
 
@@ -437,7 +441,7 @@ export function ReminderEdit({
           <div className="app-scroll flex gap-1.5 overflow-x-auto pb-1">
             {KINDS.map((k) => (
               <Chip key={k.id} active={kind === k.id} onClick={() => setKind(k.id)}>
-                {k.label}
+                {t(k.labelKey)}
               </Chip>
             ))}
           </div>
@@ -445,26 +449,26 @@ export function ReminderEdit({
 
         {/* due date + time */}
         <div className="grid grid-cols-[1.5fr_1fr] gap-3">
-          <Field label="Date">
+          <Field label={t("rm.dueDate")}>
             <div className="relative">
               <input
                 type="date"
                 className={cx(inputCls, "pr-10")}
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                aria-label="Due date"
+                aria-label={t("rm.dueDate")}
               />
               <Calendar size={15} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-mute" />
             </div>
           </Field>
-          <Field label="Time">
+          <Field label={t("rm.dueTime")}>
             <div className="relative">
               <input
                 type="time"
                 className={cx(inputCls, "pr-10")}
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                aria-label="Due time"
+                aria-label={t("rm.dueTime")}
               />
               <Clock3 size={15} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-mute" />
             </div>
@@ -473,7 +477,7 @@ export function ReminderEdit({
 
         {/* repeat */}
         <div>
-          <SectionLabel>Repeat</SectionLabel>
+          <SectionLabel>{t("rm.repeat")}</SectionLabel>
           <div className="app-scroll flex gap-1.5 overflow-x-auto pb-1">
             {REPEATS.map((r) => (
               <Chip key={r.id} active={repeat === r.id} onClick={() => setRepeat(r.id)}>
@@ -495,7 +499,7 @@ export function ReminderEdit({
 
         {/* lead times */}
         <div>
-          <SectionLabel>Alert me early</SectionLabel>
+          <SectionLabel>{t("rm.alertEarly")}</SectionLabel>
           <div className="flex gap-1.5">
             {LEADS.map((l) => (
               <Chip key={l.m} active={lead.includes(l.m)} onClick={() => toggleLead(l.m)}>
@@ -510,7 +514,7 @@ export function ReminderEdit({
 
         {/* owner */}
         <div>
-          <SectionLabel>Owner</SectionLabel>
+          <SectionLabel>{t("rm.ownerLabel")}</SectionLabel>
           <div className="flex items-center justify-between rounded-2xl border border-line bg-surface px-3.5 py-2.5">
             <div className="flex min-w-0 items-center gap-2.5">
               {owner === "general" ? (
@@ -521,7 +525,7 @@ export function ReminderEdit({
                 <Avatar contact={ownerContact} size="sm" />
               )}
               <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-[1.4px] text-mute">Saved under</p>
+                <p className="text-[10px] font-bold uppercase tracking-[1.4px] text-mute">{t("nt.savedUnder")}</p>
                 <p className="truncate text-[13px] font-semibold text-ink">{ownerName}</p>
               </div>
             </div>
@@ -536,10 +540,10 @@ export function ReminderEdit({
 
         {/* entity links */}
         <div>
-          <SectionLabel>Links</SectionLabel>
+          <SectionLabel>{t("ee.links")}</SectionLabel>
           <div className="space-y-2">
             {links.length > 0 && <LinkChips links={links} onChange={setLinks} onOpen={openLink} />}
-            <AddLinkButton links={links} onChange={setLinks} label="Attach to credit, list, note…" />
+            <AddLinkButton links={links} onChange={setLinks} label={t("lg.attachTo")} />
           </div>
         </div>
       </div>
@@ -548,7 +552,7 @@ export function ReminderEdit({
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         allowGeneral
-        title="Move reminder to…"
+        title={t("rm.moveReminder")}
         onPick={(id) => {
           setOwner(id);
           if (reminderId && id !== reminder?.ownerId) moveEntity("reminder", reminderId, id);
@@ -559,52 +563,64 @@ export function ReminderEdit({
 }
 
 /* ------------------------------------------------------------------ */
-/* BankEdit — simplified: bank name + account number.                   */
-/* The owner (person / General) is implied by where the account is      */
-/* created from, so no holder, label, IBAN/SWIFT/UPI/branch/balance.   */
+/* BankEdit — bank name + account number + holder name.                */
+/* General accounts offer "Choose from contacts" — picking a contact    */
+/* fills the holder name AND moves the account under that person.      */
 /* ------------------------------------------------------------------ */
 
 export function BankEdit({ bankId, ownerId }: { bankId?: ID; ownerId: ID | "general" }) {
   const ui = useUI();
   const t = useT();
   const confirm = useConfirm();
-  const ownerLabel = useOwnerLabel(ownerId);
   const bank = useApp((s) => (bankId ? s.banks.find((b) => b.id === bankId && !b.deletedAt) : undefined));
   const saveBank = useApp((s) => s.saveBank);
   const deleteBank = useApp((s) => s.deleteBank);
 
   const [bankName, setBankName] = useState(bank?.bankName || bank?.label || "");
   const [accountNumber, setAccountNumber] = useState(bank?.accountNumber ?? "");
+  const [holderName, setHolderName] = useState(bank?.holderName ?? "");
+  /* local owner — "Choose from contacts" can link the account to a person */
+  const [owner, setOwner] = useState<OwnerId>(ownerId);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const ownerLabel = useOwnerLabel(owner);
+
+  /* person behind a non-general owner — for the read-only holder row */
+  const ownerContact = useApp((s) =>
+    owner === "general" ? undefined : s.contacts.find((c) => c.id === owner && !c.deletedAt)
+  );
+  const ownerName = owner === "general" ? undefined : displayName(ownerContact);
 
   const save = () => {
     const name = bankName.trim();
     const num = accountNumber.trim();
     if (!name) {
-      toastErr("Bank name is required");
+      toastErr(t("bk.bankNameRequired"));
       return;
     }
     if (!num) {
-      toastErr("Account number is required");
+      toastErr(t("bk.accountNumberRequired"));
       return;
     }
     saveBank({
       id: bankId,
-      ownerId,
+      ownerId: owner,
       /* label stays synced to the bank name so card rendering keeps working */
       label: name,
       bankName: name,
       /* trimmed value: empty string clears (store convention), never undefined */
       accountNumber: num,
+      holderName: holderName.trim() || "",
     });
-    toastOk(bankId ? "Account updated" : "Account saved");
+    toastOk(bankId ? t("bk.accountUpdated") : t("bk.accountSaved"));
     ui.pop();
   };
 
   const remove = async () => {
     if (!bankId) return;
     const ok = await confirm({
-      title: "Delete account?",
-      message: `“${bank?.bankName || bank?.label || ""}” will be moved to Trash — you can undo right after.`,
+      title: t("bk.deleteTitle"),
+      message: t("bk.deleteMsg", { name: bank?.bankName || bank?.label || "" }),
       confirmLabel: t("act.delete"),
       tone: "danger",
     });
@@ -616,7 +632,7 @@ export function BankEdit({ bankId, ownerId }: { bankId?: ID; ownerId: ID | "gene
 
   return (
     <Sheet
-      title={bankId ? "Edit account" : "New bank account"}
+      title={bankId ? t("bk.editAccount") : t("bk.newAccount")}
       subtitle={ownerLabel}
       onBack={ui.pop}
       footer={
@@ -634,27 +650,77 @@ export function BankEdit({ bankId, ownerId }: { bankId?: ID; ownerId: ID | "gene
       }
     >
       <div className="space-y-4 p-4 pb-10">
-        <Field label="Bank name" hint="e.g. Commercial Bank">
+        <Field label={t("bk.bankName")}>
           <input
             className={inputCls}
             value={bankName}
             onChange={(e) => setBankName(e.target.value)}
-            placeholder="Commercial Bank"
+            placeholder={t("bk.bankPlaceholder")}
             autoFocus={!bankId}
-            aria-label="Bank name"
+            aria-label={t("bk.bankName")}
           />
         </Field>
 
-        <Field label="Account number" hint="Shown masked in lists — reveal to copy the full number">
+        <Field label={t("bk.accountNumber")} hint={t("bk.maskedHint")}>
           <input
             className={cx(inputCls, "tracking-[1.5px] tabular-nums")}
             value={accountNumber}
             onChange={(e) => setAccountNumber(e.target.value)}
-            placeholder="1000 2345 6789"
+            placeholder={t("bk.numberPlaceholder")}
             inputMode="numeric"
-            aria-label="Account number"
+            aria-label={t("bk.accountNumber")}
           />
         </Field>
+
+        <Field label={t("bk.holderName")} hint={t("bk.holderOptional")}>
+          <input
+            className={inputCls}
+            value={holderName}
+            onChange={(e) => setHolderName(e.target.value)}
+            placeholder="Abebe K."
+            aria-label={t("bk.holderName")}
+          />
+        </Field>
+
+        {owner === "general" ? (
+          /* General account → offer linking a contact as the holder */
+          <div>
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              aria-label={t("bk.chooseFromContacts")}
+              className="flex h-11 w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-line2 bg-surface2/60 text-[12px] font-semibold text-brand transition active:scale-[0.98]"
+            >
+              <UserRound size={15} /> {t("bk.chooseFromContacts")}
+            </button>
+            <ContactPicker
+              open={pickerOpen}
+              onClose={() => setPickerOpen(false)}
+              allowGeneral={false}
+              title={t("bk.chooseFromContacts")}
+              onPick={(contactId, contactName) => {
+                /* fill the holder field AND move the account under the person */
+                setOwner(contactId);
+                if (contactName) setHolderName(contactName);
+                setPickerOpen(false);
+              }}
+            />
+          </div>
+        ) : (
+          /* person's account → read-only holder hint */
+          <div className="flex items-center gap-2.5 rounded-2xl border border-line bg-surface px-3.5 py-2.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-brandsoft text-brand">
+              <UserRound size={15} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-bold uppercase tracking-[1.4px] text-mute">{t("bk.holder")}</p>
+              <p className="truncate text-[13px] font-semibold text-ink">{ownerName ?? "—"}</p>
+            </div>
+            <span className="shrink-0 rounded-full bg-brandsoft px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-brand">
+              {t("nt.savedUnder")} · {ownerName ?? "—"}
+            </span>
+          </div>
+        )}
       </div>
     </Sheet>
   );

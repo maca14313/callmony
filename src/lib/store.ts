@@ -135,6 +135,8 @@ interface AppState {
 
   /* settings + data */
   updateSettings: (patch: Partial<Settings>) => void;
+  addCustomCategory: (label: string) => void;
+  removeCustomCategory: (label: string) => void;
   importContacts: (list: Partial<Contact>[], mode: "skip" | "merge") => { added: number; merged: number; skipped: number };
   wipeAll: () => Promise<void>;
 }
@@ -145,6 +147,8 @@ const DEFAULT_SETTINGS: Settings = {
   countryCode: "ET",
   autolockMin: 1,
   hideBalances: false,
+  callMode: "dialer",
+  customCategories: [],
   notifAsked: false,
   blockedNumbers: [],
 };
@@ -460,6 +464,7 @@ export const useApp = create<AppState>((set, get) => {
         date: input.date ?? existing?.date ?? todayStr(),
         dueDate: input.dueDate ?? existing?.dueDate,
         category: input.category ?? existing?.category,
+        kind: input.kind ?? existing?.kind,
         method: input.method ?? existing?.method,
         note: input.note ?? existing?.note,
         listId: input.listId ?? existing?.listId,
@@ -1122,6 +1127,19 @@ export const useApp = create<AppState>((set, get) => {
       const next = { ...get().settings, ...patch };
       set({ settings: next });
       persistSettings(next);
+    },
+
+    addCustomCategory: (label: string) => {
+      const name = label.trim();
+      if (!name) return;
+      const cur = get().settings.customCategories ?? [];
+      if (cur.some((c) => c.toLowerCase() === name.toLowerCase())) return;
+      get().updateSettings({ customCategories: [...cur, name] });
+    },
+
+    removeCustomCategory: (label: string) => {
+      const cur = get().settings.customCategories ?? [];
+      get().updateSettings({ customCategories: cur.filter((c) => c !== label) });
     },
 
     importContacts: (list, mode) => {

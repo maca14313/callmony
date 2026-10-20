@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { useUI } from "@/lib/ui-store";
-import { useT } from "@/lib/i18n";
+import { useT, t } from "@/lib/i18n";
 import { ownerFullBalance, r2 } from "@/lib/calc";
 import { toVCard } from "@/lib/exporters";
 import {
@@ -54,7 +54,6 @@ import {
   EmptyState,
   IconButton,
   Money,
-  SearchInput,
   SectionLabel,
   cx,
 } from "../kit/primitives";
@@ -71,13 +70,13 @@ import { toastErr, toastOk, toastUndoLast } from "../kit/toast";
 /** Share a contact as a vCard — Web Share when available, copy / download otherwise. */
 async function shareVCard(c: Contact) {
   const vcf = toVCard([c], true);
-  const res = await shareText(`Contact · ${displayName(c)}`, vcf);
+  const res = await shareText(`${t("misc.contact")} · ${displayName(c)}`, vcf);
   if (res === "copied") {
     await copyText(vcf);
-    toastOk("vCard copied to clipboard");
+    toastOk(t("cd.vcardCopied"));
   } else if (res === "failed") {
     downloadBlob(new Blob([vcf], { type: "text/vcard" }), `${displayName(c)}.vcf`);
-    toastOk("vCard downloaded");
+    toastOk(t("cd.vcardDownloaded"));
   }
 }
 
@@ -148,6 +147,7 @@ function ViewHeader({
 type FilterKey = "all" | "owe-me" | "i-owe" | "settled" | "favorites";
 type SortKey = "name" | "balance" | "recent";
 
+/* Sort labels — "A–Z" / "Recent" have no catalog key yet (MISSING: cd.sortAZ, cd.sortRecent). */
 const SORT_LABEL: Record<SortKey, string> = { name: "A–Z", balance: "Balance", recent: "Recent" };
 
 function ContactRow({
@@ -175,6 +175,7 @@ function ContactRow({
 }) {
   const t = useT();
   const phone = primaryPhone(contact);
+  /* "Telegram only" / "No phone number" have no catalog key yet (MISSING: cd.telegramOnly, cd.noPhoneNumber). */
   const sub = phone
     ? prettyPhone(phone)
     : contact.socials.some((s) => s.app === "telegram")
@@ -186,7 +187,7 @@ function ContactRow({
     {
       key: "fav",
       icon: <Star size={18} fill={contact.favorite ? "currentColor" : "none"} />,
-      label: contact.favorite ? "Unfavorite" : "Favorite",
+      label: contact.favorite ? t("cd.removeFavorite") : t("cd.addFavorite"),
       className: "bg-brandink",
       onClick: onFavorite,
     },
@@ -200,7 +201,7 @@ function ContactRow({
       onClick: onWhatsApp,
     },
     { key: "sms", icon: <MessageSquare size={18} />, label: t("act.message"), className: "bg-brandink", onClick: onMessage },
-    { key: "del", icon: <Trash2 size={18} />, label: "Delete contact", className: "bg-neg", onClick: onDelete },
+    { key: "del", icon: <Trash2 size={18} />, label: t("cd.deleteContact"), className: "bg-neg", onClick: onDelete },
   ];
 
   return (
@@ -211,7 +212,7 @@ function ContactRow({
           <div className="flex items-center gap-1.5">
             <p className="truncate text-[13px] font-semibold text-ink">{displayName(contact)}</p>
             {contact.favorite && (
-              <Star size={11} className="shrink-0 text-brand" fill="currentColor" aria-label="Favorite" />
+              <Star size={11} className="shrink-0 text-brand" fill="currentColor" aria-label={t("cd.favorites")} />
             )}
             {blocked && (
               <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-negsoft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-neg">
@@ -236,7 +237,6 @@ export function ContactsView() {
   const confirm = useConfirm();
   const t = useT();
   const { act } = useContactActions();
-  const [q, setQ] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sort, setSort] = useState<SortKey>("name");
   const [menuFor, setMenuFor] = useState<Contact | null>(null);
@@ -279,33 +279,16 @@ export function ContactsView() {
   const blockedSet = useMemo(() => new Set(app.settings.blockedNumbers), [app.settings.blockedNumbers]);
   const isBlocked = (c: Contact) => c.phones.some((p) => blockedSet.has(normalizePhone(p.number, cc)));
 
+  /* Search now lives only in the global SearchOverlay (header icon) — the
+     chip filters stay here; no per-view query state anymore. */
   const filtered = useMemo(() => {
-    const query = q.toLowerCase().trim();
-    const digits = query.replace(/[^\d]/g, "");
     const list = contacts.filter((c) => {
       const b = balances.get(c.id) ?? 0;
       if (filter === "owe-me" && b <= 0.005) return false;
       if (filter === "i-owe" && b >= -0.005) return false;
       if (filter === "settled" && Math.abs(b) > 0.005) return false;
       if (filter === "favorites" && !c.favorite) return false;
-      if (!query) return true;
-      const hay = [
-        displayName(c),
-        c.nickname || "",
-        c.company || "",
-        c.jobTitle || "",
-        c.note || "",
-        c.pinnedNote || "",
-        ...c.tags,
-        ...c.phones.map((p) => p.number),
-        ...c.emails.map((e) => e.address),
-        ...c.socials.map((s) => s.handle),
-      ]
-        .join(" ")
-        .toLowerCase();
-      const numberHit =
-        digits.length >= 2 && c.phones.some((p) => p.number.replace(/\D/g, "").includes(digits));
-      return hay.includes(query) || numberHit;
+      return true;
     });
     return [...list].sort((a, b) => {
       if (sort === "balance")
@@ -317,7 +300,7 @@ export function ContactsView() {
         );
       return displayName(a).localeCompare(displayName(b));
     });
-  }, [contacts, q, filter, sort, balances, lastActivity]);
+  }, [contacts, filter, sort, balances, lastActivity]);
 
   const groups = useMemo(() => {
     if (sort !== "name") return [{ letter: "", items: filtered }];
@@ -339,9 +322,9 @@ export function ContactsView() {
   const message = (c: Contact) => act(c, "sms");
   const remove = async (c: Contact) => {
     const ok = await confirm({
-      title: "Delete contact?",
-      message: `“${displayName(c)}” will move to Trash. You can undo right after, and ledger history stays safe.`,
-      confirmLabel: "Delete",
+      title: t("cd.deleteTitle"),
+      message: t("cd.deleteMsg", { name: displayName(c) }),
+      confirmLabel: t("act.delete"),
       tone: "danger",
     });
     if (!ok) return;
@@ -351,7 +334,7 @@ export function ContactsView() {
   const toggleBlock = (c: Contact) => {
     const nums = c.phones.map((p) => normalizePhone(p.number, cc));
     if (!nums.length) {
-      toastErr("No number to block");
+      toastErr(t("cd.noNumberToBlock"));
       return;
     }
     const blocked = nums.every((n) => blockedSet.has(n));
@@ -360,6 +343,7 @@ export function ContactsView() {
       : [...new Set([...app.settings.blockedNumbers, ...nums])];
     app.updateSettings({ blockedNumbers: next });
     setMenuFor(null);
+    /* MISSING keys: cd.numberUnblocked / cd.numberBlocked */
     toastOk(blocked ? "Number unblocked" : "Number blocked");
   };
   const cycleSort = () =>
@@ -371,27 +355,25 @@ export function ContactsView() {
 
   return (
     <div className="tab-content">
-      <ViewHeader title={t("nav.contacts")} subtitle="The people who matter." />
-
-      <SearchInput value={q} onChange={setQ} placeholder="Search name, number, notes…" />
+      <ViewHeader title={t("nav.contacts")} subtitle={t("hdr.contacts")} />
 
       {/* summary strip — only when balances exist */}
       {(toReceive > 0.005 || toPay < -0.005) && (
         <div className="mt-3 grid grid-cols-3 gap-2">
           <div className="rounded-2xl border border-line bg-surface p-3 shadow-key">
-            <p className="text-[9px] font-bold uppercase tracking-[1.5px] text-mute">To receive</p>
+            <p className="text-[9px] font-bold uppercase tracking-[1.5px] text-mute">{t("cd.toReceive")}</p>
             <p className="mt-1 text-[13px] font-bold text-pos">
               <Money value={toReceive} signed />
             </p>
           </div>
           <div className="rounded-2xl border border-line bg-surface p-3 shadow-key">
-            <p className="text-[9px] font-bold uppercase tracking-[1.5px] text-mute">To pay</p>
+            <p className="text-[9px] font-bold uppercase tracking-[1.5px] text-mute">{t("cd.toPay")}</p>
             <p className="mt-1 text-[13px] font-bold text-neg">
               <Money value={toPay} signed />
             </p>
           </div>
           <div className="rounded-2xl border border-line bg-surface p-3 shadow-key">
-            <p className="text-[9px] font-bold uppercase tracking-[1.5px] text-mute">Net</p>
+            <p className="text-[9px] font-bold uppercase tracking-[1.5px] text-mute">{t("lg.net")}</p>
             <p
               className={cx(
                 "mt-1 text-[13px] font-bold",
@@ -407,16 +389,16 @@ export function ContactsView() {
       {/* filter chips */}
       <div className="app-scroll -mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1">
         <Chip className="py-2" active={filter === "all"} onClick={() => setFilter("all")}>
-          All
+          {t("act.all")}
         </Chip>
         <Chip className="py-2" active={filter === "owe-me"} onClick={() => setFilter("owe-me")}>
-          They owe me
+          {t("cd.theyOweYou")}
         </Chip>
         <Chip className="py-2" active={filter === "i-owe"} onClick={() => setFilter("i-owe")}>
-          I owe them
+          {t("cd.youOweThem")}
         </Chip>
         <Chip className="py-2" active={filter === "settled"} onClick={() => setFilter("settled")}>
-          Settled
+          {t("cd.settledUp")}
         </Chip>
         <Chip className="py-2" active={filter === "favorites"} onClick={() => setFilter("favorites")}>
           {t("cd.favorites")}
@@ -431,6 +413,7 @@ export function ContactsView() {
                 type="button"
                 onClick={cycleSort}
                 className="flex h-11 items-center gap-1.5 rounded-full border border-line2 bg-surface px-3.5 text-[10px] font-bold uppercase tracking-[1.2px] text-mute shadow-key transition active:scale-95"
+                /* MISSING key: cd.sortBy ("Sort by {label} — tap to change") */
                 aria-label={`Sort by ${SORT_LABEL[sort]} — tap to change`}
               >
                 <ArrowDownUp size={13} className="text-brand" />
@@ -440,13 +423,14 @@ export function ContactsView() {
                 type="button"
                 onClick={() => ui.open({ type: "contactEdit" })}
                 className="flex h-11 items-center gap-1 rounded-full bg-brandsoft px-3.5 text-[11px] font-bold text-brand transition active:scale-95"
-                aria-label="Add new contact"
+                aria-label={t("act.newContact")}
               >
-                <Plus size={14} /> Add new
+                <Plus size={14} /> {t("act.newContact")}
               </button>
             </div>
           }
         >
+          {/* MISSING keys: cd.contactsCount ("{n} contacts"), cd.oneContact ("1 contact"), cd.xOfY ("{a} of {b}") */}
           {filtered.length === contacts.length
             ? `${contacts.length} contact${contacts.length === 1 ? "" : "s"}`
             : `${filtered.length} of ${contacts.length}`}
@@ -455,10 +439,11 @@ export function ContactsView() {
         {filtered.length === 0 ? (
           <EmptyState
             icon={<Users size={22} />}
-            title={q || filter !== "all" ? "No matching contacts" : "No contacts yet"}
+            /* MISSING keys: cd.noMatchingContacts, cd.noContactsYet, cd.tryAnotherFilter, cd.noContactsHint */
+            title={filter !== "all" ? "No matching contacts" : "No contacts yet"}
             hint={
-              q || filter !== "all"
-                ? "Try a different search or filter."
+              filter !== "all"
+                ? "Try a different filter."
                 : "Add the people you call and settle with most."
             }
             action={
@@ -513,6 +498,7 @@ export function ContactsView() {
             <ActionRow
               icon={<Phone size={17} />}
               title={t("act.call")}
+              /* MISSING key: cd.noPhoneNumber ("No phone number") */
               sub={menuPhone ? prettyPhone(menuPhone, cc) : "No phone number"}
               onClick={() => {
                 setMenuFor(null);
@@ -557,7 +543,7 @@ export function ContactsView() {
             />
             <ActionRow
               icon={<Star size={17} fill={menu.favorite ? "currentColor" : "none"} />}
-              title={menu.favorite ? "Remove from favorites" : "Add to favorites"}
+              title={menu.favorite ? t("cd.removeFavorite") : t("cd.addFavorite")}
               onClick={() => {
                 app.toggleFavorite(menu.id);
                 setMenuFor(null);
@@ -566,7 +552,7 @@ export function ContactsView() {
             />
             <ActionRow
               icon={<Share2 size={17} />}
-              title="Share vCard"
+              title={t("cd.shareVcard")}
               onClick={() => {
                 setMenuFor(null);
                 void shareVCard(menu);
@@ -574,12 +560,14 @@ export function ContactsView() {
             />
             <ActionRow
               icon={<Ban size={17} />}
+              /* MISSING keys: cd.unblockNumber ("Unblock number") / cd.blockNumber ("Block number") */
               title={isBlocked(menu) ? "Unblock number" : "Block number"}
               onClick={() => toggleBlock(menu)}
             />
             <ActionRow
               icon={<Trash2 size={17} />}
-              title="Delete contact"
+              /* MISSING key: cd.deleteContact ("Delete contact") */
+              title={t("cd.deleteContact")}
               danger
               onClick={() => {
                 setMenuFor(null);
@@ -616,6 +604,7 @@ function RecentRow({
   onOpen: () => void;
   onRedial: () => void;
 }) {
+  const t = useT();
   const name = contact ? displayName(contact) : prettyPhone(call.phone);
   const dir = DIR_META[call.direction];
   return (
@@ -624,7 +613,7 @@ function RecentRow({
         type="button"
         onClick={onOpen}
         className="flex min-w-0 flex-1 items-center gap-3 text-left"
-        aria-label={`Open ${name}`}
+        aria-label={`${t("act.open")} ${name}`}
       >
         {contact ? <Avatar contact={contact} size="md" /> : <Avatar name="?" size="md" />}
         <span className="min-w-0 flex-1">
@@ -650,7 +639,7 @@ function RecentRow({
       </button>
       <div className="flex shrink-0 flex-col items-end gap-1">
         <span className="text-[10px] font-medium text-mute">{ft(call.at)}</span>
-        <IconButton label={`Call ${name}`} variant="surface" className="h-9 w-9" onClick={onRedial}>
+        <IconButton label={`${t("act.call")} ${name}`} variant="surface" className="h-9 w-9" onClick={onRedial}>
           <Phone size={15} />
         </IconButton>
       </div>
@@ -663,7 +652,6 @@ export function RecentsView() {
   const ui = useUI();
   const confirm = useConfirm();
   const t = useT();
-  const [q, setQ] = useState("");
   const [dir, setDir] = useState<RecentFilter>("all");
   const [menuOpen, setMenuOpen] = useState(false);
   const [unknownFor, setUnknownFor] = useState<CallLog | null>(null);
@@ -688,16 +676,10 @@ export function RecentsView() {
 
   const recents = useMemo(() => [...app.recents].sort((a, b) => b.at - a.at), [app.recents]);
 
+  /* Search now lives only in the global SearchOverlay (header icon) — only the
+     direction chip filter is applied here. */
   const groups = useMemo(() => {
-    const query = q.toLowerCase().trim();
-    const digits = query.replace(/[^\d]/g, "");
-    const list = recents.filter((r) => {
-      if (dir !== "all" && r.direction !== dir) return false;
-      if (!query) return true;
-      const c = contactFor(r);
-      const hay = `${c ? displayName(c) : ""} ${r.phone}`.toLowerCase();
-      return hay.includes(query) || (digits.length >= 2 && r.phone.replace(/\D/g, "").includes(digits));
-    });
+    const list = recents.filter((r) => dir === "all" || r.direction === dir);
     const out: { label: string; items: CallLog[] }[] = [];
     list.forEach((r) => {
       const label = dayGroup(r.at);
@@ -706,7 +688,7 @@ export function RecentsView() {
       else out.push({ label, items: [r] });
     });
     return out;
-  }, [recents, q, dir, contactFor]);
+  }, [recents, dir]);
 
   const missedCount = useMemo(() => recents.filter((r) => r.direction === "missed").length, [recents]);
 
@@ -721,10 +703,10 @@ export function RecentsView() {
     <div className="tab-content">
       <ViewHeader
         title={t("nav.recents")}
-        subtitle="Your conversations at a glance."
+        subtitle={t("hdr.recents")}
         action={
           <IconButton
-            label="Call history options"
+            label={t("cd.callHistoryOptions")}
             className="mt-1"
             onClick={() => setMenuOpen(true)}
           >
@@ -744,7 +726,7 @@ export function RecentsView() {
                 type="button"
                 onClick={() => ui.open({ type: "contact", contactId: c.id })}
                 className="flex w-[64px] shrink-0 flex-col items-center gap-1.5"
-                aria-label={`Open ${displayName(c)}`}
+                aria-label={`${t("act.open")} ${displayName(c)}`}
               >
                 <Avatar contact={c} size="md" className="rounded-full shadow-key" />
                 <span className="w-full truncate text-center text-[10px] font-medium text-mute">
@@ -756,12 +738,11 @@ export function RecentsView() {
         </section>
       )}
 
-      <SearchInput value={q} onChange={setQ} placeholder="Search calls…" />
-
       <div className="app-scroll -mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1">
         <Chip className="py-2" active={dir === "all"} onClick={() => setDir("all")}>
-          All
+          {t("act.all")}
         </Chip>
+        {/* MISSING keys: cd.missed ("Missed"), cd.incoming ("Incoming"), cd.outgoing ("Outgoing") */}
         <Chip className="py-2" active={dir === "missed"} onClick={() => setDir("missed")}>
           Missed{missedCount > 0 ? ` · ${missedCount}` : ""}
         </Chip>
@@ -777,11 +758,13 @@ export function RecentsView() {
         {groups.length === 0 ? (
           <EmptyState
             icon={<PhoneMissed size={22} />}
+            /* MISSING keys: cd.noCallsYet ("No calls yet"), cd.noMatchingCalls ("No matching calls"),
+               cd.noCallsHint ("Calls you make from callmony will appear here."), cd.tryAnotherFilter */
             title={recents.length === 0 ? "No calls yet" : "No matching calls"}
             hint={
               recents.length === 0
                 ? "Calls you make from callmony will appear here."
-                : "Try a different search or filter."
+                : "Try a different filter."
             }
           />
         ) : (
@@ -811,12 +794,12 @@ export function RecentsView() {
       </div>
 
       {/* history options */}
-      <BottomSheet open={menuOpen} onClose={() => setMenuOpen(false)} title="Call history">
+      <BottomSheet open={menuOpen} onClose={() => setMenuOpen(false)} title={t("cd.callHistory")}>
         <div className="space-y-0.5 pb-2">
           <ActionRow
             icon={<PhoneIncoming size={17} />}
-            title="Simulate incoming call"
-            sub="See how an incoming call feels"
+            title={t("cd.simulateIncoming")}
+            sub={t("cd.seeIncoming")}
             onClick={() => {
               setMenuOpen(false);
               ui.open({ type: "call", phone: "+251 900 000 000", direction: "incoming" });
@@ -824,10 +807,13 @@ export function RecentsView() {
           />
           <ActionRow
             icon={<Trash2 size={17} />}
-            title="Clear call history"
+            title={t("cd.clearHistory")}
             danger
             onClick={async () => {
               setMenuOpen(false);
+              /* MISSING keys: cd.clearHistoryConfirm ("Clear call history?"),
+                 cd.clearHistoryMsg ("All recent calls will be removed. This cannot be undone."),
+                 cd.clearAll ("Clear all") */
               const ok = await confirm({
                 title: "Clear call history?",
                 message: "All recent calls will be removed. This cannot be undone.",
@@ -836,7 +822,7 @@ export function RecentsView() {
               });
               if (!ok) return;
               app.clearRecents();
-              toastOk("Call history cleared");
+              toastOk(t("cd.historyCleared"));
             }}
           />
         </div>
@@ -869,27 +855,32 @@ export function RecentsView() {
             />
             <ActionRow
               icon={<Copy size={17} />}
-              title="Copy number"
+              title={t("cd.copyNumber")}
               onClick={() => {
-                void copyText(unknown.phone).then((ok) => toastOk(ok ? "Number copied" : "Couldn't copy"));
+                /* MISSING key: cd.numberCopied ("Number copied") */
+                void copyText(unknown.phone).then((ok) =>
+                  toastOk(ok ? "Number copied" : t("act.couldntCopy"))
+                );
                 setUnknownFor(null);
               }}
             />
             <ActionRow
               icon={<Trash2 size={17} />}
-              title="Delete this log entry"
+              title={t("cd.deleteLog")}
               danger
               onClick={async () => {
+                /* MISSING keys: cd.deleteLogConfirm ("Delete log entry?"),
+                   cd.deleteLogMsg ("This single call record will be removed.") */
                 const ok = await confirm({
                   title: "Delete log entry?",
                   message: "This single call record will be removed.",
-                  confirmLabel: "Delete",
+                  confirmLabel: t("act.delete"),
                   tone: "danger",
                 });
                 if (!ok) return;
                 app.deleteRecent(unknown.id);
                 setUnknownFor(null);
-                toastOk("Call log entry deleted");
+                toastOk(t("cd.logDeleted"));
               }}
             />
           </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { ID, LinkRef, Reminder } from "./types";
+import type { ID, EntryKind, LinkRef, Reminder } from "./types";
 
 export type Tab = "contacts" | "recents" | "general" | "reminders" | "trash";
 
@@ -13,7 +13,7 @@ export type Overlay =
   | { type: "contactEdit"; contactId?: ID; prefillPhone?: string; prefillName?: string }
   | { type: "list"; listId: ID }
   | { type: "listEdit"; listId?: ID; ownerId: ID | "general"; kind?: "calculating" | "simple" | "checklist" | "todo" }
-  | { type: "entryEdit"; entryId?: ID; ownerId: ID | "general"; entryType?: "credit" | "debit" }
+  | { type: "entryEdit"; entryId?: ID; ownerId: ID | "general"; entryType?: "credit" | "debit"; kind?: EntryKind }
   | { type: "noteEdit"; noteId?: ID; ownerId: ID | "general"; linkTo?: LinkRef }
   | { type: "reminderEdit"; reminderId?: ID; ownerId: ID | "general"; prefill?: Partial<Reminder> }
   | { type: "bankEdit"; bankId?: ID; ownerId: ID | "general" }
@@ -76,7 +76,11 @@ export const useUI = create<UIState>((set, get) => ({
   setTab: (t) => set({ tab: t, moreOpen: false }),
   open: (o) => set((s) => ({ overlayStack: [...s.overlayStack, o], moreOpen: false })),
   pop: () => set((s) => ({ overlayStack: s.overlayStack.slice(0, -1) })),
-  closeAll: () => set({ overlayStack: [], calculatorPickHandler: null }),
+  /* closeAll also dismisses the keypad half-modal, the More sheet and the
+     action picker — otherwise tapping the bottom nav while the keypad is
+     open looks like "nothing happens" (the view switched behind the scrim). */
+  closeAll: () =>
+    set({ overlayStack: [], calculatorPickHandler: null, keypadOpen: false, moreOpen: false, actionPicker: null }),
   closeType: (type) =>
     set((s) => ({ overlayStack: s.overlayStack.filter((o) => o.type !== type) })),
   setMoreOpen: (v) => set({ moreOpen: v }),
