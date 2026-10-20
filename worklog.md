@@ -326,3 +326,17 @@ Work Log:
 
 Stage Summary:
 - All 12 user requirements browser-verified working, including two real calculator bugs fixed at the root (stale-closure digit loss + use-value destroying the opening sheet). App is fully functional on phone viewport; lint/tsc clean.
+
+---
+Task ID: 7
+Agent: main (Z.ai Code)
+Task: Finalization — admin console groups-safety, v1.1.0 tar builds, git commit + push.
+
+Work Log:
+- admin/index.html exportCleaned hardened for the new data model: `d.groups = d.groups || []` + groups added to keptIds/live-filter; entries' groupId cleaned when its group was trashed; entry.refs / payment.refs / group.refs / list.refs filtered by a fixed `valid()` that keeps "item"/"link" refs and the "general" contact owner (previously those would have been wrongly dropped).
+- Built builds/callmony-client-v1.1.0.tar (129 entries: src, public, scripts, configs, worklog) + builds/callmony-admin-v1.1.0.tar; SHA256SUMS.txt regenerated for all four tars (v1.0.0 + v1.1.0).
+- Git: staged all changes (new kits ActionPicker/EntityLinks/KeypadSheet, i18n, App shell, all view/section/overlay updates, deleted KeypadView, builds) → commit e4cdf1b "callmony v1.1.0 — …" → pushed to https://github.com/maca14313/callmony.git main (912e203..e4cdf1b).
+- Final state: `bunx tsc --noEmit` 0 errors in src/, `bun run lint` 0 problems, GET / 200, no console/page errors.
+
+Stage Summary:
+- v1.1.0 shipped: all 12 user requirements implemented and browser-verified; source + client/admin .tar builds + checksums on GitHub.
