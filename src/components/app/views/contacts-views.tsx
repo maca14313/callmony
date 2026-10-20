@@ -147,8 +147,7 @@ function ViewHeader({
 type FilterKey = "all" | "owe-me" | "i-owe" | "settled" | "favorites";
 type SortKey = "name" | "balance" | "recent";
 
-/* Sort labels — "A–Z" / "Recent" have no catalog key yet (MISSING: cd.sortAZ, cd.sortRecent). */
-const SORT_LABEL: Record<SortKey, string> = { name: "A–Z", balance: "Balance", recent: "Recent" };
+/* Sort labels — localized via cd.sortAZ / cd.sortBalance / cd.sortRecent. */
 
 function ContactRow({
   contact,
@@ -175,12 +174,11 @@ function ContactRow({
 }) {
   const t = useT();
   const phone = primaryPhone(contact);
-  /* "Telegram only" / "No phone number" have no catalog key yet (MISSING: cd.telegramOnly, cd.noPhoneNumber). */
   const sub = phone
     ? prettyPhone(phone)
     : contact.socials.some((s) => s.app === "telegram")
-      ? "Telegram only"
-      : contact.emails[0]?.address || "No phone number";
+      ? t("cd.telegramOnly")
+      : contact.emails[0]?.address || t("cd.noPhoneNumber");
 
   const left: SwipeAction[] = [
     { key: "call", icon: <Phone size={18} />, label: t("act.call"), className: "bg-brand", onClick: onCall },
@@ -216,7 +214,7 @@ function ContactRow({
             )}
             {blocked && (
               <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-negsoft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-neg">
-                <Ban size={9} /> blocked
+                <Ban size={9} /> {t("cd.blocked")}
               </span>
             )}
           </div>
@@ -343,11 +341,13 @@ export function ContactsView() {
       : [...new Set([...app.settings.blockedNumbers, ...nums])];
     app.updateSettings({ blockedNumbers: next });
     setMenuFor(null);
-    /* MISSING keys: cd.numberUnblocked / cd.numberBlocked */
-    toastOk(blocked ? "Number unblocked" : "Number blocked");
+    toastOk(blocked ? t("cd.numberUnblocked") : t("cd.numberBlocked"));
   };
   const cycleSort = () =>
     setSort((s) => (s === "name" ? "balance" : s === "balance" ? "recent" : "name"));
+  const sortLabel = t(
+    sort === "name" ? "cd.sortAZ" : sort === "balance" ? "cd.sortBalance" : "cd.sortRecent"
+  );
 
   const menu = menuFor;
   const menuPhone = menu ? primaryPhone(menu) : undefined;
@@ -413,11 +413,10 @@ export function ContactsView() {
                 type="button"
                 onClick={cycleSort}
                 className="flex h-11 items-center gap-1.5 rounded-full border border-line2 bg-surface px-3.5 text-[10px] font-bold uppercase tracking-[1.2px] text-mute shadow-key transition active:scale-95"
-                /* MISSING key: cd.sortBy ("Sort by {label} — tap to change") */
-                aria-label={`Sort by ${SORT_LABEL[sort]} — tap to change`}
+                aria-label={t("cd.sortBy", { label: sortLabel })}
               >
                 <ArrowDownUp size={13} className="text-brand" />
-                {SORT_LABEL[sort]}
+                {sortLabel}
               </button>
               <button
                 type="button"
@@ -430,21 +429,21 @@ export function ContactsView() {
             </div>
           }
         >
-          {/* MISSING keys: cd.contactsCount ("{n} contacts"), cd.oneContact ("1 contact"), cd.xOfY ("{a} of {b}") */}
           {filtered.length === contacts.length
-            ? `${contacts.length} contact${contacts.length === 1 ? "" : "s"}`
-            : `${filtered.length} of ${contacts.length}`}
+            ? contacts.length === 1
+              ? t("cd.oneContact")
+              : t("cd.contactsCount", { n: contacts.length })
+            : t("cd.xOfY", { a: filtered.length, b: contacts.length })}
         </SectionLabel>
 
         {filtered.length === 0 ? (
           <EmptyState
             icon={<Users size={22} />}
-            /* MISSING keys: cd.noMatchingContacts, cd.noContactsYet, cd.tryAnotherFilter, cd.noContactsHint */
-            title={filter !== "all" ? "No matching contacts" : "No contacts yet"}
+            title={filter !== "all" ? t("cd.noMatchingContacts") : t("cd.noContactsYet")}
             hint={
               filter !== "all"
-                ? "Try a different filter."
-                : "Add the people you call and settle with most."
+                ? t("cd.tryAnotherFilter")
+                : t("cd.noContactsHint")
             }
             action={
               contacts.length === 0 ? (
@@ -498,8 +497,7 @@ export function ContactsView() {
             <ActionRow
               icon={<Phone size={17} />}
               title={t("act.call")}
-              /* MISSING key: cd.noPhoneNumber ("No phone number") */
-              sub={menuPhone ? prettyPhone(menuPhone, cc) : "No phone number"}
+              sub={menuPhone ? prettyPhone(menuPhone, cc) : t("cd.noPhoneNumber")}
               onClick={() => {
                 setMenuFor(null);
                 act(menu, "call");
@@ -560,13 +558,11 @@ export function ContactsView() {
             />
             <ActionRow
               icon={<Ban size={17} />}
-              /* MISSING keys: cd.unblockNumber ("Unblock number") / cd.blockNumber ("Block number") */
-              title={isBlocked(menu) ? "Unblock number" : "Block number"}
+              title={isBlocked(menu) ? t("cd.unblockNumber") : t("cd.blockNumber")}
               onClick={() => toggleBlock(menu)}
             />
             <ActionRow
               icon={<Trash2 size={17} />}
-              /* MISSING key: cd.deleteContact ("Delete contact") */
               title={t("cd.deleteContact")}
               danger
               onClick={() => {
@@ -588,9 +584,9 @@ export function ContactsView() {
 type RecentFilter = "all" | "missed" | "incoming" | "outgoing";
 
 const DIR_META: Record<CallLog["direction"], { label: string; icon: React.ReactNode }> = {
-  outgoing: { label: "Outgoing", icon: <ArrowUpRight size={12} className="text-brand" /> },
-  incoming: { label: "Incoming", icon: <ArrowDownLeft size={12} className="text-mute" /> },
-  missed: { label: "Missed", icon: <PhoneMissed size={12} className="text-neg" /> },
+  outgoing: { label: "cd.outgoing", icon: <ArrowUpRight size={12} className="text-brand" /> },
+  incoming: { label: "cd.incoming", icon: <ArrowDownLeft size={12} className="text-mute" /> },
+  missed: { label: "cd.missed", icon: <PhoneMissed size={12} className="text-neg" /> },
 };
 
 function RecentRow({
@@ -627,7 +623,7 @@ function RecentRow({
           </span>
           <span className="flex items-center gap-1.5 text-[11px] text-mute">
             {dir.icon}
-            <span>{dir.label}</span>
+            <span>{t(dir.label)}</span>
             {call.duration > 0 && (
               <>
                 <span className="text-line2">·</span>
@@ -742,15 +738,15 @@ export function RecentsView() {
         <Chip className="py-2" active={dir === "all"} onClick={() => setDir("all")}>
           {t("act.all")}
         </Chip>
-        {/* MISSING keys: cd.missed ("Missed"), cd.incoming ("Incoming"), cd.outgoing ("Outgoing") */}
         <Chip className="py-2" active={dir === "missed"} onClick={() => setDir("missed")}>
-          Missed{missedCount > 0 ? ` · ${missedCount}` : ""}
+          {t("cd.missed")}
+          {missedCount > 0 ? ` · ${missedCount}` : ""}
         </Chip>
         <Chip className="py-2" active={dir === "incoming"} onClick={() => setDir("incoming")}>
-          Incoming
+          {t("cd.incoming")}
         </Chip>
         <Chip className="py-2" active={dir === "outgoing"} onClick={() => setDir("outgoing")}>
-          Outgoing
+          {t("cd.outgoing")}
         </Chip>
       </div>
 
@@ -758,13 +754,11 @@ export function RecentsView() {
         {groups.length === 0 ? (
           <EmptyState
             icon={<PhoneMissed size={22} />}
-            /* MISSING keys: cd.noCallsYet ("No calls yet"), cd.noMatchingCalls ("No matching calls"),
-               cd.noCallsHint ("Calls you make from callmony will appear here."), cd.tryAnotherFilter */
-            title={recents.length === 0 ? "No calls yet" : "No matching calls"}
+            title={recents.length === 0 ? t("cd.noCallsYet") : t("cd.noMatchingCalls")}
             hint={
               recents.length === 0
-                ? "Calls you make from callmony will appear here."
-                : "Try a different filter."
+                ? t("cd.noCallsHint")
+                : t("cd.tryAnotherFilter")
             }
           />
         ) : (
@@ -811,13 +805,10 @@ export function RecentsView() {
             danger
             onClick={async () => {
               setMenuOpen(false);
-              /* MISSING keys: cd.clearHistoryConfirm ("Clear call history?"),
-                 cd.clearHistoryMsg ("All recent calls will be removed. This cannot be undone."),
-                 cd.clearAll ("Clear all") */
               const ok = await confirm({
-                title: "Clear call history?",
-                message: "All recent calls will be removed. This cannot be undone.",
-                confirmLabel: "Clear all",
+                title: t("cd.clearHistoryConfirm"),
+                message: t("cd.clearHistoryMsg"),
+                confirmLabel: t("cd.clearAll"),
                 tone: "danger",
               });
               if (!ok) return;
@@ -857,9 +848,8 @@ export function RecentsView() {
               icon={<Copy size={17} />}
               title={t("cd.copyNumber")}
               onClick={() => {
-                /* MISSING key: cd.numberCopied ("Number copied") */
                 void copyText(unknown.phone).then((ok) =>
-                  toastOk(ok ? "Number copied" : t("act.couldntCopy"))
+                  toastOk(ok ? t("cd.numberCopied") : t("act.couldntCopy"))
                 );
                 setUnknownFor(null);
               }}
@@ -869,11 +859,9 @@ export function RecentsView() {
               title={t("cd.deleteLog")}
               danger
               onClick={async () => {
-                /* MISSING keys: cd.deleteLogConfirm ("Delete log entry?"),
-                   cd.deleteLogMsg ("This single call record will be removed.") */
                 const ok = await confirm({
-                  title: "Delete log entry?",
-                  message: "This single call record will be removed.",
+                  title: t("cd.deleteLogConfirm"),
+                  message: t("cd.deleteLogMsg"),
                   confirmLabel: t("act.delete"),
                   tone: "danger",
                 });

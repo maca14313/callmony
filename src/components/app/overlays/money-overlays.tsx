@@ -46,17 +46,20 @@ import {
   groupItems,
   itemPaid,
   itemRemaining,
+  itemsCount,
+  itemsTotal,
   lineTotal,
   listTotals,
   r2,
 } from "@/lib/calc";
-import { copyText, displayName, downloadBlob, fd, fdShort, money, todayStr } from "@/lib/utils";
+import { copyText, displayName, downloadBlob, fd, fdShort, money, todayStr, uid } from "@/lib/utils";
 import { openExternal, primaryPhone, waLink } from "@/lib/share";
 import { listShareText, listToPdfBlob } from "@/lib/pdf";
 import {
   ENTRY_CATEGORIES,
   PAYMENT_METHODS,
   type CalcList,
+  type EntryItem,
   type EntryKind,
   type ID,
   type LedgerEntry,
@@ -1961,6 +1964,9 @@ export function EntryEdit({
   const [pickerOpen, setPickerOpen] = useState(false);
   /** attached entities — plain ids, saved together with the entry (no draft-first flow needed) */
   const [draftRefs, setDraftRefs] = useState<LinkRef[]>(existing?.refs ?? []);
+  /** shopping-style line items — while any line exists the amount = Σ qty × price
+      (the manual amount string stays in state so removing all lines restores it) */
+  const [items, setItems] = useState<EntryItem[]>(existing?.items ?? []);
   /** group selection — "" = none (clears on save). New entries pick up the pending group
       parked by the group ⋯ “Add entry” action. */
   const [groupId, setGroupId] = useState<ID | "">(() => {
@@ -2048,8 +2054,34 @@ export function EntryEdit({
     if (category === name) setCategory("");
   };
 
+  /* ---- item lines ------------------------------------------------------ */
+  const hasItems = items.length > 0;
+  const itemsSum = itemsTotal(items);
+
+  const updateItem = (id: ID, patch: Partial<EntryItem>) =>
+    setItems((arr) => arr.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+
+  const removeItem = (id: ID) => setItems((arr) => arr.filter((it) => it.id !== id));
+
+  const addItem = () =>
+    setItems((arr) => [...arr, { id: uid(), name: "", qty: 0, unit: "", price: 0 }]);
+
   const save = () => {
-    const amt = parseNum(amount);
+    /* with item lines: amount = Σ qty × price and every line must be complete;
+       without lines: manual amount, and [] clears the lines on an existing entry
+       (saveEntry keeps undefined as-is) */
+    const savedItems: EntryItem[] = items.map((it) => ({
+      ...it,
+      name: it.name.trim(),
+      qty: r2(+it.qty || 0),
+      unit: it.unit?.trim() || undefined,
+      price: r2(+it.price || 0),
+    }));
+    if (hasItems && savedItems.some((it) => !it.name || !(it.qty > 0) || !(it.price > 0))) {
+      toastErr(t("lg.itemIncomplete"));
+      return;
+    }
+    const amt = hasItems ? itemsTotal(savedItems) : parseNum(amount);
     if (amt <= 0) {
       toastErr(t("lg.amountGreaterThanZero"));
       return;
@@ -2060,6 +2092,7 @@ export function EntryEdit({
       type,
       kind,
       amount: r2(amt),
+      items: savedItems,
       date,
       // "" clears an existing due date (saveEntry keeps undefined as-is)
       dueDate: dueOn && dueDate ? dueDate : "",
@@ -2136,21 +2169,30 @@ export function EntryEdit({
           ))}
         </div>
 
-        {/* big amount */}
+        {/* big amount — read-only Σ of the item lines while any line exists */}
         <div className="rounded-[22px] border border-line bg-surface p-4 shadow-key">
           <Field label={t("lg.amount")}>
             <div className="flex w-full items-center gap-2">
               <input
-                value={amount}
+                value={hasItems ? String(itemsSum) : amount}
                 onChange={(e) => setAmount(e.target.value)}
                 inputMode="decimal"
                 placeholder="0"
                 aria-label={t("lg.entryAmount")}
-                className="w-full rounded-2xl border border-line bg-surface2 px-4 py-3 text-[28px] font-bold tabular-nums tracking-tight text-ink placeholder:text-mute/60 focus:border-brand/50 focus:ring-2 focus:ring-brand/15"
+                disabled={hasItems}
+                className={cx(
+                  "w-full rounded-2xl border border-line bg-surface2 px-4 py-3 text-[28px] font-bold tabular-nums tracking-tight text-ink placeholder:text-mute/60 focus:border-brand/50 focus:ring-2 focus:ring-brand/15",
+                  hasItems && "opacity-70"
+                )}
               />
-              <CalcButton onPick={(v) => setAmount(String(v))} />
+              {!hasItems && <CalcButton onPick={(v) => setAmount(String(v))} />}
             </div>
           </Field>
+          {hasItems && (
+            <p className="mt-2.5 text-[11px] font-semibold text-brand">
+              {t("lg.autoFromItems", { n: itemsCount(items) })}
+            </p>
+          )}
           {existing && existing.payments.length > 0 && (
             <p className="mt-2.5 text-[11px] text-mute">
               {t("lg.paid")} <Money value={paidOf(existing)} /> of <Money value={existing.amount} /> ·{" "}
@@ -2158,6 +2200,85 @@ export function EntryEdit({
             </p>
           )}
         </div>
+
+        {/* items — shopping-style lines (name + qty [+ unit] × unit price) */}
+        <section
+          className="rounded-[22px] border border-line bg-surface p-4 shadow-key"
+          aria-label={t("lg.itemsTitle")}
+        >
+          <p className="text-[10px] font-bold uppercase tracking-[1.5px] text-mute">{t("lg.itemsTitle")}</p>
+          <p className="mt-0.5 text-[10.5px] text-mute">{t("lg.itemsHint")}</p>
+
+          {items.length === 0 ? (
+            <p className="mt-2.5 text-[11px] text-mute">{t("lg.noItemsYet")}</p>
+          ) : (
+            <div className="mt-2.5 space-y-2">
+              {items.map((it) => (
+                <div key={it.id} className="rounded-2xl border border-line bg-surface2/60 p-2.5">
+                  {/* name + remove */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={it.name}
+                      onChange={(e) => updateItem(it.id, { name: e.target.value })}
+                      placeholder={t("lg.itemNamePh")}
+                      aria-label={t("lg.itemName")}
+                      className={cx(inputCls, "py-2 text-[13px] font-semibold")}
+                    />
+                    <IconButton
+                      label={t("lg.removeItem")}
+                      className="h-9 w-9 shrink-0"
+                      onClick={() => removeItem(it.id)}
+                    >
+                      <X size={14} />
+                    </IconButton>
+                  </div>
+                  {/* qty · unit · unit price */}
+                  <div className="mt-2 grid grid-cols-[0.8fr_1fr_1.2fr] gap-2">
+                    <Field label={t("lg.qty")}>
+                      <NumField
+                        value={it.qty}
+                        ariaLabel={t("lg.qty")}
+                        placeholder={t("lg.qtyPh")}
+                        className="px-2.5 text-center"
+                        onCommit={(v) => updateItem(it.id, { qty: r2(v) })}
+                      />
+                    </Field>
+                    <Field label={t("lg.unit")}>
+                      <input
+                        value={it.unit ?? ""}
+                        onChange={(e) => updateItem(it.id, { unit: e.target.value })}
+                        placeholder={t("lg.unitPh")}
+                        aria-label={t("lg.unit")}
+                        className={cx(inputCls, "px-2.5 py-2.5 text-center text-[13px]")}
+                      />
+                    </Field>
+                    <Field label={t("lg.unitPrice")}>
+                      <NumField
+                        value={it.price}
+                        ariaLabel={t("lg.unitPrice")}
+                        className="px-2.5 text-right"
+                        onCommit={(v) => updateItem(it.id, { price: r2(v) })}
+                      />
+                    </Field>
+                  </div>
+                  {/* computed line total */}
+                  <p className="mt-1.5 flex items-baseline justify-end gap-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-[1px] text-mute">
+                      {t("lg.lineTotal")}
+                    </span>
+                    <span className="text-[13px] font-bold tabular-nums text-ink">
+                      <Money value={r2((+it.qty || 0) * (+it.price || 0))} />
+                    </span>
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <Button variant="soft" size="sm" className="mt-2.5 w-full" onClick={addItem}>
+            <Plus size={13} /> {t("lg.addItem")}
+          </Button>
+        </section>
 
         {/* date + method */}
         <div className="grid grid-cols-2 gap-2">

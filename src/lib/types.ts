@@ -80,6 +80,16 @@ export interface Payment {
   createdAt: number;
 }
 
+/** One shopping-style line on a ledger entry — name + qty (+ optional unit) × unit price. */
+export interface EntryItem {
+  id: ID;
+  name: string; // "ball"
+  qty: number; // 3
+  unit?: string; // "pic" / "kg" / "bag" — free text, optional
+  price: number; // unit price 100
+  attachments?: ID[]; // optional per-line files (mirrors ListItem rows)
+}
+
 /**
  * Ledger entry.
  * credit  = "they owe you" (+)  · for General: income
@@ -96,6 +106,8 @@ export interface LedgerEntry {
   type: "credit" | "debit";
   kind?: EntryKind; // income/expense/credit/debit — user's chosen label (both contexts)
   amount: number;
+  /** line items qty×price; amount = Σ qty×price when present */
+  items?: EntryItem[];
   payments: Payment[];
   date: string; // YYYY-MM-DD
   dueDate?: string;

@@ -1,4 +1,4 @@
-import type { CalcList, LedgerEntry, ListItem, Payment, Repeat } from "./types";
+import type { CalcList, EntryItem, LedgerEntry, ListItem, Payment, Repeat } from "./types";
 
 /** Round to 2 decimals — used on every money computation. */
 export const r2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -63,6 +63,14 @@ export const groupTotals = (entries: LedgerEntry[], groupId: string) => {
   const paid = r2(members.reduce((s, e) => s + sumPayments(e.payments), 0));
   return { count: members.length, net, remaining, paid };
 };
+
+/** Σ line totals of an entry's item lines (qty × unit price). */
+export const itemsTotal = (items?: EntryItem[]): number =>
+  r2((items ?? []).reduce((s, it) => s + (+it.qty || 0) * (+it.price || 0), 0));
+
+/** Σ quantities — "8 items" when the lines are 3 + 4 + 1. */
+export const itemsCount = (items?: EntryItem[]): number =>
+  (items ?? []).reduce((s, it) => s + (+it.qty || 0), 0);
 
 /* ---------------- Calculating lists ---------------- */
 

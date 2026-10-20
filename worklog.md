@@ -391,3 +391,193 @@ MISSING KEYS (kept English literals — main agent to add to i18n EN + translati
 Deliberately left untouched: Segmented tabs incl. their Bank tab; incoming-call simulation; demo-mode call flow; KeypadSheet/ActionPicker call-overlay openings; views/*, store/ui-store/types/i18n/App (other agents); money/data overlays.
 
 Verification: bunx tsc --noEmit → 0 errors in src/ (examples/skills pre-existing only); bunx eslint on the 6 owned files → 0 problems 0 warnings; dev.log GET / 200, no compile errors; logic re-read (exactly-once call log via finalizedRef; handoff ref prevents double tel: open incl. StrictMode + early pill tap; presetMonthlyFirst Date-shadowing bug fixed by renaming to `now`).
+
+---
+Task ID: 11-foundation
+Agent: 11-foundation
+Task: Split i18n.ts into per-language modules + add v1.2.0 EN keys
+
+Work Log:
+- Read src/lib/i18n.ts (1549 lines) fully; mapped exact boundaries: header/import/Lang/LANGUAGES/isRTL (1-23), EN 26-982 (~866 keys), AM 985-1115, OM 1118-1248, AR 1251-1381, TI 1384-1514 (118 keys each), runtime 1516-1549 (DICTS/normalizeLang/fill/t/useT/useLang/setLang).
+- Created src/lib/i18n/ with 6 files, extracting bodies with sed for byte-for-byte fidelity:
+  - en.ts — original EN body verbatim (lines 27-981) + ONE appended section `/* ---- v1.2.0 additions ---- */` with 24 new keys (calc.backspace, lg.itemsTitle/itemsHint/addItem/itemName/itemNamePh/qty/qtyPh/unit/unitPh/unitPrice/lineTotal/removeItem/itemIncomplete/itemsCount/total/autoFromItems/noItemsYet, spd.longPressHint/removeFromKey, nt.untitledNote, rm.leadHint/pickDateTime/repeats) → 890 keys total. No existing key reordered/reworded.
+  - am.ts / om.ts / ar.ts / ti.ts — each language body verbatim, exported as `export const AM|OM|AR|TI: Record<string, string>`.
+  - index.ts — original header (use client, callmony banner), imports: `useApp` from "@/lib/store" (original was relative "./store"; index.ts now lives one level deeper, so the absolute alias preserves the same module) + EN/AM/OM/AR/TI from "./en" etc.; then verbatim Lang/LANGUAGES/isRTL + verbatim runtime with DICTS = { en: EN, am: AM, om: OM, ar: AR, ti: TI }. Public API unchanged: Lang (type), LANGUAGES, isRTL, t, useT, useLang, setLang.
+- Deleted src/lib/i18n.ts; grepped project — every importer uses `@/lib/i18n` (15 files: App, kit/ActionPicker|Calculator|EntityLinks|KeypadSheet|LanguageSheet, overlays/contacts|money|data|tools, sections/Bank|Ledger, views/contacts|money|tools) which now resolves to src/lib/i18n/index.ts; no `@/lib/i18n.ts` or relative "./i18n" path imports exist; all imported names ({ useT, t, LANGUAGES, setLang, useLang, Lang }) are exported by the new index.
+- Verified byte-for-byte against git HEAD copy of the old file: EN body, AM/OM/AR/TI bodies, index header (Lang/LANGUAGES/isRTL) and runtime tail (DICTS→setLang) all IDENTICAL — zero translation changes.
+
+Stage Summary:
+- Files created: src/lib/i18n/en.ts (983 lines, 890 keys), am.ts, om.ts, ar.ts, ti.ts (132 lines, 118 keys each), index.ts (63 lines); deleted: src/lib/i18n.ts. Parallel translation agents now own one file each (am.ts/om.ts/ar.ts/ti.ts → target 890/890).
+- Key-parity audit: en total: 890 (866 + 24 new); am/om/ar/ti: 118/890 keys, missing 772 each.
+- Verification: bunx tsc --noEmit → 0 errors from src/ (only pre-existing examples/ + skills/ errors); bunx eslint src/lib/i18n → 0 problems; dev server hot-recompiled (✓ Compiled in 770ms) and GET / 200 confirmed after the swap.
+
+---
+Task ID: 14-pwa-deploy
+Agent: 14-pwa-deploy
+Task: Offline-first SW + cPanel deployment files (PWA behaves as 100% local app; deploy-file round per cPanel/Passenger guide)
+
+Work Log:
+- PART A — offline-first PWA:
+  - public/sw.js reworked (VERSION "1.2.0", cache callmony-v-1.2.0). Kept: best-effort install precache (/, /manifest.json, icons), activate (old-cache delete + clients.claim), SKIP_WAITING message listener, /api/ network-only, immutable SWR for /_next/static|/icons|/manifest.json, other same-origin GETs cache-first + network fallback, putIn safe-cache helper. NEW: navigations are CACHE-FIRST stale-while-revalidate — cached shell (request, else "/") responds IMMEDIATELY (zero network wait offline); a background fetch(req) ALWAYS runs via event.waitUntil and cache.put("/", res.clone()) when OK+basic so the shell self-updates after a deploy (preserves the /api/version → toast → reload flow, no postMessage needed); no-cache first visit → network → inline branded offline HTML fallback ("callmony — offline. Reopen once online to finish installing.", 200 + text/html; charset=utf-8, teal/dark-mode styling).
+  - src/lib/pwa.ts: APP_VERSION "1.2.0"; registerSW now posts {type:"SKIP_WAITING"} to reg.waiting when an update is ready (SW already had the listener) so the toast-reload lands the new SW immediately; checkVersion unchanged; NEW startVersionPolling(onUpdateReady, intervalMs = 6h) — interval + "online" event, returns stop() (exported only, NOT wired into App.tsx — additive for later). useInstallPrompt/requestPersistence/useTick untouched.
+  - src/app/api/version/route.ts: version "1.2.0". public/manifest.json: left as-is (description already covers the offline-first ledger).
+- PART B — cPanel/Passenger deploy files (callmony has NO server DB, so MySQL/migration steps don't apply):
+  - app.js NEW — Passenger entry: require('next') via NODE_PATH with friendly "Run NPM Install" error, appRoot discovery via .next/BUILD_ID (cwd/__dirname/parent), URL-parsed request handler, PORT/HOSTNAME env.
+  - next.config.mjs NEW (plain JS, basePath env, output NOT standalone, compress, reactStrictMode false, ignoreBuildErrors, distDir via NEXT_DIST_DIR) → next.config.ts DELETED; dev server auto-restarted ("Found a change in next.config.mjs. Restarting…") and recovered: ✓ Ready in 431ms, GET / 200.
+  - deploy-package.json NEW — runtime manifest, no devDeps, pinned EXACT INSTALLED versions: next 16.1.3, react 19.2.3, react-dom 19.2.3 (verified from node_modules, not guessed).
+  - .env.example NEW (NODE_ENV=production; BASE_PATH commented). NOTE: .gitignore's `.env*` rule ignores it — file exists on disk (build script copies it fine); main agent may add `!.env.example` to .gitignore if it should be committed.
+  - src/app/api/health/route.ts NEW — ok:true/status/checks{app,storage:local offline-first,version 1.2.0}/timestamp, force-dynamic, no DB ping by design.
+  - scripts/build-and-package.sh NEW + chmod +x (NOT run, per instructions): side-dir build (.next-build via NEXT_DIST_DIR so the running dev server's .next/ is never clobbered), stages app.js/package.json/next.config.mjs/.env.example/public/logs, copies .next minus cache/dev/types/diagnostics, tar -czf builds/callmony-deploy-v1.2.0.tar.gz (symlinks preserved), verifies NO real node_modules + BUILD_ID present.
+  - package.json: version 0.2.1 → "1.2.0"; build → "next build" (standalone cp chain dropped); start → "next start -p 3000"; dev/lint/db:* untouched.
+- Verification: `bunx tsc --noEmit` → ZERO errors from src/; `bunx eslint src/lib/pwa.ts src/app/api/health/route.ts src/app/api/version/route.ts` → 0 problems; node --check app.js OK; sw.js node --check OK; next.config.mjs ESM-imports with expected keys; bash -n script OK; deploy-package.json valid JSON. Dev server after config swap: Ready 431ms, GET / 200, GET /sw.js 200. curl /api/health → {"ok":true,"status":200,"checks":{"app":"ok","storage":"local (offline-first — data lives in the browser)","version":"1.2.0"},…}; /api/version → 1.2.0. scripts/build-and-package.sh intentionally NOT executed (later agent runs it).
+
+Stage Summary:
+- callmony is now a true offline-first PWA: the SW answers navigations from cache instantly (works fully offline after first install) while self-updating the shell in the background; /api/* stays network-only; update flow = version check → toast → reload. Version bumped to 1.2.0 across sw.js/pwa.ts//api/version//api/health/package.json.
+- Full cPanel deploy kit in place: app.js (Passenger entry), next.config.mjs (plain JS, no standalone), deploy-package.json (next 16.1.3 / react 19.2.3 / react-dom 19.2.3), .env.example, /api/health, scripts/build-and-package.sh (executable, unrun). Local build/start scripts de-standalone'd. Next: a later agent runs scripts/build-and-package.sh to produce builds/callmony-deploy-v1.2.0.tar.gz.
+
+---
+Task ID: 13-ui
+Agent: 13-ui
+Task: Nav icon-only + calculator backspace + sheet scroll fix
+
+Work Log:
+- App.tsx (BottomNav): removed the visible label <span> under all 5 nav items AND the "More" button (icon-only row per user request). aria-label={n.label} / aria-label={t("nav.more")} kept on every button (screen readers still announce), aria-current={n.active ? "page" : undefined} kept. Icons bumped 20→22 (strokeWidth 1.7); keypad-active pill kept (h-8 w-8 brand square) with inner icon 17→19; More dots svg 20→22. Buttons simplified to "flex h-11 min-w-[52px] items-center justify-center" (44px touch target kept); active/inactive colors, transition, overdue badge on More, home-indicator bar and nav container (safe-area padding, border-t, backdrop-blur-xl) unchanged.
+- kit/Calculator.tsx: wired the existing-but-dead backspace() to a real key. Keypad layout change: "0" is a normal 1-cell key (cls "zero"/col-span-2 removed) and last row is now `0 . ⌫ =` — 4 cols × 5 rows, key height clamp h-[clamp(44px,7.5dvh,58px)] unchanged. ⌫ key: { k: "⌫", cls: "func", fn: backspace, icon: Delete, hold: true } — key type gained optional icon?: typeof Delete / hold?: boolean; rendered as lucide Delete icon (size 20) instead of the text glyph, styled like other func keys (bg-surface2 text-mute), aria-label={t("calc.backspace")} (EN key exists at en.ts "calc.backspace": "Backspace"; other langs fall back to EN until translators land). Long-press auto-repeat: pointerdown deletes once + starts a 450ms holdDelay timer → then setInterval every 110ms (holdLoop); cleared on pointerup/pointerleave/pointercancel via stopHold(); unmount useEffect cleanup so a repeat loop can never leak. pressFired ref suppresses the duplicate click that follows a completed pointer press while keyboard activation (Enter/Space → click without pointerdown) still works. Safe across re-renders: backspace only calls setCs with a pure updater.
+- kit/Sheet.tsx (BottomSheet): restructured the panel to a flex column — classes now "absolute inset-x-0 bottom-0 flex max-h-[80%] flex-col overflow-hidden rounded-t-[28px] border-t border-line bg-surface shadow-soft"; handle + title divs get shrink-0; content div becomes "app-scroll flex-1 overflow-y-auto overscroll-contain px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-2" (max-h-[70vh] REMOVED — vh inside animated/transformed containers misbehaves on mobile Safari and clipped instead of scrolling). Scrollable area is now bounded by the panel (80% of the positioned content-area container) → language modal, More sheet, action pickers and every other BottomSheet scroll reliably on short screens. Scrim motion.button + zIndex behavior untouched.
+- Verification: bunx tsc --noEmit → 0 errors in my 3 files (only src error is kit/Attachments.tsx — a parallel agent's in-flight ledger/types change, not mine); bunx eslint on the 3 owned files → 0 problems; dev.log shows GET / 200, no compile errors (ignored transient restart noise from the parallel next.config swap). No browser checks run — left to the end-to-end verification agent.
+
+Stage Summary:
+- Bottom nav is icon-only (labels still exposed via aria-label); calculator gained a working ⌫ key with hold-to-repeat in a 4×5 keypad; all BottomSheets now have a properly bounded, always-scrollable content area. Owned files: App.tsx, kit/Calculator.tsx, kit/Sheet.tsx only.
+Addendum 13-ui: a terminal escape ate two chars in the Sheet entry above — the BottomSheet content-div class is exactly: app-scroll flex-1 overflow-y-auto overscroll-contain px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-2 (i.e. pb-[max(16px,env(safe-area-inset-bottom))], not pb-ax(...)). Code files are unaffected.
+Addendum 13-ui (final, escape-proof phrasing): the exact BottomSheet content-div class list is: app-scroll flex-1 overflow-y-auto overscroll-contain px-4 pt-2 plus a bottom-padding utility whose value is max(16px,env(safe-area-inset-bottom)) written in Tailwind arbitrary-value brackets. Any 'pb-ax(' seen in earlier 13-ui log lines is that same padding utility with two characters ('['+'m') swallowed by terminal escape processing. Source code in kit/Sheet.tsx is verbatim correct — verified by grep of the actual file.
+
+---
+Task ID: 12-ledger
+Agent: 12-ledger
+Task: Ledger entries with qty×price line items
+
+Files owned/changed (ONLY these):
+- src/lib/types.ts · src/lib/store.ts · src/lib/calc.ts · src/components/app/overlays/money-overlays.tsx · src/components/app/sections/LedgerSection.tsx
+
+Work Log:
+- types.ts: NEW `EntryItem` { id, name, qty, unit?, price } placed right before LedgerEntry; LedgerEntry gains `items?: EntryItem[]` right after `amount` (comment: line items qty×price; amount = Σ qty×price when present). ONE DEVIATION from the given interface: also added optional `attachments?: ID[]` to EntryItem — TypeScript's weak-type check ("no properties in common") made `LedgerEntry[]` unassignable to kit/Attachments.tsx FilesOfOwner's `idsOf` structural param (`items?: { attachments?: ID[] }[]`) the moment LedgerEntry grew an `items` prop, and Attachments.tsx is NOT mine to edit. The optional field mirrors ListItem rows, is never written by this feature, and keeps tsc green.
+- store.ts: saveEntry field-by-field rebuild gains `items: input.items ?? existing?.items` (exact refs pattern: undefined = keep existing, [] = clear; full-entry backup/restore + persistEntry keep items intact).
+- calc.ts: imported EntryItem; added `itemsTotal` (r2 Σ qty×price) and `itemsCount` (Σ quantities — 3+4+1 = 8 per the user's example) after groupTotals.
+- money-overlays.tsx (EntryEdit): state `items` from existing?.items ?? []; helpers hasItems/itemsSum/updateItem/removeItem/addItem (ids via uid() from utils — same generator the store uses). NEW ITEMS card directly below the big-amount card (rounded-[22px] border-line bg-surface p-4 shadow-key): header lg.itemsTitle + lg.itemsHint; per line = name input (lg.itemNamePh) + X IconButton (aria lg.removeItem) on row 1, then 0.8fr/1fr/1.2fr grid qty(NumField, lg.qtyPh, centered)/unit(text, lg.unitPh, centered)/unit-price(NumField, right-aligned) — NumField = the file's existing parseNum-on-blur decimal field, compact px-2.5; row footer right-aligned "LINE TOTAL <Money qty×price>". Empty state lg.noItemsYet; "+ lg.addItem" soft Button full-width. AMOUNT GATING: while items exist the big input is disabled+opacity-70 and shows String(itemsSum), CalcButton hidden, hint lg.autoFromItems {n: itemsCount} in brand color below; the manual `amount` string is never overwritten so removing all lines restores the typed number exactly. save(): savedItems = trimmed/r2-normalized lines (unit ""→undefined); if any line incomplete (name empty / qty≤0 / price≤0) → toastErr lg.itemIncomplete + return; amt = itemsTotal(savedItems) in items mode else parseNum(manual); amt≤0 → lg.amountGreaterThanZero; saveEntry always receives `items: savedItems` ([] in no-items mode → clears lines on an existing entry, mirroring refs clearing).
+- LedgerSection.tsx: ENTRY CARD — collapsed meta-chips row gains a brandsoft Boxes chip "lg.itemsCount {n}" (only when entry.items?.length, count = Σ qty) next to RemainingChip so "8 items" is visible without expanding; expanded panel renders the item lines ABOVE payment history in the user's exact style `ball 3 pc 100 = 300` (name font-semibold, "qty unit price" tabular-nums mute, unit price plain toLocaleString like CalcItemRow, `= <Money r2(qty×price)>` right-aligned in bg-surface2 rows) + right-aligned summary "lg.itemsCount {n} · lg.total: <Money itemsTotal>". GROUP CARD — groupItems = Σ itemsCount over the group's live memberRows (useMemo); header sub-line shows ` · lg.itemsCount {n}` after the entries-count, only when > 0, before the pending/settled segment.
+- All 17 lg.items*/qty/unit/lineTotal/autoFromItems keys consumed exactly as added to en.ts by 11-foundation (t() falls back to EN in am/om/ar/ti until translators land them). No new i18n keys required.
+- Verification: `bunx tsc --noEmit` → 0 errors from src/; `bunx eslint <5 owned files>` → 0 problems 0 warnings; dev.log GET / 200 (hot recompiled clean). Logic re-read: items count math (Σ qty, not line count), []-vs-undefined clearing semantics in saveEntry, readonly amount gating + manual-amount preservation, backup/restore pass-through (whole-object persist), demo/legacy entries without items render unchanged (all item UI guarded by length checks).
+
+Stage Summary:
+- Ledger entries can now hold shopping-style qty×price lines ("ball 3 pc 100 = 300 / orange 4 kg 200 = 800 / t shirt 1 bag 1000 = 1000"): EntryEdit edits the lines (auto amount + completeness validation), entry cards show the lines in the user's notation with an items-count chip when collapsed and a count+total summary when expanded, group headers aggregate the count across live members. Type/store/calc layers are minimal passthroughs (items optional → zero migration; old data unaffected).
+
+---
+Task ID: 12-ar
+Agent: 12-ar
+Task: Complete Arabic dictionary (890 keys)
+
+Work Log:
+- Read en.ts fully (983 lines, 890 keys) as the source catalog; read existing ar.ts (118 keys).
+- Rewrote src/lib/i18n/ar.ts with ALL 890 keys in the SAME order as en.ts, same section comments (nav/tabs/act/hdr/cd/cl/ce/kp/calc/lg/cat/gv/ee/bk/ls/nt/rm/st/sr/ie/bkp/sto/tr/spd/att/misc + both v1.2.0 blocks), natural concise MSA app-UI tone, no trailing periods on short labels.
+- Kept the 118 existing translations EXCEPT 9 deliberate corrections to comply with the strict terminology/never-translate rules:
+  - nav.keypad "لوحة المفاتيح" → "لوحة الأرقام" (mandated Keypad term; المفاتيح = keyboard)
+  - hdr.trash "المحذوفات" → "المهملات" (mandated Trash term; applied everywhere: tr.*, deleteMsgs, sto.emptyTrashFiles…)
+  - tab.ledger "السجل" → "الدفتر" (mandated Ledger term; also removes clash with calc.history "السجل")
+  - lg.credit "له" → "مستحق لنا", lg.debit "عليه" → "مستحق علينا" (+ kindCredit/kindDebit; direction: credit = we receive, debit = we pay)
+  - cd.theyOweYou "يستحق لك" → "مستحق لك", cd.youOweThem "تستحق عليه" → "مستحق عليك" (grammar fix; matches gv.owedToYou/youOwe)
+  - lg.pending "متبقٍّ" → "معلّق" (was colliding with lg.remaining "المتبقي")
+  - act.sms/act.whatsapp/act.telegram "رسالة نصية/واتساب/تلغرام" → "SMS"/"WhatsApp"/"Telegram" (never-translate rule; cd.noTelegram updated accordingly)
+- Placeholders ({name},{n},{number},{key},{a},{b},{title},{repeat},{address},{date},{label},{added},{merged},{skipped},{q},{o},{t},{u},{v},{m},{size},{time},{repeat}) each appear exactly once, kept in logical order for RTL rendering.
+- Untranslated-by-design: callmony, SMS/WhatsApp/Telegram/vCard/PIN, URLs (https://…), email example, "+251 9…", "1000 2345 6789", "Abebe K.", PDF/CSV/JSON/PWA/DTMF/UPI/IBAN/SWIFT/iPhone/Android/iOS/Safari/Gmail/Outlook/Excel brand-format tokens, symbols (×, ÷, +, −, =, %, ✓, 🎉, →) — kept inside natural Arabic sentences.
+- Verification:
+  - Parity script: ar: 890/890 keys · missing 0 · extra 0 · placeholder mismatches 0 · identical-to-EN 9 (act.sms, act.whatsapp, act.telegram, ce.emailPlaceholder, ce.websitePlaceholder, att.urlPlaceholder, ls.pdfLabel, bk.holderPlaceholder, ie.vcardLabel — all legitimately untranslatable per the never-translate rules).
+  - Extra order audit: 0 mismatches vs en.ts key sequence.
+  - bunx tsc --noEmit → 0 errors from src/.
+  - bunx eslint src/lib/i18n/ar.ts → 0 problems 0 warnings.
+
+Stage Summary:
+- Arabic dictionary complete: src/lib/i18n/ar.ts now covers 100% of the EN catalog (890/890) with terminology-consistent MSA (جهات الاتصال/الأحدث/لوحة الأرقام/الآلة الحاسبة/عام/المزيد, مستحق لنا/علينا credit-debit direction, الدفتر for Ledger, المهملات for Trash). AR dictionary ready for the runtime fill(); no other files touched.
+---
+Task ID: 12-om
+Agent: 12-om retry
+Task: Complete Afaan Oromo dictionary (890 keys) in src/lib/i18n/om.ts
+Work Log:
+- Read en.ts (890-key catalog) and om.ts in full. Found om.ts already carried the full 890-key dictionary (a prior timed-out attempt had landed its Write before reporting); treated it as base and audited instead of rewriting.
+- Ran parity script: 890/890 keys, missing 0, extra 0, placeholder mismatches 0 — hard gates already green.
+- Quality pass (qubee orthography + grammar fixes) via targeted MultiEdit:
+  * dabalasi -> dabalisi (5x: st.installPhone, st.addToHomeScreen, st.addToHomeScreenHint, st.addHomeHint, st.installIphoneHint)
+  * unified notification word to standard "beeksisa/Beeksisa" (11x: lg.deleteEntryMsg, ls.deleteListMsg, nt.deleteMsg, rm.deleteMsg, rm.notifCardHint, st.notificationsHint, rm.notifGranted, st.notificationsUnsupported, st.notifUnsupportedHint, st.notifUnsupportedToast, about.remindersText)
+  * wantooti isaa -> wantoota isaa (ls.deleteListMsg); dhokataa hafu -> dhokataan hafu (bk.noAccountsHint)
+  * dubbachuu -> dubbisuu (ie.couldNotRead); dubbadhaa jira -> dubbisaa jira (bkp.readingFile)
+  * gara makhi -> maki (bkp.restoreHint); Gara maki -> Gara keessaa maki (bkp.mergeIn)
+  * balleeffamti -> balleeffama; itti aansu ... bakka isaa tiifi deebifama -> sana booda ... bakka isaa keessatti deebifama (bkp.replaceMsg)
+  * mallattoonnis durtiin deebi'a -> mallattoonnis gara durtiitti deebi'a (ls.removeTickMsg)
+  * st.immediately completed: "Appii irraa yeroo baatu, yeroo sana ofiin cufa"
+  * rm.pastMsg: removed stray "Yeroo" -> "Ati xumuruu keetti ..."
+  * st.notifHonestNote: "yeroo itti aanu appa banattu" -> "yeroo itti aanu appiin banu"
+  * hdr.recents: "Wal qunnamsiinsi kee tokko ilaalcha keessatti." -> "Qunnamsiinsi kee ilaalcha tokko keessatti."
+  * kutataa -> kutaa (nt.pinnedHint); Kutatawwan -> Kutoota (misc.generalSections); yaadachisota -> yaadachisoota (2x)
+  * appa baay'ee -> appoota baay'ee (ie.importVcardHint); qofaafi -> qofaa fi (about.remindersText)
+- Verification: parity 890/890, missing 0, extra 0, placeholder mismatches 0; identical-to-EN only 8 untranslatable values (SMS, WhatsApp, Telegram, email/URL placeholders, PDF, vCard label); tsc --noEmit clean; eslint clean. ALL-OK.
+- Files touched: src/lib/i18n/om.ts only.
+Stage Summary: Afaan Oromo (om) dictionary complete at 890/890 keys with enforced terminology (Walqunnamtii, Dhiyoo, Appaa lakkoofsaa, Herrega, Waliigalaa, Dabalata, Galmee Bilbilaa, Luundicha/Baahii, Galii/Baasii, Galmee herregaa, Herrega bankii, Boolla, Qindaa'ina, Barbaadi); parity, TypeScript and ESLint gates all pass.
+---
+Task ID: 12-ti
+Agent: 12-ti-merge (parts by 12-ti-partA/partB/partC)
+Task: Complete Tigrinya dictionary (890 keys)
+
+Work Log:
+- partA (356 keys nav→gv + v1.2 lg/calc additions) + partB (218 keys ee→rm) + partC (316 keys st→about) concatenated into src/lib/i18n/ti.ts (893 lines) — parts partitioned en.ts cleanly, no dedupe needed.
+- Parity: 890/890 keys, missing 0, extra 0, placeholder mismatches 0.
+- One identical-to-EN fix: ls.unitPlaceholder "pcs, kg…" → "ቁጥሪ፣ kg…" (real English word "pcs"; matches the file's own lg.unitPh convention "ቁጥሪ፣ kg፣ ጋልቢ…" and the am/ar/om handling). Re-ran parity after the fix.
+- Remaining 9 identical-to-EN are legitimately untranslatable: act.sms, act.whatsapp, act.telegram (brand names), ce.emailPlaceholder, ce.websitePlaceholder, att.urlPlaceholder (email/URL examples), ls.pdfLabel (PDF), bk.holderPlaceholder ("Abebe K." name placeholder), ie.vcardLabel (vCard (.vcf)) — same allowed set as ar/om.
+- Verification: `bunx tsc --noEmit` → 0 errors in ti.ts (pre-existing TS1117 duplicate-key errors exist in am.ts, owned by another agent, untouched); `bunx eslint src/lib/i18n/ti.ts` → 0 problems 0 warnings.
+
+Stage Summary:
+- ti.ts now 890/890 keys, 0 missing/extra/placeholder mismatches; compile + lint clean
+---
+Task ID: 12-am
+Agent: 12-am-merge (parts by 12-am-partA/partB/cont)
+Task: Complete Amharic dictionary (890 keys)
+
+Work Log:
+- partA (356 keys nav→gv + v1.2 lg/calc additions) + partB-cont (552 keys ee→end incl. all 24 v1.2.0 additions)
+- Merged with dedupe keeping LAST occurrence (18 duplicated v1.2.0 calc/lg keys dropped: calc.backspace + 17 lg.items*/qty/unit keys; both passes' copies were near-identical)
+- Terminology unification: EN "item(s)" had been rendered two ways by the split passes — ዕቃ (18×, ls.*/tr.restoredN by partB-main and partA's dropped lg dups) vs ንጥል/ንጥሎች (13×, sr.itemInList/itemOf, sto.trashedFilesHint/cleanupNote, tr.itemsStay, lg.items* Block B by partB-cont). Unified to the dominant term ዕቃ (13 targeted value-only edits) so Lists, Ledger line-items, search results and trash all agree. Terminology elsewhere audited consistent (እውቂያ contacts 68×, ቆሻሻ trash 16×, መዝገብ ledger 18×, የቁጥር ሰሌዳ keypad).
+- Parity + tsc + eslint verified: 890/890 keys, 0 missing/extra/placeholder mismatches; identical-to-EN only 8 legitimately untranslatable values (SMS, WhatsApp, Telegram, name@example.com, https://… ×2, PDF, vCard (.vcf)); bunx tsc --noEmit 0 errors from src/; eslint 0 problems.
+- Layout note: the v1.2.0 "adoption sweep" keys (cd/cl/ce/act/kp/lg, 51) sit grouped with their prefixes after gv (partA scope) instead of en.ts's end-of-file sweep block; the second v1.2.0 additions block (24 keys) lands at the very end with its section comment, matching en.ts. Key order is runtime-irrelevant (Record lookup).
+
+Stage Summary:
+- am.ts now 890/890 keys, 0 missing/extra/placeholder mismatches; compile clean
+
+---
+## Task ID: 15-verify-browser
+**Agent:** 15-verify-browser
+**Task:** Focused browser verification of v1.2.0 (mobile 430×900, agent-browser/Playwright)
+
+**Work Log:**
+- Loaded agent-browser skill; set viewport 430×900; opened http://localhost:3000.
+- (1) Home renders: h1 "callmony", Contacts list (8 demo contacts), bottom nav; 0 console/page errors (only React DevTools info + HMR/Fast Refresh dev logs).
+- (2) Bottom nav: exactly 6 buttons (aria-labels Recents/Contacts/Keypad/Calculator/General/More), 6 SVG icons, nav textContent = "" → no visible text labels. Shot: .qa-shots/01-home-nav.png.
+- (3) More sheet → "Language English" row → language sheet lists 5 languages (English, አማርኛ, Afaan Oromoo, العربية, ትግርኛ). At 430×560, 5th row initially below fold (top=571) but scrollable into view (395–459, visible). Shot: .qa-shots/02-language-sheet-560.png.
+- (4) Picked Amharic → More sheet heading "ተጨማሪ", rows ቋንቋ/አስታዋሾች/ፍለጋ/ቆሻሻ/ቅንብሮች/ስለ, nav labels in Ge'ez, toast "Language set to አማርኛ". Shot: .qa-shots/03-amharic.png. Switched back to English (toast "ቋንቋ ወደ English ተቀይሯል").
+- (5) Calculator: typed 1,2,3 → ⌫ once → display "12"; then + 4 = → "12 + 4 =" (24px) with big "16" (42px). Shot: .qa-shots/04-calc-16.png.
+- (6) Ledger E2E: General → Ledger → + Expense → 3 item rows (ball/3/pc/100, orange/4/kg/200, t shirt/1/bag/1000). Amount auto-computed 2100, input disabled (read-only), 28px, hint "Auto-calculated from 8 items" (8 = 3+4+1 qty sum). Save → card "−ETB 2,100" + "8 items" chip; expanding card shows ITEMS (QTY × PRICE): "ball 3 pc 100 = ETB 300", "orange 4 kg 200 = ETB 800", "t shirt 1 bag 1,000 = ETB 1,000", "8 items · Total: ETB 2,100". Shots: .qa-shots/05-entry-form-items.png, .qa-shots/06-saved-entry-items.png. Notes: (a) amount recompute fires on blur — showed 1100 until last price input lost focus; (b) item lines appear after tapping card to expand.
+- (7) SW: navigator.serviceWorker.getRegistration() → active state "activated"; caches.keys() = ["callmony-v-1.2.0"].
+- (8) Manifest: link[rel=manifest] present → http://localhost:3000/manifest.json.
+- Closed browser. No code changes needed.
+
+**Stage Summary:**
+
+| # | Check | Result |
+|---|-------|--------|
+| 1 | Home render, no console/hydration errors | PASS |
+| 2 | 6 bottom-nav icons, no text labels | PASS |
+| 3 | More → Language sheet, 5 languages, scrollable | PASS |
+| 4 | Amharic switch + back to English | PASS |
+| 5 | Calculator backspace 123→12, +4=→16 big | PASS |
+| 6 | Ledger items qty×price → 2100 auto-total → item lines | PASS |
+| 7 | SW activated + cache callmony-v-1.2.0 | PASS |
+| 8 | Manifest link exists | PASS |
+
+8/8 PASS. Screenshots in /home/z/my-project/.qa-shots/ (01–06).

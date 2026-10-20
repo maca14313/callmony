@@ -360,18 +360,17 @@ function BottomNav() {
               aria-label={n.label}
               aria-current={n.active ? "page" : undefined}
               className={cx(
-                "nav-item flex min-w-[52px] flex-col items-center gap-1 transition",
+                "nav-item flex h-11 min-w-[52px] items-center justify-center transition",
                 n.active ? "text-brand" : "text-[#a3b0ac] dark:text-mute"
               )}
             >
               {isKeypad && n.active ? (
                 <span className="flex h-8 w-8 items-center justify-center rounded-[12px] bg-brand text-white shadow-key">
-                  <Icon size={17} fill="currentColor" />
+                  <Icon size={19} fill="currentColor" />
                 </span>
               ) : (
-                <Icon size={20} strokeWidth={1.7} />
+                <Icon size={22} strokeWidth={1.7} />
               )}
-              <span className={cx("text-[10px]", n.active ? "font-bold" : "font-medium")}>{n.label}</span>
             </button>
           );
         })}
@@ -381,10 +380,10 @@ function BottomNav() {
             setMoreOpen(true);
           }}
           aria-label={t("nav.more")}
-          className="nav-item relative flex min-w-[52px] flex-col items-center gap-1 text-[#a3b0ac] transition dark:text-mute"
+          className="nav-item relative flex h-11 min-w-[52px] items-center justify-center text-[#a3b0ac] transition dark:text-mute"
         >
           <span className="relative">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
               <circle cx="5" cy="12" r="1.7" />
               <circle cx="12" cy="12" r="1.7" />
               <circle cx="19" cy="12" r="1.7" />
@@ -395,7 +394,6 @@ function BottomNav() {
               </span>
             )}
           </span>
-          <span className="text-[10px] font-medium">{t("nav.more")}</span>
         </button>
       </div>
       <div className="mx-auto mt-2 h-[4px] w-[105px] rounded-full bg-line2" aria-hidden />

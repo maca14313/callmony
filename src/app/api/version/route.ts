@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   return NextResponse.json({
     app: "callmony",
-    version: "1.0.0",
+    version: "1.2.0",
     buildTime: new Date().toISOString(),
   });
 }

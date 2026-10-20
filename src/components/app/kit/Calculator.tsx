@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Copy, History, X } from "lucide-react";
+import { Copy, Delete, History, X } from "lucide-react";
 import { copyText } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 import { Button, cx } from "./primitives";
@@ -98,6 +98,31 @@ export function Calculator({ onUse }: { onUse?: (value: number) => void }) {
         : { ...s, display: s.display.length <= 1 || (s.display.length === 2 && s.display.startsWith("-")) ? "0" : s.display.slice(0, -1) }
     );
 
+  /* ⌫ hold-to-repeat: the press itself deletes one digit on pointerdown;
+     holding past 450ms repeats every 110ms (real-calculator UX). Timer ids
+     live in refs so re-renders never orphan them; any pointer exit clears
+     both. backspace only calls setCs with a pure updater → the interval's
+     closure stays valid across re-renders. */
+  const holdDelay = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdLoop = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pressFired = useRef(false); // the click after a pointer press is a duplicate
+
+  const stopHold = () => {
+    if (holdDelay.current !== null) clearTimeout(holdDelay.current);
+    if (holdLoop.current !== null) clearInterval(holdLoop.current);
+    holdDelay.current = null;
+    holdLoop.current = null;
+  };
+
+  // never leave a repeat loop running after unmount
+  useEffect(
+    () => () => {
+      if (holdDelay.current !== null) clearTimeout(holdDelay.current);
+      if (holdLoop.current !== null) clearInterval(holdLoop.current);
+    },
+    []
+  );
+
   const percent = () =>
     setCs((s) => {
       const n = parseFloat(s.display.replace(/,/g, "")) || 0;
@@ -130,7 +155,7 @@ export function Calculator({ onUse }: { onUse?: (value: number) => void }) {
   const bucket = (len: number, sizes: [string, string, string, string]) =>
     len <= 9 ? sizes[0] : len <= 14 ? sizes[1] : len <= 22 ? sizes[2] : sizes[3];
 
-  const KEYS: { k: string; sub?: string; cls?: string; fn: () => void }[] = [
+  const KEYS: { k: string; sub?: string; cls?: string; fn: () => void; icon?: typeof Delete; hold?: boolean }[] = [
     { k: "C", cls: "func", fn: clearAll },
     { k: "±", cls: "func", fn: toggleSign },
     { k: "%", cls: "func", fn: percent },
@@ -147,8 +172,9 @@ export function Calculator({ onUse }: { onUse?: (value: number) => void }) {
     { k: "2", fn: () => inputDigit("2") },
     { k: "3", fn: () => inputDigit("3") },
     { k: "+", cls: "op", fn: () => chooseOp("+") },
-    { k: "0", cls: "zero", fn: () => inputDigit("0") },
+    { k: "0", fn: () => inputDigit("0") },
     { k: ".", fn: () => inputDigit(".") },
+    { k: "⌫", cls: "func", fn: backspace, icon: Delete, hold: true },
     { k: "=", cls: "eq", fn: equals },
   ];
 
@@ -274,25 +300,55 @@ export function Calculator({ onUse }: { onUse?: (value: number) => void }) {
             <Copy size={14} /> {t("act.copy")}
           </button>
         </div>
-        {KEYS.map((key) => (
-          <button
-            key={key.k}
-            onClick={key.fn}
-            className={cx(
-              "key flex h-[clamp(44px,7.5dvh,58px)] items-center justify-center rounded-[19px] text-[21px] font-medium shadow-key transition active:scale-95",
-              key.cls === "op" || key.cls === "eq"
-                ? "bg-brand text-white shadow-floating"
-                : key.cls === "func"
-                  ? "bg-surface2 text-mute"
-                  : "bg-surface text-ink",
-              key.cls === "zero" && "col-span-2",
-              key.cls === "eq" && "bg-brandink"
-            )}
-            aria-label={key.k}
-          >
-            {key.k}
-          </button>
-        ))}
+        {KEYS.map((key) => {
+          const KeyIcon = key.icon;
+          return (
+            <button
+              key={key.k}
+              onClick={
+                key.hold
+                  ? () => {
+                      /* pointerdown already deleted — this click is a duplicate
+                         unless it was keyboard activation (Enter/Space) */
+                      if (pressFired.current) {
+                        pressFired.current = false;
+                        return;
+                      }
+                      key.fn();
+                    }
+                  : key.fn
+              }
+              onPointerDown={
+                key.hold
+                  ? () => {
+                      pressFired.current = true;
+                      key.fn();
+                      stopHold();
+                      holdDelay.current = setTimeout(() => {
+                        holdDelay.current = null;
+                        holdLoop.current = setInterval(() => key.fn(), 110);
+                      }, 450);
+                    }
+                  : undefined
+              }
+              onPointerUp={key.hold ? stopHold : undefined}
+              onPointerLeave={key.hold ? stopHold : undefined}
+              onPointerCancel={key.hold ? stopHold : undefined}
+              className={cx(
+                "key flex h-[clamp(44px,7.5dvh,58px)] items-center justify-center rounded-[19px] text-[21px] font-medium shadow-key transition active:scale-95",
+                key.cls === "op" || key.cls === "eq"
+                  ? "bg-brand text-white shadow-floating"
+                  : key.cls === "func"
+                    ? "bg-surface2 text-mute"
+                    : "bg-surface text-ink",
+                key.cls === "eq" && "bg-brandink"
+              )}
+              aria-label={key.hold ? t("calc.backspace") : key.k}
+            >
+              {KeyIcon ? <KeyIcon size={20} /> : key.k}
+            </button>
+          );
+        })}
         {onUse && (
           <div className="col-span-4 pt-1">
             <Button

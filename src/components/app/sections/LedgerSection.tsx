@@ -36,6 +36,8 @@ import {
   entryRemaining,
   entrySignedRemaining,
   groupTotals,
+  itemsCount,
+  itemsTotal,
   openListsPending,
   r2,
   totalsForOwner,
@@ -478,6 +480,11 @@ function EntryCard({
       {/* meta chips + note */}
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5 pl-[52px]">
         <RemainingChip entry={entry} />
+        {entry.items && entry.items.length > 0 && (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brandsoft px-2 py-0.5 text-[10px] font-bold text-brand">
+            <Boxes size={11} aria-hidden /> {t("lg.itemsCount", { n: itemsCount(entry.items) })}
+          </span>
+        )}
         {entry.dueDate && <DueBadge dueDate={entry.dueDate} />}
         {entry.category && (
           <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-surface2 px-2 py-0.5 text-[10px] font-semibold text-mute">
@@ -513,6 +520,34 @@ function EntryCard({
             className="overflow-hidden"
           >
             <div className="mt-3 border-t border-line pt-3">
+              {/* item lines — name qty [unit] price = qty × price */}
+              {entry.items && entry.items.length > 0 && (
+                <div className="mb-3">
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-[1.5px] text-mute">
+                    {t("lg.itemsTitle")}
+                  </p>
+                  <ul className="space-y-1">
+                    {entry.items.map((it) => (
+                      <li key={it.id} className="flex items-baseline gap-2 rounded-xl bg-surface2 px-2.5 py-1.5">
+                        <span className="min-w-0 flex-1 truncate text-[12px] text-ink">
+                          <span className="font-semibold">{it.name}</span>{" "}
+                          <span className="tabular-nums text-mute">
+                            {it.qty}
+                            {it.unit ? ` ${it.unit}` : ""} {it.price.toLocaleString("en-US")}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-[12px] font-bold text-ink">
+                          = <Money value={r2((+it.qty || 0) * (+it.price || 0))} />
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1.5 flex items-baseline justify-end gap-1 text-[10.5px] font-semibold text-mute">
+                    {t("lg.itemsCount", { n: itemsCount(entry.items) })} · {t("lg.total")}:{" "}
+                    <Money value={itemsTotal(entry.items)} />
+                  </p>
+                </div>
+              )}
               <p className="mb-2 text-[10px] font-bold uppercase tracking-[1.5px] text-mute">{t("lg.paymentHistory")}</p>
               {nPayments === 0 && <p className="pb-1 text-[11px] text-mute">{t("lg.noPaymentsYet")}</p>}
               <ol className="space-y-1.5">
@@ -738,6 +773,11 @@ function GroupCard({
     () => rows.filter(({ entry }) => entry.groupId === group.id),
     [rows, group.id]
   );
+  /** Σ item quantities across the group's live member entries ("8 items" badge) */
+  const groupItems = useMemo(
+    () => memberRows.reduce((s, { entry }) => s + itemsCount(entry.items), 0),
+    [memberRows]
+  );
 
   const saveRename = () => {
     const title = renameTitle.trim();
@@ -842,6 +882,7 @@ function GroupCard({
           <span className="mt-0.5 flex items-baseline justify-between gap-2">
             <span className="truncate text-[11px] text-mute">
               {totals.count === 1 ? t("lg.oneEntry") : t("lg.entriesCount", { n: totals.count })}
+              {groupItems > 0 ? ` · ${t("lg.itemsCount", { n: groupItems })}` : ""}
               {totals.remaining > 0.005 ? (
                 <>
                   {" · "}

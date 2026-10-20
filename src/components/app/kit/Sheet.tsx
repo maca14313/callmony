@@ -111,18 +111,18 @@ export function BottomSheet({
         animate={{ y: 0 }}
         exit={{ y: "110%" }}
         transition={{ type: "spring", damping: 28, stiffness: 320 }}
-        className="sheet-content absolute inset-x-0 bottom-0 max-h-[80%] overflow-hidden rounded-t-[28px] border-t border-line bg-surface shadow-soft"
+        className="sheet-content absolute inset-x-0 bottom-0 flex max-h-[80%] flex-col overflow-hidden rounded-t-[28px] border-t border-line bg-surface shadow-soft"
         style={{ zIndex }}
         role="dialog"
         aria-label={typeof title === "string" ? title : "Bottom sheet"}
       >
-        <div className="mx-auto mt-3 h-1 w-10 rounded-full bg-line2" />
+        <div className="mx-auto mt-3 h-1 w-10 shrink-0 rounded-full bg-line2" />
         {title && (
-          <div className="px-5 pb-1 pt-3">
+          <div className="shrink-0 px-5 pb-1 pt-3">
             <h3 className="text-[15px] font-bold tracking-tight text-ink">{title}</h3>
           </div>
         )}
-        <div className="app-scroll max-h-[70vh] overflow-y-auto px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-2">
+        <div className="app-scroll flex-1 overflow-y-auto overscroll-contain px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-2">
           {children}
         </div>
       </motion.div>

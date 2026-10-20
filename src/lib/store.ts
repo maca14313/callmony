@@ -470,6 +470,7 @@ export const useApp = create<AppState>((set, get) => {
         listId: input.listId ?? existing?.listId,
         groupId: input.groupId === "" ? undefined : input.groupId ?? existing?.groupId,
         refs: input.refs ?? existing?.refs,
+        items: input.items ?? existing?.items,
         attachments: input.attachments ?? existing?.attachments ?? [],
         createdAt: existing?.createdAt ?? now(),
         updatedAt: now(),
