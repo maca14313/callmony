@@ -19,6 +19,7 @@ const ICONS: Record<LinkRef["type"], typeof Phone> = {
   reminder: Bell,
   bank: CreditCard,
   item: StickyNote,
+  link: Link2,
 };
 
 export function LinkChips({

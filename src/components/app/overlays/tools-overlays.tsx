@@ -1,10 +1,12 @@
 "use client";
 
 /* =========================================================================
-   Task 2-c — tools overlays
+   Task 5-c — tools overlays
    NoteEdit · ReminderEdit · BankEdit — full-screen Sheets opened from the
-   overlay stack. Attachments for NEW records use the "save draft first"
-   flow sanctioned by the spec (save → get id → attach).
+   overlay stack. File attachments were REMOVED by user request — notes and
+   reminders link to other entities via LinkChips/AddLinkButton instead, and
+   BankEdit is simplified to exactly two fields (bank name + account number;
+   the owner is implied by where the account is created from).
    ========================================================================= */
 
 import { useMemo, useState } from "react";
@@ -13,16 +15,15 @@ import {
   Check,
   Clock3,
   Inbox,
-  Paperclip,
   Pin,
   Repeat,
   Trash2,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { useUI } from "@/lib/ui-store";
+import { useT } from "@/lib/i18n";
 import { dateStr, displayName, ft, todayStr } from "@/lib/utils";
 import type {
-  AttachmentMeta,
   ID,
   LinkRef,
   OwnerId,
@@ -33,10 +34,8 @@ import type {
 import { Sheet } from "../kit/Sheet";
 import { useConfirm } from "../kit/Confirm";
 import { toastErr, toastOk, toastUndoLast } from "../kit/toast";
-import { AttachButton, AttachmentStrip } from "../kit/Attachments";
 import { AddLinkButton, LinkChips, useOpenLink } from "../kit/LinkPicker";
 import { ContactPicker } from "../kit/ContactPicker";
-import { CalcButton } from "../kit/Calculator";
 import { Avatar, Button, Chip, Field, SectionLabel, cx, inputCls } from "../kit/primitives";
 
 /* ------------------------------------------------------------------ */
@@ -55,46 +54,6 @@ function useOwnerLabel(ownerId: OwnerId): string {
     ownerId === "general" ? undefined : s.contacts.find((c) => c.id === ownerId && !c.deletedAt)
   );
   return ownerId === "general" ? "In General" : `In ${displayName(contact)}`;
-}
-
-/** Attach row: real AttachButton once a draft id exists; "save draft" flow for new records. */
-function AttachArea({
-  parentType,
-  draftId,
-  ids,
-  onAttached,
-  onEnsureDraft,
-}: {
-  parentType: "note" | "reminder" | "bank";
-  draftId: ID | undefined;
-  ids: ID[];
-  onAttached: (meta: AttachmentMeta) => void;
-  onEnsureDraft: () => boolean;
-}) {
-  return (
-    <div>
-      <SectionLabel>Files</SectionLabel>
-      <div className="flex items-center gap-2.5">
-        {draftId ? (
-          <AttachButton parentType={parentType} parentId={draftId} onAttached={onAttached} compact />
-        ) : (
-          <Button variant="soft" size="md" onClick={() => onEnsureDraft()}>
-            <Paperclip size={14} /> Save draft &amp; attach
-          </Button>
-        )}
-        <p className="text-[10px] leading-4 text-mute">
-          {draftId
-            ? `${ids.length} file${ids.length === 1 ? "" : "s"} attached`
-            : "Files attach once the draft is saved"}
-        </p>
-      </div>
-      {draftId && ids.length > 0 && (
-        <div className="mt-2.5">
-          <AttachmentStrip ids={ids} />
-        </div>
-      )}
-    </div>
-  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -119,6 +78,7 @@ export function NoteEdit({
   linkTo?: LinkRef;
 }) {
   const ui = useUI();
+  const t = useT();
   const confirm = useConfirm();
   const openLink = useOpenLink();
   const ownerLabel = useOwnerLabel(ownerId);
@@ -132,36 +92,6 @@ export function NoteEdit({
   const [pinned, setPinned] = useState(note?.pinned ?? false);
   const [color, setColor] = useState<string | undefined>(note?.color);
   const [links, setLinks] = useState<LinkRef[]>(note?.links ?? (linkTo ? [linkTo] : []));
-  const [attachments, setAttachments] = useState<ID[]>(note?.attachments ?? []);
-  const [draftId, setDraftId] = useState<ID | undefined>(noteId);
-
-  /** Save current form as a draft so files can attach to a real id. */
-  const ensureDraft = (): boolean => {
-    if (draftId) return true;
-    if (!title.trim() && !body.trim()) {
-      toastErr("Write a title or some text first");
-      return false;
-    }
-    const n = saveNote({
-      ownerId,
-      title: title.trim() || "Untitled note",
-      body,
-      tags: parseTags(tagsStr),
-      pinned,
-      color: color || "",
-      links,
-      attachments: [],
-    });
-    setDraftId(n.id);
-    toastOk("Draft saved — pick files to attach");
-    return true;
-  };
-
-  const onAttached = (meta: AttachmentMeta) => {
-    const next = [...attachments, meta.id];
-    setAttachments(next);
-    if (draftId) saveNote({ id: draftId, ownerId, attachments: next });
-  };
 
   const save = () => {
     if (!title.trim() && !body.trim()) {
@@ -169,7 +99,7 @@ export function NoteEdit({
       return;
     }
     saveNote({
-      id: draftId,
+      id: noteId,
       ownerId,
       title: title.trim() || "Untitled note",
       body,
@@ -177,7 +107,6 @@ export function NoteEdit({
       pinned,
       color: color || "",
       links,
-      attachments,
     });
     toastOk(noteId ? "Note updated" : "Note saved");
     ui.pop();
@@ -188,7 +117,7 @@ export function NoteEdit({
     const ok = await confirm({
       title: "Delete note?",
       message: `“${note?.title || "Untitled note"}” will be moved to Trash — you can undo right after.`,
-      confirmLabel: "Delete",
+      confirmLabel: t("act.delete"),
       tone: "danger",
     });
     if (!ok) return;
@@ -205,12 +134,12 @@ export function NoteEdit({
       footer={
         <div className="flex gap-2.5">
           <Button variant="brand" size="lg" className="flex-1" onClick={save}>
-            Save note
+            {t("act.save")}
           </Button>
           {noteId && (
             <Button variant="danger" size="lg" className="w-[52px] px-0" onClick={() => void remove()}>
               <Trash2 size={16} />
-              <span className="sr-only">Delete note</span>
+              <span className="sr-only">{t("act.delete")}</span>
             </Button>
           )}
         </div>
@@ -306,7 +235,7 @@ export function NoteEdit({
           </div>
         </Field>
 
-        {/* links */}
+        {/* entity links */}
         <div>
           <SectionLabel>Links</SectionLabel>
           <div className="space-y-2">
@@ -314,14 +243,6 @@ export function NoteEdit({
             <AddLinkButton links={links} onChange={setLinks} label="Link to contact, entry, list…" />
           </div>
         </div>
-
-        <AttachArea
-          parentType="note"
-          draftId={draftId}
-          ids={attachments}
-          onAttached={onAttached}
-          onEnsureDraft={ensureDraft}
-        />
       </div>
     </Sheet>
   );
@@ -362,6 +283,7 @@ export function ReminderEdit({
   prefill?: Partial<Reminder>;
 }) {
   const ui = useUI();
+  const t = useT();
   const confirm = useConfirm();
   const openLink = useOpenLink();
   const reminder = useApp((s) =>
@@ -388,8 +310,6 @@ export function ReminderEdit({
   const [repeat, setRepeat] = useState<RepeatKind>(reminder?.repeat ?? "none");
   const [lead, setLead] = useState<number[]>(reminder?.leadMinutes ?? []);
   const [links, setLinks] = useState<LinkRef[]>(reminder?.links ?? prefill?.links ?? []);
-  const [attachments, setAttachments] = useState<ID[]>(reminder?.attachments ?? []);
-  const [draftId, setDraftId] = useState<ID | undefined>(reminderId);
   const [owner, setOwner] = useState<OwnerId>(reminder?.ownerId ?? ownerId);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -404,37 +324,9 @@ export function ReminderEdit({
     return isNaN(v) ? NaN : v;
   }, [date, time]);
 
-  const ensureDraft = (): boolean => {
-    if (draftId) return true;
-    if (!title.trim()) {
-      toastErr("Add a title first");
-      return false;
-    }
-    const r = saveReminder({
-      ownerId: owner,
-      title: title.trim(),
-      notes,
-      kind,
-      dueAt: isNaN(dueAt) ? Date.now() + 86400000 : dueAt,
-      repeat,
-      leadMinutes: lead,
-      links,
-      attachments: [],
-    });
-    setDraftId(r.id);
-    toastOk("Draft saved — pick files to attach");
-    return true;
-  };
-
-  const onAttached = (meta: AttachmentMeta) => {
-    const next = [...attachments, meta.id];
-    setAttachments(next);
-    if (draftId) saveReminder({ id: draftId, ownerId: owner, title: title.trim() || "Untitled", attachments: next });
-  };
-
   const save = async () => {
-    const t = title.trim();
-    if (!t) {
+    const trimmed = title.trim();
+    if (!trimmed) {
       toastErr("Title is required");
       return;
     }
@@ -451,16 +343,15 @@ export function ReminderEdit({
       if (!ok) return;
     }
     saveReminder({
-      id: draftId,
+      id: reminderId,
       ownerId: owner,
-      title: t,
+      title: trimmed,
       notes,
       kind,
       dueAt,
       repeat,
       leadMinutes: lead,
       links,
-      attachments,
     });
     toastOk(reminderId ? "Reminder updated" : "Reminder saved");
     ui.pop();
@@ -471,7 +362,7 @@ export function ReminderEdit({
     const ok = await confirm({
       title: "Delete reminder?",
       message: `“${reminder?.title || ""}” will be moved to Trash — you can undo right after.`,
-      confirmLabel: "Delete",
+      confirmLabel: t("act.delete"),
       tone: "danger",
     });
     if (!ok) return;
@@ -507,12 +398,12 @@ export function ReminderEdit({
       footer={
         <div className="flex gap-2.5">
           <Button variant="brand" size="lg" className="flex-1" onClick={() => void save()}>
-            <Check size={15} /> Save reminder
+            <Check size={15} /> {t("act.save")}
           </Button>
           {reminderId && (
             <Button variant="danger" size="lg" className="w-[52px] px-0" onClick={() => void remove()}>
               <Trash2 size={16} />
-              <span className="sr-only">Delete reminder</span>
+              <span className="sr-only">{t("act.delete")}</span>
             </Button>
           )}
         </div>
@@ -643,7 +534,7 @@ export function ReminderEdit({
           </p>
         </div>
 
-        {/* links */}
+        {/* entity links */}
         <div>
           <SectionLabel>Links</SectionLabel>
           <div className="space-y-2">
@@ -651,14 +542,6 @@ export function ReminderEdit({
             <AddLinkButton links={links} onChange={setLinks} label="Attach to credit, list, note…" />
           </div>
         </div>
-
-        <AttachArea
-          parentType="reminder"
-          draftId={draftId}
-          ids={attachments}
-          onAttached={onAttached}
-          onEnsureDraft={ensureDraft}
-        />
       </div>
 
       <ContactPicker
@@ -676,91 +559,42 @@ export function ReminderEdit({
 }
 
 /* ------------------------------------------------------------------ */
-/* BankEdit                                                             */
+/* BankEdit — simplified: bank name + account number.                   */
+/* The owner (person / General) is implied by where the account is      */
+/* created from, so no holder, label, IBAN/SWIFT/UPI/branch/balance.   */
 /* ------------------------------------------------------------------ */
 
 export function BankEdit({ bankId, ownerId }: { bankId?: ID; ownerId: ID | "general" }) {
   const ui = useUI();
+  const t = useT();
   const confirm = useConfirm();
   const ownerLabel = useOwnerLabel(ownerId);
   const bank = useApp((s) => (bankId ? s.banks.find((b) => b.id === bankId && !b.deletedAt) : undefined));
   const saveBank = useApp((s) => s.saveBank);
   const deleteBank = useApp((s) => s.deleteBank);
 
-  const [label, setLabel] = useState(bank?.label ?? "");
-  const [bankName, setBankName] = useState(bank?.bankName ?? "");
-  const [holderName, setHolderName] = useState(bank?.holderName ?? "");
+  const [bankName, setBankName] = useState(bank?.bankName || bank?.label || "");
   const [accountNumber, setAccountNumber] = useState(bank?.accountNumber ?? "");
-  const [iban, setIban] = useState(bank?.iban ?? "");
-  const [swift, setSwift] = useState(bank?.swift ?? "");
-  const [upiId, setUpiId] = useState(bank?.upiId ?? "");
-  const [branch, setBranch] = useState(bank?.branch ?? "");
-  const [balanceStr, setBalanceStr] = useState(bank?.balance != null ? String(bank.balance) : "");
-  const [notes, setNotes] = useState(bank?.notes ?? "");
-  const [attachments, setAttachments] = useState<ID[]>(bank?.attachments ?? []);
-  const [draftId, setDraftId] = useState<ID | undefined>(bankId);
-
-  const ensureDraft = (): boolean => {
-    if (draftId) return true;
-    if (!label.trim()) {
-      toastErr("Add a label first");
-      return false;
-    }
-    const bal = balanceStr.trim() ? parseFloat(balanceStr) : undefined;
-    const b = saveBank({
-      ownerId,
-      label: label.trim(),
-      bankName,
-      holderName,
-      accountNumber,
-      iban,
-      swift,
-      upiId,
-      branch,
-      notes,
-      balance: bal != null && !isNaN(bal) ? bal : undefined,
-      attachments: [],
-    });
-    setDraftId(b.id);
-    toastOk("Draft saved — pick files to attach");
-    return true;
-  };
-
-  const onAttached = (meta: AttachmentMeta) => {
-    const next = [...attachments, meta.id];
-    setAttachments(next);
-    if (draftId) saveBank({ id: draftId, ownerId, label: label.trim() || "Account", attachments: next });
-  };
 
   const save = () => {
-    if (!label.trim()) {
-      toastErr("Label is required");
+    const name = bankName.trim();
+    const num = accountNumber.trim();
+    if (!name) {
+      toastErr("Bank name is required");
       return;
     }
-    const bal = balanceStr.trim();
-    let balance: number | undefined;
-    if (bal) {
-      const n = parseFloat(bal);
-      if (isNaN(n)) {
-        toastErr("Balance must be a number");
-        return;
-      }
-      balance = n;
+    if (!num) {
+      toastErr("Account number is required");
+      return;
     }
     saveBank({
-      id: draftId,
+      id: bankId,
       ownerId,
-      label: label.trim(),
-      bankName,
-      holderName,
-      accountNumber,
-      iban,
-      swift,
-      upiId,
-      branch,
-      notes,
-      balance,
-      attachments,
+      /* label stays synced to the bank name so card rendering keeps working */
+      label: name,
+      bankName: name,
+      /* trimmed value: empty string clears (store convention), never undefined */
+      accountNumber: num,
     });
     toastOk(bankId ? "Account updated" : "Account saved");
     ui.pop();
@@ -770,8 +604,8 @@ export function BankEdit({ bankId, ownerId }: { bankId?: ID; ownerId: ID | "gene
     if (!bankId) return;
     const ok = await confirm({
       title: "Delete account?",
-      message: `“${bank?.label || ""}” will be moved to Trash — you can undo right after.`,
-      confirmLabel: "Delete",
+      message: `“${bank?.bankName || bank?.label || ""}” will be moved to Trash — you can undo right after.`,
+      confirmLabel: t("act.delete"),
       tone: "danger",
     });
     if (!ok) return;
@@ -788,49 +622,28 @@ export function BankEdit({ bankId, ownerId }: { bankId?: ID; ownerId: ID | "gene
       footer={
         <div className="flex gap-2.5">
           <Button variant="brand" size="lg" className="flex-1" onClick={save}>
-            Save account
+            <Check size={15} /> {t("act.save")}
           </Button>
           {bankId && (
             <Button variant="danger" size="lg" className="w-[52px] px-0" onClick={() => void remove()}>
               <Trash2 size={16} />
-              <span className="sr-only">Delete account</span>
+              <span className="sr-only">{t("act.delete")}</span>
             </Button>
           )}
         </div>
       }
     >
       <div className="space-y-4 p-4 pb-10">
-        <Field label="Label" hint='e.g. "Main account", "CBE — shop"'>
+        <Field label="Bank name" hint="e.g. Commercial Bank">
           <input
             className={inputCls}
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="Account label"
+            value={bankName}
+            onChange={(e) => setBankName(e.target.value)}
+            placeholder="Commercial Bank"
             autoFocus={!bankId}
-            aria-label="Account label"
+            aria-label="Bank name"
           />
         </Field>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Bank name">
-            <input
-              className={inputCls}
-              value={bankName}
-              onChange={(e) => setBankName(e.target.value)}
-              placeholder="Commercial Bank"
-              aria-label="Bank name"
-            />
-          </Field>
-          <Field label="Holder">
-            <input
-              className={inputCls}
-              value={holderName}
-              onChange={(e) => setHolderName(e.target.value)}
-              placeholder="Full name"
-              aria-label="Holder name"
-            />
-          </Field>
-        </div>
 
         <Field label="Account number" hint="Shown masked in lists — reveal to copy the full number">
           <input
@@ -842,80 +655,6 @@ export function BankEdit({ bankId, ownerId }: { bankId?: ID; ownerId: ID | "gene
             aria-label="Account number"
           />
         </Field>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="IBAN">
-            <input
-              className={inputCls}
-              value={iban}
-              onChange={(e) => setIban(e.target.value)}
-              placeholder="ET29…"
-              aria-label="IBAN"
-            />
-          </Field>
-          <Field label="SWIFT / BIC">
-            <input
-              className={inputCls}
-              value={swift}
-              onChange={(e) => setSwift(e.target.value)}
-              placeholder="CBETETAA"
-              aria-label="SWIFT code"
-            />
-          </Field>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="UPI ID">
-            <input
-              className={inputCls}
-              value={upiId}
-              onChange={(e) => setUpiId(e.target.value)}
-              placeholder="name@bank"
-              aria-label="UPI ID"
-            />
-          </Field>
-          <Field label="Branch">
-            <input
-              className={inputCls}
-              value={branch}
-              onChange={(e) => setBranch(e.target.value)}
-              placeholder="Bole branch"
-              aria-label="Branch"
-            />
-          </Field>
-        </div>
-
-        <Field label="Balance" hint="Optional — use the calculator to compute it">
-          <div className="flex gap-2">
-            <input
-              className={cx(inputCls, "tabular-nums")}
-              value={balanceStr}
-              onChange={(e) => setBalanceStr(e.target.value)}
-              placeholder="0.00"
-              inputMode="decimal"
-              aria-label="Account balance"
-            />
-            <CalcButton onPick={(v) => setBalanceStr(String(v))} />
-          </div>
-        </Field>
-
-        <Field label="Notes">
-          <textarea
-            className={cx(inputCls, "min-h-[80px] resize-y")}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Anything special about this account…"
-            aria-label="Account notes"
-          />
-        </Field>
-
-        <AttachArea
-          parentType="bank"
-          draftId={draftId}
-          ids={attachments}
-          onAttached={onAttached}
-          onEnsureDraft={ensureDraft}
-        />
       </div>
     </Sheet>
   );

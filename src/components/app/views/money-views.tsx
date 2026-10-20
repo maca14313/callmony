@@ -4,33 +4,33 @@ import { useMemo, useState } from "react";
 import { Inbox, Info } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { openListsPending, totalsForOwner } from "@/lib/calc";
+import { useT } from "@/lib/i18n";
 import { LedgerSection } from "../sections/LedgerSection";
 import { ListsSection } from "../sections/ListsSection";
 import { NotesSection } from "../sections/NotesSection";
 import { RemindersSection } from "../sections/RemindersSection";
 import { BankSection } from "../sections/BankSection";
-import { FilesOfOwner } from "../kit/Attachments";
 import { Money, Segmented } from "../kit/primitives";
 
-type GeneralTab = "ledger" | "lists" | "notes" | "reminders" | "accounts" | "files";
+type GeneralTab = "ledger" | "lists" | "notes" | "reminders" | "accounts";
 
-const TABS: { value: GeneralTab; label: string }[] = [
-  { value: "ledger", label: "Ledger" },
-  { value: "lists", label: "Lists" },
-  { value: "notes", label: "Notes" },
-  { value: "reminders", label: "Reminders" },
-  { value: "accounts", label: "Accounts" },
-  { value: "files", label: "Files" },
-];
-
-/** General — the personal (no-contact) space: income/expense ledger, lists, notes, reminders, accounts, files. */
+/** General — the personal (no-contact) space: income/expense ledger, lists, notes, reminders, accounts. */
 export function GeneralView() {
+  const t = useT();
   const [tab, setTab] = useState<GeneralTab>("ledger");
   const entries = useApp((s) => s.entries);
   const lists = useApp((s) => s.lists);
 
   const totals = useMemo(() => totalsForOwner(entries, "general"), [entries]);
   const listsPending = useMemo(() => openListsPending(lists, "general"), [lists]);
+
+  const TABS: { value: GeneralTab; label: string }[] = [
+    { value: "ledger", label: t("tab.ledger") },
+    { value: "lists", label: t("tab.lists") },
+    { value: "notes", label: t("tab.notes") },
+    { value: "reminders", label: t("tab.reminders") },
+    { value: "accounts", label: "Accounts" },
+  ];
 
   return (
     <div className="tab-content pt-1">
@@ -45,7 +45,8 @@ export function GeneralView() {
           </span>
           <div className="min-w-0">
             <h2 className="text-[18px] font-bold tracking-tight text-ink">
-              General<span className="text-brand">.</span>
+              {t("hdr.general")}
+              <span className="text-brand">.</span>
             </h2>
             <p className="text-[11px] text-mute">Your personal space — income, expenses &amp; lists</p>
           </div>
@@ -53,19 +54,19 @@ export function GeneralView() {
 
         <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
           <div className="rounded-2xl bg-surface px-2 py-3 shadow-key">
-            <dt className="text-[9px] font-bold uppercase tracking-[1.4px] text-mute">Income</dt>
+            <dt className="text-[9px] font-bold uppercase tracking-[1.4px] text-mute">{t("lg.income")}</dt>
             <dd className="mt-1 text-[13px] font-bold text-pos">
               <Money value={totals.credit} />
             </dd>
           </div>
           <div className="rounded-2xl bg-surface px-2 py-3 shadow-key">
-            <dt className="text-[9px] font-bold uppercase tracking-[1.4px] text-mute">Expense</dt>
+            <dt className="text-[9px] font-bold uppercase tracking-[1.4px] text-mute">{t("lg.expense")}</dt>
             <dd className="mt-1 text-[13px] font-bold text-neg">
               <Money value={totals.debit} />
             </dd>
           </div>
           <div className="rounded-2xl bg-surface px-2 py-3 shadow-key">
-            <dt className="text-[9px] font-bold uppercase tracking-[1.4px] text-mute">Net</dt>
+            <dt className="text-[9px] font-bold uppercase tracking-[1.4px] text-mute">{t("lg.net")}</dt>
             <dd className="mt-1 text-[13px] font-bold text-ink">
               <Money value={totals.net} signed />
             </dd>
@@ -76,7 +77,7 @@ export function GeneralView() {
           <p className="mt-3 flex items-center justify-center gap-1.5 rounded-2xl bg-amber/10 px-3 py-2 text-[11px] font-semibold text-amber">
             <Info size={12} className="shrink-0" aria-hidden />
             <span>
-              Open calculating lists: +<Money value={listsPending} /> (counted in balance)
+              {t("lg.openLists")}: +<Money value={listsPending} /> ({t("lg.countedInBalance")})
             </span>
           </p>
         )}
@@ -92,7 +93,6 @@ export function GeneralView() {
         {tab === "notes" && <NotesSection ownerId="general" />}
         {tab === "reminders" && <RemindersSection ownerId="general" />}
         {tab === "accounts" && <BankSection ownerId="general" />}
-        {tab === "files" && <FilesOfOwner ownerId="general" />}
       </div>
     </div>
   );

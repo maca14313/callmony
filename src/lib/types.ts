@@ -76,6 +76,7 @@ export interface Payment {
   note?: string;
   method?: string;
   auto?: "tick" | "settle"; // created by ticking a row / settle-up
+  refs?: LinkRef[]; // attached banks / lists / notes / reminders / owners / links
   createdAt: number;
 }
 
@@ -97,7 +98,21 @@ export interface LedgerEntry {
   method?: string;
   note?: string;
   listId?: ID; // created from a calculating list
+  groupId?: ID; // ledger group this entry belongs to
+  refs?: LinkRef[]; // attached banks / lists / notes / reminders / owners / links
   attachments: ID[];
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+}
+
+/** A named group of ledger entries — shows its own calculated totals. */
+export interface LedgerGroup {
+  id: ID;
+  ownerId: OwnerId;
+  title: string;
+  note?: string;
+  refs: LinkRef[]; // attached banks / lists / notes / reminders / owners / links
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -146,15 +161,17 @@ export interface CalcList {
   currency?: string;
   items: ListItem[];
   attachments: ID[];
+  refs?: LinkRef[]; // attached banks / notes / reminders / owners / links
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
 }
 
 export interface LinkRef {
-  type: "contact" | "entry" | "list" | "note" | "reminder" | "bank" | "item";
+  type: "contact" | "entry" | "list" | "note" | "reminder" | "bank" | "item" | "link";
   id: ID;
   label?: string;
+  url?: string; // for type === "link"
 }
 
 export interface Note {
@@ -261,6 +278,7 @@ export interface AttachmentMeta {
 
 export interface Settings {
   theme: "light" | "dark" | "auto";
+  language?: "en" | "am" | "om" | "ar" | "ti";
   currency: string; // 'ETB' | 'USD' ...
   countryCode: string; // 'ET' default dial code +251
   pinHash?: { hash: string; salt: string };
@@ -282,6 +300,7 @@ export interface BackupFile {
   data: {
     contacts: Contact[];
     entries: LedgerEntry[];
+    groups?: LedgerGroup[]; // ledger groups (optional = older backups)
     lists: CalcList[];
     notes: Note[];
     reminders: Reminder[];

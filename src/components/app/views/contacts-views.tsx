@@ -1,8 +1,8 @@
 "use client";
 
 /* =========================================================================
-   callmony — Contacts views (Task 2-a)
-   ContactsView · FavoritesView · RecentsView
+   callmony — Contacts views (Task 5-a)
+   ContactsView · RecentsView (favorites strip lives atop Recents)
    ========================================================================= */
 
 import { useMemo, useState } from "react";
@@ -14,7 +14,6 @@ import {
   Ban,
   ChevronRight,
   Copy,
-  Grid3X3,
   MessageCircle,
   MessageSquare,
   MoreVertical,
@@ -28,11 +27,11 @@ import {
   Star,
   Trash2,
   UserPlus,
-  UserRound,
   Users,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { useUI } from "@/lib/ui-store";
+import { useT } from "@/lib/i18n";
 import { ownerFullBalance, r2 } from "@/lib/calc";
 import { toVCard } from "@/lib/exporters";
 import {
@@ -45,16 +44,8 @@ import {
   normalizePhone,
   prettyPhone,
 } from "@/lib/utils";
-import {
-  openExternal,
-  primaryPhone,
-  shareText,
-  smsLink,
-  telegramHandle,
-  tgLink,
-  waLink,
-} from "@/lib/share";
-import type { CallLog, Contact, Settings } from "@/lib/types";
+import { primaryPhone, shareText, telegramHandle } from "@/lib/share";
+import type { CallLog, Contact } from "@/lib/types";
 import {
   Avatar,
   BalancePill,
@@ -64,36 +55,18 @@ import {
   IconButton,
   Money,
   SearchInput,
-  SectionCard,
   SectionLabel,
   cx,
 } from "../kit/primitives";
 import { BottomSheet } from "../kit/Sheet";
 import { SwipeRow, type SwipeAction } from "../kit/SwipeRow";
 import { useConfirm } from "../kit/Confirm";
+import { useContactActions } from "../kit/ActionPicker";
 import { toastErr, toastOk, toastUndoLast } from "../kit/toast";
 
 /* ------------------------------------------------------------------ */
 /* Shared bits                                                          */
 /* ------------------------------------------------------------------ */
-
-const SPEED_KEYS = ["2", "3", "4", "5", "6", "7", "8", "9"];
-
-/**
- * Speed-dial assignment per key. `settings.speedDial` wins; contacts that
- * still carry a legacy `speedDial` field act as a fallback (demo data).
- */
-function speedDialAssignments(contacts: Contact[], settings: Settings): Record<string, string | undefined> {
-  const out: Record<string, string | undefined> = {};
-  contacts.forEach((c) => {
-    if (c.speedDial) out[c.speedDial] = c.id;
-  });
-  const sd = (settings as Settings & { speedDial?: Record<string, string | undefined> }).speedDial ?? {};
-  SPEED_KEYS.forEach((k) => {
-    if (k in sd) out[k] = sd[k];
-  });
-  return out;
-}
 
 /** Share a contact as a vCard — Web Share when available, copy / download otherwise. */
 async function shareVCard(c: Contact) {
@@ -200,6 +173,7 @@ function ContactRow({
   onDelete: () => void;
   onLongPress: () => void;
 }) {
+  const t = useT();
   const phone = primaryPhone(contact);
   const sub = phone
     ? prettyPhone(phone)
@@ -208,7 +182,7 @@ function ContactRow({
       : contact.emails[0]?.address || "No phone number";
 
   const left: SwipeAction[] = [
-    { key: "call", icon: <Phone size={18} />, label: "Call", className: "bg-brand", onClick: onCall },
+    { key: "call", icon: <Phone size={18} />, label: t("act.call"), className: "bg-brand", onClick: onCall },
     {
       key: "fav",
       icon: <Star size={18} fill={contact.favorite ? "currentColor" : "none"} />,
@@ -221,11 +195,11 @@ function ContactRow({
     {
       key: "wa",
       icon: <MessageCircle size={18} />,
-      label: "WhatsApp",
+      label: t("act.whatsapp"),
       className: "bg-[#1faa53]",
       onClick: onWhatsApp,
     },
-    { key: "sms", icon: <MessageSquare size={18} />, label: "Message", className: "bg-brandink", onClick: onMessage },
+    { key: "sms", icon: <MessageSquare size={18} />, label: t("act.message"), className: "bg-brandink", onClick: onMessage },
     { key: "del", icon: <Trash2 size={18} />, label: "Delete contact", className: "bg-neg", onClick: onDelete },
   ];
 
@@ -260,6 +234,8 @@ export function ContactsView() {
   const app = useApp();
   const ui = useUI();
   const confirm = useConfirm();
+  const t = useT();
+  const { act } = useContactActions();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sort, setSort] = useState<SortKey>("name");
@@ -356,31 +332,11 @@ export function ContactsView() {
     return out;
   }, [filtered, sort]);
 
-  /* ---- actions ---- */
-  const call = (c: Contact) => {
-    const p = primaryPhone(c);
-    if (!p) {
-      toastErr("No phone number for this contact");
-      return;
-    }
-    ui.open({ type: "call", phone: p, contactId: c.id });
-  };
-  const whatsApp = (c: Contact) => {
-    const p = primaryPhone(c);
-    if (!p) {
-      toastErr("No phone number on this contact");
-      return;
-    }
-    openExternal(waLink(p, undefined, cc));
-  };
-  const message = (c: Contact) => {
-    const p = primaryPhone(c);
-    if (!p) {
-      toastErr("No phone number on this contact");
-      return;
-    }
-    openExternal(smsLink(p, undefined, cc));
-  };
+  /* ---- actions ---- routed through act() so multi-number contacts
+     get the shared picker sheet with the default number starred ---- */
+  const call = (c: Contact) => act(c, "call");
+  const whatsApp = (c: Contact) => act(c, "whatsapp");
+  const message = (c: Contact) => act(c, "sms");
   const remove = async (c: Contact) => {
     const ok = await confirm({
       title: "Delete contact?",
@@ -415,7 +371,7 @@ export function ContactsView() {
 
   return (
     <div className="tab-content">
-      <ViewHeader title="Contacts" subtitle="The people who matter." />
+      <ViewHeader title={t("nav.contacts")} subtitle="The people who matter." />
 
       <SearchInput value={q} onChange={setQ} placeholder="Search name, number, notes…" />
 
@@ -463,7 +419,7 @@ export function ContactsView() {
           Settled
         </Chip>
         <Chip className="py-2" active={filter === "favorites"} onClick={() => setFilter("favorites")}>
-          Favorites
+          {t("cd.favorites")}
         </Chip>
       </div>
 
@@ -508,7 +464,7 @@ export function ContactsView() {
             action={
               contacts.length === 0 ? (
                 <Button variant="brand" onClick={() => ui.open({ type: "contactEdit" })}>
-                  <Plus size={15} /> Add contact
+                  <Plus size={15} /> {t("act.newContact")}
                 </Button>
               ) : undefined
             }
@@ -532,7 +488,7 @@ export function ContactsView() {
                     onCall={() => call(c)}
                     onFavorite={() => {
                       app.toggleFavorite(c.id);
-                      toastOk(c.favorite ? "Removed from favorites" : "Added to favorites");
+                      toastOk(c.favorite ? t("cd.removedFromFavorites") : t("cd.addToFavorites"));
                     }}
                     onWhatsApp={() => whatsApp(c)}
                     onMessage={() => message(c)}
@@ -556,36 +512,44 @@ export function ContactsView() {
           <div className="space-y-0.5 pb-2">
             <ActionRow
               icon={<Phone size={17} />}
-              title="Call"
+              title={t("act.call")}
               sub={menuPhone ? prettyPhone(menuPhone, cc) : "No phone number"}
               onClick={() => {
                 setMenuFor(null);
-                call(menu);
+                act(menu, "call");
               }}
             />
             <ActionRow
               icon={<MessageCircle size={17} />}
-              title="WhatsApp"
+              title={t("act.whatsapp")}
               sub={menuPhone ? prettyPhone(menuPhone, cc) : undefined}
               onClick={() => {
                 setMenuFor(null);
-                whatsApp(menu);
+                act(menu, "whatsapp");
+              }}
+            />
+            <ActionRow
+              icon={<MessageSquare size={17} />}
+              title={t("act.message")}
+              onClick={() => {
+                setMenuFor(null);
+                act(menu, "sms");
               }}
             />
             {menuTg && (
               <ActionRow
                 icon={<Send size={17} />}
-                title="Telegram"
+                title={t("act.telegram")}
                 sub={`@${menuTg.replace(/^@/, "")}`}
                 onClick={() => {
                   setMenuFor(null);
-                  openExternal(tgLink(menuTg));
+                  act(menu, "telegram");
                 }}
               />
             )}
             <ActionRow
               icon={<Pencil size={17} />}
-              title="Edit contact"
+              title={t("cd.editContact")}
               onClick={() => {
                 setMenuFor(null);
                 ui.open({ type: "contactEdit", contactId: menu.id });
@@ -597,7 +561,7 @@ export function ContactsView() {
               onClick={() => {
                 app.toggleFavorite(menu.id);
                 setMenuFor(null);
-                toastOk(menu.favorite ? "Removed from favorites" : "Added to favorites");
+                toastOk(menu.favorite ? t("cd.removedFromFavorites") : t("cd.addToFavorites"));
               }}
             />
             <ActionRow
@@ -625,143 +589,6 @@ export function ContactsView() {
           </div>
         )}
       </BottomSheet>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* FavoritesView                                                        */
-/* ------------------------------------------------------------------ */
-
-export function FavoritesView() {
-  const app = useApp();
-  const ui = useUI();
-
-  const favorites = useMemo(
-    () =>
-      app.contacts
-        .filter((c) => !c.deletedAt && c.favorite)
-        .sort((a, b) => displayName(a).localeCompare(displayName(b))),
-    [app.contacts]
-  );
-
-  const sdContacts = useMemo(() => {
-    const live = app.contacts.filter((c) => !c.deletedAt);
-    const map = speedDialAssignments(live, app.settings);
-    return SPEED_KEYS.map((k) => map[k])
-      .filter((id): id is string => !!id)
-      .map((id) => live.find((c) => c.id === id))
-      .filter((c): c is Contact => !!c);
-  }, [app.contacts, app.settings]);
-
-  return (
-    <div className="tab-content">
-      <ViewHeader title="Favorites" subtitle="Your closest connections, one tap away." />
-
-      {favorites.length === 0 ? (
-        <EmptyState
-          icon={<Star size={22} />}
-          title="No favorites yet"
-          hint="Star the people you reach for most and they'll live here — plus a speed-dial key."
-          action={
-            <Button variant="brand" onClick={() => ui.setTab("contacts")}>
-              <Users size={15} /> Explore contacts
-            </Button>
-          }
-        />
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-3">
-            {favorites.map((c, i) => {
-              const phone = primaryPhone(c);
-              return (
-                <motion.div
-                  key={c.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.04, duration: 0.24 }}
-                >
-                  <SectionCard
-                    className="flex flex-col items-center gap-2.5 text-center"
-                    onClick={() => ui.open({ type: "contact", contactId: c.id })}
-                  >
-                    <div className="relative">
-                      <Avatar contact={c} size="lg" />
-                      <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-brand text-white shadow-key">
-                        <Star size={11} fill="currentColor" />
-                      </span>
-                    </div>
-                    <div className="w-full">
-                      <p className="truncate text-[13px] font-semibold text-ink">{displayName(c)}</p>
-                      <p className="truncate text-[11px] text-mute">
-                        {phone ? prettyPhone(phone, app.settings.countryCode) : "Telegram only"}
-                      </p>
-                    </div>
-                    {phone ? (
-                      <Button
-                        variant="brand"
-                        size="sm"
-                        className="w-full"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          ui.open({ type: "call", phone, contactId: c.id });
-                        }}
-                      >
-                        <Phone size={13} /> Call now
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="soft"
-                        size="sm"
-                        className="w-full"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          ui.open({ type: "contact", contactId: c.id });
-                        }}
-                      >
-                        <UserRound size={13} /> Open profile
-                      </Button>
-                    )}
-                  </SectionCard>
-                </motion.div>
-              );
-            })}
-          </div>
-
-          <div className="mt-5">
-            <SectionLabel>Shortcuts</SectionLabel>
-            <SectionCard
-              className="flex items-center gap-3"
-              onClick={() => ui.open({ type: "speedDial" })}
-            >
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-brandsoft text-brand">
-                <Grid3X3 size={20} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-bold text-ink">Speed dial</p>
-                <p className="truncate text-[11px] text-mute">
-                  {sdContacts.length > 0
-                    ? `${sdContacts.length} contact${sdContacts.length === 1 ? "" : "s"} on keys 2–9`
-                    : "Assign contacts to keys 2–9"}
-                </p>
-              </div>
-              {sdContacts.length > 0 && (
-                <div className="flex shrink-0 -space-x-2">
-                  {sdContacts.slice(0, 4).map((c) => (
-                    <Avatar
-                      key={c.id}
-                      contact={c}
-                      size="xs"
-                      className="border-2 border-surface"
-                    />
-                  ))}
-                </div>
-              )}
-              <ChevronRight size={16} className="shrink-0 text-line2" />
-            </SectionCard>
-          </div>
-        </>
-      )}
     </div>
   );
 }
@@ -835,6 +662,7 @@ export function RecentsView() {
   const app = useApp();
   const ui = useUI();
   const confirm = useConfirm();
+  const t = useT();
   const [q, setQ] = useState("");
   const [dir, setDir] = useState<RecentFilter>("all");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -842,6 +670,12 @@ export function RecentsView() {
 
   const cc = app.settings.countryCode;
   const contacts = useMemo(() => app.contacts.filter((c) => !c.deletedAt), [app.contacts]);
+
+  /* favorites strip — favorite contacts, one tap to their detail sheet */
+  const favorites = useMemo(
+    () => contacts.filter((c) => c.favorite).sort((a, b) => displayName(a).localeCompare(displayName(b))),
+    [contacts]
+  );
 
   const contactFor = useMemo(() => {
     const byId = new Map(contacts.map((c) => [c.id, c] as const));
@@ -886,7 +720,7 @@ export function RecentsView() {
   return (
     <div className="tab-content">
       <ViewHeader
-        title="Recent calls"
+        title={t("nav.recents")}
         subtitle="Your conversations at a glance."
         action={
           <IconButton
@@ -898,6 +732,29 @@ export function RecentsView() {
           </IconButton>
         }
       />
+
+      {/* favorites strip */}
+      {favorites.length > 0 && (
+        <section className="mt-1">
+          <SectionLabel>{t("cd.favorites")}</SectionLabel>
+          <div className="app-scroll -mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
+            {favorites.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => ui.open({ type: "contact", contactId: c.id })}
+                className="flex w-[64px] shrink-0 flex-col items-center gap-1.5"
+                aria-label={`Open ${displayName(c)}`}
+              >
+                <Avatar contact={c} size="md" className="rounded-full shadow-key" />
+                <span className="w-full truncate text-center text-[10px] font-medium text-mute">
+                  {c.firstName || displayName(c)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       <SearchInput value={q} onChange={setQ} placeholder="Search calls…" />
 
@@ -995,7 +852,7 @@ export function RecentsView() {
           <div className="space-y-0.5 pb-2">
             <ActionRow
               icon={<Phone size={17} />}
-              title="Call"
+              title={t("act.call")}
               onClick={() => {
                 setUnknownFor(null);
                 ui.open({ type: "call", phone: unknown.phone });
@@ -1003,7 +860,7 @@ export function RecentsView() {
             />
             <ActionRow
               icon={<UserPlus size={17} />}
-              title="Add to contacts"
+              title={t("act.newContact")}
               onClick={() => {
                 const phone = unknown.phone;
                 setUnknownFor(null);

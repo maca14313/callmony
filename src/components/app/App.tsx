@@ -7,7 +7,6 @@ import {
   Calculator as CalcIcon,
   Clock3,
   Grid3X3,
-  Heart,
   Inbox,
   RotateCcw,
   Search,
@@ -21,15 +20,16 @@ import { useApp } from "@/lib/store";
 import { useUI, type Overlay } from "@/lib/ui-store";
 import { dueStatus } from "@/lib/calc";
 import { checkVersion, registerSW, useInstallPrompt, useTick } from "@/lib/pwa";
-import { hashPin } from "@/lib/utils";
+import { useLang, useT } from "@/lib/i18n";
 import { ConfirmProvider } from "./kit/Confirm";
 import { BottomSheet, Sheet } from "./kit/Sheet";
 import { Button, cx } from "./kit/primitives";
 import { AlarmDialog } from "./kit/AlarmDialog";
 import { CalculatorSheet } from "./kit/Calculator";
+import { KeypadSheet } from "./kit/KeypadSheet";
+import { ActionPickerHost } from "./kit/ActionPicker";
 
-import { KeypadView } from "./views/KeypadView";
-import { ContactsView, FavoritesView, RecentsView } from "./views/contacts-views";
+import { ContactsView, RecentsView } from "./views/contacts-views";
 import { GeneralView } from "./views/money-views";
 import { RemindersView, TrashView } from "./views/tools-views";
 
@@ -117,15 +117,30 @@ function StatusBar() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Overlay host                                                         */
+/* Overlay host — renders every overlay EXCEPT calls (those are        */
+/* frame-level so the bottom nav hides while on a call).               */
 /* ------------------------------------------------------------------ */
 
 function OverlayHost() {
   const stack = useUI((s) => s.overlayStack);
+  const visible = useMemo(() => stack.filter((o) => o.type !== "call"), [stack]);
   return (
     <AnimatePresence>
-      {stack.map((o, i) => (
+      {visible.map((o, i) => (
         <OverlayItem key={`${o.type}-${i}`} overlay={o} depth={i} />
+      ))}
+    </AnimatePresence>
+  );
+}
+
+/** Call overlays render at the FRAME level — they cover the bottom nav. */
+function CallOverlayHost() {
+  const stack = useUI((s) => s.overlayStack);
+  const calls = useMemo(() => stack.filter((o) => o.type === "call"), [stack]);
+  return (
+    <AnimatePresence>
+      {calls.map((o, i) => (
+        <OverlayItem key={`call-${i}`} overlay={o} depth={i} />
       ))}
     </AnimatePresence>
   );
@@ -191,7 +206,7 @@ function OverlayItem({ overlay, depth }: { overlay: Overlay; depth: number }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Alarm watcher                                                        */
+/* Alarm watcher                                                       */
 /* ------------------------------------------------------------------ */
 
 function AlarmWatcher() {
@@ -230,7 +245,7 @@ function AlarmWatcher() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Autolock                                                             */
+/* Autolock                                                            */
 /* ------------------------------------------------------------------ */
 
 function AutolockWatcher() {
@@ -274,62 +289,112 @@ function AutolockWatcher() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Bottom navigation                                                    */
+/* Bottom navigation — ALWAYS visible (except while on a call).        */
+/* Recents · Contacts · Keypad (opens half-modal) · Calculator · More  */
 /* ------------------------------------------------------------------ */
 
-const NAV = [
-  { tab: "favorites", label: "Favorites", icon: Heart },
-  { tab: "recents", label: "Recents", icon: Clock3 },
-  { tab: "contacts", label: "Contacts", icon: Users },
-  { tab: "keypad", label: "Keypad", icon: Grid3X3 },
-] as const;
-
 function BottomNav() {
+  const t = useT();
   const tab = useUI((s) => s.tab);
   const setTab = useUI((s) => s.setTab);
   const setMoreOpen = useUI((s) => s.setMoreOpen);
+  const keypadOpen = useUI((s) => s.keypadOpen);
+  const setKeypadOpen = useUI((s) => s.setKeypadOpen);
+  const closeAll = useUI((s) => s.closeAll);
+  const openCalculator = useUI((s) => s.openCalculator);
+  const stack = useUI((s) => s.overlayStack);
+  const calcActive = stack.length > 0 && stack[stack.length - 1].type === "calculator";
   const overdue = useApp(
     (s) => s.reminders.filter((r) => !r.deletedAt && !r.done && dueStatus(r.dueAt) === "overdue").length
   );
 
+  const items: {
+    key: string;
+    label: string;
+    icon: typeof Clock3;
+    active: boolean;
+    onClick: () => void;
+  }[] = [
+    {
+      key: "recents",
+      label: t("nav.recents"),
+      icon: Clock3,
+      active: tab === "recents",
+      onClick: () => {
+        closeAll();
+        setTab("recents");
+      },
+    },
+    {
+      key: "contacts",
+      label: t("nav.contacts"),
+      icon: Users,
+      active: tab === "contacts",
+      onClick: () => {
+        closeAll();
+        setTab("contacts");
+      },
+    },
+    {
+      key: "keypad",
+      label: t("nav.keypad"),
+      icon: Grid3X3,
+      active: keypadOpen,
+      onClick: () => {
+        closeAll();
+        setKeypadOpen(true);
+      },
+    },
+    {
+      key: "calculator",
+      label: t("nav.calculator"),
+      icon: CalcIcon,
+      active: calcActive,
+      onClick: () => {
+        closeAll();
+        openCalculator();
+      },
+    },
+  ];
+
   return (
     <nav
-      className="relative z-20 shrink-0 border-t border-line bg-surface/95 px-3 pb-[max(18px,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl"
+      className="relative z-20 shrink-0 border-t border-line bg-surface/95 px-3 pb-[max(14px,env(safe-area-inset-bottom))] pt-2.5 backdrop-blur-xl"
       aria-label="Main navigation"
     >
-      <div className="mx-auto flex max-w-[370px] items-center justify-around">
-        {NAV.map((n) => {
+      <div className="mx-auto flex max-w-[380px] items-center justify-around">
+        {items.map((n) => {
           const Icon = n.icon;
-          const active = tab === n.tab;
+          const isKeypad = n.key === "keypad";
           return (
             <button
-              key={n.tab}
-              onClick={() => setTab(n.tab)}
+              key={n.key}
+              onClick={n.onClick}
               aria-label={n.label}
-              aria-current={active ? "page" : undefined}
+              aria-current={n.active ? "page" : undefined}
               className={cx(
-                "nav-item flex min-w-[62px] flex-col items-center gap-1.5 transition",
-                active ? "text-brand" : "text-[#a3b0ac] dark:text-mute"
+                "nav-item flex min-w-[58px] flex-col items-center gap-1 transition",
+                n.active ? "text-brand" : "text-[#a3b0ac] dark:text-mute"
               )}
             >
-              {n.tab === "keypad" && active ? (
+              {isKeypad && n.active ? (
                 <span className="flex h-8 w-8 items-center justify-center rounded-[12px] bg-brand text-white shadow-key">
                   <Icon size={17} fill="currentColor" />
                 </span>
               ) : (
-                <Icon size={21} strokeWidth={1.7} />
+                <Icon size={20} strokeWidth={1.7} />
               )}
-              <span className={cx("text-[10px]", active ? "font-bold" : "font-medium")}>{n.label}</span>
+              <span className={cx("text-[10px]", n.active ? "font-bold" : "font-medium")}>{n.label}</span>
             </button>
           );
         })}
         <button
           onClick={() => setMoreOpen(true)}
-          aria-label="More tools"
-          className="nav-item relative flex min-w-[62px] flex-col items-center gap-1.5 text-[#a3b0ac] transition dark:text-mute"
+          aria-label={t("nav.more")}
+          className="nav-item relative flex min-w-[58px] flex-col items-center gap-1 text-[#a3b0ac] transition dark:text-mute"
         >
           <span className="relative">
-            <svg width="21" height="21" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <circle cx="5" cy="12" r="1.7" />
               <circle cx="12" cy="12" r="1.7" />
               <circle cx="19" cy="12" r="1.7" />
@@ -340,25 +405,27 @@ function BottomNav() {
               </span>
             )}
           </span>
-          <span className="text-[10px] font-medium">More</span>
+          <span className="text-[10px] font-medium">{t("nav.more")}</span>
         </button>
       </div>
-      <div className="mx-auto mt-3.5 h-[4px] w-[105px] rounded-full bg-line2" aria-hidden />
+      <div className="mx-auto mt-2.5 h-[4px] w-[105px] rounded-full bg-line2" aria-hidden />
     </nav>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* More sheet                                                           */
+/* More sheet                                                          */
 /* ------------------------------------------------------------------ */
 
 function MoreSheet() {
   const ui = useUI();
+  const t = useT();
   const { canInstall, promptInstall, isIOS } = useInstallPrompt();
   const trashCount = useApp(
     (s) =>
       s.contacts.filter((c) => c.deletedAt).length +
       s.entries.filter((e) => e.deletedAt).length +
+      s.groups.filter((g) => g.deletedAt).length +
       s.lists.filter((l) => l.deletedAt).length +
       s.notes.filter((n) => n.deletedAt).length +
       s.reminders.filter((r) => r.deletedAt).length +
@@ -369,17 +436,17 @@ function MoreSheet() {
   );
 
   const items: { label: string; icon: typeof Inbox; badge?: number; onClick: () => void }[] = [
-    { label: "General", icon: Inbox, onClick: () => ui.setTab("general") },
-    { label: "Reminders", icon: Bell, badge: overdue, onClick: () => ui.setTab("reminders") },
-    { label: "Calculator", icon: CalcIcon, onClick: () => ui.openCalculator() },
-    { label: "Search", icon: Search, onClick: () => ui.open({ type: "search" }) },
-    { label: "Trash", icon: Trash2, badge: trashCount || undefined, onClick: () => ui.setTab("trash") },
-    { label: "Settings", icon: Settings, onClick: () => ui.open({ type: "settings" }) },
-    { label: "About", icon: Info, onClick: () => ui.open({ type: "about" }) },
+    { label: t("hdr.general"), icon: Inbox, onClick: () => ui.setTab("general") },
+    { label: t("tab.reminders"), icon: Bell, badge: overdue, onClick: () => ui.setTab("reminders") },
+    { label: t("nav.calculator"), icon: CalcIcon, onClick: () => ui.openCalculator() },
+    { label: t("act.search"), icon: Search, onClick: () => ui.open({ type: "search" }) },
+    { label: t("hdr.trash"), icon: Trash2, badge: trashCount || undefined, onClick: () => ui.setTab("trash") },
+    { label: t("hdr.settings"), icon: Settings, onClick: () => ui.open({ type: "settings" }) },
+    { label: t("st.about"), icon: Info, onClick: () => ui.open({ type: "about" }) },
   ];
 
   return (
-    <BottomSheet open={ui.moreOpen} onClose={() => ui.setMoreOpen(false)} title="More">
+    <BottomSheet open={ui.moreOpen} onClose={() => ui.setMoreOpen(false)} title={t("nav.more")}>
       <div className="grid grid-cols-3 gap-2.5 pb-2">
         {items.map((it) => {
           const Icon = it.icon;
@@ -427,25 +494,21 @@ function MoreSheet() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Header                                                               */
+/* Header                                                              */
 /* ------------------------------------------------------------------ */
 
-const SECONDARY_TITLES: Record<string, string> = {
-  general: "General",
-  reminders: "Reminders",
-  trash: "Trash",
-};
-
 function AppHeader() {
+  const t = useT();
   const ui = useUI();
-  const secondary = SECONDARY_TITLES[ui.tab];
+  const secondary =
+    ui.tab === "general" ? t("hdr.general") : ui.tab === "reminders" ? t("tab.reminders") : ui.tab === "trash" ? t("hdr.trash") : undefined;
 
   if (secondary) {
     return (
       <header className="flex shrink-0 items-center gap-2 border-b border-line bg-canvas px-3 py-3">
         <button
           onClick={() => ui.setTab("contacts")}
-          aria-label="Back to contacts"
+          aria-label={t("act.back")}
           className="flex h-9 w-9 items-center justify-center rounded-full text-mute transition hover:bg-surface2"
         >
           <RotateCcw size={17} />
@@ -468,7 +531,7 @@ function AppHeader() {
             call<span className="text-brand">mony</span>
           </h1>
         </div>
-        <p className="mt-1 pl-0.5 text-[12px] text-mute">Talk. Track. Settle up.</p>
+        <p className="mt-1 pl-0.5 text-[12px] text-mute">{t("hdr.tagline")}</p>
       </div>
       <div className="flex gap-2">
         <Button
@@ -476,7 +539,7 @@ function AppHeader() {
           size="sm"
           className="h-10 w-10 rounded-full p-0"
           onClick={() => ui.open({ type: "search" })}
-          aria-label="Global search"
+          aria-label={t("act.search")}
         >
           <Search size={18} />
         </Button>
@@ -485,7 +548,7 @@ function AppHeader() {
           size="sm"
           className="h-10 w-10 rounded-full border border-line2 bg-surface p-0 shadow-key"
           onClick={() => ui.open({ type: "settings" })}
-          aria-label="Settings"
+          aria-label={t("hdr.settings")}
         >
           <Settings size={18} />
         </Button>
@@ -495,7 +558,7 @@ function AppHeader() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Main app                                                             */
+/* Main app                                                            */
 /* ------------------------------------------------------------------ */
 
 export function CallmonyApp() {
@@ -509,6 +572,7 @@ export function CallmonyApp() {
   const hydrate = useApp((s) => s.hydrate);
   const tab = useUI((s) => s.tab);
   const locked = useUI((s) => s.locked);
+  const { dir } = useLang();
 
   useEffect(() => {
     void hydrate();
@@ -536,14 +600,10 @@ export function CallmonyApp() {
 
   const view = useMemo(() => {
     switch (tab) {
-      case "keypad":
-        return <KeypadView />;
       case "recents":
         return <RecentsView />;
       case "contacts":
         return <ContactsView />;
-      case "favorites":
-        return <FavoritesView />;
       case "reminders":
         return <RemindersView />;
       case "general":
@@ -551,14 +611,14 @@ export function CallmonyApp() {
       case "trash":
         return <TrashView />;
       default:
-        return <KeypadView />;
+        return <ContactsView />;
     }
   }, [tab]);
 
   if (!mounted || !hydrated) {
     return (
       <div className="min-h-[100dvh] w-full bg-appbg sm:py-6">
-        <div className="relative mx-auto flex h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden bg-canvas shadow-2xl sm:h-[900px] sm:rounded-[34px]">
+        <div className="relative mx-auto flex h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden bg-canvas shadow-2xl sm:h-[min(900px,calc(100dvh-48px))] sm:rounded-[34px]">
           <Splash />
         </div>
       </div>
@@ -569,18 +629,31 @@ export function CallmonyApp() {
     <ConfirmProvider>
       <div className="min-h-[100dvh] w-full bg-appbg sm:py-6">
         <div
-          className="relative mx-auto flex h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden bg-canvas shadow-2xl sm:h-[900px] sm:rounded-[34px]"
+          dir={dir}
+          className="relative mx-auto flex h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden bg-canvas shadow-2xl sm:h-[min(900px,calc(100dvh-48px))] sm:rounded-[34px]"
           role="application"
           aria-label="callmony contacts and ledger app"
         >
           <StatusBar />
           <AppHeader />
-          <main className="app-scroll relative flex-1 overflow-y-auto overscroll-contain px-5 pb-32">
-            {view}
-          </main>
+
+          {/* Content area — views + overlay sheets live here, ABOVE the nav.
+              Sheets (absolute inset-0 of this container) never cover the nav. */}
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            <main className="app-scroll flex-1 overflow-y-auto overscroll-contain px-5 pb-10">
+              {view}
+            </main>
+            <OverlayHost />
+            <KeypadSheet />
+            <MoreSheet />
+            <ActionPickerHost />
+          </div>
+
+          {/* Always-visible bottom navigation (hidden only by call/lock screens) */}
           <BottomNav />
-          <MoreSheet />
-          <OverlayHost />
+
+          {/* Frame-level: calls cover everything incl. the nav */}
+          <CallOverlayHost />
           <AlarmWatcher />
           <AutolockWatcher />
           <AnimatePresence>{locked && <LockScreen />}</AnimatePresence>

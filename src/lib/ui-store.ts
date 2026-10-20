@@ -3,14 +3,10 @@
 import { create } from "zustand";
 import type { ID, LinkRef, Reminder } from "./types";
 
-export type Tab =
-  | "keypad"
-  | "recents"
-  | "contacts"
-  | "favorites"
-  | "reminders"
-  | "general"
-  | "trash";
+export type Tab = "contacts" | "recents" | "general" | "reminders" | "trash";
+
+/** Quick actions that may need a "which number?" picker before running. */
+export type ContactAction = "call" | "sms" | "whatsapp" | "telegram" | "email";
 
 export type Overlay =
   | { type: "contact"; contactId: ID }
@@ -32,6 +28,12 @@ export type Overlay =
   | { type: "storage" }
   | { type: "about" };
 
+export interface ActionPickerState {
+  contactId: ID;
+  action: ContactAction;
+  text?: string; // pre-filled message body (WhatsApp reminder etc.)
+}
+
 interface UIState {
   tab: Tab;
   overlayStack: Overlay[];
@@ -40,6 +42,8 @@ interface UIState {
   alarmQueue: Reminder[];
   calculatorValue: number | null;
   calculatorPickHandler: ((value: number) => void) | null;
+  keypadOpen: boolean;
+  actionPicker: ActionPickerState | null;
 
   setTab: (t: Tab) => void;
   open: (o: Overlay) => void;
@@ -52,16 +56,22 @@ interface UIState {
   shiftAlarm: () => Reminder | undefined;
   openCalculator: (onPick?: (value: number) => void) => void;
   setCalculatorValue: (v: number | null) => void;
+  clearCalculatorHandler: () => void;
+  setKeypadOpen: (v: boolean) => void;
+  openAction: (a: ActionPickerState) => void;
+  closeAction: () => void;
 }
 
 export const useUI = create<UIState>((set, get) => ({
-  tab: "keypad",
+  tab: "contacts",
   overlayStack: [],
   moreOpen: false,
   locked: false,
   alarmQueue: [],
   calculatorValue: null,
   calculatorPickHandler: null,
+  keypadOpen: false,
+  actionPicker: null,
 
   setTab: (t) => set({ tab: t, moreOpen: false }),
   open: (o) => set((s) => ({ overlayStack: [...s.overlayStack, o], moreOpen: false })),
@@ -81,4 +91,8 @@ export const useUI = create<UIState>((set, get) => ({
   openCalculator: (onPick) =>
     set({ overlayStack: [...get().overlayStack, { type: "calculator" }], calculatorPickHandler: onPick ?? null }),
   setCalculatorValue: (v) => set({ calculatorValue: v }),
+  clearCalculatorHandler: () => set({ calculatorPickHandler: null }),
+  setKeypadOpen: (v) => set({ keypadOpen: v }),
+  openAction: (a) => set({ actionPicker: a }),
+  closeAction: () => set({ actionPicker: null }),
 }));

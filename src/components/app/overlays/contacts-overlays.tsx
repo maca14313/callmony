@@ -19,6 +19,7 @@ import {
   GitMerge,
   Grid3X3,
   Info,
+  Landmark,
   Link2,
   Mail,
   MapPin,
@@ -48,6 +49,7 @@ import {
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { useUI } from "@/lib/ui-store";
+import { useT } from "@/lib/i18n";
 import { openListsPending, ownerFullBalance } from "@/lib/calc";
 import { toVCard } from "@/lib/exporters";
 import {
@@ -102,7 +104,7 @@ import {
 import { BottomSheet, Sheet } from "../kit/Sheet";
 import { useConfirm } from "../kit/Confirm";
 import { toastErr, toastOk, toastUndoLast } from "../kit/toast";
-import { AttachButton, AttachmentStrip, FilesOfOwner } from "../kit/Attachments";
+import { useContactActions } from "../kit/ActionPicker";
 import { ContactPicker } from "../kit/ContactPicker";
 import { LedgerSection } from "../sections/LedgerSection";
 import { ListsSection } from "../sections/ListsSection";
@@ -261,16 +263,18 @@ function socialUrl(s: Social): string | null {
 }
 
 /* ------------------------------------------------------------------ */
-/* ContactDetail                                                        */
+/* ContactDetail — Ledger-first, 6-action grid                          */
 /* ------------------------------------------------------------------ */
 
-type DetailTab = "overview" | "ledger" | "lists" | "notes" | "bank" | "files" | "reminders";
+type DetailTab = "ledger" | "lists" | "notes" | "bank" | "reminders" | "info";
 
 export function ContactDetail({ contactId }: { contactId: ID }) {
   const app = useApp();
   const ui = useUI();
   const confirm = useConfirm();
-  const [tab, setTab] = useState<DetailTab>("overview");
+  const t = useT();
+  const { act } = useContactActions();
+  const [tab, setTab] = useState<DetailTab>("ledger");
   const [menuOpen, setMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [phoneSheet, setPhoneSheet] = useState<PhoneT | null>(null);
@@ -302,8 +306,9 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
   }
 
   const settled = Math.abs(balance) < 0.005;
-  const balanceLabel = settled ? "Settled up" : balance > 0 ? "They owe you" : "You owe them";
+  const balanceLabel = settled ? t("cd.settledUp") : balance > 0 ? t("cd.theyOweYou") : t("cd.youOweThem");
   const phone = primaryPhone(contact);
+  const hasPhones = contact.phones.length > 0;
   const email = primaryEmail(contact);
   const tg = telegramHandle(contact);
   const hasTelegramSocial = contact.socials.some((s) => s.app === "telegram");
@@ -320,15 +325,6 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
           date: fd(new Date()),
         })
       : `Hi ${name}, I'd like to settle up ${money(Math.abs(balance), app.settings.currency)} that I owe you. How would you like to receive it?`;
-
-  const openWhatsApp = () => {
-    if (!phone) {
-      toastErr("No phone number on this contact");
-      return;
-    }
-    openExternal(waLink(phone, waReminder, cc));
-    if (waReminder) app.logMessage(contact.id, "whatsapp", waReminder);
-  };
 
   const remove = async () => {
     const ok = await confirm({
@@ -363,7 +359,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
             variant={contact.favorite ? "brand" : "ghost"}
             onClick={() => {
               app.toggleFavorite(contact.id);
-              toastOk(contact.favorite ? "Removed from favorites" : "Added to favorites");
+              toastOk(contact.favorite ? t("cd.removedFromFavorites") : t("cd.addToFavorites"));
             }}
           >
             <Star size={17} fill={contact.favorite ? "currentColor" : "none"} />
@@ -378,7 +374,17 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
         {/* hero */}
         <div className="flex flex-col items-center">
           <Avatar contact={contact} size="xl" />
-          <h2 className="mt-3 text-[22px] font-bold tracking-tight text-ink">{name}</h2>
+          <div className="mt-3 flex items-center justify-center gap-1.5">
+            <h2 className="text-[22px] font-bold tracking-tight text-ink">{name}</h2>
+            <IconButton
+              label={t("cd.editContact")}
+              variant="surface"
+              className="h-9 w-9"
+              onClick={() => ui.open({ type: "contactEdit", contactId: contact.id })}
+            >
+              <Pencil size={14} />
+            </IconButton>
+          </div>
           {contact.company && (
             <p className="mt-0.5 text-[11px] text-mute">
               {contact.jobTitle ? `${contact.jobTitle} · ` : ""}
@@ -391,43 +397,47 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
           <p className="mt-1.5 text-[11px] font-medium text-mute">{balanceLabel}</p>
           {openPending !== 0 && (
             <p className="mt-1 text-[10px] text-mute">
-              Open lists <Money value={openPending} signed /> counted in balance
+              {t("lg.openLists")} <Money value={openPending} signed /> {t("lg.countedInBalance")}
             </p>
           )}
         </div>
 
-        {/* quick actions */}
-        <div className="app-scroll -mx-1 mt-5 flex gap-2 overflow-x-auto px-1 pb-1">
-          <QuickAction
-            primary
-            icon={<PhoneCall size={19} />}
-            label="Call"
-            disabled={!phone}
-            onClick={() => phone && ui.open({ type: "call", phone, contactId: contact.id })}
+        {/* quick actions — fixed 2×3 icon grid */}
+        <div className="mt-5 grid grid-cols-3 gap-2.5">
+          <GridAction
+            icon={<PhoneCall size={19} className="text-brand" />}
+            label={t("act.call")}
+            disabled={!hasPhones}
+            onClick={() => act(contact, "call")}
           />
-          <QuickAction
+          <GridAction
             icon={<MessageCircle size={19} />}
-            label="SMS"
-            disabled={!phone}
-            onClick={() => phone && openExternal(smsLink(phone, undefined, cc))}
+            label={t("act.sms")}
+            disabled={!hasPhones}
+            onClick={() => act(contact, "sms")}
           />
-          <QuickAction
-            icon={<MessageCircle size={19} />}
-            label="WhatsApp"
-            disabled={!phone}
-            onClick={openWhatsApp}
+          <GridAction
+            icon={<MessageCircle size={19} className="text-[#1faa53]" />}
+            label={t("act.whatsapp")}
+            disabled={!hasPhones}
+            onClick={() => act(contact, "whatsapp", { text: waReminder })}
           />
-          {tg && (
-            <QuickAction icon={<Send size={19} />} label="Telegram" onClick={() => openExternal(tgLink(tg))} />
-          )}
-          {email && (
-            <QuickAction
-              icon={<Mail size={19} />}
-              label="Email"
-              onClick={() => openExternal(mailtoLink(email))}
-            />
-          )}
-          <QuickAction icon={<MoreVertical size={19} />} label="More" onClick={() => setMoreOpen(true)} />
+          <GridAction
+            icon={<Landmark size={19} />}
+            label={t("tab.bank")}
+            onClick={() => setTab("bank")}
+          />
+          <GridAction
+            icon={<Send size={19} />}
+            label={t("act.telegram")}
+            disabled={!tg}
+            onClick={() => act(contact, "telegram")}
+          />
+          <GridAction
+            icon={<MoreVertical size={19} />}
+            label={t("act.more")}
+            onClick={() => setMoreOpen(true)}
+          />
         </div>
 
         {/* tabs */}
@@ -436,13 +446,12 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
             value={tab}
             onChange={setTab}
             options={[
-              { value: "overview", label: "Overview" },
-              { value: "ledger", label: "Ledger" },
-              { value: "lists", label: "Lists" },
-              { value: "notes", label: "Notes" },
-              { value: "bank", label: "Bank" },
-              { value: "files", label: "Files" },
-              { value: "reminders", label: "Reminders" },
+              { value: "ledger", label: t("tab.ledger") },
+              { value: "lists", label: t("tab.lists") },
+              { value: "notes", label: t("tab.notes") },
+              { value: "bank", label: t("tab.bank") },
+              { value: "reminders", label: t("tab.reminders") },
+              { value: "info", label: t("tab.info") },
             ]}
           />
 
@@ -451,7 +460,6 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
             {tab === "lists" && <ListsSection ownerId={contact.id} />}
             {tab === "notes" && <NotesSection ownerId={contact.id} />}
             {tab === "bank" && <BankSection ownerId={contact.id} />}
-            {tab === "files" && <FilesOfOwner ownerId={contact.id} />}
             {tab === "reminders" && <RemindersSection ownerId={contact.id} />}
             {tab === "reminders" && (
               <p className="text-center text-[10px] text-mute">
@@ -459,7 +467,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
               </p>
             )}
 
-            {tab === "overview" && (
+            {tab === "info" && (
               <motion.div
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -472,24 +480,35 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                     <SectionLabel>Phones</SectionLabel>
                     <SectionCard className="divide-y divide-line p-0">
                       {contact.phones.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => setPhoneSheet(p)}
-                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition active:bg-surface2"
-                          aria-label={`Options for ${prettyPhone(p.number, cc)}`}
-                        >
-                          <LabelChip>{p.label}</LabelChip>
-                          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
-                            {prettyPhone(p.number, cc)}
-                          </span>
-                          <Star
-                            size={12}
-                            className={cx("shrink-0", p.primary ? "text-brand" : "text-line2")}
-                            fill={p.primary ? "currentColor" : "none"}
-                          />
-                          <ChevronRight size={14} className="shrink-0 text-line2" />
-                        </button>
+                        <div key={p.id} className="flex items-center gap-1 pr-3">
+                          <button
+                            type="button"
+                            onClick={() => setPhoneSheet(p)}
+                            className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition active:bg-surface2"
+                            aria-label={`Options for ${prettyPhone(p.number, cc)}`}
+                          >
+                            <LabelChip>{p.label}</LabelChip>
+                            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
+                              {prettyPhone(p.number, cc)}
+                            </span>
+                            <Star
+                              size={12}
+                              className={cx("shrink-0", p.primary ? "text-brand" : "text-line2")}
+                              fill={p.primary ? "currentColor" : "none"}
+                            />
+                            <ChevronRight size={14} className="shrink-0 text-line2" />
+                          </button>
+                          <IconButton
+                            label={`Copy ${prettyPhone(p.number, cc)}`}
+                            variant="surface"
+                            className="h-9 w-9"
+                            onClick={() =>
+                              void copyText(p.number).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"))
+                            }
+                          >
+                            <Copy size={14} />
+                          </IconButton>
+                        </div>
                       ))}
                     </SectionCard>
                   </section>
@@ -501,18 +520,28 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                     <SectionLabel>Emails</SectionLabel>
                     <SectionCard className="divide-y divide-line p-0">
                       {contact.emails.map((e) => (
-                        <div key={e.id} className="flex items-center gap-3 px-4 py-3">
+                        <div key={e.id} className="flex items-center gap-2 px-4 py-3">
                           <LabelChip>{e.label}</LabelChip>
                           <button
                             type="button"
                             className="min-w-0 flex-1 truncate text-left text-[13px] font-semibold text-ink"
                             onClick={() => {
-                              void copyText(e.address).then((ok) => toastOk(ok ? "Email copied" : "Couldn't copy"));
+                              void copyText(e.address).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"));
                             }}
                             aria-label="Copy email address"
                           >
                             {e.address}
                           </button>
+                          <IconButton
+                            label={`Copy ${e.address}`}
+                            variant="surface"
+                            className="h-9 w-9"
+                            onClick={() =>
+                              void copyText(e.address).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"))
+                            }
+                          >
+                            <Copy size={14} />
+                          </IconButton>
                           <IconButton
                             label={`Write email to ${e.address}`}
                             variant="surface"
@@ -533,30 +562,41 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                     <SectionLabel>Socials</SectionLabel>
                     <SectionCard className="divide-y divide-line p-0">
                       {contact.socials.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => {
-                            const url = socialUrl(s);
-                            if (url) openExternal(url);
-                            else {
-                              void copyText(s.handle).then((ok) => toastOk(ok ? "Handle copied" : "Couldn't copy"));
-                            }
-                          }}
-                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition active:bg-surface2"
-                          aria-label={`Open ${s.app}`}
-                        >
-                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-brandsoft text-brand">
-                            {SOCIAL_ICONS[s.app]}
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13px] font-semibold text-ink">
-                              {s.handle}
+                        <div key={s.id} className="flex items-center gap-1 pr-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const url = socialUrl(s);
+                              if (url) openExternal(url);
+                              else {
+                                void copyText(s.handle).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"));
+                              }
+                            }}
+                            className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition active:bg-surface2"
+                            aria-label={`Open ${s.app}`}
+                          >
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-brandsoft text-brand">
+                              {SOCIAL_ICONS[s.app]}
                             </span>
-                            <span className="block text-[10px] uppercase tracking-[1.5px] text-mute">{s.app}</span>
-                          </span>
-                          <ChevronRight size={14} className="shrink-0 text-line2" />
-                        </button>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[13px] font-semibold text-ink">
+                                {s.handle}
+                              </span>
+                              <span className="block text-[10px] uppercase tracking-[1.5px] text-mute">{s.app}</span>
+                            </span>
+                            <ChevronRight size={14} className="shrink-0 text-line2" />
+                          </button>
+                          <IconButton
+                            label={`Copy ${s.app} handle`}
+                            variant="surface"
+                            className="h-9 w-9"
+                            onClick={() =>
+                              void copyText(s.handle).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"))
+                            }
+                          >
+                            <Copy size={14} />
+                          </IconButton>
+                        </div>
                       ))}
                     </SectionCard>
                   </section>
@@ -568,22 +608,33 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                     <SectionLabel>Links</SectionLabel>
                     <SectionCard className="divide-y divide-line p-0">
                       {contact.links.map((l) => (
-                        <button
-                          key={l.id}
-                          type="button"
-                          onClick={() => openExternal(l.url)}
-                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition active:bg-surface2"
-                          aria-label={`Open ${l.label || l.url}`}
-                        >
-                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-brandsoft text-brand">
-                            <Link2 size={15} />
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13px] font-semibold text-ink">{l.label}</span>
-                            <span className="block truncate text-[10px] text-mute">{l.url}</span>
-                          </span>
-                          <ChevronRight size={14} className="shrink-0 text-line2" />
-                        </button>
+                        <div key={l.id} className="flex items-center gap-1 pr-3">
+                          <button
+                            type="button"
+                            onClick={() => openExternal(l.url)}
+                            className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition active:bg-surface2"
+                            aria-label={`Open ${l.label || l.url}`}
+                          >
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-brandsoft text-brand">
+                              <Link2 size={15} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[13px] font-semibold text-ink">{l.label}</span>
+                              <span className="block truncate text-[10px] text-mute">{l.url}</span>
+                            </span>
+                            <ChevronRight size={14} className="shrink-0 text-line2" />
+                          </button>
+                          <IconButton
+                            label={`Copy ${l.label || l.url} link`}
+                            variant="surface"
+                            className="h-9 w-9"
+                            onClick={() =>
+                              void copyText(l.url).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"))
+                            }
+                          >
+                            <Copy size={14} />
+                          </IconButton>
+                        </div>
                       ))}
                     </SectionCard>
                   </section>
@@ -595,24 +646,34 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                     <SectionLabel>Addresses</SectionLabel>
                     <SectionCard className="divide-y divide-line p-0">
                       {contact.addresses.map((a) => (
-                        <button
-                          key={a.id}
-                          type="button"
-                          onClick={() => {
-                            void copyText(a.text).then((ok) => toastOk(ok ? "Address copied" : "Couldn't copy"));
-                          }}
-                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition active:bg-surface2"
-                          aria-label="Copy address"
-                        >
-                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-brandsoft text-brand">
-                            <MapPin size={15} />
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13px] font-semibold text-ink">{a.text}</span>
-                            <span className="block text-[10px] uppercase tracking-[1.5px] text-mute">{a.label}</span>
-                          </span>
-                          <Copy size={13} className="shrink-0 text-line2" />
-                        </button>
+                        <div key={a.id} className="flex items-center gap-1 pr-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void copyText(a.text).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"));
+                            }}
+                            className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition active:bg-surface2"
+                            aria-label="Copy address"
+                          >
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-brandsoft text-brand">
+                              <MapPin size={15} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[13px] font-semibold text-ink">{a.text}</span>
+                              <span className="block text-[10px] uppercase tracking-[1.5px] text-mute">{a.label}</span>
+                            </span>
+                          </button>
+                          <IconButton
+                            label="Copy address"
+                            variant="surface"
+                            className="h-9 w-9"
+                            onClick={() =>
+                              void copyText(a.text).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"))
+                            }
+                          >
+                            <Copy size={14} />
+                          </IconButton>
+                        </div>
                       ))}
                     </SectionCard>
                   </section>
@@ -664,11 +725,23 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                     <SectionLabel>Custom fields</SectionLabel>
                     <SectionCard className="divide-y divide-line p-0">
                       {contact.customFields.map((f) => (
-                        <div key={f.id} className="flex items-center gap-3 px-4 py-3">
-                          <span className="w-[92px] shrink-0 truncate text-[10px] font-bold uppercase tracking-[1.2px] text-mute">
-                            {f.key}
-                          </span>
-                          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{f.value}</span>
+                        <div key={f.id} className="flex items-center gap-1 pr-3">
+                          <div className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3">
+                            <span className="w-[92px] shrink-0 truncate text-[10px] font-bold uppercase tracking-[1.2px] text-mute">
+                              {f.key}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{f.value}</span>
+                          </div>
+                          <IconButton
+                            label={`Copy ${f.key}`}
+                            variant="surface"
+                            className="h-9 w-9"
+                            onClick={() =>
+                              void copyText(f.value).then((ok) => toastOk(ok ? t("act.copied") : "Couldn't copy"))
+                            }
+                          >
+                            <Copy size={14} />
+                          </IconButton>
                         </div>
                       ))}
                     </SectionCard>
@@ -714,25 +787,6 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
                     </div>
                   </section>
                 )}
-
-                {/* attachments */}
-                <section>
-                  <SectionLabel
-                    right={
-                      <AttachButton parentType="contact" parentId={contact.id} compact label="Attach" />
-                    }
-                  >
-                    Files
-                  </SectionLabel>
-                  <AttachmentStrip parentType="contact" parentId={contact.id} />
-                  {!app.attachments.some(
-                    (a) => a.parentType === "contact" && a.parentId === contact.id
-                  ) && (
-                    <p className="px-1 text-[10px] text-mute">
-                      Attach ID scans, agreements or voice notes — they live on this contact.
-                    </p>
-                  )}
-                </section>
               </motion.div>
             )}
           </div>
@@ -780,7 +834,7 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
       </BottomSheet>
 
       {/* quick-action "More" sheet */}
-      <BottomSheet open={moreOpen} onClose={() => setMoreOpen(false)} title="More">
+      <BottomSheet open={moreOpen} onClose={() => setMoreOpen(false)} title={t("act.more")}>
         <div className="space-y-0.5 pb-2">
           <ActionRow
             icon={<Share2 size={17} />}
@@ -788,6 +842,15 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
             onClick={() => {
               setMoreOpen(false);
               void shareVCard(contact);
+            }}
+          />
+          <ActionRow
+            icon={<Mail size={17} />}
+            title={t("act.email")}
+            sub={email}
+            onClick={() => {
+              setMoreOpen(false);
+              act(contact, "email");
             }}
           />
           {phone && (
@@ -890,37 +953,30 @@ export function ContactDetail({ contactId }: { contactId: ID }) {
   );
 }
 
-function QuickAction({
+function GridAction({
   icon,
   label,
   onClick,
-  primary,
   disabled,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
-  primary?: boolean;
   disabled?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={label}
-      className="flex w-[64px] shrink-0 flex-col items-center gap-1.5 transition active:scale-95 disabled:opacity-40"
-    >
-      <span
-        className={cx(
-          "flex h-12 w-12 items-center justify-center rounded-[17px] shadow-key",
-          primary ? "bg-brand text-white shadow-floating" : "border border-line bg-surface text-brand"
-        )}
+    <div className="flex flex-col items-center gap-1">
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={label}
+        className="flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-surface text-ink shadow-key transition active:scale-95 disabled:opacity-40"
       >
         {icon}
-      </span>
-      <span className="text-[10px] font-semibold text-mute">{label}</span>
-    </button>
+      </button>
+      <span className="max-w-full truncate text-[9px] font-semibold text-mute">{label}</span>
+    </div>
   );
 }
 
@@ -1603,6 +1659,7 @@ export function CallScreen({
 }) {
   const app = useApp();
   const ui = useUI();
+  const t = useT();
   const cc = app.settings.countryCode;
 
   /* hide while another overlay sits on top of the call (e.g. adding a contact mid-call) */
@@ -1797,13 +1854,13 @@ export function CallScreen({
                   onClick={() => setSpeaker((s) => !s)}
                 />
                 <ControlButton
-                  label="Message"
+                  label={t("act.message")}
                   icon={<MessageCircle size={20} />}
                   onClick={() => toastOk("Messaging isn't available during a call in this demo")}
                 />
                 {!contact && (
                   <ControlButton
-                    label="Add contact"
+                    label={t("act.newContact")}
                     icon={<UserPlus size={20} />}
                     onClick={() => ui.open({ type: "contactEdit", prefillPhone: phone })}
                   />
@@ -1840,7 +1897,7 @@ export function CallScreen({
                 className="flex h-11 items-center gap-2 rounded-full border border-line2 bg-surface px-4 text-[11px] font-bold text-ink shadow-key transition active:scale-95"
                 aria-label="Open WhatsApp"
               >
-                <MessageCircle size={14} className="text-[#1faa53]" /> WhatsApp
+                <MessageCircle size={14} className="text-[#1faa53]" /> {t("act.whatsapp")}
               </button>
             </div>
           )}

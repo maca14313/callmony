@@ -53,6 +53,17 @@ export const totalsForOwner = (entries: LedgerEntry[], ownerId: string) => {
   return { credit, debit, net: r2(credit - debit) };
 };
 
+/** Totals for a ledger group — net full amount + net still pending. */
+export const groupTotals = (entries: LedgerEntry[], groupId: string) => {
+  const members = entries.filter((e) => e.groupId === groupId && !e.deletedAt);
+  const net = r2(
+    members.reduce((s, e) => s + (e.type === "credit" ? 1 : -1) * (+e.amount || 0), 0)
+  );
+  const remaining = r2(members.reduce((s, e) => s + entrySignedRemaining(e), 0));
+  const paid = r2(members.reduce((s, e) => s + sumPayments(e.payments), 0));
+  return { count: members.length, net, remaining, paid };
+};
+
 /* ---------------- Calculating lists ---------------- */
 
 /** line total = qty × price − row discount + row tax */

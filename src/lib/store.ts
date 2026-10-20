@@ -10,6 +10,7 @@ import {
   Contact,
   ID,
   LedgerEntry,
+  LedgerGroup,
   LinkRef,
   MessageLog,
   Note,
@@ -42,6 +43,7 @@ interface AppState {
   hydrated: boolean;
   contacts: Contact[];
   entries: LedgerEntry[];
+  groups: LedgerGroup[];
   lists: CalcList[];
   notes: Note[];
   reminders: Reminder[];
@@ -72,8 +74,16 @@ interface AppState {
   purgeEntry: (id: ID) => void;
   addPayment: (entryId: ID, payment: Partial<Payment> & { amount: number }) => void;
   removePayment: (entryId: ID, paymentId: ID) => void;
+  removePaymentRefs: (entryId: ID, paymentId: ID, refs: LinkRef[]) => void;
+  updatePaymentRefs: (entryId: ID, paymentId: ID, refs: LinkRef[]) => void;
   settleUp: (ownerId: OwnerId) => number;
-  moveEntity: (kind: "entry" | "list" | "note" | "reminder" | "bank", id: ID, ownerId: OwnerId) => void;
+  moveEntity: (kind: "entry" | "list" | "note" | "reminder" | "bank" | "group", id: ID, ownerId: OwnerId) => void;
+
+  /* ledger groups */
+  saveGroup: (g: Partial<LedgerGroup> & { id?: ID; ownerId: OwnerId; title: string }) => LedgerGroup;
+  deleteGroup: (id: ID) => void;
+  restoreGroup: (id: ID) => void;
+  purgeGroup: (id: ID) => void;
 
   /* lists */
   saveList: (l: Partial<CalcList> & { id?: ID; ownerId: OwnerId; title: string }) => CalcList;
@@ -149,6 +159,7 @@ export const useApp = create<AppState>((set, get) => {
 
   const persistContact = (c: Contact) => void idbPut("contacts", c);
   const persistEntry = (e: LedgerEntry) => void idbPut("entries", e);
+  const persistGroup = (g: LedgerGroup) => void idbPut("groups", g);
   const persistList = (l: CalcList) => void idbPut("lists", l);
   const persistNote = (n: Note) => void idbPut("notes", n);
   const persistReminder = (r: Reminder) => void idbPut("reminders", r);
@@ -186,6 +197,7 @@ export const useApp = create<AppState>((set, get) => {
     hydrated: false,
     contacts: [],
     entries: [],
+    groups: [],
     lists: [],
     notes: [],
     reminders: [],
@@ -199,10 +211,11 @@ export const useApp = create<AppState>((set, get) => {
     /* ---------------- hydrate ---------------- */
     hydrate: async () => {
       if (get().hydrated) return;
-      const [contacts, entries, lists, notes, reminders, banks, recents, messages, attachments] =
+      const [contacts, entries, groups, lists, notes, reminders, banks, recents, messages, attachments] =
         await Promise.all([
           idbGetAll<Contact>("contacts"),
           idbGetAll<LedgerEntry>("entries"),
+          idbGetAll<LedgerGroup>("groups"),
           idbGetAll<CalcList>("lists"),
           idbGetAll<Note>("notes"),
           idbGetAll<Reminder>("reminders"),
@@ -220,6 +233,7 @@ export const useApp = create<AppState>((set, get) => {
         set({
           contacts: demo.contacts,
           entries: demo.entries,
+          groups: demo.groups,
           lists: demo.lists,
           notes: demo.notes,
           reminders: demo.reminders,
@@ -232,6 +246,7 @@ export const useApp = create<AppState>((set, get) => {
         await metaSet("demoSeeded", true);
         demo.contacts.forEach(persistContact);
         demo.entries.forEach(persistEntry);
+        demo.groups.forEach(persistGroup);
         demo.lists.forEach(persistList);
         demo.notes.forEach(persistNote);
         demo.reminders.forEach(persistReminder);
@@ -245,6 +260,7 @@ export const useApp = create<AppState>((set, get) => {
       set({
         contacts,
         entries,
+        groups,
         lists,
         notes,
         reminders,
@@ -447,6 +463,8 @@ export const useApp = create<AppState>((set, get) => {
         method: input.method ?? existing?.method,
         note: input.note ?? existing?.note,
         listId: input.listId ?? existing?.listId,
+        groupId: input.groupId === "" ? undefined : input.groupId ?? existing?.groupId,
+        refs: input.refs ?? existing?.refs,
         attachments: input.attachments ?? existing?.attachments ?? [],
         createdAt: existing?.createdAt ?? now(),
         updatedAt: now(),
@@ -480,6 +498,62 @@ export const useApp = create<AppState>((set, get) => {
       await idbDel("entries", id);
     },
 
+    /* ---------------- ledger groups ---------------- */
+    saveGroup: (input) => {
+      const existing = input.id ? get().groups.find((g) => g.id === input.id) : undefined;
+      const id = input.id || uid();
+      const g: LedgerGroup = {
+        id,
+        ownerId: input.ownerId,
+        title: input.title?.trim() || existing?.title || "Group",
+        note: input.note ?? existing?.note,
+        refs: input.refs ?? existing?.refs ?? [],
+        createdAt: existing?.createdAt ?? now(),
+        updatedAt: now(),
+      };
+      set((s) => ({
+        groups: existing ? s.groups.map((x) => (x.id === id ? g : x)) : [...s.groups, g],
+      }));
+      persistGroup(g);
+      return g;
+    },
+
+    deleteGroup: (id) => {
+      const g = get().groups.find((x) => x.id === id);
+      if (!g) return;
+      const members = get().entries.filter((e) => e.groupId === id && !e.deletedAt);
+      // un-assign member entries (their history stays, they just become single entries)
+      members.forEach((m) => {
+        const next = touch({ ...m, groupId: undefined });
+        set((s) => ({ entries: s.entries.map((x) => (x.id === m.id ? next : x)) }));
+        persistEntry(next);
+      });
+      const next = { ...g, deletedAt: now() };
+      set((s) => ({ groups: s.groups.map((x) => (x.id === id ? next : x)) }));
+      persistGroup(next);
+      get().pushUndo("Group deleted", () => {
+        get().restoreGroup(id);
+        members.forEach((m) => {
+          const back = touch({ ...m, groupId: id });
+          set((s) => ({ entries: s.entries.map((x) => (x.id === m.id ? back : x)) }));
+          persistEntry(back);
+        });
+      });
+    },
+
+    restoreGroup: (id) => {
+      const g = get().groups.find((x) => x.id === id);
+      if (!g) return;
+      const next = { ...g, deletedAt: undefined };
+      set((s) => ({ groups: s.groups.map((x) => (x.id === id ? next : x)) }));
+      persistGroup(next);
+    },
+
+    purgeGroup: async (id) => {
+      set((s) => ({ groups: s.groups.filter((x) => x.id !== id) }));
+      await idbDel("groups", id);
+    },
+
     addPayment: (entryId, payment) => {
       const p: Payment = {
         id: uid(),
@@ -488,6 +562,7 @@ export const useApp = create<AppState>((set, get) => {
         note: payment.note,
         method: payment.method,
         auto: payment.auto,
+        refs: payment.refs,
         createdAt: now(),
       };
       updateEntry(entryId, (e) => ({ ...e, payments: [...e.payments, p] }));
@@ -497,6 +572,20 @@ export const useApp = create<AppState>((set, get) => {
       updateEntry(entryId, (e) => ({
         ...e,
         payments: e.payments.filter((p) => p.id !== paymentId),
+      }));
+    },
+
+    removePaymentRefs: (entryId, paymentId, refs) => {
+      updateEntry(entryId, (e) => ({
+        ...e,
+        payments: e.payments.map((p) => (p.id === paymentId ? { ...p, refs } : p)),
+      }));
+    },
+
+    updatePaymentRefs: (entryId, paymentId, refs) => {
+      updateEntry(entryId, (e) => ({
+        ...e,
+        payments: e.payments.map((p) => (p.id === paymentId ? { ...p, refs } : p)),
       }));
     },
 
@@ -527,6 +616,24 @@ export const useApp = create<AppState>((set, get) => {
       switch (kind) {
         case "entry":
           updateEntry(id, (e) => ({ ...e, ownerId }));
+          break;
+        case "group":
+          set((s) => {
+            const g = s.groups.find((x) => x.id === id);
+            if (g) {
+              const next = touch({ ...g, ownerId });
+              persistGroup(next);
+              return { groups: s.groups.map((x) => (x.id === id ? next : x)) };
+            }
+            return {};
+          });
+          // move the member entries along with the group
+          set((s) => ({
+            entries: s.entries.map((e) =>
+              e.groupId === id && !e.deletedAt ? touch({ ...e, ownerId }) : e
+            ),
+          }));
+          get().entries.filter((e) => e.groupId === id).forEach((e) => e.ownerId === ownerId && persistEntry(e));
           break;
         case "list":
           updateList(id, (l) => ({ ...l, ownerId }));
@@ -679,6 +786,7 @@ export const useApp = create<AppState>((set, get) => {
         note: payment.note,
         method: payment.method,
         auto: payment.auto,
+        refs: payment.refs,
         createdAt: now(),
       };
       updateList(listId, (l) => ({
@@ -1063,12 +1171,13 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     wipeAll: async () => {
-      const stores = ["contacts", "entries", "lists", "notes", "reminders", "banks", "recents", "messages", "attachments", "blobs"] as const;
+      const stores = ["contacts", "entries", "groups", "lists", "notes", "reminders", "banks", "recents", "messages", "attachments", "blobs"] as const;
       await Promise.all(stores.map((s) => idbClear(s)));
       await idbPutKey("meta", "demoSeeded", true);
       set({
         contacts: [],
         entries: [],
+        groups: [],
         lists: [],
         notes: [],
         reminders: [],
@@ -1205,6 +1314,19 @@ function buildDemoData() {
       category: "Loan",
       method: "cash",
       note: "Borrowed for shop restock",
+      attachments: [],
+      createdAt: t,
+      updatedAt: t,
+    },
+    {
+      id: uid(),
+      ownerId: abel.id,
+      type: "credit",
+      amount: 750,
+      payments: [pay(250, 3)],
+      date: new Date(t - 4 * 86400000).toISOString().slice(0, 10),
+      category: "Sale",
+      note: "Weekly supply pickup",
       attachments: [],
       createdAt: t,
       updatedAt: t,
@@ -1459,7 +1581,20 @@ function buildDemoData() {
     { id: uid(), phone: "+251 914 567 890", contactId: hana.id, direction: "outgoing", at: t - 90000000, duration: 0, via: "app", createdAt: t },
   ];
 
-  return { contacts, entries, lists, notes, reminders, banks, recents };
+  /* demo ledger group — shows grouped entries with calculated totals */
+  const shopGroup: LedgerGroup = {
+    id: uid(),
+    ownerId: abel.id,
+    title: "Shop restock",
+    note: "Everything tied to the shop restock — group totals update as payments land.",
+    refs: [],
+    createdAt: t,
+    updatedAt: t,
+  };
+  entries[0].groupId = shopGroup.id;
+  entries[1].groupId = shopGroup.id;
+
+  return { contacts, entries, groups: [shopGroup], lists, notes, reminders, banks, recents };
 }
 
 /* selectors — NOTE: always select stable references (arrays/objects from state),

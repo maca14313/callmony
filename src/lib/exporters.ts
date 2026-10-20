@@ -5,6 +5,7 @@ import {
   Contact,
   Email,
   LedgerEntry,
+  LedgerGroup,
   LinkItem,
   MessageLog,
   Note,
@@ -235,6 +236,7 @@ export async function buildBackup(
   data: {
     contacts: Contact[];
     entries: LedgerEntry[];
+    groups?: LedgerGroup[];
     lists: CalcList[];
     notes: Note[];
     reminders: Reminder[];
@@ -259,6 +261,7 @@ export async function buildBackup(
     data: {
       contacts: data.contacts,
       entries: data.entries,
+      groups: data.groups || [],
       lists: data.lists,
       notes: data.notes,
       reminders: data.reminders,

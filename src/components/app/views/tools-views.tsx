@@ -1,17 +1,18 @@
 "use client";
 
 /* =========================================================================
-   Task 2-c — tools views
+   Task 5-c — tools views
    RemindersView (main tab): segmented status groups + kind filter chips,
    notifications permission card, "+ New reminder".
    TrashView (main tab): per-type segmented trash with restore / delete
-   forever / restore all / empty trash.
+   forever / restore all / empty trash — incl. soft-deleted ledger groups.
    ========================================================================= */
 
 import { useMemo, useState } from "react";
 import {
   BellRing,
   CreditCard,
+  Layers,
   ListChecks,
   Notebook,
   Plus,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { useUI } from "@/lib/ui-store";
+import { useT } from "@/lib/i18n";
 import { dueStatus } from "@/lib/calc";
 import { displayName, money as fmtMoney, relTime } from "@/lib/utils";
 import type { Contact, ID, LedgerEntry, Reminder, ReminderKind } from "@/lib/types";
@@ -57,6 +59,7 @@ const KIND_CHIPS: { id: KindFilter; label: string }[] = [
 
 export function RemindersView() {
   const ui = useUI();
+  const t = useT();
   const remindersAll = useApp((s) => s.reminders);
   const settings = useApp((s) => s.settings);
   const updateSettings = useApp((s) => s.updateSettings);
@@ -154,7 +157,7 @@ export function RemindersView() {
       {/* heading */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-[25px] font-bold tracking-tight text-ink">Reminders</h2>
+          <h2 className="text-[25px] font-bold tracking-tight text-ink">{t("tab.reminders")}</h2>
           <p className="mt-0.5 text-xs font-medium text-mute">{stats}</p>
         </div>
         <Button
@@ -202,10 +205,10 @@ export function RemindersView() {
         value={seg}
         onChange={setSeg}
         options={[
-          { value: "overdue", label: "Overdue", badge: groups.overdue.length },
-          { value: "today", label: "Today", badge: groups.today.length },
-          { value: "upcoming", label: "Upcoming", badge: groups.upcoming.length },
-          { value: "done", label: "Done" },
+          { value: "overdue", label: t("rm.overdue"), badge: groups.overdue.length },
+          { value: "today", label: t("rm.today"), badge: groups.today.length },
+          { value: "upcoming", label: t("rm.upcoming"), badge: groups.upcoming.length },
+          { value: "done", label: t("rm.done") },
           { value: "all", label: "All" },
         ]}
       />
@@ -238,10 +241,10 @@ export function RemindersView() {
           />
         ) : (
           <>
-            {renderGroup("overdue", "Overdue", groups.overdue, "Nothing overdue 🎉")}
-            {renderGroup("today", "Today", groups.today, "Nothing due today")}
-            {renderGroup("upcoming", "Upcoming", groups.upcoming, "Nothing coming up")}
-            {renderGroup("done", "Done", groups.done, "Nothing completed yet")}
+            {renderGroup("overdue", t("rm.overdue"), groups.overdue, "Nothing overdue 🎉")}
+            {renderGroup("today", t("rm.today"), groups.today, "Nothing due today")}
+            {renderGroup("upcoming", t("rm.upcoming"), groups.upcoming, "Nothing coming up")}
+            {renderGroup("done", t("rm.done"), groups.done, "Nothing completed yet")}
           </>
         )}
       </div>
@@ -253,7 +256,7 @@ export function RemindersView() {
 /* TrashView                                                           */
 /* ================================================================== */
 
-type TrashTab = "all" | "contacts" | "entries" | "lists" | "notes" | "reminders" | "banks";
+type TrashTab = "all" | "contacts" | "entries" | "groups" | "lists" | "notes" | "reminders" | "banks";
 
 interface TrashItem {
   key: string;
@@ -271,6 +274,7 @@ const TAB_LABELS: Record<TrashTab, string> = {
   all: "All",
   contacts: "Contacts",
   entries: "Entries",
+  groups: "Groups", // translated via t("lg.groups") in the UI
   lists: "Lists",
   notes: "Notes",
   reminders: "Reminders",
@@ -279,10 +283,12 @@ const TAB_LABELS: Record<TrashTab, string> = {
 
 export function TrashView() {
   const confirm = useConfirm();
+  const t = useT();
   const [tab, setTab] = useState<TrashTab>("all");
 
   const contacts = useApp((s) => s.contacts);
   const entries = useApp((s) => s.entries);
+  const groupsAll = useApp((s) => s.groups);
   const lists = useApp((s) => s.lists);
   const notes = useApp((s) => s.notes);
   const reminders = useApp((s) => s.reminders);
@@ -292,6 +298,8 @@ export function TrashView() {
   const purgeContact = useApp((s) => s.purgeContact);
   const restoreEntry = useApp((s) => s.restoreEntry);
   const purgeEntry = useApp((s) => s.purgeEntry);
+  const restoreGroup = useApp((s) => s.restoreGroup);
+  const purgeGroup = useApp((s) => s.purgeGroup);
   const restoreList = useApp((s) => s.restoreList);
   const purgeList = useApp((s) => s.purgeList);
   const restoreNote = useApp((s) => s.restoreNote);
@@ -314,6 +322,9 @@ export function TrashView() {
     const when = `Deleted ${relTime(deletedAt)}`;
     return ownerId ? `${ownerLabel(ownerId)} · ${when}` : when;
   };
+
+  /* translated label for a trash segment ("Groups" has an i18n key) */
+  const tabLabel = (x: TrashTab): string => (x === "groups" ? t("lg.groups") : TAB_LABELS[x]);
 
   /* Derivation is cheap (filtering small local arrays) — computed per render
      so the React compiler can auto-memoize it reliably. */
@@ -355,6 +366,22 @@ export function TrashView() {
           deletedAt: e.deletedAt,
           restore: () => restoreEntry(e.id),
           purge: () => void purgeEntry(e.id),
+        });
+      });
+
+    if (tab === "all" || tab === "groups")
+      groupsAll.forEach((g) => {
+        if (!g.deletedAt) return;
+        out.push({
+          key: `g-${g.id}`,
+          name: g.title,
+          icon: <Layers size={17} />,
+          iconCls: "bg-brandsoft text-brand",
+          title: <span className="truncate">{g.title}</span>,
+          sub: deletedSub(g.ownerId, g.deletedAt),
+          deletedAt: g.deletedAt,
+          restore: () => restoreGroup(g.id),
+          purge: () => void purgeGroup(g.id),
         });
       });
 
@@ -429,12 +456,13 @@ export function TrashView() {
     () => ({
       contacts: contacts.filter((c) => c.deletedAt).length,
       entries: entries.filter((e) => e.deletedAt).length,
+      groups: groupsAll.filter((g) => g.deletedAt).length,
       lists: lists.filter((l) => l.deletedAt).length,
       notes: notes.filter((n) => n.deletedAt).length,
       reminders: reminders.filter((r) => r.deletedAt).length,
       banks: banks.filter((b) => b.deletedAt).length,
     }),
-    [contacts, entries, lists, notes, reminders, banks]
+    [contacts, entries, groupsAll, lists, notes, reminders, banks]
   );
 
   const purgeOne = async (it: TrashItem) => {
@@ -457,7 +485,7 @@ export function TrashView() {
 
   const emptyTrash = async () => {
     if (!items.length) return;
-    const scope = tab === "all" ? `all ${items.length} items` : `the ${items.length} ${TAB_LABELS[tab].toLowerCase()}`;
+    const scope = tab === "all" ? `all ${items.length} items` : `the ${items.length} ${tabLabel(tab).toLowerCase()}`;
     const ok = await confirm({
       title: "Empty trash?",
       message: `Permanently delete ${scope} in trash? This cannot be undone.`,
@@ -474,7 +502,7 @@ export function TrashView() {
       {/* heading */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-[25px] font-bold tracking-tight text-ink">Trash</h2>
+          <h2 className="text-[25px] font-bold tracking-tight text-ink">{t("hdr.trash")}</h2>
           <p className="mt-0.5 text-xs font-medium text-mute">
             {items.length
               ? `${items.length} item${items.length === 1 ? "" : "s"} · deleted items stay until you empty the trash`
@@ -502,6 +530,7 @@ export function TrashView() {
           { value: "all", label: TAB_LABELS.all, badge: items.length },
           { value: "contacts", label: TAB_LABELS.contacts, badge: counts.contacts },
           { value: "entries", label: TAB_LABELS.entries, badge: counts.entries },
+          { value: "groups", label: t("lg.groups"), badge: counts.groups },
           { value: "lists", label: TAB_LABELS.lists, badge: counts.lists },
           { value: "notes", label: TAB_LABELS.notes, badge: counts.notes },
           { value: "reminders", label: TAB_LABELS.reminders, badge: counts.reminders },
@@ -517,8 +546,8 @@ export function TrashView() {
             title="Trash is empty 🎉"
             hint={
               tab === "all"
-                ? "Deleted contacts, entries, lists, notes, reminders and accounts appear here."
-                : `No deleted ${TAB_LABELS[tab].toLowerCase()} right now.`
+                ? "Deleted contacts, entries, groups, lists, notes, reminders and accounts appear here."
+                : `No deleted ${tabLabel(tab).toLowerCase()} right now.`
             }
           />
         ) : (

@@ -13,6 +13,7 @@ import {
   ArrowLeftRight,
   Bell,
   BellOff,
+  Check,
   CheckCircle2,
   ChevronRight,
   CloudOff,
@@ -29,6 +30,7 @@ import {
   Info,
   KeyRound,
   Landmark,
+  Languages,
   ListChecks,
   Loader2,
   Lock,
@@ -55,6 +57,7 @@ import {
 
 import { useApp } from "@/lib/store";
 import { useUI } from "@/lib/ui-store";
+import { LANGUAGES, useT } from "@/lib/i18n";
 import { APP_VERSION, requestPersistence, useInstallPrompt } from "@/lib/pwa";
 import {
   bytesStr,
@@ -207,6 +210,7 @@ async function buildBackupBlob(): Promise<{ blob: Blob; filename: string; files:
     {
       contacts: s.contacts,
       entries: s.entries,
+      groups: s.groups,
       lists: s.lists,
       notes: s.notes,
       reminders: s.reminders,
@@ -270,6 +274,7 @@ async function applyRestoreReplace(backup: BackupFile): Promise<void> {
   const jobs: Promise<void>[] = [];
   d.contacts.forEach((c) => jobs.push(idbPut("contacts", c)));
   d.entries.forEach((e) => jobs.push(idbPut("entries", e)));
+  d.groups?.forEach((g) => jobs.push(idbPut("groups", g)));
   d.lists.forEach((l) => jobs.push(idbPut("lists", l)));
   d.notes.forEach((n) => jobs.push(idbPut("notes", n)));
   d.reminders.forEach((r) => jobs.push(idbPut("reminders", r)));
@@ -295,6 +300,7 @@ async function applyRestoreMerge(backup: BackupFile): Promise<void> {
   const have = {
     contacts: idsOf(s.contacts),
     entries: idsOf(s.entries),
+    groups: idsOf(s.groups),
     lists: idsOf(s.lists),
     notes: idsOf(s.notes),
     reminders: idsOf(s.reminders),
@@ -306,6 +312,9 @@ async function applyRestoreMerge(backup: BackupFile): Promise<void> {
   const jobs: Promise<void>[] = [];
   d.contacts.filter((c) => !have.contacts.has(c.id)).forEach((c) => jobs.push(idbPut("contacts", c)));
   d.entries.filter((e) => !have.entries.has(e.id)).forEach((e) => jobs.push(idbPut("entries", e)));
+  d.groups
+    ?.filter((g) => !have.groups.has(g.id))
+    .forEach((g) => jobs.push(idbPut("groups", g)));
   d.lists.filter((l) => !have.lists.has(l.id)).forEach((l) => jobs.push(idbPut("lists", l)));
   d.notes.filter((n) => !have.notes.has(n.id)).forEach((n) => jobs.push(idbPut("notes", n)));
   d.reminders.filter((r) => !have.reminders.has(r.id)).forEach((r) => jobs.push(idbPut("reminders", r)));
@@ -1004,6 +1013,7 @@ function RestoreContent({ backup, onClose }: { backup: BackupFile; onClose: () =
   const counts = [
     `${backup.data.contacts.length} contacts`,
     `${backup.data.entries.length} entries`,
+    `${backup.data.groups?.length ?? 0} groups`,
     `${backup.data.lists.length} lists`,
     `${backup.data.notes.length} notes`,
     `${backup.data.reminders.length} reminders`,
@@ -1550,6 +1560,7 @@ export function SearchOverlay({ query: initialQuery }: { query?: string }) {
 export function SettingsView() {
   const pop = useUI((s) => s.pop);
   const openOverlay = useUI((s) => s.open);
+  const t = useT();
   const settings = useApp((s) => s.settings);
   const updateSettings = useApp((s) => s.updateSettings);
   const wipeAll = useApp((s) => s.wipeAll);
@@ -1568,6 +1579,7 @@ export function SettingsView() {
     open: false,
     mode: "set",
   });
+  const [langSheet, setLangSheet] = useState(false);
   /* overlays render client-side only, so a lazy read is safe */
   const [standalone] = useState(() =>
     typeof window !== "undefined" && window.matchMedia
@@ -1625,28 +1637,43 @@ export function SettingsView() {
     !lastBackupAt || Date.now() - lastBackupAt > 30 * 24 * 60 * 60 * 1000;
   const filesTotal = attachments.reduce((s, a) => s + a.size, 0);
 
+  const activeLang = LANGUAGES.find((l) => l.code === settings.language) ?? LANGUAGES[0];
+
+  const pickLang = (code: string) => {
+    updateSettings({ language: code as Settings["language"] });
+    const lang = LANGUAGES.find((l) => l.code === code);
+    toastOk(`Language set to ${lang?.native ?? code}`);
+    setLangSheet(false);
+  };
+
   return (
     <Sheet title="Settings" onBack={pop}>
       <div className="space-y-6 px-4 pb-14 pt-4">
         {/* Appearance */}
-        <section aria-label="Appearance">
-          <SectionLabel>Appearance</SectionLabel>
+        <section aria-label={t("st.appearance")}>
+          <SectionLabel>{t("st.appearance")}</SectionLabel>
           <SectionCard className="space-y-4">
             <div>
-              <p className="mb-2 text-[13px] font-semibold text-ink">Theme</p>
+              <p className="mb-2 text-[13px] font-semibold text-ink">{t("st.theme")}</p>
               <Segmented
                 options={[
-                  { value: "light", label: "Light" },
-                  { value: "dark", label: "Dark" },
-                  { value: "auto", label: "Auto" },
+                  { value: "light", label: t("st.light") },
+                  { value: "dark", label: t("st.dark") },
+                  { value: "auto", label: t("st.auto") },
                 ]}
                 value={settings.theme}
                 onChange={applyTheme}
               />
             </div>
+            <ActionRow
+              icon={<Languages size={18} />}
+              label={t("st.language")}
+              hint={activeLang.native}
+              onClick={() => setLangSheet(true)}
+            />
             <ToggleRow
               icon={<EyeOff size={17} />}
-              label="Hide balances"
+              label={t("st.hideBalances")}
               hint="Blur money amounts everywhere until you turn this off."
               checked={settings.hideBalances}
               onToggle={() => updateSettings({ hideBalances: !settings.hideBalances })}
@@ -1690,8 +1717,8 @@ export function SettingsView() {
         </section>
 
         {/* Security */}
-        <section aria-label="Security">
-          <SectionLabel>Security — PIN lock</SectionLabel>
+        <section aria-label={t("st.security")}>
+          <SectionLabel>{t("st.security")}</SectionLabel>
           <SectionCard>
             {settings.pinHash ? (
               <>
@@ -1739,8 +1766,8 @@ export function SettingsView() {
         </section>
 
         {/* Notifications */}
-        <section aria-label="Notifications">
-          <SectionLabel>Notifications</SectionLabel>
+        <section aria-label={t("st.notifications")}>
+          <SectionLabel>{t("st.notifications")}</SectionLabel>
           <SectionCard>
             <NotifStatusRow perm={notif.perm} onAsk={() => void notif.ask()} />
             <Note icon={<Info size={13} />}>
@@ -1752,8 +1779,8 @@ export function SettingsView() {
         </section>
 
         {/* Backup & restore */}
-        <section aria-label="Backup and restore">
-          <SectionLabel>Backup &amp; restore</SectionLabel>
+        <section aria-label={t("st.backup")}>
+          <SectionLabel>{t("st.backup")}</SectionLabel>
           <SectionCard className="space-y-1">
             <ActionRow
               icon={<Archive size={18} />}
@@ -1883,12 +1910,12 @@ export function SettingsView() {
         </section>
 
         {/* Storage */}
-        <section aria-label="Storage">
-          <SectionLabel>Storage</SectionLabel>
+        <section aria-label={t("st.storage")}>
+          <SectionLabel>{t("st.storage")}</SectionLabel>
           <SectionCard>
             <ActionRow
               icon={<HardDrive size={18} />}
-              label="Storage"
+              label={t("st.storage")}
               hint={`${attachments.length} files · ${bytesStr(filesTotal)}`}
               onClick={() => openOverlay({ type: "storage" })}
             />
@@ -1935,8 +1962,8 @@ export function SettingsView() {
         </section>
 
         {/* About */}
-        <section aria-label="About">
-          <SectionLabel>About</SectionLabel>
+        <section aria-label={t("st.about")}>
+          <SectionLabel>{t("st.about")}</SectionLabel>
           <SectionCard>
             <ActionRow
               icon={<Info size={18} />}
@@ -2016,6 +2043,41 @@ export function SettingsView() {
         mode={pinSheet.mode}
         onClose={() => setPinSheet((p) => ({ ...p, open: false }))}
       />
+
+      {/* language picker */}
+      <BottomSheet open={langSheet} onClose={() => setLangSheet(false)} title={t("st.language")}>
+        <div className="space-y-1.5 pb-2">
+          {LANGUAGES.map((l) => {
+            const active = settings.language === l.code;
+            return (
+              <button
+                key={l.code}
+                type="button"
+                onClick={() => pickLang(l.code)}
+                aria-pressed={active}
+                className={cx(
+                  "flex h-12 w-full items-center gap-3 rounded-2xl px-3 text-left transition active:scale-[0.98]",
+                  active ? "border border-brand/40 bg-brandsoft" : "hover:bg-surface2"
+                )}
+              >
+                <span
+                  className={cx(
+                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] text-[13px] font-bold",
+                    active ? "bg-brand text-white" : "bg-surface2 text-mute"
+                  )}
+                >
+                  {l.code.toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13.5px] font-semibold text-ink">{l.native}</span>
+                  <span className="block truncate text-[11px] text-mute">{l.label}</span>
+                </span>
+                {active && <Check size={17} className="shrink-0 text-brand" />}
+              </button>
+            );
+          })}
+        </div>
+      </BottomSheet>
       <RestoreChoiceSheet
         open={!!restoreBackup}
         backup={restoreBackup}

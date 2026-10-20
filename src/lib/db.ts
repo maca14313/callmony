@@ -1,13 +1,14 @@
 /* IndexedDB layer — all data lives on the device.
-   v2 schema: keyed stores use in-line ids; `meta` + `blobs` use out-of-line keys. */
+   v3 schema: keyed stores use in-line ids; `meta` + `blobs` use out-of-line keys. */
 
 const DB_NAME = "dial-ledger";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 /** stores keyed by in-line "id" property */
 export const KEYED_STORES = [
   "contacts",
   "entries",
+  "groups",
   "lists",
   "notes",
   "reminders",

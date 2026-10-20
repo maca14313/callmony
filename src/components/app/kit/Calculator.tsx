@@ -4,12 +4,14 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Copy, History, X } from "lucide-react";
 import { copyText } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 import { Button, cx } from "./primitives";
 import { toastOk } from "./toast";
 import { useUI } from "@/lib/ui-store";
 
-/* Calculator engine + keypad — used as a full view, a sheet from amount fields,
-   and anywhere quick math is needed. */
+/* Calculator engine + keypad — used as a sheet from amount fields and
+   anywhere quick math is needed. The running expression (e.g. "100 +")
+   is shown IN THE MAIN DISPLAY AREA, right above the current number. */
 
 type Op = "+" | "−" | "×" | "÷";
 
@@ -19,15 +21,22 @@ interface HistEntry {
 }
 
 export function Calculator({ onUse }: { onUse?: (value: number) => void }) {
-  const [display, setDisplay] = useState("0");
-  const [acc, setAcc] = useState<number | null>(null);
-  const [op, setOp] = useState<Op | null>(null);
-  const [fresh, setFresh] = useState(true); // next digit starts a new number
+  const t = useT();
+  /* one state object + functional updaters → rapid/batched key presses
+     can never read a stale closure (digits were lost otherwise). */
+  interface CalcState {
+    display: string;
+    expr: string; // "100 +" — shown in the main display area
+    acc: number | null;
+    op: Op | null;
+    fresh: boolean; // next digit starts a new number
+  }
+  const [cs, setCs] = useState<CalcState>({ display: "0", expr: "", acc: null, op: null, fresh: true });
   const [history, setHistory] = useState<HistEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [memory, setMemory] = useState<number | null>(null);
 
-  const num = parseFloat(display.replace(/,/g, "")) || 0;
+  const { display, expr } = cs;
 
   const fmt = (n: number): string => {
     if (!isFinite(n)) return "Error";
@@ -44,59 +53,62 @@ export function Calculator({ onUse }: { onUse?: (value: number) => void }) {
     }
   };
 
-  const inputDigit = (d: string) => {
-    if (fresh) {
-      setDisplay(d === "." ? "0." : d);
-      setFresh(false);
-      return;
-    }
-    if (d === "." && display.includes(".")) return;
-    if (display.replace(/[-.]/g, "").length >= 12) return;
-    setDisplay(display === "0" && d !== "." ? d : display + d);
-  };
+  const inputDigit = (d: string) =>
+    setCs((s) => {
+      if (s.fresh) {
+        return {
+          ...s,
+          display: d === "." ? "0." : d,
+          fresh: false,
+          expr: s.expr.endsWith("=") ? "" : s.expr,
+        };
+      }
+      if (d === "." && s.display.includes(".")) return s;
+      if (s.display.replace(/[-.]/g, "").length >= 12) return s;
+      return { ...s, display: s.display === "0" && d !== "." ? d : s.display + d };
+    });
 
-  const chooseOp = (o: Op) => {
-    if (op && !fresh && acc !== null) {
-      const r = apply(acc, num, op);
-      setAcc(r);
-      setDisplay(fmt(r));
-    } else {
-      setAcc(num);
-    }
-    setOp(o);
-    setFresh(true);
-  };
+  const chooseOp = (o: Op) =>
+    setCs((s) => {
+      const n = parseFloat(s.display.replace(/,/g, "")) || 0;
+      if (s.op && !s.fresh && s.acc !== null) {
+        const r = apply(s.acc, n, s.op);
+        return { ...s, acc: r, display: fmt(r), expr: `${fmt(r)} ${o}`, op: o, fresh: true };
+      }
+      return { ...s, acc: n, expr: `${fmt(n)} ${o}`, op: o, fresh: true };
+    });
 
   const equals = () => {
-    if (op === null || acc === null) return;
-    const r = apply(acc, num, op);
-    const expr = `${fmt(acc)} ${op} ${fmt(num)}`;
-    setDisplay(fmt(r));
-    setHistory((h) => [{ expr, result: fmt(r) }, ...h].slice(0, 30));
-    setAcc(null);
-    setOp(null);
-    setFresh(true);
+    const s = cs; // each real key press / click is its own event → committed state is fresh
+    if (s.op === null || s.acc === null) return;
+    const n = parseFloat(s.display.replace(/,/g, "")) || 0;
+    const r = apply(s.acc, n, s.op);
+    const fullExpr = `${fmt(s.acc)} ${s.op} ${fmt(n)} =`;
+    setCs({ ...s, display: fmt(r), expr: fullExpr, acc: null, op: null, fresh: true });
+    setHistory((h) => [{ expr: fullExpr, result: fmt(r) }, ...h].slice(0, 30));
   };
 
-  const clearAll = () => {
-    setDisplay("0");
-    setAcc(null);
-    setOp(null);
-    setFresh(true);
-  };
+  const clearAll = () => setCs({ display: "0", expr: "", acc: null, op: null, fresh: true });
 
-  const backspace = () => {
-    if (fresh) return;
-    setDisplay((d) => (d.length <= 1 || (d.length === 2 && d.startsWith("-")) ? "0" : d.slice(0, -1)));
-  };
+  const backspace = () =>
+    setCs((s) =>
+      s.fresh
+        ? s
+        : { ...s, display: s.display.length <= 1 || (s.display.length === 2 && s.display.startsWith("-")) ? "0" : s.display.slice(0, -1) }
+    );
 
-  const percent = () => {
-    const r = acc !== null && op ? (num / 100) * acc : num / 100;
-    setDisplay(fmt(r));
-    setFresh(false);
-  };
+  const percent = () =>
+    setCs((s) => {
+      const n = parseFloat(s.display.replace(/,/g, "")) || 0;
+      const r = s.acc !== null && s.op ? (n / 100) * s.acc : n / 100;
+      return { ...s, display: fmt(r), fresh: false };
+    });
 
-  const toggleSign = () => setDisplay((d) => (d.startsWith("-") ? d.slice(1) : d === "0" ? d : "-" + d));
+  const toggleSign = () =>
+    setCs((s) => ({
+      ...s,
+      display: s.display.startsWith("-") ? s.display.slice(1) : s.display === "0" ? s.display : "-" + s.display,
+    }));
 
   const pretty = display.length > 12 ? display : (() => {
     const [int, dec] = display.split(".");
@@ -128,30 +140,24 @@ export function Calculator({ onUse }: { onUse?: (value: number) => void }) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* memory + small hints */}
-      <div className="flex items-center justify-between px-2 text-[10px] font-semibold text-mute">
+      {/* memory row */}
+      <div className="flex items-center justify-between px-3 pt-1 text-[10px] font-semibold text-mute">
         <div className="flex items-center gap-2">
           {memory !== null && (
             <button
               className="rounded-full bg-brandsoft px-2 py-0.5 text-brand"
               onClick={() => {
-                setDisplay(fmt(memory));
-                setFresh(false);
+                setCs((s) => ({ ...s, display: fmt(memory), fresh: false }));
               }}
             >
               M {fmt(memory).slice(0, 8)}
             </button>
           )}
-          {op && acc !== null && (
-            <span className="tabular-nums">
-              {fmt(acc)} {op}
-            </span>
-          )}
         </div>
         <div className="flex gap-1">
           <button
             className="rounded-full px-2 py-0.5 hover:bg-surface2"
-            onClick={() => setMemory(num)}
+            onClick={() => setMemory(parseFloat(display.replace(/,/g, "")) || 0)}
             aria-label="Store in memory"
           >
             M+
@@ -166,12 +172,18 @@ export function Calculator({ onUse }: { onUse?: (value: number) => void }) {
         </div>
       </div>
 
-      {/* display */}
-      <div className="flex min-h-[86px] flex-col items-end justify-end px-3 pb-3 pt-2">
+      {/* MAIN DISPLAY — expression + current number, both centered here */}
+      <div className="flex min-h-[92px] flex-col items-end justify-end px-4 pb-3 pt-2">
+        <p
+          className="min-h-[18px] max-w-full break-all text-right text-[15px] font-semibold tabular-nums tracking-wide text-mute"
+          aria-live="polite"
+        >
+          {expr}
+        </p>
         <p
           className={cx(
             "max-w-full break-all text-right font-medium tabular-nums tracking-wide text-ink",
-            pretty.length > 9 ? "text-[26px]" : "text-[34px]"
+            pretty.length > 9 ? "text-[28px]" : "text-[36px]"
           )}
           aria-live="polite"
         >
@@ -188,21 +200,20 @@ export function Calculator({ onUse }: { onUse?: (value: number) => void }) {
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden"
           >
-            <div className="app-scroll max-h-32 overflow-y-auto rounded-2xl border border-line bg-surface p-2 mx-1">
+            <div className="app-scroll max-h-32 overflow-y-auto rounded-2xl border border-line bg-surface p-2 mx-2">
               {history.length === 0 ? (
-                <p className="py-3 text-center text-[11px] text-mute">No calculations yet</p>
+                <p className="py-3 text-center text-[11px] text-mute">{t("calc.noCalculations")}</p>
               ) : (
                 history.map((h, i) => (
                   <button
                     key={i}
                     className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left hover:bg-surface2"
                     onClick={() => {
-                      setDisplay(h.result);
-                      setFresh(false);
+                      setCs((s) => ({ ...s, display: h.result, expr: h.expr, fresh: false }));
                       setShowHistory(false);
                     }}
                   >
-                    <span className="text-[11px] text-mute">{h.expr} =</span>
+                    <span className="text-[11px] text-mute">{h.expr}</span>
                     <span className="text-xs font-semibold tabular-nums text-ink">{h.result}</span>
                   </button>
                 ))
@@ -220,16 +231,16 @@ export function Calculator({ onUse }: { onUse?: (value: number) => void }) {
             onClick={() => setShowHistory((v) => !v)}
             aria-label="Toggle history"
           >
-            <History size={14} /> History
+            <History size={14} /> {t("calc.history")}
           </button>
           <button
             className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold text-mute transition hover:bg-surface2"
             onClick={async () => {
-              if (await copyText(display)) toastOk("Copied");
+              if (await copyText(display)) toastOk(t("act.copied"));
             }}
             aria-label="Copy result"
           >
-            <Copy size={14} /> Copy
+            <Copy size={14} /> {t("act.copy")}
           </button>
         </div>
         {KEYS.map((key) => (
@@ -237,7 +248,7 @@ export function Calculator({ onUse }: { onUse?: (value: number) => void }) {
             key={key.k}
             onClick={key.fn}
             className={cx(
-              "key flex h-[58px] items-center justify-center rounded-[19px] text-[21px] font-medium shadow-key transition active:scale-95",
+              "key flex h-[clamp(44px,7.5dvh,58px)] items-center justify-center rounded-[19px] text-[21px] font-medium shadow-key transition active:scale-95",
               key.cls === "op" || key.cls === "eq"
                 ? "bg-brand text-white shadow-floating"
                 : key.cls === "func"
@@ -257,9 +268,9 @@ export function Calculator({ onUse }: { onUse?: (value: number) => void }) {
               variant="brand"
               size="lg"
               className="w-full"
-              onClick={() => onUse(parseFloat(display.replace(/,/g, "")) || 0)}
+              onClick={() => onUse(parseFloat(display.replace(/,/g, "").replace(/ /g, "")) || 0)}
             >
-              Use this value
+              {t("calc.useValue")}
             </Button>
           </div>
         )}
@@ -270,19 +281,23 @@ export function Calculator({ onUse }: { onUse?: (value: number) => void }) {
 
 /** Calculator as an in-frame sheet (opened from amount inputs via useUI.openCalculator). */
 export function CalculatorSheet() {
+  const t = useT();
   const pop = useUI((s) => s.pop);
   const handler = useUI((s) => s.calculatorPickHandler);
-  const closeAll = useUI((s) => s.closeAll);
+  const clearHandler = useUI((s) => s.clearCalculatorHandler);
+  /* Only the calculator sheet itself is popped — the sheet that opened it
+     (EntryEdit, Add payment, …) must stay open so the picked value lands. */
+  const dismiss = () => {
+    pop();
+    clearHandler();
+  };
   return (
     <div className="absolute inset-0 flex flex-col bg-canvas" style={{ zIndex: 70 }}>
       <header className="flex items-center justify-between border-b border-line px-3 py-3">
-        <h2 className="px-2 text-[17px] font-bold tracking-tight text-ink">Calculator</h2>
+        <h2 className="px-2 text-[17px] font-bold tracking-tight text-ink">{t("nav.calculator")}</h2>
         <button
-          onClick={() => {
-            if (handler) closeAll();
-            else pop();
-          }}
-          aria-label="Close calculator"
+          onClick={dismiss}
+          aria-label={t("act.close")}
           className="flex h-9 w-9 items-center justify-center rounded-full text-mute hover:bg-surface2"
         >
           <X size={18} />
@@ -294,7 +309,7 @@ export function CalculatorSheet() {
             handler
               ? (v) => {
                   handler(v);
-                  closeAll();
+                  dismiss();
                 }
               : undefined
           }

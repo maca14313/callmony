@@ -654,17 +654,31 @@ function renderTable() {
 function exportCleaned() {
   const b = JSON.parse(JSON.stringify(state.backup));
   const d = b.data;
+  d.groups = d.groups || [];
   const keptIds = {
     contacts: new Set(live(d.contacts).map((c) => c.id)), entries: new Set(live(d.entries).map((e) => e.id)),
+    groups: new Set(live(d.groups).map((g) => g.id)),
     lists: new Set(live(d.lists).map((l) => l.id)), notes: new Set(live(d.notes).map((n) => n.id)),
     reminders: new Set(live(d.reminders).map((r) => r.id)), banks: new Set(live(d.banks).map((x) => x.id)),
   };
-  ["contacts", "entries", "lists", "notes", "reminders", "banks"].forEach((k) => { d[k] = live(d[k]); });
-  // drop links pointing at removed records
-  const valid = (l) => { const s = keptIds[l.type]; return s ? s.has(l.id) : l.type === "item" ? true : false; };
+  ["contacts", "entries", "groups", "lists", "notes", "reminders", "banks"].forEach((k) => { d[k] = live(d[k]); });
+  // drop links pointing at removed records ("item"/"link" refs + the "general" owner are always valid)
+  const valid = (l) => {
+    if (l.type === "item" || l.type === "link") return true;
+    if (l.type === "contact" && l.id === "general") return true;
+    const s = keptIds[l.type];
+    return s ? s.has(l.id) : false;
+  };
   d.notes.forEach((n) => (n.links = (n.links || []).filter(valid)));
   d.reminders.forEach((r) => (r.links = (r.links || []).filter(valid)));
-  d.entries.forEach((e) => { if (e.listId && !keptIds.lists.has(e.listId)) delete e.listId; });
+  d.entries.forEach((e) => {
+    if (e.listId && !keptIds.lists.has(e.listId)) delete e.listId;
+    if (e.groupId && !keptIds.groups.has(e.groupId)) delete e.groupId;
+    e.refs = (e.refs || []).filter(valid);
+    (e.payments || []).forEach((p) => (p.refs = (p.refs || []).filter(valid)));
+  });
+  d.groups.forEach((g) => (g.refs = (g.refs || []).filter(valid)));
+  d.lists.forEach((l) => (l.refs = (l.refs || []).filter(valid)));
   // keep only attachments whose parent still exists
   const parents = new Set();
   [...d.contacts, ...d.entries, ...d.lists, ...d.notes, ...d.reminders, ...d.banks].forEach((x) => (x.attachments || []).forEach((id) => parents.add(id)));

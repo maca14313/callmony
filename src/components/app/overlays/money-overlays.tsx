@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowDownLeft,
   ArrowUpRight,
   Bell,
   Bookmark,
+  Boxes,
   Calculator,
   CalendarClock,
   Check,
@@ -23,7 +24,6 @@ import {
   ListChecks,
   ListPlus,
   MessageCircle,
-  Paperclip,
   Pencil,
   Plus,
   Receipt,
@@ -36,6 +36,8 @@ import {
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { useUI } from "@/lib/ui-store";
+import { useT } from "@/lib/i18n";
+import { takePendingEntryGroup } from "../sections/LedgerSection";
 import type { ReactNode } from "react";
 import {
   dueStatus,
@@ -52,18 +54,18 @@ import { listShareText, listToPdfBlob } from "@/lib/pdf";
 import {
   ENTRY_CATEGORIES,
   PAYMENT_METHODS,
-  type AttachmentMeta,
   type CalcList,
   type ID,
   type LedgerEntry,
   type ListDiscount,
   type ListKind,
   type ListItem,
+  type LinkRef,
   type OwnerId,
   type Payment,
   type Repeat,
 } from "@/lib/types";
-import { AttachButton, AttachmentStrip } from "../kit/Attachments";
+import { AttachEntities, EntityRefChips } from "../kit/EntityLinks";
 import { CalcButton } from "../kit/Calculator";
 import { ContactPicker } from "../kit/ContactPicker";
 import { useConfirm } from "../kit/Confirm";
@@ -73,6 +75,7 @@ import { toastErr, toastOk, toastUndoLast } from "../kit/toast";
 import {
   Avatar,
   Button,
+  Chip,
   EmptyState,
   Field,
   IconButton,
@@ -315,12 +318,14 @@ function AddPaymentSheet({
   onClose: () => void;
   remaining: number;
   currency: string;
-  onSubmit: (p: { amount: number; date: string; note?: string; method?: string }) => void;
+  onSubmit: (p: { amount: number; date: string; note?: string; method?: string; refs: LinkRef[] }) => void;
 }) {
+  const t = useT();
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayStr());
   const [note, setNote] = useState("");
   const [method, setMethod] = useState("cash");
+  const [refs, setRefs] = useState<LinkRef[]>([]);
   if (!open) return null;
 
   const submit = () => {
@@ -329,11 +334,11 @@ function AddPaymentSheet({
       toastErr("Enter an amount greater than 0");
       return;
     }
-    onSubmit({ amount: r2(amt), date: date || todayStr(), note: note.trim() || undefined, method });
+    onSubmit({ amount: r2(amt), date: date || todayStr(), note: note.trim() || undefined, method, refs });
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Add payment">
+    <BottomSheet open={open} onClose={onClose} title={t("lg.addPayment")}>
       <Field label="Amount">
         <div className="flex w-full items-center gap-2">
           <input
@@ -391,8 +396,12 @@ function AddPaymentSheet({
           className={inputCls}
         />
       </Field>
+      {/* attached entities — banks, lists, notes, reminders, contacts & links */}
+      <div className="mt-3">
+        <AttachEntities refs={refs} onChange={setRefs} />
+      </div>
       <Button variant="brand" size="lg" className="mt-4 w-full" onClick={submit}>
-        <Plus size={15} /> Add payment
+        <Plus size={15} /> {t("lg.addPayment")}
       </Button>
     </BottomSheet>
   );
@@ -403,6 +412,7 @@ function AddPaymentSheet({
 /* ------------------------------------------------------------------ */
 
 function ItemPayments({ listId, item, currency }: { listId: ID; item: ListItem; currency: string }) {
+  const t = useT();
   const confirm = useConfirm();
   const addItemPayment = useApp((s) => s.addItemPayment);
   const removeItemPayment = useApp((s) => s.removeItemPayment);
@@ -427,28 +437,31 @@ function ItemPayments({ listId, item, currency }: { listId: ID; item: ListItem; 
 
   return (
     <div className="rounded-2xl bg-surface2 p-3">
-      <p className="mb-2 text-[10px] font-bold uppercase tracking-[1.5px] text-mute">Payments</p>
+      <p className="mb-2 text-[10px] font-bold uppercase tracking-[1.5px] text-mute">{t("lg.payments")}</p>
       {n === 0 && <p className="pb-1 text-[11px] text-mute">No payments yet</p>}
       <ol className="space-y-1">
         {item.payments.map((p, i) => (
-          <li key={p.id} className="flex items-center gap-2 rounded-xl bg-surface px-2.5 py-1.5 shadow-key">
-            <span className="w-3.5 shrink-0 text-[10.5px] font-bold tabular-nums text-mute">{i + 1}.</span>
-            <span className="shrink-0 text-[11px] text-mute">{fdShort(p.date)}</span>
-            <span className="shrink-0 text-[12px] font-bold text-ink">
-              <Money value={p.amount} currency={currency} />
-            </span>
-            {(p.note || p.auto) && (
-              <span className="min-w-0 flex-1 truncate text-[10px] text-mute">
-                {p.auto === "tick" ? "Ticked" : p.auto === "settle" ? "Settle up" : p.note}
+          <li key={p.id} className="rounded-xl bg-surface px-2.5 py-1.5 shadow-key">
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 shrink-0 text-[10.5px] font-bold tabular-nums text-mute">{i + 1}.</span>
+              <span className="shrink-0 text-[11px] text-mute">{fdShort(p.date)}</span>
+              <span className="shrink-0 text-[12px] font-bold text-ink">
+                <Money value={p.amount} currency={currency} />
               </span>
-            )}
-            <IconButton
-              label={`Remove payment ${i + 1}`}
-              className="h-9 w-9 shrink-0"
-              onClick={() => void remove(p, i)}
-            >
-              <X size={13} />
-            </IconButton>
+              {(p.note || p.auto) && (
+                <span className="min-w-0 flex-1 truncate text-[10px] text-mute">
+                  {p.auto === "tick" ? "Ticked" : p.auto === "settle" ? "Settle up" : p.note}
+                </span>
+              )}
+              <IconButton
+                label={`Remove payment ${i + 1}`}
+                className="h-9 w-9 shrink-0"
+                onClick={() => void remove(p, i)}
+              >
+                <X size={13} />
+              </IconButton>
+            </div>
+            {p.refs && p.refs.length > 0 && <EntityRefChips refs={p.refs} className="mt-1 pl-6" />}
           </li>
         ))}
       </ol>
@@ -466,19 +479,21 @@ function ItemPayments({ listId, item, currency }: { listId: ID; item: ListItem; 
         )}
       </p>
       <Button size="sm" variant="soft" className="mt-2 w-full" onClick={() => setPayOpen(true)}>
-        <Plus size={13} /> Add payment
+        <Plus size={13} /> {t("lg.addPayment")}
       </Button>
-      <AddPaymentSheet
-        open={payOpen}
-        onClose={() => setPayOpen(false)}
-        remaining={Math.max(rem, 0)}
-        currency={currency}
-        onSubmit={(p) => {
-          addItemPayment(listId, item.id, p);
-          toastOk("Payment added");
-          setPayOpen(false);
-        }}
-      />
+      {payOpen && (
+        <AddPaymentSheet
+          open
+          onClose={() => setPayOpen(false)}
+          remaining={Math.max(rem, 0)}
+          currency={currency}
+          onSubmit={(p) => {
+            addItemPayment(listId, item.id, p);
+            toastOk("Payment added");
+            setPayOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -535,6 +550,7 @@ function CalcItemRow({
   onToggleExpand: () => void;
   currency: string;
 }) {
+  const t = useT();
   const confirm = useConfirm();
   const toggleItemChecked = useApp((s) => s.toggleItemChecked);
   const updateListItem = useApp((s) => s.updateListItem);
@@ -603,7 +619,7 @@ function CalcItemRow({
             </span>
             {paid > 0.005 && rem > 0.005 && (
               <span className="shrink-0 text-[10px] font-bold text-amber">
-                Paid <Money value={paid} currency={currency} /> / <Money value={lt} currency={currency} />
+                {t("lg.paid")} <Money value={paid} currency={currency} /> / <Money value={lt} currency={currency} />
               </span>
             )}
           </span>
@@ -628,12 +644,12 @@ function CalcItemRow({
         <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2.5 pl-[54px]">
           {rem <= 0.005 && lt > 0.005 && (
             <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brandsoft px-2 py-0.5 text-[10px] font-bold text-pos">
-              Paid ✓
+              {t("lg.paid")} ✓
             </span>
           )}
           {rem < -0.005 && (
             <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-negsoft px-2 py-0.5 text-[10px] font-bold text-neg">
-              Overpaid by <Money value={-rem} currency={currency} />
+              {t("lg.overpaidBy")} <Money value={-rem} currency={currency} />
             </span>
           )}
           {item.dueDate && <DueBadge dueDate={item.dueDate} />}
@@ -1014,6 +1030,7 @@ function AddItemForm({ list }: { list: CalcList }) {
 /* ------------------------------------------------------------------ */
 
 function TotalsSheet({ open, onClose, list }: { open: boolean; onClose: () => void; list: CalcList }) {
+  const t = useT();
   const saveList = useApp((s) => s.saveList);
   const settings = useApp((s) => s.settings);
   const [dType, setDType] = useState<ListDiscount["type"]>(list.discount?.type ?? "pct");
@@ -1129,19 +1146,19 @@ function TotalsSheet({ open, onClose, list }: { open: boolean; onClose: () => vo
             </div>
           )}
           <div className="flex justify-between border-t border-line pt-1.5 text-[12.5px] font-bold text-ink">
-            <span>Total</span>
+            <span>{t("ls.total")}</span>
             <span>
               <Money value={preview.grand} currency={currency} />
             </span>
           </div>
           <div className="flex justify-between text-[10.5px]">
-            <span>Paid</span>
+            <span>{t("lg.paid")}</span>
             <span className="text-pos">
               <Money value={preview.paid} currency={currency} />
             </span>
           </div>
           <div className="flex justify-between text-[10.5px] font-bold">
-            <span>Pending</span>
+            <span>{t("lg.pending")}</span>
             <span className={preview.pending > 0.005 ? "text-neg" : "text-pos"}>
               <Money value={preview.pending} currency={currency} />
             </span>
@@ -1161,6 +1178,7 @@ function TotalsSheet({ open, onClose, list }: { open: boolean; onClose: () => vo
 /* ================================================================== */
 
 export function ListDetail({ listId }: { listId: ID }) {
+  const t = useT();
   const ui = useUI();
   const confirm = useConfirm();
   const list = useApp((s) => s.lists.find((l) => l.id === listId && !l.deletedAt));
@@ -1275,13 +1293,13 @@ export function ListDetail({ listId }: { listId: ID }) {
       {isCalc && (
         <div className="flex items-baseline justify-between gap-2 px-0.5 pb-2">
           <span className="text-[10px] font-bold uppercase tracking-[1px] text-mute">
-            Total{" "}
+            {t("ls.total")}{" "}
             <span className="text-[13px] font-bold normal-case tracking-normal text-ink">
               <Money value={totals.grand} currency={currency} />
             </span>
           </span>
           <span className="text-[10px] font-bold uppercase tracking-[1px] text-mute">
-            Paid{" "}
+            {t("lg.paid")}{" "}
             <span className="text-[13px] font-bold normal-case tracking-normal text-pos">
               <Money value={totals.paid} currency={currency} />
             </span>
@@ -1294,10 +1312,10 @@ export function ListDetail({ listId }: { listId: ID }) {
           >
             {totals.pending > 0.005 ? (
               <>
-                Pending <Money value={totals.pending} currency={currency} />
+                {t("lg.pending")} <Money value={totals.pending} currency={currency} />
               </>
             ) : (
-              "All settled ✓"
+              `${t("ls.allSettled")} ✓`
             )}
           </span>
         </div>
@@ -1440,7 +1458,7 @@ export function ListDetail({ listId }: { listId: ID }) {
                 </div>
               )}
               <div className="flex justify-between border-t border-line pt-1 text-[12px] font-bold text-ink">
-                <span>Total</span>
+                <span>{t("ls.total")}</span>
                 <span>
                   <Money value={totals.grand} currency={currency} />
                 </span>
@@ -1551,32 +1569,14 @@ export function ListDetail({ listId }: { listId: ID }) {
         {/* add item */}
         <AddItemForm list={list} />
 
-        {/* attachments */}
-        <section className="rounded-[22px] border border-line bg-surface p-4 shadow-key" aria-label="Attachments">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-bold uppercase tracking-[1.5px] text-mute">Attachments</p>
-            <AttachButton
-              compact
-              parentType="list"
-              parentId={list.id}
-              onAttached={(meta) => {
-                // read fresh from the store — rapid multi-file attaches re-render between picks
-                const cur = useApp.getState().lists.find((l) => l.id === list.id);
-                saveList({
-                  id: list.id,
-                  ownerId: list.ownerId,
-                  title: list.title,
-                  attachments: [...(cur?.attachments ?? list.attachments), meta.id],
-                });
-              }}
+        {/* attached entities — banks, lists, notes, reminders, contacts & links */}
+        <section className="rounded-[22px] border border-line bg-surface p-4 shadow-key" aria-label="Attached entities">
+          <p className="text-[10px] font-bold uppercase tracking-[1.5px] text-mute">Links</p>
+          <div className="mt-2">
+            <AttachEntities
+              refs={list.refs ?? []}
+              onChange={(next) => saveList({ id: list.id, ownerId: list.ownerId, title: list.title, refs: next })}
             />
-          </div>
-          <div className="mt-3">
-            {list.attachments.length > 0 ? (
-              <AttachmentStrip parentType="list" parentId={list.id} ids={list.attachments} />
-            ) : (
-              <p className="text-[10.5px] text-mute">Receipts or photos for this list — stored offline.</p>
-            )}
           </div>
         </section>
       </div>
@@ -1689,6 +1689,7 @@ export function ListEdit({
   ownerId: ID | "general";
   kind?: ListKind;
 }) {
+  const t = useT();
   const ui = useUI();
   const existing = useApp((s) => (listId ? s.lists.find((l) => l.id === listId && !l.deletedAt) : undefined));
   const contacts = useApp((s) => s.contacts);
@@ -1733,7 +1734,7 @@ export function ListEdit({
 
   return (
     <Sheet
-      title={listId ? "Edit list" : "New list"}
+      title={listId ? "Edit list" : t("ls.newList")}
       subtitle={`${KIND_META[k].label} · ${ownerName}`}
       onBack={() => ui.pop()}
       footer={
@@ -1907,17 +1908,17 @@ export function EntryEdit({
   ownerId: ID | "general";
   entryType?: "credit" | "debit";
 }) {
+  const t = useT();
   const ui = useUI();
   const confirm = useConfirm();
-  /** draft id — a NEW entry can save early as a draft so files attach to a real id */
-  const [draftId, setDraftId] = useState<ID | null>(null);
-  const currentId: ID | undefined = entryId ?? draftId ?? undefined;
-  const existing = useApp((s) => (currentId ? s.entries.find((e) => e.id === currentId && !e.deletedAt) : undefined));
+  const existing = useApp((s) => (entryId ? s.entries.find((e) => e.id === entryId && !e.deletedAt) : undefined));
   const contacts = useApp((s) => s.contacts);
+  const groups = useApp((s) => s.groups);
   const saveEntry = useApp((s) => s.saveEntry);
   const deleteEntry = useApp((s) => s.deleteEntry);
   const moveEntity = useApp((s) => s.moveEntity);
   const saveReminder = useApp((s) => s.saveReminder);
+  const saveGroup = useApp((s) => s.saveGroup);
 
   const [type, setType] = useState<"credit" | "debit">(existing?.type ?? entryType ?? "credit");
   const [amount, setAmount] = useState(existing && existing.amount > 0 ? String(existing.amount) : "");
@@ -1929,46 +1930,41 @@ export function EntryEdit({
   const [note, setNote] = useState(existing?.note ?? "");
   const [owner, setOwner] = useState<OwnerId>(existing?.ownerId ?? ownerId);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [attachments, setAttachments] = useState<ID[]>(existing?.attachments ?? []);
+  /** attached entities — plain ids, saved together with the entry (no draft-first flow needed) */
+  const [draftRefs, setDraftRefs] = useState<LinkRef[]>(existing?.refs ?? []);
+  /** group selection — "" = none (clears on save). New entries pick up the pending group
+      parked by the group ⋯ “Add entry” action. */
+  const [groupId, setGroupId] = useState<ID | "">(() => {
+    if (!entryId) {
+      const pending = takePendingEntryGroup();
+      if (pending && pending.ownerId === ownerId) return pending.groupId;
+    }
+    return existing?.groupId ?? "";
+  });
+  const [newGroupOpen, setNewGroupOpen] = useState(false);
+  const [newGroupTitle, setNewGroupTitle] = useState("");
 
   const ownerContact = owner === "general" ? null : contacts.find((c) => c.id === owner) ?? null;
   const ownerName = ownerContact ? displayName(ownerContact) : "General";
   const isGeneral = owner === "general";
 
-  /** Save the current form as a draft so files can attach to a real id (new entries only). */
-  const ensureDraft = (): boolean => {
-    if (currentId) return true;
-    const amt = parseNum(amount);
-    if (amt <= 0) {
-      toastErr("Enter an amount greater than 0 first");
-      return false;
-    }
-    const saved = saveEntry({
-      ownerId: owner,
-      type,
-      amount: r2(amt),
-      date,
-      dueDate: dueOn && dueDate ? dueDate : "",
-      category,
-      method,
-      note: note.trim() || "",
-    });
-    setDraftId(saved.id);
-    return true;
-  };
+  /** live groups of the currently selected owner */
+  const ownerGroups = useMemo(
+    () => groups.filter((g) => g.ownerId === owner && !g.deletedAt),
+    [groups, owner]
+  );
 
-  /** Keep the entry's attachment ids in sync with every added file. */
-  const onAttached = (meta: AttachmentMeta) => {
-    if (!currentId) return;
-    setAttachments((ids) => [...ids, meta.id]);
-    // read fresh from the store — rapid multi-file attaches re-render between picks
-    const cur = useApp.getState().entries.find((e) => e.id === currentId);
-    saveEntry({
-      id: currentId,
-      ownerId: cur?.ownerId ?? owner,
-      type: cur?.type ?? type,
-      attachments: [...(cur?.attachments ?? []), meta.id],
-    });
+  /** create a group right from the selector and select it */
+  const createGroupInline = () => {
+    const title = newGroupTitle.trim();
+    if (!title) {
+      toastErr("Give the group a name");
+      return;
+    }
+    const g = saveGroup({ ownerId: owner, title });
+    setGroupId(g.id);
+    setNewGroupTitle("");
+    setNewGroupOpen(false);
   };
 
   const save = () => {
@@ -1978,7 +1974,7 @@ export function EntryEdit({
       return;
     }
     const saved = saveEntry({
-      ...(currentId ? { id: currentId } : {}),
+      ...(entryId ? { id: entryId } : {}),
       ownerId: owner,
       type,
       amount: r2(amt),
@@ -1988,7 +1984,9 @@ export function EntryEdit({
       category,
       method,
       note: note.trim() || "",
-      attachments,
+      // "" clears the group (saveEntry keeps undefined as-is)
+      groupId: groupId || "",
+      refs: draftRefs,
     });
     if (entryId && owner !== existing?.ownerId) moveEntity("entry", saved.id, owner);
     // auto-alarm scenario — a due date on a NEW entry sets the payment reminder
@@ -2014,8 +2012,8 @@ export function EntryEdit({
       tone: "danger",
     });
     if (!ok) return;
-    if (currentId) {
-      deleteEntry(currentId);
+    if (entryId) {
+      deleteEntry(entryId);
       toastUndoLast();
     }
     ui.pop();
@@ -2038,12 +2036,12 @@ export function EntryEdit({
       onBack={() => ui.pop()}
       footer={
         <div className="flex gap-2.5">
-          {currentId && (
+          {entryId && (
             <Button variant="surface" size="lg" className="flex-1 text-neg" onClick={() => void remove()}>
-              <Trash2 size={15} /> Delete
+              <Trash2 size={15} /> {t("act.delete")}
             </Button>
           )}
-          <Button variant="brand" size="lg" className={currentId ? "flex-[2]" : "w-full"} onClick={save}>
+          <Button variant="brand" size="lg" className={entryId ? "flex-[2]" : "w-full"} onClick={save}>
             <Check size={16} /> Save entry
           </Button>
         </div>
@@ -2056,7 +2054,7 @@ export function EntryEdit({
             active={type === "credit"}
             onClick={() => setType("credit")}
             icon={ArrowDownLeft}
-            label={isGeneral ? "Income" : "Credit"}
+            label={isGeneral ? t("lg.income") : t("lg.credit")}
             sub={isGeneral ? "money in" : "they owe you"}
             tone="pos"
           />
@@ -2064,7 +2062,7 @@ export function EntryEdit({
             active={type === "debit"}
             onClick={() => setType("debit")}
             icon={ArrowUpRight}
-            label={isGeneral ? "Expense" : "Debit"}
+            label={isGeneral ? t("lg.expense") : t("lg.debit")}
             sub={isGeneral ? "money out" : "you owe them"}
             tone="neg"
           />
@@ -2186,24 +2184,55 @@ export function EntryEdit({
           </div>
         </div>
 
-        {/* attachments — a new entry saves a draft first so files attach to a real id */}
-        <section className="rounded-[22px] border border-line bg-surface p-4 shadow-key" aria-label="Attachments">
+        {/* group — every live group of the entry's owner + inline creation */}
+        <section className="rounded-[22px] border border-line bg-surface p-4 shadow-key" aria-label="Group">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-bold uppercase tracking-[1.5px] text-mute">Attachments</p>
-            {currentId ? (
-              <AttachButton compact parentType="entry" parentId={currentId} onAttached={onAttached} />
-            ) : (
-              <Button variant="soft" size="sm" onClick={ensureDraft}>
-                <Paperclip size={13} /> Save draft &amp; attach
-              </Button>
-            )}
+            <p className="text-[10px] font-bold uppercase tracking-[1.5px] text-mute">{t("lg.group")}</p>
+            <span className="flex items-center gap-1 text-[10px] font-semibold text-mute">
+              <Boxes size={12} aria-hidden /> {ownerGroups.length} group{ownerGroups.length !== 1 ? "s" : ""}
+            </span>
           </div>
-          <div className="mt-3">
-            {currentId && attachments.length > 0 ? (
-              <AttachmentStrip parentType="entry" parentId={currentId} ids={attachments} />
-            ) : (
-              <p className="text-[10.5px] text-mute">Receipts or proofs — stored offline.</p>
-            )}
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Chip active={groupId === ""} onClick={() => setGroupId("")}>
+              None
+            </Chip>
+            {ownerGroups.map((g) => (
+              <Chip key={g.id} active={groupId === g.id} onClick={() => setGroupId(g.id)}>
+                {g.title}
+              </Chip>
+            ))}
+            <Chip active={newGroupOpen} onClick={() => setNewGroupOpen((v) => !v)}>
+              + New
+            </Chip>
+          </div>
+          {newGroupOpen && (
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                autoFocus
+                value={newGroupTitle}
+                onChange={(e) => setNewGroupTitle(e.target.value)}
+                placeholder="Group name"
+                aria-label="New group name"
+                className={inputCls}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") createGroupInline();
+                }}
+              />
+              <Button variant="soft" size="sm" onClick={createGroupInline}>
+                <Plus size={13} /> {t("act.add")}
+              </Button>
+            </div>
+          )}
+        </section>
+
+        {/* attached entities — banks, lists, notes, reminders, contacts & links */}
+        <section className="rounded-[22px] border border-line bg-surface p-4 shadow-key" aria-label="Attached entities">
+          <p className="text-[10px] font-bold uppercase tracking-[1.5px] text-mute">Links</p>
+          <p className="mt-0.5 text-[10.5px] text-mute">
+            Banks, lists, notes, reminders, contacts &amp; web links — saved with the entry.
+          </p>
+          <div className="mt-2">
+            <AttachEntities refs={draftRefs} onChange={setDraftRefs} />
           </div>
         </section>
       </div>
@@ -2211,7 +2240,12 @@ export function EntryEdit({
       <ContactPicker
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
-        onPick={(id) => setOwner(id as OwnerId)}
+        onPick={(id) => {
+          setOwner(id as OwnerId);
+          // groups belong to an owner — switching owners clears the selection
+          setGroupId("");
+          setNewGroupOpen(false);
+        }}
         allowGeneral
       />
     </Sheet>
