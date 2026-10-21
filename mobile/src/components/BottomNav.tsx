@@ -12,7 +12,6 @@ import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { dueStatus } from "../lib/calc";
 import { useThemeColors } from "../theme";
-import { toast } from "./kit";
 
 const TABS: { key: string; icon: string; labelKey: string }[] = [
   { key: "recents", icon: "history", labelKey: "nav.recents" },
@@ -108,7 +107,6 @@ export const BottomNav: React.FC = () => {
   );
 };
 
-export const navToast = toast;
 
 const styles = StyleSheet.create({
   root: {

@@ -5,9 +5,8 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useT } from "../i18n";
-import { relTime } from "../lib/utils";
 import { F, useThemeColors } from "../theme";
-import { Btn, Card, Chip, EmptyState, IconBtn, Segmented, confirm, toast } from "../components/kit";
+import { Btn, Card, EmptyState, IconBtn, Segmented, confirm, toast } from "../components/kit";
 import { useOwnerName } from "../components/ContactPicker";
 
 type TrashType = "all" | "entries" | "groups" | "lists" | "notes" | "reminders" | "banks";
@@ -192,4 +191,3 @@ const trStyles = StyleSheet.create({
   icon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" },
 });
 
-export const _trashKeep = { Chip, relTime };

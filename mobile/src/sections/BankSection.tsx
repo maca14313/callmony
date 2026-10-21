@@ -11,10 +11,9 @@ import { copyText, maskAccount } from "../lib/utils";
 import type { BankAccount, OwnerId } from "../lib/types";
 import { shareText } from "../lib/share";
 import { F, useThemeColors } from "../theme";
-import { Btn, Card, EmptyState, IconBtn, Money, Pill, SectionHeader, confirm, toast } from "../components/kit";
+import { Btn, Card, EmptyState, IconBtn, Money, confirm, toast } from "../components/kit";
 import { SwipeRow } from "../components/SwipeRow";
 import { BottomSheet } from "../components/Sheet";
-import { useOwnerName } from "../components/ContactPicker";
 
 export const BankSection: React.FC<{ ownerId: OwnerId }> = ({ ownerId }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
@@ -145,4 +144,3 @@ const bankStyles = StyleSheet.create({
   icon: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" },
 });
 
-export const _bankKeep = { SectionHeader, Pill, useOwnerName };

@@ -9,7 +9,7 @@ import { useT } from "../i18n";
 import { relTime } from "../lib/utils";
 import type { Note, OwnerId } from "../lib/types";
 import { F, useThemeColors } from "../theme";
-import { Btn, Card, EmptyState, IconBtn, confirm, toast } from "../components/kit";
+import { Btn, Card, EmptyState, confirm, toast } from "../components/kit";
 import { SwipeRow } from "../components/SwipeRow";
 
 const NOTE_COLORS = ["#E4EDE7", "#F7E8DF", "#E5E8F9", "#F4E5EE", "#F4EEDB"];
@@ -106,7 +106,6 @@ export const NotesSection: React.FC<{ ownerId: OwnerId }> = ({ ownerId }) => {
 
 export const NOTE_COLOR_OPTIONS = NOTE_COLORS;
 
-export const _noteKeep = { IconBtn, toast, F };
 const noteStyles = StyleSheet.create({
   strip: { width: 4, borderRadius: 2, alignSelf: "stretch" },
 });

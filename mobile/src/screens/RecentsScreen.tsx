@@ -26,7 +26,6 @@ export const RecentsScreen: React.FC = () => {
   const contacts = useApp((s) => s.deviceContacts);
   const appRecents = useApp((s) => s.recents);
   const countryCode = useApp((s) => s.settings.countryCode);
-  const clearRecents = useApp((s) => s.clearRecents);
   const deleteRecent = useApp((s) => s.deleteRecent);
   const contactX = useApp((s) => s.contactX);
   const favorites = useMemo(

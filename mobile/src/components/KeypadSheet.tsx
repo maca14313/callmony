@@ -8,7 +8,7 @@ import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
-import { displayName, normalizePhone, prettyPhone, t9Match, uid, vibrate } from "../lib/utils";
+import { displayName, normalizePhone, prettyPhone, t9Match, vibrate } from "../lib/utils";
 import { contactOwnerId } from "../lib/types";
 import { placeCall } from "../native/calls";
 import { openNewContactForm } from "../native/deviceContacts";
@@ -267,7 +267,6 @@ export const KeypadSheet: React.FC = () => {
   );
 };
 
-export const keyUid = uid;
 
 const styles = StyleSheet.create({
   displayRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10, minHeight: 58 },

@@ -317,7 +317,6 @@ const ContactMenuSheet: React.FC<{
 }> = ({ onClose, recordID, contact }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
   const t = useT();
-  const open = useUI((s) => s.open);
   const countryCode = useApp((s) => s.settings.countryCode);
   const favSet = new Set(useApp((s) => s.contactX.filter((c) => c.favorite).map((c) => c.recordID)));
   const toggleFavorite = useApp((s) => s.toggleFavorite);

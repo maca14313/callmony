@@ -9,10 +9,10 @@ import { useApp } from "../lib/store";
 import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { dueStatus } from "../lib/calc";
-import { fd, ft, relTime } from "../lib/utils";
+import { fd, ft } from "../lib/utils";
 import type { Reminder, ReminderKind, OwnerId } from "../lib/types";
 import { F, useThemeColors } from "../theme";
-import { Btn, Card, Chip, EmptyState, IconBtn, Pill, confirm, toast } from "../components/kit";
+import { Btn, Card, EmptyState, IconBtn, Pill, confirm, toast } from "../components/kit";
 import { SwipeRow } from "../components/SwipeRow";
 
 export const RemindersSection: React.FC<{
@@ -165,4 +165,3 @@ const remStyles = StyleSheet.create({
   doneBtn: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, alignItems: "center", justifyContent: "center" },
 });
 
-export const _remKeep = { relTime, Chip };
