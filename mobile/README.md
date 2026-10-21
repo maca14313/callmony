@@ -71,3 +71,21 @@ All code is written for both platforms; the iOS build runs locally from a Mac
 | `VIBRATE` | haptic feedback |
 
 All runtime permissions are requested in-context with an explanation.
+
+## Enable the CI APK build (one-time, ~2 minutes)
+
+The repo's fine-grained access token doesn't carry the **Workflows**
+permission, so `.github/workflows/build-android.yml` couldn't be committed at
+the repo root by automation (a copy ships at
+`mobile/.github/workflows/build-android.yml`). Enable CI yourself, in the
+browser — no token needed:
+
+1. Open https://github.com/maca14313/callmony/new/main
+2. Set the file name to exactly:
+   `.github/workflows/build-android.yml`
+3. Open `mobile/.github/workflows/build-android.yml` in the repo
+   (raw view), copy **all** of it, paste it into the new file.
+4. Click **Commit changes**.
+
+From then on, every push to `main` (or a manual **Run workflow**) builds the
+signed APK — grab it from the run's **Artifacts → callmony-release-apk**.
