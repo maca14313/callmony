@@ -625,3 +625,25 @@ Stage Summary:
 - mobile/ = complete production React Native edition (~10k lines src) — both platforms, 100% offline, all web features ported, real calls (no simulation).
 - APK: signed release build via GitHub Actions once the workflow file is added at the repo root (2-min web-UI step documented; PAT cannot write workflow files).
 - Known limits: iOS build needs a Mac (code ready); eslint not run (nested workspace issue); recents on iOS = in-app log only (system log not readable on iOS by design).
+
+---
+Task ID: RN-2
+Agent: main (Z.ai Code)
+Task: Ship the RN APK — push remaining commit, build signed release APK locally, publish to GitHub Releases, verify dev server.
+
+Work Log:
+- Read worklog + repo state: RN-1 left one unpushed commit (2aede9c) containing the root .github/workflows/build-android.yml.
+- `git push` attempt → REJECTED: "refusing to allow a Personal Access Token to create or update workflow ... without workflow scope". Contents API PUT → 403 "Resource not accessible by personal access token". Confirmed: PAT has contents/push but NOT the Workflows permission; no automated route can add the workflow file.
+- Split the commit: pushed a4b602c (scripts/i18n-extra.js + worklog RN-1) WITHOUT the workflow file → push OK. Workflow YAML stays local + identical copy at mobile/.github/workflows/ + manual-enable instructions in mobile/README.md.
+- Built the APK locally in the sandbox: installed Android cmdline-tools 12.0 + platform-34 + build-tools 34.0.0 to /home/z/android-sdk.
+- Build failures fixed in sequence: (1) background gradle processes OOM-killed — cgroup limit 4GB (oom_kill counter confirmed); tuned gradle.properties to -Xmx1280m + kotlin in-process + workers.max=2. (2) sandbox JDK 21 lacks jlink (JdkImageTransform failure at notifee compile) → installed Temurin JDK 17.0.20.1 to /home/z/jdk-17.0.20.1+1. (3) temporarily stopped the Next.js dev server during the build to free ~700 MB, restarted it after (port 3000 → 200 again).
+- Result: BUILD SUCCESSFUL in 3m47s (491 tasks) → mobile/android/app/build/outputs/apk/release/callmony-v1.0.0-release.apk (64,239,556 bytes, universal 4-ABI).
+- Verified with apksigner/aapt: signed by the committed release keystore (CN=Callmony, Addis Ababa, ET); package com.callmony, versionName 1.0.0, minSdk 23 / targetSdk 34.
+- Created GitHub Release v1.0.0 (id 419294269) via API and uploaded the APK asset → https://github.com/maca14313/callmony/releases/download/v1.0.0/callmony-v1.0.0-release.apk
+- Updated mobile/README.md: Releases link, local-build notes (full JDK 17 w/ jlink, local.properties, memory tuning).
+- Committed gradle.properties tuning + README + this worklog entry; pushed to main.
+
+Stage Summary:
+- The signed production APK is published on the GitHub Releases page (v1.0.0) — user can install it directly today.
+- Repo main is fully pushed except .github/workflows/build-android.yml (blocked by PAT lacking Workflows permission; file kept locally, identical copy + step-by-step enable instructions in mobile/README.md).
+- Local-build recipe documented: full JDK 17 + android-sdk + tuned gradle.properties.

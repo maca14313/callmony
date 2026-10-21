@@ -33,6 +33,10 @@ lives on the device. Contacts and the call log come from the phone itself.
 
 ## Build the APK
 
+**Ready-made APK:** grab `callmony-v1.0.0-release.apk` from the
+[Releases page](https://github.com/maca14313/callmony/releases) — signed,
+universal (all CPU types), Android 6.0+.
+
 GitHub Actions builds a **signed release APK** on every push to `main`
 (`.github/workflows/build-android.yml`) — download the `callmony-release-apk`
 artifact from the run page and sideload it.
@@ -45,6 +49,14 @@ npm install
 cd android && ./gradlew assembleRelease   # → app/build/outputs/apk/release/
 # or: npx react-native run-android         # debug install on a connected device
 ```
+
+Local build notes:
+- Requires a **full JDK 17** (must include `jlink` — JRE-style installs fail at
+  `notifee:compileReleaseJavaWithJavac`). Set `JAVA_HOME` to it.
+- Write `sdk.dir=<path-to-android-sdk>` into `mobile/android/local.properties`.
+- `gradle.properties` is tuned for machines with 2–4 GB RAM (1280 MB heap,
+  in-process Kotlin). With more memory you can raise `org.gradle.jvmargs`.
+- The build produces `callmony-v1.0.0-release.apk` (~61 MB, all 4 ABIs).
 
 The release keystore (`android/app/callmony-release.keystore`) is committed for
 easy sideloading. For Play Store distribution, generate your own keystore and
