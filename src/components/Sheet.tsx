@@ -1,8 +1,12 @@
-/* Sheets — full-screen Sheet (overlay) + partial BottomSheet (scrollable) */
+/* Sheets — full-screen Sheet (overlay) + partial BottomSheet.
+   BottomSheet closes FOUR ways: scrim tap · grabber/header tap · X button ·
+   hardware back. The scrim is the FIRST child inside the flex-end container
+   so it is the deepest hit-test target at every point above the sheet —
+   taps can never be swallowed by a full-screen sibling (the bug that made
+   sheets feel impossible to close without the hardware back button). */
 
-import React, { useState } from "react";
+import React from "react";
 import {
-  Dimensions,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -11,6 +15,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
@@ -29,6 +34,7 @@ export const Sheet: React.FC<{
   scroll?: boolean;
 }> = ({ title, subtitle, onBack, headerRight, footer, children, scroll = true }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
+  const t = useT();
   const insets = useSafeAreaInsets();
 
   return (
@@ -36,7 +42,13 @@ export const Sheet: React.FC<{
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View style={[styles.sheetRoot, { backgroundColor: C.canvas, paddingTop: insets.top }]}>
           <View style={[styles.sheetHeader, { borderBottomColor: C.line }]}>
-            <Pressable onPress={onBack} hitSlop={10} style={styles.backBtn}>
+            <Pressable
+              onPress={onBack}
+              hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
+              style={styles.backBtn}
+              accessibilityRole="button"
+              accessibilityLabel={t("act.back")}
+            >
               <Icon name="chevron-left" size={26} color={C.ink} />
             </Pressable>
             <View style={{ flex: 1, alignItems: "center" }}>
@@ -71,49 +83,67 @@ export const Sheet: React.FC<{
   );
 };
 
-/** Partial bottom sheet — drag handle, scrim tap-to-close, scrollable body. */
+/** Partial bottom sheet — scrim tap, header/grabber tap, X button and the
+    hardware back key all close it. The sheet body scrolls; the header never
+    scrolls away, so there is always a visible close affordance. */
 export const BottomSheet: React.FC<{
   title?: string;
   onClose: () => void;
   children: React.ReactNode;
   maxHeightPct?: number;
-}> = ({ title, onClose, children, maxHeightPct = 0.86 }) => {
+  noScroll?: boolean;
+}> = ({ title, onClose, children, maxHeightPct = 0.86, noScroll = false }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
+  const t = useT();
   const insets = useSafeAreaInsets();
-  const [maxH] = useState(Dimensions.get("window").height * maxHeightPct);
+  const { height } = useWindowDimensions();
+  const maxH = height * maxHeightPct;
 
   return (
     <Modal transparent animationType="slide" visible onRequestClose={onClose}>
-      <Pressable style={[styles.scrim, { backgroundColor: C.scrim }]} onPress={onClose} />
-      <KeyboardAvoidingView
-        style={{ justifyContent: "flex-end", flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <View
-          style={[
-            styles.bottomSheet,
-            {
-              backgroundColor: C.card,
-              maxHeight: maxH,
-              paddingBottom: Math.max(insets.bottom, 14),
-            },
-          ]}
-        >
-          <View style={styles.grabberRow}>
-            <View style={[styles.grabber, { backgroundColor: C.line }]} />
-            {!!title && (
-              <Text style={{ fontSize: F.h2, fontWeight: "800", color: C.ink, marginTop: 10 }}>{title}</Text>
+      {/* container: scrim is the FIRST child → deepest hit target everywhere
+          above the sheet; the KAV below only wraps the sheet itself. */}
+      <View style={{ flex: 1, justifyContent: "flex-end" }}>
+        <Pressable
+          style={[styles.scrim, { backgroundColor: C.scrim }]}
+          onPress={onClose}
+          accessibilityLabel={t("act.close")}
+          accessibilityRole="button"
+        />
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ maxHeight: maxH }}>
+          <View style={[styles.bottomSheet, { backgroundColor: C.card, maxHeight: maxH, paddingBottom: Math.max(insets.bottom, 14) }]}>
+            {/* header: tap anywhere (grabber / title / X) to close */}
+            <Pressable
+              onPress={onClose}
+              hitSlop={{ top: 6, bottom: 6 }}
+              style={styles.grabberRow}
+              accessibilityRole="button"
+              accessibilityLabel={t("act.close")}
+            >
+              <View style={[styles.grabber, { backgroundColor: C.line }]} />
+              <View style={styles.titleRow}>
+                {!!title && (
+                  <Text style={{ fontSize: F.h2, fontWeight: "800", color: C.ink, flexShrink: 1 }} numberOfLines={1}>
+                    {title}
+                  </Text>
+                )}
+                <Icon name="close" size={22} color={C.sub} />
+              </View>
+            </Pressable>
+            {noScroll ? (
+              <View style={{ paddingHorizontal: 18, paddingBottom: 10 }}>{children}</View>
+            ) : (
+              <ScrollView
+                contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 10 }}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+              >
+                {children}
+              </ScrollView>
             )}
           </View>
-          <ScrollView
-            contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 10 }}
-            keyboardShouldPersistTaps="handled"
-            nestedScrollEnabled
-          >
-            {children}
-          </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 };
@@ -134,4 +164,13 @@ const styles = StyleSheet.create({
   bottomSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, elevation: 12 },
   grabberRow: { alignItems: "center", paddingTop: 10, paddingHorizontal: 18, paddingBottom: 6 },
   grabber: { width: 44, height: 5, borderRadius: 3 },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 10,
+    alignSelf: "stretch",
+    justifyContent: "center",
+    minHeight: 30,
+  },
 });

@@ -1076,16 +1076,51 @@ export const useApp = create<AppState>((set, get) => ({
 export const contactByRecord = (recordID: string): DeviceContact | undefined =>
   useApp.getState().deviceContacts.find((c) => c.recordID === recordID);
 
-export const contactByPhone = (phone: string): DeviceContact | undefined => {
+/* Phone index — rebuilt automatically whenever the deviceContacts array
+   identity changes. Two keys per number: the full normalized digits and the
+   LAST 9 DIGITS (the national significant part of an Ethiopian mobile
+   number). The tail key is what makes calls logged as "+251 09…" (double
+   prefix), "09…", "9…" or "+251 9…" all resolve to the same contact. */
+let phoneIdxFor: DeviceContact[] | null = null;
+let phoneIdxFull = new Map<string, DeviceContact>();
+let phoneIdxTail = new Map<string, DeviceContact>();
+
+const ensurePhoneIndex = () => {
   const { deviceContacts, settings } = useApp.getState();
-  const norm = normalizePhone(phone, settings.countryCode);
-  const digits = norm.replace(/\D/g, "");
-  return deviceContacts.find((c) =>
-    c.phones.some((p) => {
-      const pd = normalizePhone(p.number, settings.countryCode).replace(/\D/g, "");
-      return pd === digits || pd.endsWith(digits) || digits.endsWith(pd);
-    })
-  );
+  if (phoneIdxFor === deviceContacts) return;
+  phoneIdxFor = deviceContacts;
+  phoneIdxFull = new Map();
+  phoneIdxTail = new Map();
+  deviceContacts.forEach((c) => {
+    c.phones.forEach((p) => {
+      const d = normalizePhone(p.number, settings.countryCode).replace(/\D/g, "");
+      if (d.length < 5) return;
+      if (!phoneIdxFull.has(d)) phoneIdxFull.set(d, c);
+      const tail = d.slice(-9);
+      if (tail.length >= 7 && !phoneIdxTail.has(tail)) phoneIdxTail.set(tail, c);
+    });
+  });
+};
+
+/** Resolve a phone number (any local/international format) to a contact.
+    O(1) via the index; empty or too-short numbers never match. */
+export const contactByPhone = (phone: string): DeviceContact | undefined => {
+  const { settings } = useApp.getState();
+  const d = normalizePhone(phone ?? "", settings.countryCode).replace(/\D/g, "");
+  if (d.length < 5) return undefined; // empty / private / short codes → no match
+  ensurePhoneIndex();
+  const full = phoneIdxFull.get(d);
+  if (full) return full;
+  const tail = d.slice(-9);
+  if (tail.length >= 7) {
+    const hit = phoneIdxTail.get(tail);
+    if (hit) return hit;
+  }
+  // last resort: one number is a suffix of the other (≥7 digits)
+  for (const [key, c] of phoneIdxFull) {
+    if (key.length >= 7 && (key.endsWith(d) || d.endsWith(key))) return c;
+  }
+  return undefined;
 };
 
 export const favoriteRecordIds = (): Set<string> =>

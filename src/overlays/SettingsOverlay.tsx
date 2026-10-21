@@ -3,7 +3,7 @@
    Security (PIN + autolock) · Backup & restore · Import & export ·
    About · Danger zone. */
 
-import React, { useState } from "react";
+import React, { memo, useState } from "react";
 import { Alert, Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import DocumentPicker from "react-native-document-picker";
 import RNFS from "react-native-fs";
@@ -21,7 +21,6 @@ import { F, useThemeColors } from "../theme";
 import { Btn, Card, Divider, SectionHeader, Segmented, confirm, toast } from "../components/kit";
 import { Sheet, BottomSheet } from "../components/Sheet";
 import { LanguageSheet } from "../components/LanguageSheet";
-import { ContactPicker } from "../components/ContactPicker";
 
 export const SettingsOverlay: React.FC = () => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
@@ -191,7 +190,12 @@ export const SettingsOverlay: React.FC = () => {
           ))}
         </View>
         <Text style={{ fontSize: F.small, color: C.sub, marginBottom: 8 }}>{t("st.countryCode")}</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          nestedScrollEnabled
+          contentContainerStyle={{ gap: 6 }}
+        >
           {COUNTRY_CODES.map((c) => (
             <Pressable
               key={c.code}
@@ -364,7 +368,25 @@ export const PinFlow: React.FC<{ mode: "set" | "change" | "remove"; onClose: () 
 
   return (
     <BottomSheet title={mode === "remove" ? t("st.removePin") : title} onClose={onClose}>
-      <Animated.View style={{ transform: [{ translateX: shake }] }}>
+      <Animated.View style={{ transform: [{ translateX: shake }], alignItems: "center" }}>
+        {/* visible dots — you always see what you typed */}
+        <View style={pinFlowStyles.dotsRow}>
+          {[0, 1, 2, 3].map((i) => (
+            <View
+              key={i}
+              style={[
+                pinFlowStyles.dot,
+                {
+                  backgroundColor: value.length > i ? C.brand : C.line,
+                  transform: [{ scale: value.length > i ? 1.12 : 1 }],
+                },
+              ]}
+            />
+          ))}
+        </View>
+        <Text style={{ fontSize: F.body, fontWeight: "700", color: C.ink, marginTop: 14, marginBottom: 16 }}>
+          {title}
+        </Text>
         <PinPad value={value} onChange={(v) => { setValue(v); if (v.length === 4) setTimeout(() => submit(v), 120); }} />
       </Animated.View>
       <Text style={{ fontSize: F.tiny, color: C.sub, textAlign: "center", marginTop: 10, marginBottom: 4 }}>
@@ -439,12 +461,12 @@ export const LockScreen: React.FC = () => {
   );
 };
 
-/* ---------------- PIN pad ---------------- */
+/* ---------------- PIN pad (memoized — keys re-render only on value change) ---------------- */
 
 const PinPad: React.FC<{
   value: string;
   onChange: (v: string) => void;
-}> = ({ value, onChange }) => {
+}> = memo(({ value, onChange }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
   const press = (d: string) => {
     if (value.length >= 4) return;
@@ -474,7 +496,12 @@ const PinPad: React.FC<{
       </View>
     </View>
   );
-};
+});
+
+const pinFlowStyles = StyleSheet.create({
+  dotsRow: { flexDirection: "row", gap: 16, marginTop: 6 },
+  dot: { width: 16, height: 16, borderRadius: 8 },
+});
 
 const setStyles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 4 },
@@ -490,6 +517,7 @@ const pinStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  keysWrap: { flexDirection: "row", flexWrap: "wrap", gap: 14, justifyContent: "center" },
 });
 
 const lockStyles = StyleSheet.create({

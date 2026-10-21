@@ -160,8 +160,20 @@ const DIAL_CODES: Record<string, string> = {
 
 export const normalizePhone = (raw: string, countryCode = "ET"): string => {
   let n = (raw || "").replace(/[^\d+*#]/g, "");
-  if (n.startsWith("00")) n = `+${n.slice(2)}`;
-  if (n.startsWith("+")) return n.slice(1);
+  if (!n) return "";
+  if (/^0+$/.test(n)) return n; // "0"/"00" — meaningless, keep as-is (never matches)
+  if (n.startsWith("00")) n = `+${n.slice(2)}`; // 00-international prefix → +
+  if (n.startsWith("+")) {
+    const rest = n.slice(1);
+    const cc = DIAL_CODES[countryCode] || "251";
+    /* "+251 09…" (country code + trunk zero — a very common Ethiopian
+       storage format) is malformed E.164: the 0 never belongs after the
+       country code, so drop it → both "+251 09…" and "09…" normalize
+       to the same key and always match. */
+    if (rest.startsWith(cc + "0")) return rest.slice(0, cc.length) + rest.slice(cc.length + 1);
+    return rest;
+  }
+  if (n.includes("*") || n.includes("#")) return n.replace(/\D/g, ""); // USSD — digits only
   const cc = DIAL_CODES[countryCode] || "251";
   if (n.startsWith("0")) n = n.slice(1);
   return `${cc}${n}`;
@@ -169,8 +181,9 @@ export const normalizePhone = (raw: string, countryCode = "ET"): string => {
 
 export const prettyPhone = (raw: string, countryCode = "ET"): string => {
   if (!raw) return "";
-  const digits = normalizePhone(raw, countryCode);
   if (raw.includes("*") || raw.includes("#")) return raw; // USSD codes as typed
+  const digits = normalizePhone(raw, countryCode);
+  if (digits.replace(/^0+/, "").length < 3) return raw; // degenerate ("0", "00") → raw
   if (digits.startsWith("251") && digits.length >= 12) {
     return `+251 ${digits.slice(3, 6)} ${digits.slice(6, 9)} ${digits.slice(9)}`;
   }

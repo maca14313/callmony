@@ -168,10 +168,15 @@ const Shell: React.FC = () => {
      (already-granted ones resolve silently), then load the address book and
      the system call log IMMEDIATELY — the app opens with Contacts and
      Recents ready, like any built-in dialer. Both refresh when the user
-     returns to the app (e.g. after a call or contact edit). */
+     returns to the app (e.g. after a call), throttled to one load per 10s —
+     re-serializing a large address book on EVERY foreground made the app
+     feel laggy exactly when the user came back to it. */
+  const lastLoadRef = useRef(0);
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
+      if (Date.now() - lastLoadRef.current < 10000) return; // throttle
+      lastLoadRef.current = Date.now();
       const status = await checkContactsPermission();
       if (status === "authorized") {
         const list = await fetchAllContacts().catch(() => []);
@@ -197,6 +202,7 @@ const Shell: React.FC = () => {
           /* user can still grant later from the per-tab permission cards */
         }
       }
+      lastLoadRef.current = 0; // first load always runs
       load();
     };
     boot();
@@ -466,8 +472,11 @@ const shStyles = StyleSheet.create({
 
 const moreStyles = StyleSheet.create({
   tile: {
-    width: "30.5%",
-    minWidth: 100,
+    /* flexBasis instead of minWidth — three tiles ALWAYS fit a row on any
+       screen width (minWidth caused out-of-screen overflow on narrow phones) */
+    flexBasis: "30%",
+    flexGrow: 1,
+    maxWidth: 150,
     borderRadius: 18,
     borderWidth: 1,
     alignItems: "center",

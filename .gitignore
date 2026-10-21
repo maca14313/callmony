@@ -87,3 +87,4 @@ verify-shots/
 # logs
 *.log
 bun.lock
+.github/workflows/

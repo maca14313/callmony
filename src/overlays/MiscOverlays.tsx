@@ -475,7 +475,7 @@ const searchStyles = StyleSheet.create({
 });
 
 const spStyles = StyleSheet.create({
-  key: { width: "23%", minWidth: 82, aspectRatio: 0.9, borderRadius: 18, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  key: { flexBasis: "23%", flexGrow: 1, maxWidth: 120, aspectRatio: 0.9, borderRadius: 18, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   emptyAvatar: { width: 46, height: 46, borderRadius: 23, borderWidth: 1.5, borderStyle: "dashed", alignItems: "center", justifyContent: "center" },
 });
 

@@ -14,6 +14,10 @@ const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');
 
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const blockDir = (dir) => new RegExp('^' + esc(__dirname + '/' + dir) + '/');
+/* Android/Gradle build artifacts inside node_modules — never part of the JS
+   graph, but each package's android/build dir adds thousands of inotify
+   watches on low-limit hosts (ENOSPC during Metro's crawl). */
+const blockPattern = (p) => new RegExp(esc(__dirname + '/node_modules/') + p);
 
 const config = {
   resolver: {
@@ -24,6 +28,11 @@ const config = {
       blockDir('tests'),
       blockDir('skills'),
       blockDir('upload'),
+      blockPattern('[^/]+/android/build/'), // gradle outputs of RN native deps
+      blockPattern('[^/]+/android/build/[^/]+/'), // nested (intermediates etc.)
+      /\/android\/build\/intermediates\//, // any depth gradle intermediates
+      /\/\.git\//,
+      /\/\.gradle\//,
     ],
   },
 };

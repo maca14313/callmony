@@ -1,7 +1,13 @@
-/* SwipeRow — swipe left/right to reveal actions, tap to open, long-press for menu.
-   Pure RN Animated + PanResponder (no extra native deps). */
+/* SwipeRow — swipe left/right to reveal actions, tap to open, long-press for
+   menu. Pure RN Animated + PanResponder (no extra native deps).
 
-import React, { useCallback, useRef } from "react";
+   Gesture detection is HORIZONTAL-DOMINANT: a drag is only claimed when the
+   horizontal movement clearly outweighs the vertical movement, so swiping a
+   row sideways never scrolls the list downward (and the list scrolling
+   downward never half-opens a row). Rows are memoized and only ~15 are
+   mounted at a time (virtualized lists), so even 1000+ contacts stay smooth. */
+
+import React, { memo, useCallback, useRef } from "react";
 import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
@@ -24,7 +30,7 @@ export const SwipeRow: React.FC<{
 }> = ({ children, leftActions = [], rightActions = [], onTap, onLongPress }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
   const x = useRef(new Animated.Value(0)).current;
-  const pressed = useRef(false);
+  const openRef = useRef(0); // current snapped offset (0 = closed)
   const moved = useRef(false);
   const longFired = useRef(false);
   const longTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -34,30 +40,32 @@ export const SwipeRow: React.FC<{
 
   const snap = useCallback(
     (to: number) => {
-      Animated.timing(x, {
-        toValue: to,
-        duration: 180,
-        useNativeDriver: false,
-      }).start();
+      openRef.current = to;
+      Animated.timing(x, { toValue: to, duration: 160, useNativeDriver: false }).start();
     },
     [x]
   );
 
+  /* claim the gesture ONLY when the drag is clearly horizontal */
+  const isHorizontalDrag = (_e: unknown, g: { dx: number; dy: number }) =>
+    Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.25;
+
   const pan = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 8 && Math.abs(g.dy) < 12,
+      onMoveShouldSetPanResponder: isHorizontalDrag,
+      onMoveShouldSetPanResponderCapture: isHorizontalDrag,
       onPanResponderGrant: () => {
         moved.current = true;
         if (longTimer.current) clearTimeout(longTimer.current);
       },
       onPanResponderMove: (_e, g) => {
-        const dx = g.dx;
-        x.setValue(Math.max(-rightW - 20, Math.min(leftW + 20, dx)));
+        // drag relative to the current open position → re-swiping an open row works
+        x.setValue(Math.max(-rightW - 24, Math.min(leftW + 24, openRef.current + g.dx)));
       },
       onPanResponderRelease: (_e, g) => {
-        const dx = g.dx + g.vx * 40;
-        if (rightW > 0 && dx < -rightW * 0.45) snap(-rightW);
-        else if (leftW > 0 && dx > leftW * 0.45) snap(leftW);
+        const total = openRef.current + g.dx + g.vx * 30;
+        if (rightW > 0 && total < -rightW * 0.4) snap(-rightW);
+        else if (leftW > 0 && total > leftW * 0.4) snap(leftW);
         else snap(0);
       },
       onPanResponderTerminate: () => snap(0),
@@ -65,7 +73,6 @@ export const SwipeRow: React.FC<{
   ).current;
 
   const handlePressIn = () => {
-    pressed.current = true;
     moved.current = false;
     longFired.current = false;
     if (onLongPress) {
@@ -82,13 +89,11 @@ export const SwipeRow: React.FC<{
 
   const handlePressOut = () => {
     if (longTimer.current) clearTimeout(longTimer.current);
-    pressed.current = false;
   };
 
   const handleTap = () => {
     if (longFired.current || moved.current) return;
-    const value = (x as unknown as { _value: number })._value;
-    if (Math.abs(value) > 10) {
+    if (openRef.current !== 0) {
       snap(0);
       return;
     }
@@ -131,13 +136,21 @@ export const SwipeRow: React.FC<{
         {...pan.panHandlers}
         style={[{ transform: [{ translateX: x }] }, { backgroundColor: C.card }]}
       >
-        <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={handleTap}>
+        <Pressable
+          pressRetentionOffset={{ left: 8, right: 8, top: 4, bottom: 4 }}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          onPress={handleTap}
+        >
           {children}
         </Pressable>
       </Animated.View>
     </View>
   );
 };
+
+/** Memoized wrapper — rows re-render only when their own props change. */
+export const MemoSwipeRow = memo(SwipeRow);
 
 const styles = StyleSheet.create({
   actions: { position: "absolute", top: 0, bottom: 0, alignItems: "center" },

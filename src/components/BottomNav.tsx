@@ -39,10 +39,18 @@ export const BottomNav: React.FC = () => {
   );
 
   const handle = (key: string) => {
-    closeAll();
     if (key === "keypad") {
+      // tapping the keypad tab while the dialer overlay is open closes it
+      if (keypadOpen) {
+        closeAll();
+        return;
+      }
+      closeAll();
       setKeypadOpen(true);
-    } else if (key === "calculator") {
+      return;
+    }
+    closeAll();
+    if (key === "calculator") {
       open({ type: "calculator" });
     } else if (key === "more") {
       setMoreOpen(true);

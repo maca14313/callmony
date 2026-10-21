@@ -176,7 +176,14 @@ export const Money: React.FC<{
   const text = fmtMoney(value, currency || appCurrency, { signed });
   const color = colorize ? (value > 0 ? C.green : value < 0 ? C.red : C.sub) : undefined;
   return (
-    <Text style={{ fontSize: size, fontWeight: weight, color: color ?? C.ink }}>{text}</Text>
+    <Text
+      numberOfLines={1}
+      adjustsFontSizeToFit
+      minimumFontScale={0.6}
+      style={{ fontSize: size, fontWeight: weight, color: color ?? C.ink, flexShrink: 1 }}
+    >
+      {text}
+    </Text>
   );
 };
 
