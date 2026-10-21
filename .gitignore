@@ -1,64 +1,89 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# ================= Callmony React Native app (repo root) =================
 # dependencies
-node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp*
+
+# metro / RN
+*.jsbundle
+.metro-health-check*
+.bundle/*
+
+# Android
+android/.gradle/
+android/app/build/
+android/build/
+android/.cxx/
+android/local.properties
+.idea/
+*.iml
+*.hprof
+*.keystore
+!android/app/debug.keystore
+!android/app/callmony-release.keystore
+
+# iOS
+ios/build/
+ios/Pods/
+ios/**/xcuserdata/
+ios/**/DerivedData/
+*.xcuserstate
+*.ipa
+*.dSYM.zip
+vendor/bundle/
 
 # testing
-/coverage
-
-# next.js
-/.next/
-/out/
-
-# production
-/build
+coverage/
 
 # misc
 .DS_Store
 *.pem
 
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
+# ================= Web app (web/) =================
+web/node_modules/
+web/.next/
+web/out/
+web/.pnp
+web/.pnp.*
+web/.yarn/*
+!web/.yarn/patches
+!web/.yarn/plugins
+!web/.yarn/releases
+!web/.yarn/versions
+web/coverage/
+web/next-env.d.ts
+web/*.tsbuildinfo
+web/.vercel
 
-# env files (can opt-in for committing if needed)
-.env*
-!.env.example
+# env files (committed .env is intentionally tracked; example stays visible)
+.env.local
+.env.*.local
 
-# vercel
-.vercel
-
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
-local-*
-.claude
-.z-ai-config
-*.log
-dev.log
-dev.out.log
-test
-prompt
-
-server.log
-# Skills directory
-/skills/
-# callmony: local agent/session artifacts
+# ================= Sandbox / local agent artifacts (not part of the repo) =================
+.zscripts/
 tool-results/
 agent-ctx/
-/download/
-# callmony: local build/QA artifacts (side-dir build, deploy staging, browser shots)
+worklog.md
+Caddyfile
+tests/
+examples/
+mini-services/
+skills/
+upload/
+download/
+prompt
+.claude
+.z-ai-config
+server.log
 .next-build/
 .deploy-stage/
 .qa-shots/
 verify-shots/
+
+# logs
+*.log
+bun.lock

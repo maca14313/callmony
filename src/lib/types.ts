@@ -1,72 +1,66 @@
 /* ---------------------------------------------------------------
-   callmony — data model
-   Every record: id, createdAt, updatedAt, deletedAt (soft delete)
-   ownerId: contact id | 'general'  (null-ish = General space)
-   Money: numbers in major currency units, rounded via r2()
+   callmony — data model (React Native edition)
+   Contacts come from the DEVICE (react-native-contacts); app data
+   (ledger / lists / notes / reminders / banks / settings) lives in
+   AsyncStorage. Every record: id, createdAt, updatedAt, deletedAt.
+   ownerId: "general" | "c:<device recordID>"
 ---------------------------------------------------------------- */
 
 export type ID = string;
+/** "general" or a device contact: "c:<recordID>" */
 export type OwnerId = ID | "general";
+export const contactOwnerId = (recordID: string): OwnerId => `c:${recordID}`;
+export const ownerIdToRecordId = (ownerId: string): string | null =>
+  ownerId.startsWith("c:") ? ownerId.slice(2) : null;
 
-export interface Phone {
-  id: ID;
-  label: string; // mobile | work | home | main | other | custom
+/* ---------------- device contacts ---------------- */
+
+export interface DevicePhone {
+  id: string;
+  label: string; // mobile | work | home | main | office | other | custom
   number: string;
-  primary?: boolean;
 }
-export interface Email {
-  id: ID;
+export interface DeviceEmail {
+  id: string;
   label: string;
   address: string;
-  primary?: boolean;
 }
-export interface LinkItem {
-  id: ID;
+export interface DeviceAddress {
+  id: string;
   label: string;
-  url: string;
-}
-export interface Social {
-  id: ID;
-  app: "telegram" | "whatsapp" | "signal" | "instagram" | "x" | "other";
-  handle: string; // username or phone
-}
-export interface Address {
-  id: ID;
-  label: string;
-  text: string;
-}
-export interface CustomField {
-  id: ID;
-  key: string;
-  value: string;
+  formatted: string;
 }
 
-export interface Contact {
-  id: ID;
-  firstName: string;
-  lastName: string;
+/** A contact from the phone's address book (normalized). */
+export interface DeviceContact {
+  recordID: string;
+  displayName: string; // given + family (or company fallback)
+  givenName: string;
+  familyName: string;
   nickname?: string;
   company?: string;
   jobTitle?: string;
-  phones: Phone[];
-  emails: Email[];
-  links: LinkItem[];
-  socials: Social[];
-  addresses: Address[];
-  customFields: CustomField[];
-  birthday?: string; // YYYY-MM-DD
-  tags: string[];
-  favorite: boolean;
-  pinnedNote?: string;
   note?: string;
-  photoId?: ID; // attachment id
-  color?: string; // avatar bg
-  textColor?: string;
+  birthday?: string; // YYYY-MM-DD (normalized from the OS)
+  phones: DevicePhone[];
+  emails: DeviceEmail[];
+  addresses: DeviceAddress[];
+  thumbnailPath?: string;
+  hasPhoto: boolean;
+}
+
+/** App-local extensions layered on top of a device contact. */
+export interface ContactX {
+  recordID: string;
+  favorite: boolean;
+  tags: string[];
+  pinnedNote?: string;
   speedDial?: string; // '2'..'9'
   createdAt: number;
   updatedAt: number;
-  deletedAt?: number;
 }
+
+/* ---------------- money ledger ---------------- */
 
 /** A single payment record — every payment keeps its own row. */
 export interface Payment {
@@ -76,35 +70,26 @@ export interface Payment {
   note?: string;
   method?: string;
   auto?: "tick" | "settle"; // created by ticking a row / settle-up
-  refs?: LinkRef[]; // attached banks / lists / notes / reminders / owners / links
+  refs?: LinkRef[];
   createdAt: number;
 }
 
-/** One shopping-style line on a ledger entry — name + qty (+ optional unit) × unit price. */
+/** One shopping-style line on a ledger entry — name + qty (+ unit) × unit price. */
 export interface EntryItem {
   id: ID;
   name: string; // "ball"
   qty: number; // 3
   unit?: string; // "pic" / "kg" / "bag" — free text, optional
-  price: number; // unit price 100
-  attachments?: ID[]; // optional per-line files (mirrors ListItem rows)
+  price: number; // unit price 100 → line total 300
 }
 
-/**
- * Ledger entry.
- * credit  = "they owe you" (+)  · for General: income
- * debit   = "you owe them" (−)  · for General: expense
- * remaining = amount − Σ payments; negative remaining flips direction.
- */
-
-/** How the entry type was chosen — display label (math: credit=+, debit=−). */
 export type EntryKind = "income" | "expense" | "credit" | "debit";
 
 export interface LedgerEntry {
   id: ID;
   ownerId: OwnerId;
-  type: "credit" | "debit";
-  kind?: EntryKind; // income/expense/credit/debit — user's chosen label (both contexts)
+  type: "credit" | "debit"; // math: credit = +, debit = −
+  kind?: EntryKind; // user-chosen label (income/expense/credit/debit — both contexts)
   amount: number;
   /** line items qty×price; amount = Σ qty×price when present */
   items?: EntryItem[];
@@ -114,26 +99,26 @@ export interface LedgerEntry {
   category?: string;
   method?: string;
   note?: string;
-  listId?: ID; // created from a calculating list
-  groupId?: ID; // ledger group this entry belongs to
-  refs?: LinkRef[]; // attached banks / lists / notes / reminders / owners / links
-  attachments: ID[];
+  listId?: ID;
+  groupId?: ID;
+  refs?: LinkRef[];
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
 }
 
-/** A named group of ledger entries — shows its own calculated totals. */
 export interface LedgerGroup {
   id: ID;
   ownerId: OwnerId;
   title: string;
   note?: string;
-  refs: LinkRef[]; // attached banks / lists / notes / reminders / owners / links
+  refs: LinkRef[];
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
 }
+
+/* ---------------- calculating lists ---------------- */
 
 export interface ListDiscount {
   type: "pct" | "amount";
@@ -144,18 +129,17 @@ export interface ListItem {
   id: ID;
   name: string;
   qty: number;
-  unit?: string; // pcs, kg, hrs...
+  unit?: string;
   unitPrice: number;
-  discount?: ListDiscount; // per-row discount
-  taxPct?: number; // per-row tax
+  discount?: ListDiscount;
+  taxPct?: number;
   payments: Payment[];
-  checked: boolean; // ticked = fully paid
-  date?: string; // day this row was taken (same item, different days)
+  checked: boolean;
+  date?: string;
   dueDate?: string;
   priority?: "low" | "medium" | "high";
   note?: string;
   sortOrder: number;
-  attachments?: ID[];
   createdAt: number;
   updatedAt: number;
 }
@@ -169,26 +153,27 @@ export interface CalcList {
   kind: ListKind;
   title: string;
   note?: string;
-  discount?: ListDiscount; // whole-list discount
-  taxPct?: number; // whole-list tax %
-  extraCharge?: number; // delivery etc.
+  discount?: ListDiscount;
+  taxPct?: number;
+  extraCharge?: number;
   isTemplate: boolean;
-  postToLedger: boolean; // count pending in owner's balance
+  postToLedger: boolean;
   repeat: Repeat;
   currency?: string;
   items: ListItem[];
-  attachments: ID[];
-  refs?: LinkRef[]; // attached banks / notes / reminders / owners / links
+  refs?: LinkRef[];
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
 }
 
+/* ---------------- links / notes / reminders / banks ---------------- */
+
 export interface LinkRef {
   type: "contact" | "entry" | "list" | "note" | "reminder" | "bank" | "item" | "link";
   id: ID;
   label?: string;
-  url?: string; // for type === "link"
+  url?: string;
 }
 
 export interface Note {
@@ -200,7 +185,6 @@ export interface Note {
   pinned: boolean;
   color?: string;
   links: LinkRef[];
-  attachments: ID[];
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -216,14 +200,13 @@ export interface Reminder {
   kind: ReminderKind;
   dueAt: number; // epoch ms
   repeat: Repeat;
-  leadMinutes?: number[]; // fire early too, e.g. [1440, 60]
+  leadMinutes?: number[];
   links: LinkRef[];
   done: boolean;
   doneAt?: number;
   snoozedUntil?: number;
   lastFiredAt?: number;
   firedLeads?: number[];
-  attachments: ID[];
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -238,26 +221,25 @@ export interface BankAccount {
   accountNumber?: string;
   iban?: string;
   swift?: string;
-  upiId?: string;
   branch?: string;
   notes?: string;
   balance?: number;
   currency?: string;
-  attachments: ID[];
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
 }
 
+/* ---------------- logs ---------------- */
+
 export interface CallLog {
   id: ID;
   phone: string; // normalized display
-  contactId?: ID;
+  ownerId?: OwnerId; // resolved device contact
   direction: "incoming" | "outgoing" | "missed";
   at: number;
   duration: number; // seconds
   via: "app" | "tel";
-  note?: string;
   createdAt: number;
 }
 
@@ -270,58 +252,32 @@ export interface MessageLog {
   createdAt: number;
 }
 
-export type AttachmentParentType =
-  | "contact"
-  | "entry"
-  | "list"
-  | "item"
-  | "note"
-  | "reminder"
-  | "bank"
-  | "message";
-
-/** Metadata — the bytes live in the blobs store keyed by id. */
-export interface AttachmentMeta {
-  id: ID;
-  parentId: ID;
-  parentType: AttachmentParentType;
-  name: string;
-  mimeType: string;
-  size: number;
-  kind: "image" | "pdf" | "file";
-  thumb?: string; // small data-url thumbnail for images
-  createdAt: number;
-}
+/* ---------------- settings / backup ---------------- */
 
 export interface Settings {
   theme: "light" | "dark" | "auto";
   language?: "en" | "am" | "om" | "ar" | "ti";
-  currency: string; // 'ETB' | 'USD' ...
+  currency: string; // 'ETB' ...
   countryCode: string; // 'ET' default dial code +251
   pinHash?: { hash: string; salt: string };
   autolockMin: number; // 0 = lock immediately on blur
   hideBalances: boolean;
-  /** outgoing calls: "dialer" = real call via the phone's default caller app (tel:), "demo" = in-app simulation */
-  callMode?: "dialer" | "demo";
-  /** user-added custom ledger categories (on top of the built-in ones) */
   customCategories?: string[];
   startTab?: string;
   lastBackupAt?: number;
   notifAsked: boolean;
-  onboardingDone?: boolean;
-  demoSeeded?: boolean;
   blockedNumbers: string[];
-  speedDial?: Record<string, ID>; // keypad digit (2-9) → contact id
+  speedDial?: Record<string, string>; // keypad digit → recordID
 }
 
 export interface BackupFile {
-  app: "callmony" | "dial-ledger"; // "dial-ledger" = pre-rename backups (accepted)
+  app: "callmony";
   version: number;
   exportedAt: number;
   data: {
-    contacts: Contact[];
+    contactX: ContactX[];
     entries: LedgerEntry[];
-    groups?: LedgerGroup[]; // ledger groups (optional = older backups)
+    groups: LedgerGroup[];
     lists: CalcList[];
     notes: Note[];
     reminders: Reminder[];
@@ -329,10 +285,10 @@ export interface BackupFile {
     recents: CallLog[];
     messages: MessageLog[];
     settings: Partial<Settings>;
-    attachments: AttachmentMeta[];
   };
-  files: { id: ID; name: string; type: string; d: string }[]; // base64
 }
+
+/* ---------------- constants ---------------- */
 
 export const CURRENCIES = [
   { code: "ETB", symbol: "Br", label: "Ethiopian Birr (Br)" },
@@ -361,8 +317,6 @@ export const ENTRY_CATEGORIES = [
 
 export const PAYMENT_METHODS = ["cash", "bank", "card", "mobile", "other"];
 
-export const PHONE_LABELS = ["mobile", "work", "home", "main", "office", "other"];
-
 export const AVATAR_PALETTE = [
   { color: "#E4EDE7", text: "#527561" },
   { color: "#F7E8DF", text: "#B7785B" },
@@ -372,4 +326,29 @@ export const AVATAR_PALETTE = [
   { color: "#DFF0F0", text: "#4A8585" },
   { color: "#F0E9E4", text: "#8A7360" },
   { color: "#E7F0DC", text: "#67813F" },
+];
+
+export const COUNTRY_CODES: { code: string; dial: string; name: string }[] = [
+  { code: "ET", dial: "251", name: "Ethiopia" },
+  { code: "ER", dial: "291", name: "Eritrea" },
+  { code: "DJ", dial: "253", name: "Djibouti" },
+  { code: "SO", dial: "252", name: "Somalia" },
+  { code: "KE", dial: "254", name: "Kenya" },
+  { code: "SD", dial: "249", name: "Sudan" },
+  { code: "EG", dial: "20", name: "Egypt" },
+  { code: "SA", dial: "966", name: "Saudi Arabia" },
+  { code: "AE", dial: "971", name: "UAE" },
+  { code: "US", dial: "1", name: "United States" },
+  { code: "GB", dial: "44", name: "United Kingdom" },
+  { code: "CA", dial: "1", name: "Canada" },
+  { code: "DE", dial: "49", name: "Germany" },
+  { code: "FR", dial: "33", name: "France" },
+  { code: "IT", dial: "39", name: "Italy" },
+  { code: "ES", dial: "34", name: "Spain" },
+  { code: "NL", dial: "31", name: "Netherlands" },
+  { code: "IN", dial: "91", name: "India" },
+  { code: "NG", dial: "234", name: "Nigeria" },
+  { code: "ZA", dial: "27", name: "South Africa" },
+  { code: "TZ", dial: "255", name: "Tanzania" },
+  { code: "UG", dial: "256", name: "Uganda" },
 ];

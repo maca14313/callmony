@@ -1,38 +1,25 @@
-"use client";
+/* callmony — UI/navigation store (tabs + overlay stack + alarm queue) */
 
 import { create } from "zustand";
-import type { ID, EntryKind, LinkRef, Reminder } from "./types";
+import type { EntryKind, LinkRef, Reminder } from "./types";
 
 export type Tab = "contacts" | "recents" | "general" | "reminders" | "trash";
 
-/** Quick actions that may need a "which number?" picker before running. */
-export type ContactAction = "call" | "sms" | "whatsapp" | "telegram" | "email";
-
 export type Overlay =
-  | { type: "contact"; contactId: ID }
-  | { type: "contactEdit"; contactId?: ID; prefillPhone?: string; prefillName?: string }
-  | { type: "list"; listId: ID }
-  | { type: "listEdit"; listId?: ID; ownerId: ID | "general"; kind?: "calculating" | "simple" | "checklist" | "todo" }
-  | { type: "entryEdit"; entryId?: ID; ownerId: ID | "general"; entryType?: "credit" | "debit"; kind?: EntryKind }
-  | { type: "noteEdit"; noteId?: ID; ownerId: ID | "general"; linkTo?: LinkRef }
-  | { type: "reminderEdit"; reminderId?: ID; ownerId: ID | "general"; prefill?: Partial<Reminder> }
-  | { type: "bankEdit"; bankId?: ID; ownerId: ID | "general" }
+  | { type: "contact"; recordID: string }
+  | { type: "list"; listId: string }
+  | { type: "listEdit"; listId?: string; ownerId: string; kind?: "calculating" | "simple" | "checklist" | "todo" }
+  | { type: "entryEdit"; entryId?: string; ownerId: string; entryType?: "credit" | "debit"; kind?: EntryKind; groupId?: string }
+  | { type: "noteEdit"; noteId?: string; ownerId: string; linkTo?: LinkRef }
+  | { type: "reminderEdit"; reminderId?: string; ownerId: string; prefill?: Partial<Reminder> }
+  | { type: "bankEdit"; bankId?: string; ownerId: string }
   | { type: "settings" }
   | { type: "search"; query?: string }
   | { type: "calculator"; onPickKey?: string }
-  | { type: "call"; phone: string; contactId?: ID; direction?: "incoming" | "outgoing" | "missed" }
   | { type: "merge" }
   | { type: "speedDial" }
-  | { type: "import" }
   | { type: "backup" }
-  | { type: "storage" }
   | { type: "about" };
-
-export interface ActionPickerState {
-  contactId: ID;
-  action: ContactAction;
-  text?: string; // pre-filled message body (WhatsApp reminder etc.)
-}
 
 interface UIState {
   tab: Tab;
@@ -43,7 +30,6 @@ interface UIState {
   calculatorValue: number | null;
   calculatorPickHandler: ((value: number) => void) | null;
   keypadOpen: boolean;
-  actionPicker: ActionPickerState | null;
 
   setTab: (t: Tab) => void;
   open: (o: Overlay) => void;
@@ -58,8 +44,6 @@ interface UIState {
   setCalculatorValue: (v: number | null) => void;
   clearCalculatorHandler: () => void;
   setKeypadOpen: (v: boolean) => void;
-  openAction: (a: ActionPickerState) => void;
-  closeAction: () => void;
 }
 
 export const useUI = create<UIState>((set, get) => ({
@@ -71,16 +55,15 @@ export const useUI = create<UIState>((set, get) => ({
   calculatorValue: null,
   calculatorPickHandler: null,
   keypadOpen: false,
-  actionPicker: null,
 
   setTab: (t) => set({ tab: t, moreOpen: false }),
   open: (o) => set((s) => ({ overlayStack: [...s.overlayStack, o], moreOpen: false })),
   pop: () => set((s) => ({ overlayStack: s.overlayStack.slice(0, -1) })),
-  /* closeAll also dismisses the keypad half-modal, the More sheet and the
-     action picker — otherwise tapping the bottom nav while the keypad is
-     open looks like "nothing happens" (the view switched behind the scrim). */
+  /* closeAll also dismisses the keypad half-modal and the More sheet —
+     otherwise tapping the bottom nav while the keypad is open looks like
+     "nothing happens" (the view switched behind the scrim). */
   closeAll: () =>
-    set({ overlayStack: [], calculatorPickHandler: null, keypadOpen: false, moreOpen: false, actionPicker: null }),
+    set({ overlayStack: [], calculatorPickHandler: null, keypadOpen: false, moreOpen: false }),
   closeType: (type) =>
     set((s) => ({ overlayStack: s.overlayStack.filter((o) => o.type !== type) })),
   setMoreOpen: (v) => set({ moreOpen: v }),
@@ -97,6 +80,4 @@ export const useUI = create<UIState>((set, get) => ({
   setCalculatorValue: (v) => set({ calculatorValue: v }),
   clearCalculatorHandler: () => set({ calculatorPickHandler: null }),
   setKeypadOpen: (v) => set({ keypadOpen: v }),
-  openAction: (a) => set({ actionPicker: a }),
-  closeAction: () => set({ actionPicker: null }),
 }));

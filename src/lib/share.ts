@@ -1,113 +1,72 @@
+/* Communication shortcuts — deep links via Linking, plus message templates. */
+
+import { Linking, Share as RNShare, Platform } from "react-native";
 import { normalizePhone } from "./utils";
-import type { Contact } from "./types";
+import type { DeviceContact } from "./types";
 
-/* Communication shortcuts — standard deep links, no special integration. */
-
-export const telLink = (number: string, countryCode = "ET") =>
-  `tel:+${normalizePhone(number, countryCode)}`;
-
-/**
- * Hand a call off to the phone's default caller app.
- * location.href is far more reliable than window.open for tel: URIs
- * on mobile browsers / installed PWAs (no popup blocker involved).
- */
-export const openTel = (number: string, countryCode = "ET") => {
+export const openURL = async (url: string): Promise<boolean> => {
   try {
-    window.location.href = telLink(number, countryCode);
+    const supported = await Linking.canOpenURL(url);
+    if (!supported) return false;
+    await Linking.openURL(url);
+    return true;
   } catch {
-    /* noop */
+    return false;
   }
 };
 
-export const smsLink = (number: string, text?: string, countryCode = "ET") =>
-  `sms:+${normalizePhone(number, countryCode)}${text ? `?body=${encodeURIComponent(text)}` : ""}`;
+export const smsLink = (number: string, text?: string, countryCode = "ET"): string => {
+  const sep = Platform.OS === "ios" ? "&" : "?";
+  return `sms:${number}${text ? `${sep}body=${encodeURIComponent(text)}` : ""}`;
+};
 
-export const waLink = (number: string, text?: string, countryCode = "ET") =>
-  `https://wa.me/${normalizePhone(number, countryCode)}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
+export const waLink = (number: string, text?: string, countryCode = "ET"): string => {
+  const norm = normalizePhone(number, countryCode);
+  const clean = norm.replace(/[^\d]/g, "");
+  return `https://wa.me/${clean}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
+};
 
-export const tgLink = (handle: string) => {
+export const tgLink = (handle: string): string => {
   const h = handle.trim().replace(/^@/, "");
-  if (/^\+?\d+$/.test(h)) return `https://t.me/${h}`;
   return `https://t.me/${encodeURIComponent(h)}`;
 };
 
-export const mailtoLink = (address: string, subject?: string, body?: string) => {
+export const mailtoLink = (address: string, subject?: string, body?: string): string => {
   const params: string[] = [];
   if (subject) params.push(`subject=${encodeURIComponent(subject)}`);
   if (body) params.push(`body=${encodeURIComponent(body)}`);
   return `mailto:${address}${params.length ? `?${params.join("&")}` : ""}`;
 };
 
-export const openExternal = (url: string) => {
+export const shareText = async (title: string, message: string): Promise<boolean> => {
   try {
-    window.open(url, "_blank", "noopener,noreferrer");
+    await RNShare.share({ title, message }, { dialogTitle: title });
+    return true;
   } catch {
-    /* noop */
+    return false;
   }
 };
 
-export const openLink = (url: string) => {
-  try {
-    window.open(url, "_blank", "noopener,noreferrer");
-  } catch {
-    /* noop */
-  }
-};
-
-/** Web Share API with graceful fallback */
-export const shareText = async (title: string, text: string): Promise<"shared" | "copied" | "failed"> => {
-  const nav = navigator as Navigator & { share?: (d: ShareData) => Promise<void> };
-  if (nav.share) {
-    try {
-      await nav.share({ title, text });
-      return "shared";
-    } catch {
-      return "failed";
-    }
-  }
-  return "copied";
-};
-
-export const shareFiles = async (
-  title: string,
-  files: File[]
-): Promise<"shared" | "failed"> => {
-  const nav = navigator as Navigator & { share?: (d: ShareData) => Promise<void> };
-  if (nav.share && files.length) {
-    try {
-      await nav.share({ title, files });
-      return "shared";
-    } catch {
-      return "failed";
-    }
-  }
-  return "failed";
-};
-
-/** First usable phone for calling (primary first) */
-export const primaryPhone = (c?: Contact | null): string | undefined => {
+/** First usable phone for calling (mobile label first, else first number). */
+export const primaryPhone = (c?: DeviceContact | null): string | undefined => {
   if (!c) return undefined;
-  const p = c.phones.find((x) => x.primary) || c.phones[0];
+  const p = c.phones.find((x) => /mobile|main/i.test(x.label)) || c.phones[0];
   return p?.number;
 };
 
-export const primaryEmail = (c?: Contact | null): string | undefined => {
+export const primaryEmail = (c?: DeviceContact | null): string | undefined => {
   if (!c) return undefined;
-  const e = c.emails.find((x) => x.primary) || c.emails[0];
-  return e?.address;
+  return c.emails[0]?.address;
 };
 
-export const hasWhatsApp = (c?: Contact | null) => !!c?.phones.length;
-
-export const telegramHandle = (c?: Contact | null): string | undefined => {
+/** Telegram handle — not stored per-contact on device; use the primary phone. */
+export const telegramHandle = (c?: DeviceContact | null, countryCode = "ET"): string | undefined => {
   if (!c) return undefined;
-  const tg = c.socials.find((s) => s.app === "telegram");
-  if (tg) return tg.handle;
-  const phone = c.phones.find((p) => p.primary) || c.phones[0];
-  return phone ? `+${normalizePhone(phone.number)}` : undefined;
+  const phone = primaryPhone(c);
+  return phone ? `+${normalizePhone(phone, countryCode)}` : undefined;
 };
 
-/** Payment-reminder message templates */
+/** Payment-reminder message templates (same as the web edition). */
 export const reminderTemplates = [
   {
     id: "gentle",
@@ -122,7 +81,7 @@ export const reminderTemplates = [
   {
     id: "bill",
     title: "Bill / pending items",
-    body: "Hi {name}, here is your pending bill from \"{list}\":\n{items}\nTotal: {amount}\nThanks!",
+    body: 'Hi {name}, here is your pending bill from "{list}":\n{items}\nTotal: {amount}\nThanks!',
   },
 ];
 
