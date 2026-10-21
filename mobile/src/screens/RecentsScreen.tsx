@@ -5,7 +5,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
-import { Platform } from "react-native";
+import { Linking, Platform } from "react-native";
+
+const openSettings = async () => {
+  try {
+    await Linking.openSettings();
+  } catch {
+    /* noop */
+  }
+};
 import { useApp, contactByPhone } from "../lib/store";
 import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
@@ -150,6 +158,9 @@ export const RecentsScreen: React.FC = () => {
           actionLabel={t("st.allow")}
           onAction={() => load(true)}
         />
+        <View style={{ alignItems: "center", marginTop: 10 }}>
+          <Btn small label={t("perm.openSettings")} icon="cog-outline" variant="secondary" onPress={() => openSettings()} />
+        </View>
       </View>
     );
   }

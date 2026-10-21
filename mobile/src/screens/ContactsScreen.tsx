@@ -8,7 +8,16 @@ import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { displayName, prettyPhone } from "../lib/utils";
 import type { DeviceContact } from "../lib/types";
+import { Linking } from "react-native";
 import { placeCall } from "../native/calls";
+
+const openSettings = async () => {
+  try {
+    await Linking.openSettings();
+  } catch {
+    /* noop */
+  }
+};
 import {
   checkContactsPermission,
   fetchAllContacts,
@@ -18,7 +27,7 @@ import {
 import { openURL, smsLink, tgLink, waLink } from "../lib/share";
 import { shareContactVcard } from "../lib/exporters";
 import { F, useThemeColors } from "../theme";
-import { Avatar, Chip, EmptyState, Money, Pill, Spinner } from "../components/kit";
+import { Avatar, Btn, Chip, EmptyState, Money, Pill, Spinner } from "../components/kit";
 import { SwipeRow } from "../components/SwipeRow";
 import { BottomSheet } from "../components/Sheet";
 
@@ -148,6 +157,9 @@ export const ContactsScreen: React.FC = () => {
           actionLabel={t("st.allow")}
           onAction={() => load()}
         />
+        <View style={{ alignItems: "center", marginTop: 10 }}>
+          <Btn small label={t("perm.openSettings")} icon="cog-outline" variant="secondary" onPress={() => openSettings()} />
+        </View>
       </View>
     );
   }
