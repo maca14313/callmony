@@ -1,12 +1,16 @@
 /* Contacts tab — every phone contact in a VIRTUALIZED FlatList.
-   Rows are memoized; only the visible ~12 rows are mounted at any time, so
-   even a 2000-contact address book scrolls at 60fps. Sticky A–Z section
-   headers, swipe actions, favorites strip, balances.
+   FETCH POLICY (user request): the OS address book is queried ONLY when
+   this tab is opened (mount) AND the disk snapshot is stale/empty — the
+   boot sequence never touches it. The sync is SILENT: the cached list
+   stays fully interactive while it refreshes (no blocking spinner).
+   Rows are memoized; only the visible rows are mounted at a time, and an
+   infinite-scroll pager feeds them in 80-row pages as you scroll.
+   Sticky A–Z section headers, swipe actions, favorites strip, balances.
    Search lives ONLY in the global SearchOverlay (header magnify icon) —
    no second search input here, exactly like the webapp. */
 
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { FlatList, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { listTotals } from "../lib/calc";
@@ -15,6 +19,7 @@ import { useT } from "../i18n";
 import { displayName, normalizePhone, prettyPhone } from "../lib/utils";
 import type { DeviceContact } from "../lib/types";
 import {
+  CONTACTS_TTL,
   checkContactsPermission,
   openExistingContactEditor,
   openNewContactForm,
@@ -25,12 +30,12 @@ import { openURL, smsLink, waLink } from "../lib/share";
 import { shareContactVcard } from "../lib/exporters";
 import { copyText } from "../lib/utils";
 import { F, useThemeColors } from "../theme";
-import { Avatar, Btn, Chip, EmptyState, Money, Pill, Spinner, toast } from "../components/kit";
+import { Avatar, Btn, Chip, EmptyState, Money, Pill, toast } from "../components/kit";
 import { SwipeRow } from "../components/SwipeRow";
 import { BottomSheet } from "../components/Sheet";
 
 type SortMode = "az" | "balance" | "recent";
-type PermState = "loading" | "authorized" | "denied" | "undetermined";
+type PermState = "idle" | "authorized" | "denied";
 
 const openSettings = async () => {
   try {
@@ -40,9 +45,8 @@ const openSettings = async () => {
   }
 };
 
-/* "undetermined" → ask once; anything else passes through unchanged */
-const requestIfUndetermined = async (status: string): Promise<string> =>
-  status === "undetermined" ? requestContactsPermission() : status;
+/* infinite-scroll page size — rows mount in pages of 80 as you scroll */
+const PAGE = 80;
 
 /* ---------------- one memoized contact row ---------------- */
 
@@ -95,7 +99,10 @@ const ContactRowBody: React.FC<{
   const t = useT();
   return (
     <View style={[styles.row, { backgroundColor: C.card, borderColor: C.line }]}>
-      <Avatar contact={contact} size={46} />
+      {/* avatar with a soft brand ring — pops on the card */}
+      <View style={[styles.avatarRing, { borderColor: C.brandSoft }]}>
+        <Avatar contact={contact} size={46} />
+      </View>
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
           <Text style={{ fontSize: F.body, fontWeight: "700", color: C.ink, flexShrink: 1 }} numberOfLines={1}>
@@ -110,7 +117,22 @@ const ContactRowBody: React.FC<{
             : contact.emails[0]?.address || contact.company || t("cd.noPhone")}
         </Text>
       </View>
-      {balance !== 0 && <Money value={balance} colorize signed size={15} />}
+      {/* credit status — tinted pill with a direction arrow, not bare text */}
+      {balance !== 0 && (
+        <View
+          style={[
+            styles.balancePill,
+            { backgroundColor: balance > 0 ? "rgba(22,160,133,0.13)" : "rgba(214,69,69,0.11)" },
+          ]}
+        >
+          <Icon
+            name={balance > 0 ? "arrow-bottom-left" : "arrow-top-right"}
+            size={12}
+            color={balance > 0 ? C.green : C.red}
+          />
+          <Money value={balance} colorize signed size={14} />
+        </View>
+      )}
       <Icon name="chevron-right" size={20} color={C.faint} />
     </View>
   );
@@ -133,29 +155,43 @@ export const ContactsScreen: React.FC = () => {
   const blocked = useApp((s) => s.settings.blockedNumbers);
   const countryCode = useApp((s) => s.settings.countryCode);
 
-  const [perm, setPerm] = useState<PermState>(contacts.length > 0 ? "authorized" : "loading");
+  const [perm, setPerm] = useState<PermState>(contacts.length > 0 ? "authorized" : "idle");
+  const [syncing, setSyncing] = useState(false);
   const [filter, setFilter] = useState<"all" | "favorites" | "theyOwe" | "youOwe" | "settled">("all");
   const [sort, setSort] = useState<SortMode>("az");
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
-  /* fallback loader — normally boot already filled the store from the disk
-     snapshot (instant); this only runs when the cache was empty */
-  const load = useCallback(async (silent = false) => {
-    if (!silent) setPerm("loading");
-    const status = await checkContactsPermission();
-    if (status === "authorized" || (await requestIfUndetermined(status)) === "authorized") {
-      await useApp.getState().refreshDeviceContacts();
-      setPerm("authorized");
-    } else {
-      setPerm("denied");
-    }
-  }, []);
-
+  /* FETCH ON TAB OPEN — this screen mounts exactly when the user taps the
+     Contacts tab. The cached list (applied at boot from the disk snapshot)
+     renders instantly; the OS is queried only when that snapshot is empty
+     (first run) or older than CONTACTS_TTL. The sync never blocks the UI. */
   useEffect(() => {
-    if (contacts.length > 0) return; // already loaded at boot — nothing to do
-    load();
+    let cancelled = false;
+    (async () => {
+      let status = await checkContactsPermission();
+      if (status === "undetermined") status = await requestContactsPermission();
+      if (cancelled) return;
+      if (status !== "authorized") {
+        setPerm("denied");
+        return;
+      }
+      setPerm("authorized");
+      const { deviceContacts, contactsLoadedAt } = useApp.getState();
+      if (!deviceContacts.length || Date.now() - contactsLoadedAt >= CONTACTS_TTL) {
+        setSyncing(true);
+        await useApp.getState().refreshDeviceContacts();
+        if (!cancelled) setSyncing(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* restart the infinite scroll when the lens changes */
+  useEffect(() => setPage(1), [filter, sort]);
 
   const favSet = useMemo(() => new Set(contactX.filter((c) => c.favorite).map((c) => c.recordID)), [contactX]);
   const blockedSet = useMemo(
@@ -254,6 +290,13 @@ export const ContactsScreen: React.FC = () => {
     return { items: out, sticky: stickyIdx };
   }, [visible, sort, balances, favSet, blockedSet, countryCode]);
 
+  /* infinite scroll — feed the list in pages of PAGE rows */
+  const pagedItems = useMemo(() => items.slice(0, page * PAGE), [items, page]);
+  const hasMore = pagedItems.length < items.length;
+  const onEndReached = useCallback(() => {
+    if (hasMore) setPage((p) => p + 1);
+  }, [hasMore]);
+
   /* stable row callbacks (identity-stable → memo rows skip re-render) */
   const onTap = useCallback((recordID: string) => open({ type: "contact", recordID }), [open]);
   const onLongPress = useCallback((recordID: string) => setMenuFor(recordID), []);
@@ -272,7 +315,9 @@ export const ContactsScreen: React.FC = () => {
       if (item.kind === "letter") {
         return (
           <View style={[styles.letterWrap, { backgroundColor: C.canvas }]}>
-            <Text style={[styles.letterHeader, { color: C.brand }]}>{item.letter}</Text>
+            <View style={[styles.letterChip, { backgroundColor: C.brandSoft }]}>
+              <Text style={[styles.letterHeader, { color: C.brand }]}>{item.letter}</Text>
+            </View>
           </View>
         );
       }
@@ -292,7 +337,7 @@ export const ContactsScreen: React.FC = () => {
         />
       );
     },
-    [C.brand, C.canvas, countryCode, onTap, onLongPress, onCall, onToggleFav, onWhatsApp, onSMS]
+    [C.brand, C.brandSoft, C.canvas, countryCode, onTap, onLongPress, onCall, onToggleFav, onWhatsApp, onSMS]
   );
 
   const newContact = useCallback(async () => {
@@ -303,15 +348,8 @@ export const ContactsScreen: React.FC = () => {
     }
   }, [t]);
 
-  if (perm === "loading") {
-    return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-        <Spinner size="large" />
-      </View>
-    );
-  }
-
-  if (perm !== "authorized") {
+  /* permission denied → the request card (never a blocking spinner) */
+  if (perm === "denied") {
     return (
       <View style={{ flex: 1, justifyContent: "center" }}>
         <EmptyState
@@ -319,11 +357,26 @@ export const ContactsScreen: React.FC = () => {
           title={t("perm.contactsTitle")}
           hint={t("perm.contactsMsg")}
           actionLabel={t("st.allow")}
-          onAction={() => load()}
+          onAction={async () => {
+            const status = await requestContactsPermission();
+            if (status === "authorized") setPerm("authorized");
+          }}
         />
         <View style={{ alignItems: "center", marginTop: 10 }}>
           <Btn small label={t("perm.openSettings")} icon="cog-outline" variant="secondary" onPress={() => openSettings()} />
         </View>
+      </View>
+    );
+  }
+
+  /* first run, nothing cached yet → an inline loading STATE inside the
+     content area (header + bottom nav stay fully usable — never a
+     full-screen spinner that makes the app unusable) */
+  if (perm === "idle" && contacts.length === 0) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 40 }}>
+        <ActivityIndicator size="large" color={C.brand} />
+        <Text style={{ fontSize: F.small, color: C.sub, fontWeight: "600" }}>{t("cd.loadingContacts")}</Text>
       </View>
     );
   }
@@ -336,16 +389,31 @@ export const ContactsScreen: React.FC = () => {
       {(owedToYou > 0.005 || youOwe > 0.005) && (
         <View style={[styles.statsRow, { borderColor: C.line }]}>
           <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("cd.toReceive")}</Text>
-            <Money value={Math.abs(owedToYou)} colorize size={17} />
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <View style={[styles.statDot, { backgroundColor: "rgba(22,160,133,0.18)" }]}>
+                <Icon name="arrow-bottom-left" size={12} color={C.green} />
+              </View>
+              <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("cd.toReceive")}</Text>
+            </View>
+            <Money value={Math.abs(owedToYou)} colorize size={17} weight="800" />
           </View>
           <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("cd.toPay")}</Text>
-            <Money value={-Math.abs(youOwe)} colorize size={17} />
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <View style={[styles.statDot, { backgroundColor: "rgba(214,69,69,0.14)" }]}>
+                <Icon name="arrow-top-right" size={12} color={C.red} />
+              </View>
+              <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("cd.toPay")}</Text>
+            </View>
+            <Money value={-Math.abs(youOwe)} colorize size={17} weight="800" />
           </View>
           <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("lg.net")}</Text>
-            <Money value={Math.abs(owedToYou) - Math.abs(youOwe)} colorize size={17} />
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <View style={[styles.statDot, { backgroundColor: C.brandSoft }]}>
+                <Icon name="scale-balance" size={12} color={C.brand} />
+              </View>
+              <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("lg.net")}</Text>
+            </View>
+            <Money value={Math.abs(owedToYou) - Math.abs(youOwe)} colorize size={17} weight="800" />
           </View>
         </View>
       )}
@@ -364,7 +432,9 @@ export const ContactsScreen: React.FC = () => {
                 onPress={() => open({ type: "contact", recordID: c.recordID })}
                 style={{ alignItems: "center", width: 62 }}
               >
-                <Avatar contact={c} size={52} />
+                <View style={[styles.favRing, { borderColor: C.brandSoft }]}>
+                  <Avatar contact={c} size={52} />
+                </View>
                 <Text style={{ fontSize: F.tiny, color: C.sub, marginTop: 4 }} numberOfLines={1}>
                   {(c.givenName || c.displayName || "?").split(" ")[0]}
                 </Text>
@@ -388,13 +458,14 @@ export const ContactsScreen: React.FC = () => {
         <Chip label={t("cd.favorites")} icon="star" active={filter === "favorites"} onPress={() => setFilter("favorites")} />
       </ScrollView>
 
-      {/* count + sort + new contact */}
+      {/* count + sort + new contact + silent-sync indicator */}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 }}>
         <Text style={{ color: C.sub, fontSize: F.small, flex: 1 }}>
           {visible.length === contacts.length
             ? t("cd.contactsCount", { n: contacts.length })
             : `${visible.length} / ${contacts.length}`}
         </Text>
+        {syncing && <ActivityIndicator size="small" color={C.brand} />}
         <Pressable
           onPress={() => setSort(sort === "az" ? "balance" : sort === "balance" ? "recent" : "az")}
           style={[styles.sortBtn, { borderColor: C.line, backgroundColor: C.card }]}
@@ -418,17 +489,26 @@ export const ContactsScreen: React.FC = () => {
         </Pressable>
       </View>
 
-      {/* virtualized list */}
+      {/* virtualized list with infinite scroll */}
       <FlatList
-        data={items}
+        data={pagedItems}
         keyExtractor={(item) => item.key}
         renderItem={renderItem}
         stickyHeaderIndices={sticky.length ? sticky : undefined}
         keyboardShouldPersistTaps="handled"
-        initialNumToRender={10}
-        maxToRenderPerBatch={10}
-        windowSize={5}
+        initialNumToRender={12}
+        maxToRenderPerBatch={12}
+        windowSize={7}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={3}
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 28 }}
+        ListFooterComponent={
+          hasMore ? (
+            <View style={{ paddingVertical: 14, alignItems: "center" }}>
+              <ActivityIndicator size="small" color={C.brand} />
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           <EmptyState
             icon="account-search-outline"
@@ -568,19 +648,32 @@ const menuStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   statsRow: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth },
-  statCard: { flex: 1, borderRadius: 14, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 9, gap: 2, minWidth: 0 },
+  statCard: { flex: 1, borderRadius: 16, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 9, gap: 3, minWidth: 0 },
+  statDot: { width: 20, height: 20, borderRadius: 7, alignItems: "center", justifyContent: "center" },
   sortBtn: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 999, borderWidth: 1, paddingHorizontal: 11, paddingVertical: 7, minHeight: 36 },
   newBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, minHeight: 36 },
-  letterWrap: { backgroundColor: "transparent", paddingVertical: 2, marginBottom: 2 },
-  letterHeader: { fontSize: F.small, fontWeight: "800", marginTop: 6, marginBottom: 4, paddingHorizontal: 2 },
+  letterWrap: { backgroundColor: "transparent", paddingVertical: 2, marginBottom: 4 },
+  letterChip: { alignSelf: "flex-start", borderRadius: 8, paddingHorizontal: 9, paddingVertical: 2 },
+  letterHeader: { fontSize: F.small, fontWeight: "800" },
   row: {
     flexDirection: "row",
     alignItems: "center",
     gap: 11,
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 11,
-    minHeight: 68,
+    minHeight: 70,
+  },
+  avatarRing: { borderRadius: 27, borderWidth: 2, padding: 1 },
+  favRing: { borderRadius: 31, borderWidth: 2, padding: 1 },
+  balancePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    maxWidth: 130,
   },
 });

@@ -584,15 +584,14 @@ const styles = StyleSheet.create({
   },
   backspace: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
   key: {
+    /* FLAT key tiles — no elevation / no Android shadow: elevation renders
+       a visible light "box" offset below each key on many devices (the
+       white-box-under-the-numbers artifact). The webapp keys are flat with
+       a barely-there border, so we match that 1:1. */
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
     gap: 1,
-    elevation: 2,
-    shadowColor: "#0e2a26",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
   },
   controls: {
     flexDirection: "row",

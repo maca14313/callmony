@@ -47,7 +47,9 @@ interface UIState {
 }
 
 export const useUI = create<UIState>((set, get) => ({
-  tab: "contacts",
+  /* the app opens on RECENTS (dialer-style home), exactly like the user's
+     phone app — Contacts is one tap away, and it loads its own data lazily */
+  tab: "recents",
   overlayStack: [],
   moreOpen: false,
   locked: false,

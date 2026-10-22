@@ -3,17 +3,32 @@
 import { Linking, Share as RNShare, Platform } from "react-native";
 import { normalizePhone } from "./utils";
 import { useApp } from "./store";
+import { toast } from "../components/kit";
 import type { DeviceContact, SocialLink } from "./types";
 
+/* Open a deep link / web URL.
+   IMPORTANT: we deliberately do NOT pre-check Linking.canOpenURL — on
+   Android 11+ (API 30+) package-visibility filtering makes canOpenURL
+   return false for mailto:/sms:/tel:/whatsapp/… unless the manifest
+   declares <queries> for them, which made every social + email button
+   silently "do nothing". Opening directly and catching the error is the
+   reliable cross-version behavior (the OS resolver shows a picker or
+   the app; a genuinely missing handler rejects and we report it). */
 export const openURL = async (url: string): Promise<boolean> => {
   try {
-    const supported = await Linking.canOpenURL(url);
-    if (!supported) return false;
     await Linking.openURL(url);
     return true;
   } catch {
     return false;
   }
+};
+
+/** openURL + user feedback: a toast when NO app could handle the link, so
+    a tap can never again "do nothing" silently. */
+export const openWithFeedback = async (url: string, failToast: string): Promise<boolean> => {
+  const ok = await openURL(url);
+  if (!ok) toast(failToast, "error");
+  return ok;
 };
 
 export const smsLink = (number: string, text?: string): string => {

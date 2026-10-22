@@ -19,7 +19,7 @@ import { displayName, fd, ft, durationStr, money, normalizePhone, prettyPhone, c
 import { contactOwnerId } from "../lib/types";
 import { placeCall } from "../native/calls";
 import { openExistingContactEditor } from "../native/deviceContacts";
-import { openURL, smsLink, tgLink, waLink, reminderTemplates, fillTemplate, socialUrl, socialLinkFromNumber, NUMBER_SOCIAL_APPS, appTakesNumber, mailtoLink, primaryPhone } from "../lib/share";
+import { openURL, openWithFeedback, smsLink, tgLink, waLink, reminderTemplates, fillTemplate, socialUrl, socialLinkFromNumber, NUMBER_SOCIAL_APPS, appTakesNumber, mailtoLink, primaryPhone } from "../lib/share";
 import { shareContactVcard } from "../lib/exporters";
 import { F, useThemeColors } from "../theme";
 import { Avatar, Btn, Card, Chip, Field, Money, Segmented, toast } from "../components/kit";
@@ -96,7 +96,7 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
       return;
     }
     if (action === "call") placeCall(number);
-    if (action === "sms") openURL(smsLink(number));
+    if (action === "sms") openWithFeedback(smsLink(number), t("act.couldntOpen"));
     if (action === "whatsapp") {
       const text = balance > 0
         ? fillTemplate(reminderTemplates[0].body, {
@@ -108,7 +108,7 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
           ? `Hi ${displayName(contact)}, I'd like to settle up ${money(Math.abs(balance))} that I owe you. How would you like to receive it?`
           : undefined;
       if (ownerId) logMessage({ ownerId, channel: "whatsapp", text: text ?? "" });
-      openURL(waLink(number, text, countryCode));
+      openWithFeedback(waLink(number, text, countryCode), t("act.couldntOpen"));
     }
     setNumPicker(null);
   };
@@ -116,15 +116,24 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
   /* ---------- Telegram: saved handle, else a +<number> link (web parity) ---------- */
   const fireTelegram = () => {
     if (tgSocial) {
-      openURL(tgLink(tgSocial.handle));
+      openWithFeedback(tgLink(tgSocial.handle), t("act.couldntOpen"));
       return;
     }
     const byNumber = phone ? socialLinkFromNumber("telegram", phone, countryCode) : null;
     if (byNumber) {
-      openURL(byNumber);
+      openWithFeedback(byNumber, t("act.couldntOpen"));
       return;
     }
     setSocialSheet({ app: "telegram" });
+  };
+
+  /* ---------- Email: always tappable — clear feedback either way ---------- */
+  const fireEmail = () => {
+    if (!email) {
+      toast(t("cd.noEmail"), "error");
+      return;
+    }
+    openWithFeedback(mailtoLink(email), t("act.couldntOpen"));
   };
 
   /* ---------- quick actions — the webapp 6×2 grid ---------- */
@@ -133,7 +142,7 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
     { icon: "message-text-outline", label: t("act.sms"), run: () => runAction("sms"), disabled: !phone },
     { icon: "whatsapp", label: t("act.whatsapp"), run: () => runAction("whatsapp"), disabled: !phone },
     { icon: "send", label: t("act.telegram"), run: fireTelegram },
-    { icon: "email-outline", label: t("act.email"), run: () => email && openURL(mailtoLink(email)), disabled: !email },
+    { icon: "email-outline", label: t("act.email"), run: fireEmail },
     { icon: "book-outline", label: t("tab.ledger"), run: () => setSeg("ledger") },
     { icon: "bank-outline", label: t("tab.bank"), run: () => setSeg("bank") },
     { icon: "format-list-checks", label: t("tab.lists"), run: () => setSeg("lists") },
@@ -397,7 +406,7 @@ const ContactMoreSheet: React.FC<{
       icon: "email-outline",
       label: t("act.email"),
       sub: email,
-      run: () => email && openURL(mailtoLink(email)),
+      run: () => email && openWithFeedback(mailtoLink(email), t("act.couldntOpen")),
       disabled: !email,
     },
     {
@@ -410,7 +419,7 @@ const ContactMoreSheet: React.FC<{
     {
       icon: "dialpad",
       label: t("cd.openInDialer"),
-      run: () => phone && openURL(`tel:${encodeURIComponent(phone)}`),
+      run: () => phone && openWithFeedback(`tel:${encodeURIComponent(phone)}`, t("act.couldntOpen")),
       disabled: !phone,
     },
     { icon: "link-plus", label: t("ce.addSocial"), run: () => onAddSocial("telegram") },
@@ -701,7 +710,7 @@ const ContactInfo: React.FC<{
               </View>
             </Pressable>
             <Pressable
-              onPress={() => openURL(mailtoLink(e.address))}
+              onPress={() => openWithFeedback(mailtoLink(e.address), t("act.couldntOpen"))}
               hitSlop={6}
               style={[cdStyles.miniBtn, { backgroundColor: C.brandSoft }]}
               accessibilityLabel={`email ${e.address}`}
@@ -726,7 +735,7 @@ const ContactInfo: React.FC<{
               <View key={`auto-${app}`} style={cdStyles.infoRow}>
                 <Pressable
                   style={{ flex: 1, minWidth: 0 }}
-                  onPress={() => openURL(url)}
+                  onPress={() => openWithFeedback(url, t("act.couldntOpen"))}
                   accessibilityLabel={`${label} — ${t("ce.fromNumber")}`}
                 >
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -745,7 +754,7 @@ const ContactInfo: React.FC<{
                   </View>
                 </Pressable>
                 <Pressable
-                  onPress={() => openURL(url)}
+                  onPress={() => openWithFeedback(url, t("act.couldntOpen"))}
                   hitSlop={6}
                   style={[cdStyles.miniBtn, { backgroundColor: C.brandSoft }]}
                   accessibilityLabel={label}
@@ -763,7 +772,7 @@ const ContactInfo: React.FC<{
               <Pressable
                 style={{ flex: 1, minWidth: 0 }}
                 onPress={() => {
-                  if (url) openURL(url);
+                  if (url) openWithFeedback(url, t("act.couldntOpen"));
                   else
                     copyText(s.handle).then((ok) =>
                       toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error")

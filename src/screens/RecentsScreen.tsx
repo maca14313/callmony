@@ -1,17 +1,22 @@
-/* Recents tab — Android: the REAL system call log grouped by day with
-   direction filters (single-row horizontal scroll chips). iOS: calls
-   started from callmony. Rows are virtualized and memoized (400+ calls
-   scroll smoothly), every card resolves the contact via the phone index
-   (any local/international number format) and carries the SAME swipe +
-   long-press actions as the Contacts tab:
+/* Recents tab — the app's HOME (default on open). Android: the REAL system
+   call log grouped by day with direction filters. iOS: calls started from
+   callmony. FULL Contacts-tab parity (user request): the credit summary
+   strip (to receive / to pay / net), balance + owes-status on every card,
+   favorites strip, plus credit filters alongside the direction chips.
+   Every card resolves the contact via the phone index (any local /
+   international number format) and carries the SAME swipe + long-press
+   actions as the Contacts tab:
    swipe right → call · favorite   swipe left → WhatsApp · SMS.
    Long-press opens the full action sheet (call / chat / copy number /
-   favorite / call history / new contact). */
+   favorite / call history / new contact). Nothing here ever blocks with a
+   full-screen spinner: the disk snapshot renders instantly and the OS is
+   re-read silently in the background. Rows mount in infinite-scroll pages. */
 
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { FlatList, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp, contactByPhone } from "../lib/store";
+import { listTotals } from "../lib/calc";
 import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { copyText, dayGroup, durationStr, fd, ft, prettyPhone, relTime } from "../lib/utils";
@@ -21,7 +26,7 @@ import { openNewContactForm } from "../native/deviceContacts";
 import { requestCallLogPermission } from "../native/callLog";
 import { openURL, smsLink, waLink } from "../lib/share";
 import { F, useThemeColors } from "../theme";
-import { Avatar, Btn, Chip, EmptyState, Spinner, toast } from "../components/kit";
+import { Avatar, Btn, Chip, EmptyState, Money, toast } from "../components/kit";
 import { SwipeRow } from "../components/SwipeRow";
 import { BottomSheet } from "../components/Sheet";
 
@@ -33,7 +38,7 @@ const openSettings = async () => {
   }
 };
 
-type Filter = "all" | "missed" | "incoming" | "outgoing";
+type Filter = "all" | "missed" | "incoming" | "outgoing" | "theyOwe" | "youOwe";
 
 interface CallRow {
   key: string;
@@ -46,10 +51,14 @@ interface CallRow {
   appId?: string;
 }
 
+/* infinite-scroll page size */
+const PAGE = 60;
+
 /* ---------------- one memoized call row ---------------- */
 
 interface RowProps {
   row: CallRow;
+  balance: number;
   countryCode: string;
   onTap: (row: CallRow) => void;
   onLongPress: (row: CallRow) => void;
@@ -60,7 +69,7 @@ interface RowProps {
 }
 
 const CallCard: React.FC<RowProps> = memo(
-  ({ row, countryCode, onTap, onLongPress, onCall, onWhatsApp, onSMS, onToggleFav }) => {
+  ({ row, balance, countryCode, onTap, onLongPress, onCall, onWhatsApp, onSMS, onToggleFav }) => {
     const C = useThemeColors(useApp((s) => s.settings.theme));
     const t = useT();
     const digits = row.phone.replace(/\D/g, "");
@@ -101,16 +110,36 @@ const CallCard: React.FC<RowProps> = memo(
           rightActions={rightActions}
         >
           <View style={[styles.callRow, { backgroundColor: C.card, borderColor: C.line }]}>
-            <Avatar contact={row.contact} size={44} />
+            <View style={[styles.avatarRing, { borderColor: C.brandSoft }]}>
+              <Avatar contact={row.contact} size={44} />
+            </View>
             <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-              <Text
-                style={{ fontSize: F.body, fontWeight: "700", color: row.direction === "missed" ? C.red : C.ink, flexShrink: 1 }}
-                numberOfLines={1}
-              >
-                {title}
-              </Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-                <Icon name={meta.icon} size={14} color={meta.color} />
+                <Text
+                  style={{ fontSize: F.body, fontWeight: "700", color: row.direction === "missed" ? C.red : C.ink, flexShrink: 1 }}
+                  numberOfLines={1}
+                >
+                  {title}
+                </Text>
+                {/* credit status — same tinted pill as the Contacts rows */}
+                {balance !== 0 && (
+                  <View
+                    style={[
+                      styles.balancePill,
+                      { backgroundColor: balance > 0 ? "rgba(22,160,133,0.13)" : "rgba(214,69,69,0.11)" },
+                    ]}
+                  >
+                    <Icon
+                      name={balance > 0 ? "arrow-bottom-left" : "arrow-top-right"}
+                      size={11}
+                      color={balance > 0 ? C.green : C.red}
+                    />
+                    <Money value={balance} colorize signed size={12} />
+                  </View>
+                )}
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                <Icon name={meta.icon} size={13} color={meta.color} />
                 <Text style={{ fontSize: F.tiny, color: C.sub }} numberOfLines={1}>
                   {meta.label} · {ft(row.at)}
                   {row.duration > 0 ? ` · ${durationStr(row.duration)}` : ""}
@@ -133,7 +162,7 @@ const CallCard: React.FC<RowProps> = memo(
                   style={({ pressed }) => [styles.redial, { backgroundColor: pressed ? C.brandSoft : C.cardAlt }]}
                   accessibilityLabel={t("act.call")}
                 >
-                  <Icon name="phone-outline" size={20} color={C.brand} />
+                  <Icon name="phone-outline" size={19} color={C.brand} />
                 </Pressable>
               )}
             </View>
@@ -153,6 +182,8 @@ export const RecentsScreen: React.FC = () => {
   const contacts = useApp((s) => s.deviceContacts);
   const appRecents = useApp((s) => s.recents);
   const countryCode = useApp((s) => s.settings.countryCode);
+  const entries = useApp((s) => s.entries);
+  const lists = useApp((s) => s.lists);
   const deleteRecent = useApp((s) => s.deleteRecent);
   const contactX = useApp((s) => s.contactX);
   const favorites = useMemo(
@@ -165,16 +196,10 @@ export const RecentsScreen: React.FC = () => {
   const [filter, setFilter] = useState<Filter>("all");
   const [refreshing, setRefreshing] = useState(false);
   const [sheetRow, setSheetRow] = useState<CallRow | null>(null);
+  const [page, setPage] = useState(1);
 
-  const perm: "loading" | "ok" | "denied" =
-    Platform.OS !== "android"
-      ? "ok"
-      : callLogPerm === "granted"
-        ? "ok"
-        : callLogPerm === "denied"
-          ? "denied"
-          : "loading";
-
+  /* silent background refresh — NEVER a blocking full-screen spinner:
+     the disk snapshot (applied during hydrate) is already on screen */
   const load = useCallback(
     async (force = false) => {
       if (Platform.OS !== "android") return;
@@ -196,6 +221,44 @@ export const RecentsScreen: React.FC = () => {
     if (Platform.OS === "android" && callLogPerm === "unknown") load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callLogPerm]);
+
+  useEffect(() => setPage(1), [filter]);
+
+  /* per-contact balances — the SAME computation as the Contacts tab
+     (entries + open post-to-ledger lists), so the credit status shown on
+     a Recents card always matches the Contacts row */
+  const balances = useMemo(() => {
+    const map = new Map<string, number>();
+    entries.forEach((e) => {
+      if (e.deletedAt || !e.ownerId.startsWith("c:")) return;
+      const id = e.ownerId.slice(2);
+      const signed = (e.type === "credit" ? 1 : -1) * (e.amount - e.payments.reduce((s, p) => s + p.amount, 0));
+      map.set(id, Math.round(((map.get(id) ?? 0) + signed) * 100) / 100);
+    });
+    lists.forEach((l) => {
+      if (l.deletedAt || !l.ownerId.startsWith("c:") || !l.postToLedger) return;
+      const id = l.ownerId.slice(2);
+      const pending = listTotals(l).pending;
+      map.set(id, Math.round(((map.get(id) ?? 0) + pending) * 100) / 100);
+    });
+    return map;
+  }, [entries, lists]);
+
+  /* summary strip — identical to the Contacts tab */
+  const owedToYou = useMemo(
+    () =>
+      entries
+        .filter((e) => !e.deletedAt && e.ownerId.startsWith("c:") && e.type === "credit")
+        .reduce((s, e) => s + (e.amount - e.payments.reduce((x, p) => x + p.amount, 0)), 0),
+    [entries]
+  );
+  const youOwe = useMemo(
+    () =>
+      entries
+        .filter((e) => !e.deletedAt && e.ownerId.startsWith("c:") && e.type === "debit")
+        .reduce((s, e) => s + (e.amount - e.payments.reduce((x, p) => x + p.amount, 0)), 0),
+    [entries]
+  );
 
   /* unified rows: system calls (Android) or app log (iOS) */
   const rows: CallRow[] = useMemo(() => {
@@ -226,17 +289,24 @@ export const RecentsScreen: React.FC = () => {
     });
   }, [systemCalls, appRecents, contacts]);
 
-  const filtered = useMemo(
-    () => (filter === "all" ? rows : rows.filter((r) => r.direction === filter)),
-    [rows, filter]
-  );
+  /* direction + credit filters (Contacts-tab parity) */
+  const filtered = useMemo(() => {
+    if (filter === "all" || filter === "missed" || filter === "incoming" || filter === "outgoing") {
+      return filter === "all" ? rows : rows.filter((r) => r.direction === filter);
+    }
+    return rows.filter((r) => {
+      if (!r.contact) return false;
+      const b = balances.get(r.contact.recordID) ?? 0;
+      return filter === "theyOwe" ? b > 0.005 : b < -0.005;
+    });
+  }, [rows, filter, balances]);
   const missedCount = useMemo(() => rows.filter((r) => r.direction === "missed").length, [rows]);
 
-  /* flattened virtualized items + sticky day headers */
+  /* flattened virtualized items + sticky day headers (+ balance per row) */
   const { items, sticky } = useMemo(() => {
     type Item =
       | { kind: "day"; key: string; label: string }
-      | { kind: "call"; key: string; row: CallRow };
+      | { kind: "call"; key: string; row: CallRow; balance: number };
     const out: Item[] = [];
     const stickyIdx: number[] = [];
     let current = "";
@@ -247,10 +317,22 @@ export const RecentsScreen: React.FC = () => {
         stickyIdx.push(out.length);
         out.push({ kind: "day", key: `D-${label}-${r.key}`, label });
       }
-      out.push({ kind: "call", key: r.key, row: r });
+      out.push({
+        kind: "call",
+        key: r.key,
+        row: r,
+        balance: r.contact ? balances.get(r.contact.recordID) ?? 0 : 0,
+      });
     });
     return { items: out, sticky: stickyIdx };
-  }, [filtered]);
+  }, [filtered, balances]);
+
+  /* infinite scroll — feed the list in pages of PAGE rows */
+  const pagedItems = useMemo(() => items.slice(0, page * PAGE), [items, page]);
+  const hasMore = pagedItems.length < items.length;
+  const onEndReached = useCallback(() => {
+    if (hasMore) setPage((p) => p + 1);
+  }, [hasMore]);
 
   const favContacts = useMemo(
     () =>
@@ -279,17 +361,20 @@ export const RecentsScreen: React.FC = () => {
   const onSMS = useCallback((phone: string) => openURL(smsLink(phone)), []);
 
   const renderItem = useCallback(
-    ({ item }: { item: { kind: "day"; key: string; label: string } | { kind: "call"; key: string; row: CallRow } }) => {
+    ({ item }: { item: { kind: "day"; key: string; label: string } | { kind: "call"; key: string; row: CallRow; balance: number } }) => {
       if (item.kind === "day") {
         return (
           <View style={[styles.dayWrap, { backgroundColor: C.canvas }]}>
-            <Text style={[styles.dayHeader, { color: C.brand }]}>{item.label}</Text>
+            <View style={[styles.dayChip, { backgroundColor: C.brandSoft }]}>
+              <Text style={[styles.dayHeader, { color: C.brand }]}>{item.label}</Text>
+            </View>
           </View>
         );
       }
       return (
         <CallCard
           row={item.row}
+          balance={item.balance}
           countryCode={countryCode}
           onTap={onTap}
           onLongPress={onLongPress}
@@ -300,18 +385,11 @@ export const RecentsScreen: React.FC = () => {
         />
       );
     },
-    [C.brand, C.canvas, countryCode, onTap, onLongPress, onCall, onToggleFav, onWhatsApp, onSMS]
+    [C.brand, C.brandSoft, C.canvas, countryCode, onTap, onLongPress, onCall, onToggleFav, onWhatsApp, onSMS]
   );
 
-  if (perm === "loading") {
-    return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-        <Spinner size="large" />
-      </View>
-    );
-  }
-
-  if (Platform.OS === "android" && perm === "denied") {
+  /* permission denied → the request card (never a blocking spinner) */
+  if (Platform.OS === "android" && callLogPerm === "denied") {
     return (
       <View style={{ flex: 1, justifyContent: "center" }}>
         <EmptyState
@@ -330,6 +408,39 @@ export const RecentsScreen: React.FC = () => {
 
   return (
     <View style={{ flex: 1 }}>
+      {/* credit summary strip — SAME as the Contacts tab (user request) */}
+      {(owedToYou > 0.005 || youOwe > 0.005) && (
+        <View style={[styles.statsRow, { borderColor: C.line }]}>
+          <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <View style={[styles.statDot, { backgroundColor: "rgba(22,160,133,0.18)" }]}>
+                <Icon name="arrow-bottom-left" size={12} color={C.green} />
+              </View>
+              <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("cd.toReceive")}</Text>
+            </View>
+            <Money value={Math.abs(owedToYou)} colorize size={17} weight="800" />
+          </View>
+          <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <View style={[styles.statDot, { backgroundColor: "rgba(214,69,69,0.14)" }]}>
+                <Icon name="arrow-top-right" size={12} color={C.red} />
+              </View>
+              <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("cd.toPay")}</Text>
+            </View>
+            <Money value={-Math.abs(youOwe)} colorize size={17} weight="800" />
+          </View>
+          <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <View style={[styles.statDot, { backgroundColor: C.brandSoft }]}>
+                <Icon name="scale-balance" size={12} color={C.brand} />
+              </View>
+              <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("lg.net")}</Text>
+            </View>
+            <Money value={Math.abs(owedToYou) - Math.abs(youOwe)} colorize size={17} weight="800" />
+          </View>
+        </View>
+      )}
+
       {/* favorites strip */}
       {favContacts.length > 0 && (
         <View style={{ paddingTop: 10, paddingBottom: 2 }}>
@@ -344,7 +455,9 @@ export const RecentsScreen: React.FC = () => {
                 onPress={() => open({ type: "contact", recordID: c.recordID })}
                 style={{ alignItems: "center", width: 62 }}
               >
-                <Avatar contact={c} size={52} />
+                <View style={[styles.favRing, { borderColor: C.brandSoft }]}>
+                  <Avatar contact={c} size={52} />
+                </View>
                 <Text style={{ fontSize: F.tiny, color: C.sub, marginTop: 4 }} numberOfLines={1}>
                   {(c.givenName || c.displayName || "?").split(" ")[0]}
                 </Text>
@@ -354,7 +467,7 @@ export const RecentsScreen: React.FC = () => {
         </View>
       )}
 
-      {/* direction chips — single-row horizontal scroll, compact (webapp style) */}
+      {/* direction + credit chips — single-row horizontal scroll (webapp style) */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -370,25 +483,45 @@ export const RecentsScreen: React.FC = () => {
         />
         <Chip label={t("cd.incoming")} active={filter === "incoming"} onPress={() => setFilter("incoming")} />
         <Chip label={t("cd.outgoing")} active={filter === "outgoing"} onPress={() => setFilter("outgoing")} />
+        <Chip label={t("cd.theyOweYou")} active={filter === "theyOwe"} onPress={() => setFilter("theyOwe")} />
+        <Chip label={t("cd.youOweThem")} active={filter === "youOwe"} onPress={() => setFilter("youOwe")} />
       </ScrollView>
 
-      {/* virtualized call list */}
+      {/* virtualized call list with infinite scroll */}
       <FlatList
-        data={items}
+        data={pagedItems}
         keyExtractor={(item) => item.key}
         renderItem={renderItem}
         stickyHeaderIndices={sticky.length ? sticky : undefined}
         keyboardShouldPersistTaps="handled"
-        initialNumToRender={10}
-        maxToRenderPerBatch={10}
-        windowSize={5}
+        initialNumToRender={12}
+        maxToRenderPerBatch={12}
+        windowSize={7}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={3}
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 28 }}
+        ListFooterComponent={
+          hasMore ? (
+            <View style={{ paddingVertical: 14, alignItems: "center" }}>
+              <ActivityIndicator size="small" color={C.brand} />
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
-          <EmptyState
-            icon="history"
-            title={t("cd.noCallsYet")}
-            hint={t("cd.noCallsHint")}
-          />
+          callLogPerm === "unknown" && systemCalls.length === 0 ? (
+            /* first paint before the (background) permission/log read finishes —
+               an inline loader, the app stays fully usable */
+            <View style={{ alignItems: "center", justifyContent: "center", paddingTop: 80, gap: 12 }}>
+              <ActivityIndicator size="large" color={C.brand} />
+              <Text style={{ fontSize: F.small, color: C.sub, fontWeight: "600" }}>{t("cd.loadingCalls")}</Text>
+            </View>
+          ) : (
+            <EmptyState
+              icon="history"
+              title={filter !== "all" ? t("cd.noMatchingContacts") : t("cd.noCallsYet")}
+              hint={filter !== "all" ? t("cd.tryAnotherFilter") : t("cd.noCallsHint")}
+            />
+          )
         }
         ListHeaderComponent={
           Platform.OS !== "android" && items.length > 0 ? (
@@ -543,17 +676,32 @@ const rowStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
+  statsRow: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth },
+  statCard: { flex: 1, borderRadius: 16, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 9, gap: 3, minWidth: 0 },
+  statDot: { width: 20, height: 20, borderRadius: 7, alignItems: "center", justifyContent: "center" },
   dayWrap: { backgroundColor: "transparent", paddingBottom: 2 },
-  dayHeader: { fontSize: F.small, fontWeight: "800", marginTop: 8, marginBottom: 4, paddingHorizontal: 2 },
+  dayChip: { alignSelf: "flex-start", borderRadius: 8, paddingHorizontal: 9, paddingVertical: 2, marginTop: 8 },
+  dayHeader: { fontSize: F.small, fontWeight: "800" },
   callRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 11,
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 1,
-    paddingHorizontal: 13,
+    paddingHorizontal: 12,
     paddingVertical: 10,
-    minHeight: 66,
+    minHeight: 68,
   },
+  avatarRing: { borderRadius: 26, borderWidth: 2, padding: 1 },
+  favRing: { borderRadius: 31, borderWidth: 2, padding: 1 },
   redial: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  balancePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    maxWidth: 118,
+  },
 });

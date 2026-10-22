@@ -2,6 +2,7 @@
    Reads the same CallLog.Calls provider the built-in dialer uses. */
 
 import { NativeModules, PermissionsAndroid, Platform } from "react-native";
+import RNFS from "react-native-fs";
 import type { PermState } from "./deviceContacts";
 
 export interface DeviceCall {
@@ -79,3 +80,25 @@ export const fetchSystemCalls = async (limit = 400): Promise<DeviceCall[]> => {
 /** Rejected with a "denied" message when READ_CALL_LOG is missing. */
 export const isPermissionDeniedError = (err: unknown): boolean =>
   String((err as { message?: string })?.message ?? err).toLowerCase().includes("denied");
+
+/* ---------------- disk snapshot (instant Recents on cold start) ---------------- */
+
+const CALLS_CACHE = `${RNFS.DocumentDirectoryPath}/calllog-cache.json`;
+
+/** Read the cached call-log snapshot — resolves [] when there is none. */
+export const loadCachedCalls = async (): Promise<DeviceCall[]> => {
+  try {
+    const txt = await RNFS.readFile(CALLS_CACHE, "utf8");
+    const parsed = JSON.parse(txt) as { savedAt: number; list: DeviceCall[] };
+    return Array.isArray(parsed?.list) ? parsed.list : [];
+  } catch {
+    return [];
+  }
+};
+
+/** Persist the snapshot (fire-and-forget — never blocks the UI). */
+export const saveCachedCalls = (list: DeviceCall[]): void => {
+  RNFS.writeFile(CALLS_CACHE, JSON.stringify({ savedAt: Date.now(), list }), "utf8").catch(
+    () => undefined
+  );
+};

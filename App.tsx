@@ -39,7 +39,7 @@ import { ListDetailOverlay, ListEditOverlay } from "./src/overlays/ListOverlays"
 import { NoteEditOverlay, ReminderEditOverlay, BankEditOverlay } from "./src/overlays/Editors";
 import { SettingsOverlay, LockScreen } from "./src/overlays/SettingsOverlay";
 import { SearchOverlay, SpeedDialOverlay, MergeOverlay, AboutOverlay, AlarmDialog } from "./src/overlays/MiscOverlays";
-import { loadCachedContacts, CONTACTS_TTL } from "./src/native/deviceContacts";
+import { loadCachedContacts } from "./src/native/deviceContacts";
 import { setupCallKeep } from "./src/native/callkeep";
 import { maybeAutoSync } from "./src/lib/backup";
 
@@ -164,59 +164,78 @@ const Shell: React.FC = () => {
   const settings = useApp((s) => s.settings);
   const [langSheet, setLangSheet] = useState(false);
 
-  /* Dialer-style boot with a DISK SNAPSHOT: the cached address book is
-     applied the moment the shell mounts (contacts tab is ready instantly —
-     zero bridge traffic), then the OS is only queried when the snapshot is
-     older than CONTACTS_TTL (5 min). The call log still refreshes on every
-     foreground (10 s throttle — it changes with every call). Result: opening
-     the app with 5000 contacts is as fast as with 50. */
+  /* ZERO-LAG BOOT: the shell paints instantly; nothing here can block it.
+     1. The DISK snapshot of the address book is applied in the background
+        (so search / keypad / recents name-resolution work immediately —
+        no bridge traffic, no spinner).
+     2. The system call log is refreshed in the background from the snapshot
+        cache first (instant Recents), then re-read from the OS.
+     3. The OS address book is NEVER queried at boot — the Contacts tab
+        fetches it itself the first time it is opened (and then only when
+        the snapshot is older than CONTACTS_TTL).
+     4. Auto email sync never fires on a cold open (it would cover the app
+        with a composer); it only runs after returning to the foreground,
+        deferred by 12 s so the UI is fully settled first. */
   const lastLogRef = useRef(0);
   useEffect(() => {
     let cancelled = false;
-    const loadLog = async () => {
-      if (Date.now() - lastLogRef.current < 10000) return; // throttle
-      lastLogRef.current = Date.now();
-      useApp.getState().loadSystemCalls();
-    };
-    const loadContacts = async (force = false) => {
-      if (!force && Date.now() - useApp.getState().contactsLoadedAt < CONTACTS_TTL) return;
-      useApp.getState().refreshDeviceContacts();
-    };
+    let syncTimer: ReturnType<typeof setTimeout> | null = null;
+
     const boot = async () => {
-      /* 1 — cached snapshot first: instant contacts, no spinner */
-      const cache = await loadCachedContacts();
-      if (!cancelled && cache) {
-        useApp.setState({ deviceContacts: cache.list, contactsLoadedAt: cache.savedAt });
+      /* 1 — cached contacts snapshot: instant, off the UI thread's way */
+      try {
+        const cache = await loadCachedContacts();
+        if (!cancelled && cache) {
+          useApp.setState({ deviceContacts: cache.list, contactsLoadedAt: cache.savedAt });
+        }
+      } catch {
+        /* cache is optional */
       }
-      /* 2 — permissions + fresh load (only when the snapshot is stale) */
+      if (cancelled) return;
+
+      /* 2 — permissions, THEN the call log read (on first run the dialogs
+         must resolve before we query — otherwise a transient "denied"
+         flash covers Recents; on later boots this resolves instantly) */
       if (Platform.OS === "android") {
         try {
           await PermissionsAndroid.requestMultiple([
-            PermissionsAndroid.PERMISSIONS.READ_CONTACTS,
             PermissionsAndroid.PERMISSIONS.READ_CALL_LOG,
             PermissionsAndroid.PERMISSIONS.CALL_PHONE,
           ]);
         } catch {
-          /* user can still grant later from the per-tab permission cards */
+          /* the denied card in Recents handles refusal */
         }
       }
-      loadContacts(!cache); // no cache → force a real load
-      lastLogRef.current = 0; // first load always runs
-      loadLog();
-      /* auto email sync also fires on cold start when due */
-      maybeAutoSync().catch(() => undefined);
+      if (cancelled) return;
+
+      /* 3 — call log: disk snapshot already applied via hydrate(); refresh
+         from the OS in the background (10 s throttle on foreground) */
+      lastLogRef.current = 0;
+      useApp.getState().loadSystemCalls();
     };
+
+    const onForeground = () => {
+      /* call log refresh (throttled) + contacts only refresh silently if
+         the Contacts tab is (or was) in use and the snapshot went stale */
+      if (Date.now() - lastLogRef.current >= 10000) {
+        lastLogRef.current = Date.now();
+        useApp.getState().loadSystemCalls();
+      }
+      if (useUI.getState().tab === "contacts") {
+        useApp.getState().refreshDeviceContacts();
+      }
+      /* auto email sync — only on FOREGROUND RETURN, deferred 12 s */
+      if (syncTimer) clearTimeout(syncTimer);
+      syncTimer = setTimeout(() => maybeAutoSync().catch(() => undefined), 12000);
+    };
+
     boot();
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") {
-        loadLog();
-        loadContacts(false);
-        /* auto email sync — opens the composer when the schedule is due */
-        maybeAutoSync().catch(() => undefined);
-      }
+      if (state === "active") onForeground();
     });
     return () => {
       cancelled = true;
+      if (syncTimer) clearTimeout(syncTimer);
       sub.remove();
     };
   }, []);
@@ -316,7 +335,7 @@ const Shell: React.FC = () => {
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10, minHeight: 52 }}>
           {isSecondary ? (
             <>
-              <IconBtn icon="arrow-left" size={40} onPress={() => setTab("contacts")} />
+              <IconBtn icon="arrow-left" size={40} onPress={() => setTab("recents")} />
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: F.h2, fontWeight: "800", color: C.ink }}>{headerTitle}</Text>
               </View>

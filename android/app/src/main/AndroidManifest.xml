@@ -1,5 +1,48 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Android 11+ package visibility: without these <queries> declarations
+         Linking.canOpenURL() returns false and ACTION_VIEW resolution fails
+         for every external app (WhatsApp, Telegram, mail, browsers…). -->
+    <queries>
+        <!-- web links (wa.me, t.me, instagram.com, x.com, signal.me…) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="http" />
+        </intent>
+        <!-- email composers -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="mailto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
+        </intent>
+        <!-- SMS + dialer -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="sms" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+        <!-- known messaging apps by package (deep links + share targets) -->
+        <package android:name="com.whatsapp" />
+        <package android:name="org.telegram.messenger" />
+        <package android:name="org.thoughtcrime.securesms" />
+        <package android:name="com.viber.voip" />
+        <package android:name="com.facebook.katana" />
+        <package android:name="com.twitter.android" />
+        <package android:name="com.instagram.android" />
+    </queries>
+
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Immediate direct calls: ACTION_CALL needs CALL_PHONE (runtime-requested). -->
     <uses-permission android:name="android.permission.CALL_PHONE" />

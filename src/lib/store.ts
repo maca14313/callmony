@@ -39,7 +39,7 @@ import type {
   SocialLink,
 } from "./types";
 import { scheduleReminderNotification, cancelReminderNotification } from "../native/notify";
-import { fetchSystemCalls, isPermissionDeniedError, type DeviceCall } from "../native/callLog";
+import { fetchSystemCalls, isPermissionDeniedError, loadCachedCalls, saveCachedCalls, type DeviceCall } from "../native/callLog";
 
 export type EntityKind = "entry" | "list" | "note" | "reminder" | "bank" | "group";
 
@@ -168,7 +168,9 @@ export const useApp = create<AppState>((set, get) => ({
   callLogPerm: "unknown",
 
   /* Load the device's real call log into the store (Android). Reads the
-     same provider the built-in dialer uses; safe to call repeatedly. */
+     same provider the built-in dialer uses; safe to call repeatedly.
+     Every successful read also refreshes the disk snapshot so the next
+     cold start renders Recents INSTANTLY (no spinner, no permission wait). */
   loadSystemCalls: async () => {
     if (Platform.OS !== "android") {
       set({ callLogPerm: "granted" });
@@ -177,6 +179,7 @@ export const useApp = create<AppState>((set, get) => ({
     try {
       const calls = await fetchSystemCalls(400);
       set({ systemCalls: calls, callLogPerm: "granted" });
+      saveCachedCalls(calls);
     } catch (err) {
       set({
         systemCalls: [],
@@ -203,6 +206,16 @@ export const useApp = create<AppState>((set, get) => ({
       ...data,
       hydrated: true,
     });
+    /* cached call-log snapshot → Recents renders instantly on cold start;
+       the real refresh happens in the background right after */
+    try {
+      const cachedCalls = await loadCachedCalls();
+      if (cachedCalls.length) {
+        set({ systemCalls: cachedCalls, callLogPerm: "granted" });
+      }
+    } catch {
+      /* snapshot is optional */
+    }
     // (re)schedule reminder notifications after boot
     data.reminders
       .filter((r) => !r.deletedAt && !r.done)
