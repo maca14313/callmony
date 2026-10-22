@@ -49,6 +49,20 @@ const read = async <T>(key: string, fallback: T): Promise<T> => {
   }
 };
 
+/* v1.5.1 — shape-sanitized read: stored JSON with the WRONG shape (e.g.
+   after an interrupted write or an app update) must never poison the store
+   and crash the app at open. Non-arrays / non-objects fall back to empty. */
+const readArr = async <T>(key: string): Promise<T[]> => {
+  const v = await read<T[] | unknown>(key, []);
+  return Array.isArray(v) ? (v as T[]) : [];
+};
+
+const readObj = async <T extends object>(key: string, fallback: T): Promise<T> => {
+  const v = await read<T | unknown>(key, fallback);
+  if (v && typeof v === "object" && !Array.isArray(v)) return v as T;
+  return fallback;
+};
+
 const write = async (key: string, value: unknown): Promise<void> => {
   try {
     await AsyncStorage.setItem(key, JSON.stringify(value));
@@ -73,16 +87,16 @@ export interface PersistedData {
 export const loadAll = async (): Promise<PersistedData> => {
   const [contactX, entries, groups, lists, notes, reminders, banks, recents, messages, settings] =
     await Promise.all([
-      read<ContactX[]>(K.contactX, []),
-      read<LedgerEntry[]>(K.entries, []),
-      read<LedgerGroup[]>(K.groups, []),
-      read<CalcList[]>(K.lists, []),
-      read<Note[]>(K.notes, []),
-      read<Reminder[]>(K.reminders, []),
-      read<BankAccount[]>(K.banks, []),
-      read<CallLog[]>(K.recents, []),
-      read<MessageLog[]>(K.messages, []),
-      read<Partial<Settings>>(K.settings, {}),
+      readArr<ContactX>(K.contactX),
+      readArr<LedgerEntry>(K.entries),
+      readArr<LedgerGroup>(K.groups),
+      readArr<CalcList>(K.lists),
+      readArr<Note>(K.notes),
+      readArr<Reminder>(K.reminders),
+      readArr<BankAccount>(K.banks),
+      readArr<CallLog>(K.recents),
+      readArr<MessageLog>(K.messages),
+      readObj<Partial<Settings>>(K.settings, {}),
     ]);
   return {
     contactX,
