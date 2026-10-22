@@ -1,7 +1,8 @@
-/* Bottom navigation — 6 icon-only tabs (Recents · Contacts · Keypad ·
-   Calculator · General · More). A flex sibling of the content column
-   with safe-area padding: it can never cover or overlap any component,
-   and adjustResize keeps it above the keyboard. 64px touch targets. */
+/* Bottom navigation — 5 icon-only tabs (Recents · Contacts · Keypad ·
+   General · More). The calculator moved to the top navbar. Tapping the
+   keypad tab opens the dialer sheet OVER the Recents tab (dialer-style).
+   A flex sibling of the content column with safe-area padding: it can
+   never cover or overlap any component. 64px touch targets. */
 
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -17,7 +18,6 @@ const TABS: { key: string; icon: string; labelKey: string }[] = [
   { key: "recents", icon: "history", labelKey: "nav.recents" },
   { key: "contacts", icon: "account-multiple-outline", labelKey: "nav.contacts" },
   { key: "keypad", icon: "dialpad", labelKey: "nav.keypad" },
-  { key: "calculator", icon: "calculator", labelKey: "nav.calculator" },
   { key: "general", icon: "wallet-outline", labelKey: "nav.general" },
   { key: "more", icon: "dots-horizontal-circle-outline", labelKey: "nav.more" },
 ];
@@ -33,26 +33,25 @@ export const BottomNav: React.FC = () => {
   const setKeypadOpen = useUI((s) => s.setKeypadOpen);
   const setMoreOpen = useUI((s) => s.setMoreOpen);
   const closeAll = useUI((s) => s.closeAll);
-  const open = useUI((s) => s.open);
   const overdueCount = useApp(
     (s) => s.reminders.filter((r) => !r.deletedAt && !r.done && dueStatus(r.snoozedUntil ?? r.dueAt) === "overdue").length
   );
 
   const handle = (key: string) => {
     if (key === "keypad") {
-      // tapping the keypad tab while the dialer overlay is open closes it
+      // tapping the keypad tab while the dialer overlay is open closes it;
+      // otherwise the keypad opens ON TOP of the Recents tab (dialer-style)
       if (keypadOpen) {
         closeAll();
         return;
       }
       closeAll();
+      setTab("recents");
       setKeypadOpen(true);
       return;
     }
     closeAll();
-    if (key === "calculator") {
-      open({ type: "calculator" });
-    } else if (key === "more") {
+    if (key === "more") {
       setMoreOpen(true);
     } else {
       setTab(key as "recents" | "contacts" | "general" | "reminders" | "trash");
@@ -61,7 +60,6 @@ export const BottomNav: React.FC = () => {
 
   const isActive = (key: string): boolean => {
     if (key === "keypad") return keypadOpen;
-    if (key === "calculator") return false; // overlay handles its own state
     if (key === "more") return moreOpen;
     return tab === key;
   };
@@ -82,7 +80,7 @@ export const BottomNav: React.FC = () => {
               accessibilityRole="tab"
               accessibilityLabel={t(item.labelKey)}
               accessibilityState={{ selected: active }}
-              android_ripple={{ color: "rgba(128,128,128,0.16)", borderless: true, radius: 30 }}
+              android_ripple={{ color: "rgba(128,128,128,0.16)", borderless: true, radius: 34 }}
               onPress={() => handle(item.key)}
               style={styles.tab}
             >
@@ -122,7 +120,7 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-around", paddingTop: 6, height: 70 },
-  tab: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 64, minWidth: 56 },
+  tab: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 64, minWidth: 60 },
   tile: {
     width: 48,
     height: 34,
@@ -140,7 +138,7 @@ const styles = StyleSheet.create({
   badge: {
     position: "absolute",
     top: 2,
-    right: 14,
+    right: 18,
     minWidth: 19,
     height: 19,
     borderRadius: 10,

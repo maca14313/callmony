@@ -1,29 +1,32 @@
-/* Contacts tab — every phone contact in a VIRTUALIZED, searchable FlatList.
-   Rows are memoized; only the visible ~15 rows are mounted at any time, so
+/* Contacts tab — every phone contact in a VIRTUALIZED FlatList.
+   Rows are memoized; only the visible ~12 rows are mounted at any time, so
    even a 2000-contact address book scrolls at 60fps. Sticky A–Z section
-   headers, swipe actions, favorites, balances. */
+   headers, swipe actions, favorites strip, balances.
+   Search lives ONLY in the global SearchOverlay (header magnify icon) —
+   no second search input here, exactly like the webapp. */
 
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { FlatList, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
-import { Linking } from "react-native";
 import { useApp } from "../lib/store";
 import { listTotals } from "../lib/calc";
 import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
-import { displayName, normalizePhone, prettyPhone, t9Match } from "../lib/utils";
+import { displayName, normalizePhone, prettyPhone } from "../lib/utils";
 import type { DeviceContact } from "../lib/types";
 import {
   checkContactsPermission,
   fetchAllContacts,
   openExistingContactEditor,
+  openNewContactForm,
   requestContactsPermission,
 } from "../native/deviceContacts";
 import { placeCall } from "../native/calls";
 import { openURL, smsLink, waLink } from "../lib/share";
 import { shareContactVcard } from "../lib/exporters";
+import { copyText } from "../lib/utils";
 import { F, useThemeColors } from "../theme";
-import { Avatar, Btn, Chip, EmptyState, Money, Pill, Spinner } from "../components/kit";
+import { Avatar, Btn, Chip, EmptyState, Money, Pill, Spinner, toast } from "../components/kit";
 import { SwipeRow } from "../components/SwipeRow";
 import { BottomSheet } from "../components/Sheet";
 
@@ -128,12 +131,7 @@ export const ContactsScreen: React.FC = () => {
   const setDeviceContacts = useApp((s) => s.setDeviceContacts);
   const countryCode = useApp((s) => s.settings.countryCode);
 
-  /* FIX: if contacts are already loaded (boot loaded them, or the user is
-     returning to this tab) start as authorized — the old code stayed stuck on
-     "loading" forever whenever the store already had contacts, which made the
-     whole list invisible behind an eternal spinner. */
   const [perm, setPerm] = useState<PermState>(contacts.length > 0 ? "authorized" : "loading");
-  const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "favorites" | "theyOwe" | "youOwe" | "settled">("all");
   const [sort, setSort] = useState<SortMode>("az");
   const [menuFor, setMenuFor] = useState<string | null>(null);
@@ -178,6 +176,13 @@ export const ContactsScreen: React.FC = () => {
     [blocked, countryCode]
   );
 
+  /* favorites strip — same as the webapp Recents strip */
+  const favContacts = useMemo(
+    () =>
+      favContactsOf(contacts, favSet).sort((a, b) => displayName(a).localeCompare(displayName(b))),
+    [contacts, favSet]
+  );
+
   const balances = useMemo(() => {
     const map = new Map<string, number>();
     entries.forEach((e) => {
@@ -199,39 +204,14 @@ export const ContactsScreen: React.FC = () => {
   const visible = useMemo(() => {
     let list = contacts;
     if (filter === "favorites") list = list.filter((c) => favSet.has(c.recordID));
-    if (filter === "theyOwe") list = list.filter((c) => (balances.get(c.recordID) ?? 0) > 0);
-    if (filter === "youOwe") list = list.filter((c) => (balances.get(c.recordID) ?? 0) < 0);
-    if (filter === "settled") list = list.filter((c) => (balances.get(c.recordID) ?? 0) === 0);
-    /* SEARCH FIX: the old code ran `.includes(queryDigits)` even when the
-       query had NO digits ("" is included in everything) → every letter
-       search matched every contact. Now phone matching only applies to real
-       digit queries, plus T9 name matching — dialer-style. */
-    const query = q.trim().toLowerCase();
-    if (query) {
-      const qDigits = query.replace(/\D/g, "");
-      list = list.filter((c) => {
-        const name = displayName(c).toLowerCase();
-        if (name.includes(query)) return true;
-        if (c.company?.toLowerCase().includes(query)) return true;
-        if (qDigits.length >= 2) {
-          if (t9Match(qDigits, name)) return true;
-          if (
-            c.phones.some((p) => {
-              const raw = p.number.replace(/\D/g, "");
-              const norm = normalizePhone(p.number, countryCode).replace(/\D/g, "");
-              return raw.includes(qDigits) || norm.includes(qDigits);
-            })
-          )
-            return true;
-        }
-        return false;
-      });
-    }
+    if (filter === "theyOwe") list = list.filter((c) => (balances.get(c.recordID) ?? 0) > 0.005);
+    if (filter === "youOwe") list = list.filter((c) => (balances.get(c.recordID) ?? 0) < -0.005);
+    if (filter === "settled") list = list.filter((c) => Math.abs(balances.get(c.recordID) ?? 0) <= 0.005);
     if (sort === "balance")
       list = [...list].sort((a, b) => Math.abs(balances.get(b.recordID) ?? 0) - Math.abs(balances.get(a.recordID) ?? 0));
     else if (sort === "recent") list = [...list].sort((a, b) => Number(b.recordID || 0) - Number(a.recordID || 0));
     return list;
-  }, [contacts, filter, q, sort, favSet, balances, countryCode]);
+  }, [contacts, filter, sort, favSet, balances]);
 
   /* summary strip */
   const owedToYou = useMemo(
@@ -325,8 +305,13 @@ export const ContactsScreen: React.FC = () => {
         />
       );
     },
-    [C.brand, countryCode, onTap, onLongPress, onCall, onToggleFav, onWhatsApp, onSMS]
+    [C.brand, C.canvas, countryCode, onTap, onLongPress, onCall, onToggleFav, onWhatsApp, onSMS]
   );
+
+  const newContact = useCallback(async () => {
+    const saved = await openNewContactForm({});
+    if (saved) toast(t("ce.contactSaved"), "ok");
+  }, [t]);
 
   if (perm === "loading") {
     return (
@@ -358,7 +343,7 @@ export const ContactsScreen: React.FC = () => {
   return (
     <View style={{ flex: 1 }}>
       {/* summary strip */}
-      {(owedToYou > 0 || youOwe > 0) && (
+      {(owedToYou > 0.005 || youOwe > 0.005) && (
         <View style={[styles.statsRow, { borderColor: C.line }]}>
           <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
             <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("cd.toReceive")}</Text>
@@ -375,35 +360,72 @@ export const ContactsScreen: React.FC = () => {
         </View>
       )}
 
-      {/* search + filters */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 10 }}>
-        <TextInput
-          value={q}
-          onChangeText={setQ}
-          placeholder={t("misc.searchPlaceholder")}
-          placeholderTextColor={C.faint}
-          style={[styles.search, { borderColor: C.line, backgroundColor: C.inputBg, color: C.ink }]}
-        />
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-          <Chip label={t("act.all")} active={filter === "all"} onPress={() => setFilter("all")} />
-          <Chip label={t("cd.favorites")} icon="star" active={filter === "favorites"} onPress={() => setFilter("favorites")} />
-          <Chip label={t("cd.theyOweYou")} active={filter === "theyOwe"} onPress={() => setFilter("theyOwe")} />
-          <Chip label={t("cd.youOweThem")} active={filter === "youOwe"} onPress={() => setFilter("youOwe")} />
-          <View style={{ flex: 1 }} />
-          <Pressable
-            onPress={() => setSort(sort === "az" ? "balance" : sort === "balance" ? "recent" : "az")}
-            style={[styles.sortBtn, { borderColor: C.line, backgroundColor: C.card }]}
+      {/* favorites strip — one tap opens the contact */}
+      {favContacts.length > 0 && (
+        <View style={{ paddingTop: 10 }}>
+          <ScrollView
+            horizontal
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 14 }}
+            showsHorizontalScrollIndicator={false}
           >
-            <Icon
-              name={sort === "az" ? "sort-alphabetical-variant" : sort === "balance" ? "scale-balance" : "clock-outline"}
-              size={18}
-              color={C.sub}
-            />
-            <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "700" }}>
-              {sort === "az" ? t("cd.sortAZ") : sort === "balance" ? t("cd.sortBalance") : t("cd.sortRecent")}
-            </Text>
-          </Pressable>
+            {favContacts.map((c) => (
+              <Pressable
+                key={c.recordID}
+                onPress={() => open({ type: "contact", recordID: c.recordID })}
+                style={{ alignItems: "center", width: 62 }}
+              >
+                <Avatar contact={c} size={52} />
+                <Text style={{ fontSize: F.tiny, color: C.sub, marginTop: 4 }} numberOfLines={1}>
+                  {(c.givenName || c.displayName || "?").split(" ")[0]}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
         </View>
+      )}
+
+      {/* filter chips — single-row horizontal scroll, compact (webapp style) */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16, gap: 6, paddingTop: 10 }}
+        style={{ flexGrow: 0 }}
+      >
+        <Chip label={t("act.all")} active={filter === "all"} onPress={() => setFilter("all")} />
+        <Chip label={t("cd.theyOweYou")} active={filter === "theyOwe"} onPress={() => setFilter("theyOwe")} />
+        <Chip label={t("cd.youOweThem")} active={filter === "youOwe"} onPress={() => setFilter("youOwe")} />
+        <Chip label={t("cd.settledUp")} active={filter === "settled"} onPress={() => setFilter("settled")} />
+        <Chip label={t("cd.favorites")} icon="star" active={filter === "favorites"} onPress={() => setFilter("favorites")} />
+      </ScrollView>
+
+      {/* count + sort + new contact */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 }}>
+        <Text style={{ color: C.sub, fontSize: F.small, flex: 1 }}>
+          {visible.length === contacts.length
+            ? t("cd.contactsCount", { n: contacts.length })
+            : `${visible.length} / ${contacts.length}`}
+        </Text>
+        <Pressable
+          onPress={() => setSort(sort === "az" ? "balance" : sort === "balance" ? "recent" : "az")}
+          style={[styles.sortBtn, { borderColor: C.line, backgroundColor: C.card }]}
+        >
+          <Icon
+            name={sort === "az" ? "sort-alphabetical-variant" : sort === "balance" ? "scale-balance" : "clock-outline"}
+            size={16}
+            color={C.brand}
+          />
+          <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "700" }}>
+            {sort === "az" ? t("cd.sortAZ") : sort === "balance" ? t("cd.sortBalance") : t("cd.sortRecent")}
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={newContact}
+          style={[styles.newBtn, { backgroundColor: C.brandSoft }]}
+          accessibilityLabel={t("act.newContact")}
+        >
+          <Icon name="plus" size={15} color={C.brand} />
+          <Text style={{ fontSize: F.tiny, color: C.brand, fontWeight: "800" }}>{t("act.newContact")}</Text>
+        </Pressable>
       </View>
 
       {/* virtualized list */}
@@ -413,24 +435,16 @@ export const ContactsScreen: React.FC = () => {
         renderItem={renderItem}
         stickyHeaderIndices={sticky.length ? sticky : undefined}
         keyboardShouldPersistTaps="handled"
-        initialNumToRender={14}
-        maxToRenderPerBatch={20}
-        windowSize={9}
-        removeClippedSubviews
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20 }}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 20 }}
         ListEmptyComponent={
           <EmptyState
             icon="account-search-outline"
-            title={q ? t("cd.noMatchingContacts") : t("cd.noContactsYet")}
-            hint={q ? t("sr.tryHint") : t("cd.noContactsHint")}
+            title={filter !== "all" ? t("cd.noMatchingContacts") : t("cd.noContactsYet")}
+            hint={filter !== "all" ? t("cd.tryAnotherFilter") : t("cd.noContactsHint")}
           />
-        }
-        ListHeaderComponent={
-          items.length > 0 ? (
-            <Text style={{ color: C.sub, fontSize: F.small, marginBottom: 8, paddingHorizontal: 4 }}>
-              {t("cd.contactsCount", { n: visible.length })}
-            </Text>
-          ) : null
         }
       />
 
@@ -445,6 +459,10 @@ export const ContactsScreen: React.FC = () => {
     </View>
   );
 };
+
+/** favorites resolved against the loaded device contacts */
+const favContactsOf = (contacts: DeviceContact[], favSet: Set<string>): DeviceContact[] =>
+  contacts.filter((c) => favSet.has(c.recordID));
 
 /* ---------------- long-press context sheet ---------------- */
 
@@ -486,11 +504,19 @@ const ContactMenuSheet: React.FC<{
       run: () => phone && openURL(smsLink(phone)),
       disabled: !phone,
     },
-    { icon: "pencil-outline", label: t("act.edit"), run: editNow },
+    { icon: "pencil-outline", label: t("cd.editContact"), run: editNow },
     {
       icon: favSet.has(recordID) ? "star-off-outline" : "star",
       label: favSet.has(recordID) ? t("cd.removedFromFavorites") : t("cd.addToFavorites"),
       run: () => toggleFavorite(recordID),
+    },
+    {
+      icon: "content-copy",
+      label: t("cd.copyNumber"),
+      run: () =>
+        phone &&
+        copyText(phone).then((ok) => toast(ok ? t("cd.numberCopied") : t("act.couldntCopy"), ok ? "ok" : "error")),
+      disabled: !phone,
     },
     {
       icon: "share-variant-outline",
@@ -552,8 +578,8 @@ const menuStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   statsRow: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth },
   statCard: { flex: 1, borderRadius: 14, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 9, gap: 2, minWidth: 0 },
-  search: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, height: 46, fontSize: F.body },
   sortBtn: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 999, borderWidth: 1, paddingHorizontal: 11, paddingVertical: 7, minHeight: 36 },
+  newBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, minHeight: 36 },
   letterWrap: { backgroundColor: "transparent", paddingVertical: 2, marginBottom: 2 },
   letterHeader: { fontSize: F.small, fontWeight: "800", marginTop: 6, marginBottom: 4, paddingHorizontal: 2 },
   row: {

@@ -6,7 +6,7 @@ import type { EntryKind, LinkRef, Reminder } from "./types";
 export type Tab = "contacts" | "recents" | "general" | "reminders" | "trash";
 
 export type Overlay =
-  | { type: "contact"; recordID: string }
+  | { type: "contact"; recordID: string; initialSeg?: "ledger" | "lists" | "notes" | "bank" | "reminders" | "info" }
   | { type: "list"; listId: string }
   | { type: "listEdit"; listId?: string; ownerId: string; kind?: "calculating" | "simple" | "checklist" | "todo" }
   | { type: "entryEdit"; entryId?: string; ownerId: string; entryType?: "credit" | "debit"; kind?: EntryKind; groupId?: string }

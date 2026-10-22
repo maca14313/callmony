@@ -1,17 +1,17 @@
-/* Keypad — FULL-SCREEN dialer overlay that opens on top of any tab.
-   Layout is computed from the window size so the keypad grid is ALWAYS
-   100% visible — it is never inside a scroll. The area above the keypad is
-   a virtualized live match list: while typing, every matching contact (T9
-   name match + number match) appears and one tap places a REAL immediate
-   call; with an empty number it shows recent calls instead — exactly like
-   the built-in dialer. Long-press 0 → "+", long-press 2–9 → speed dial,
-   backspace hold → clear. */
+/* Keypad — webapp-style BOTTOM SHEET that rises over the Recents tab.
+   Layout top→bottom: grabber + header (speed-dial · “Keypad” · close) ·
+   live match list (while typing) · NUMBER DISPLAY (right above the keys) ·
+   3×4 key grid (max-w 300, always fully visible) · video / call / add row.
+   Prefix search matches BOTH formats: “+251…” (international) and “09…”
+   (local trunk) hit the same contact. Long-press 0 → “+”, long-press 2–9 →
+   speed dial, hold backspace → clear. */
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Animated,
+  Easing,
   FlatList,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -20,7 +20,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
-import { useApp, contactByPhone } from "../lib/store";
+import { useApp } from "../lib/store";
 import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { displayName, normalizePhone, prettyPhone, t9Match, vibrate } from "../lib/utils";
@@ -28,7 +28,7 @@ import type { DeviceContact } from "../lib/types";
 import { placeCall } from "../native/calls";
 import { openNewContactForm } from "../native/deviceContacts";
 import { F, useThemeColors } from "../theme";
-import { Avatar, EmptyState, toast } from "./kit";
+import { Avatar, toast } from "./kit";
 
 const KEYS: { d: string; letters?: string }[] = [
   { d: "1" },
@@ -46,23 +46,23 @@ const KEYS: { d: string; letters?: string }[] = [
 ];
 
 /* precomputed search entry — built once per contacts change, so each
-   keystroke only runs cheap comparisons */
+   keystroke only runs cheap comparisons. Every phone is indexed in BOTH
+   raw form (“0911…”, “+251911…” as typed) and normalized E.164-ish digits,
+   so a query starting with “+251” OR “09” (or plain “9…”) all match. */
 interface MatchEntry {
   c: DeviceContact;
   name: string;
-  nameL: string;
   letters: string;
-  phones: string[]; // normalized digits
+  phones: { raw: string; norm: string; number: string }[];
 }
 
-/* one row of the list above the keypad */
+/* one row of the list above the display */
 interface SuggestRow {
   key: string;
   contact?: DeviceContact;
   title: string;
   phone: string;
   info?: string;
-  direction?: "incoming" | "outgoing" | "missed";
 }
 
 /* ---------- memoized match row (module level → real memoization) ---------- */
@@ -73,14 +73,6 @@ const MatchRow: React.FC<{
   onOpenContact: (recordID: string) => void;
 }> = memo(({ row, onCall, onOpenContact }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
-  const dir =
-    row.direction === "missed"
-      ? { icon: "phone-missed", color: C.red }
-      : row.direction === "incoming"
-        ? { icon: "phone-incoming", color: C.green }
-        : row.direction === "outgoing"
-          ? { icon: "phone-outgoing", color: C.brand }
-          : null;
   return (
     <Pressable
       onPress={() => onCall(row)}
@@ -89,19 +81,16 @@ const MatchRow: React.FC<{
       android_ripple={{ color: "rgba(128,128,128,0.12)" }}
       style={({ pressed }) => [styles.match, { backgroundColor: pressed ? C.chip : "transparent" }]}
     >
-      <Avatar contact={row.contact} size={40} />
+      <Avatar contact={row.contact} size={36} />
       <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
-        <Text style={{ color: C.ink, fontWeight: "700", fontSize: F.body, flexShrink: 1 }} numberOfLines={1}>
+        <Text style={{ color: C.ink, fontWeight: "700", fontSize: F.small, flexShrink: 1 }} numberOfLines={1}>
           {row.title}
         </Text>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-          {dir && <Icon name={dir.icon} size={13} color={dir.color} />}
-          <Text style={{ color: C.sub, fontSize: F.small }} numberOfLines={1}>
-            {row.info || row.phone}
-          </Text>
-        </View>
+        <Text style={{ color: C.sub, fontSize: F.tiny }} numberOfLines={1}>
+          {row.info || row.phone}
+        </Text>
       </View>
-      <Icon name="phone-outline" size={20} color={C.brand} />
+      <Icon name="phone-outline" size={19} color={C.brand} />
     </Pressable>
   );
 });
@@ -119,12 +108,31 @@ export const KeypadSheet: React.FC = () => {
   const contacts = useApp((s) => s.deviceContacts);
   const speedDialSettings = useApp((s) => s.settings.speedDial);
   const contactX = useApp((s) => s.contactX);
-  const systemCalls = useApp((s) => s.systemCalls);
-  const appRecents = useApp((s) => s.recents);
 
   const [number, setNumber] = useState("");
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longFired = useRef(false);
+
+  /* entrance animation — panel slides up (native driver), scrim fades in */
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 260,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [anim]);
+  const closingRef = useRef(false);
+  const close = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    Animated.timing(anim, { toValue: 0, duration: 170, useNativeDriver: true }).start(() =>
+      setKeypadOpen(false)
+    );
+  }, [anim, setKeypadOpen]);
 
   useEffect(() => {
     return () => {
@@ -132,11 +140,11 @@ export const KeypadSheet: React.FC = () => {
     };
   }, []);
 
-  /* ---------- keypad sizing: ALWAYS fits, never scrolls ---------- */
-  const CHROME =
-    58 /*display*/ + 92 /*controls*/ + 18 /*keypad top pad*/ + 30 /*row gaps*/ + 16 /*bottom pad*/;
-  const keyH = Math.max(42, Math.min(82, Math.floor((height - insets.top - insets.bottom - CHROME - 80) / 4)));
-  const keyW = Math.min(keyH, Math.floor((width - 36 /*h padding*/ - 28 /*gaps*/) / 3));
+  /* ---------- keypad sizing: webapp clamps, always fully visible ---------- */
+  const gridW = Math.min(width - 36, 300);
+  const keyW = Math.floor((gridW - 32 /* grid h-padding */ - 28 /* 2 gaps */) / 3);
+  const keyH = Math.max(44, Math.min(62, Math.floor(height * 0.082)));
+  const callSize = Math.max(54, Math.min(64, Math.floor(height * 0.08)));
 
   /* ---------- contact search index (built once per contacts load) ---------- */
   const index = useMemo<MatchEntry[]>(
@@ -146,40 +154,47 @@ export const KeypadSheet: React.FC = () => {
         return {
           c,
           name,
-          nameL: name.toLowerCase(),
           letters: name.toLowerCase().replace(/[^a-z]/g, ""),
-          phones: c.phones.map((p) => normalizePhone(p.number, countryCode).replace(/\D/g, "")),
+          phones: c.phones.map((p) => ({
+            number: p.number,
+            raw: p.number.replace(/\D/g, ""),
+            norm: normalizePhone(p.number, countryCode).replace(/\D/g, ""),
+          })),
         };
       }),
     [contacts, countryCode]
   );
 
-  /* ---------- live matches while typing (ALL matches, capped) ---------- */
+  /* ---------- live matches while typing ----------
+     Prefix search: the typed digits must appear in the RAW number (covers
+     “09…” local format) or in the NORMALIZED number (covers “+251…”), so
+     both common Ethiopian formats find the same contact. */
   const digits = number.replace(/\D/g, "");
   const matches = useMemo<MatchEntry[]>(() => {
-    if (digits.length < 1) return [];
-    const query = number.toLowerCase();
+    if (digits.length < 2) return [];
     const out: { e: MatchEntry; score: number }[] = [];
     for (const e of index) {
       let score = -1;
-      if (digits.length >= 2 && e.letters && t9Match(digits, e.name)) score = 3;
-      else if (query && e.nameL.includes(query)) score = 2;
-      if (digits.length >= 2) {
-        for (const p of e.phones) {
-          if (p.includes(digits) || digits.includes(p.slice(-digits.length))) {
-            score = 4;
-            break;
-          }
+      if (e.letters && t9Match(digits, e.name)) score = 3;
+      for (const p of e.phones) {
+        if (!digits) break;
+        if (p.raw.startsWith(digits) || p.norm.startsWith(digits)) {
+          score = 4;
+          break;
+        }
+        if (p.raw.includes(digits) || p.norm.includes(digits)) {
+          score = Math.max(score, 3.5);
+          break;
         }
       }
       if (score > 0) {
         out.push({ e, score });
-        if (out.length >= 240) break;
+        if (out.length >= 60) break;
       }
     }
     out.sort((a, b) => b.score - a.score || a.e.name.localeCompare(b.e.name));
     return out.map((x) => x.e);
-  }, [digits, number, index]);
+  }, [digits, index]);
 
   const exactMatch = useMemo(() => {
     if (digits.length < 6) return null;
@@ -191,35 +206,18 @@ export const KeypadSheet: React.FC = () => {
     );
   }, [digits, number, contacts, countryCode]);
 
-  /* ---------- list rows: matches (typed) or recent calls (empty) ---------- */
-  const listRows = useMemo<SuggestRow[]>(() => {
-    if (digits.length > 0) {
-      return matches.map((e) => ({
+  /* ---------- list rows (typed → matching contacts) ---------- */
+  const listRows = useMemo<SuggestRow[]>(
+    () =>
+      matches.map((e) => ({
         key: e.c.recordID,
         contact: e.c,
         title: e.name,
         phone: e.c.phones[0]?.number ?? "",
         info: e.c.phones[0] ? prettyPhone(e.c.phones[0].number, countryCode) : t("cd.noPhone"),
-      }));
-    }
-    const source = Platform.OS === "android" ? systemCalls.slice(0, 80) : appRecents.slice(0, 80);
-    return source.map((r) => {
-      const phone = (r as { phoneNumber?: string }).phoneNumber ?? (r as { phone?: string }).phone ?? "";
-      const cachedName = (r as { name?: string }).name;
-      const contact = phone ? contactByPhone(phone) : undefined;
-      const known = phone.replace(/\D/g, "").replace(/^0+/, "").length >= 3;
-      return {
-        key: (r as { id: string }).id,
-        contact,
-        title:
-          contact?.displayName || contact?.givenName || cachedName ||
-          (known ? prettyPhone(phone, countryCode) : t("cl.unknownNumber")),
-        phone,
-        info: known ? prettyPhone(phone, countryCode) : "",
-        direction: (r as { direction?: SuggestRow["direction"] }).direction,
-      };
-    });
-  }, [digits, matches, systemCalls, appRecents, countryCode, t]);
+      })),
+    [matches, countryCode, t]
+  );
 
   /* ---------- actions ---------- */
   const stopHold = () => {
@@ -264,7 +262,7 @@ export const KeypadSheet: React.FC = () => {
         if (phone) {
           toast(`${t("act.call")} · ${displayName(target)}`, "info");
           placeCall(phone);
-          setKeypadOpen(false);
+          close();
           return;
         }
       }
@@ -273,8 +271,12 @@ export const KeypadSheet: React.FC = () => {
   };
 
   const call = async () => {
-    if (!number) return;
+    if (!number) {
+      toast(t("kp.enterNumber"), "info");
+      return;
+    }
     vibrate(16);
+    close();
     const res = await placeCall(number);
     if (res === "blocked") toast(t("cd.blocked"), "error");
     else if (res === "denied" || res === "dialer") toast(t("cl.continuedInDialer"), "info");
@@ -290,10 +292,10 @@ export const KeypadSheet: React.FC = () => {
 
   const openContact = useCallback(
     (recordID: string) => {
-      setKeypadOpen(false);
+      close();
       open({ type: "contact", recordID });
     },
-    [open, setKeypadOpen]
+    [open, close]
   );
 
   const addContact = async () => {
@@ -302,207 +304,317 @@ export const KeypadSheet: React.FC = () => {
     if (saved) toast(t("ce.contactSaved"), "ok");
   };
 
-  const close = () => setKeypadOpen(false);
-
   const renderRow = useCallback(
     ({ item }: { item: SuggestRow }) => <MatchRow row={item} onCall={callRow} onOpenContact={openContact} />,
     [callRow, openContact]
   );
 
-  return (
-    <Modal
-      animationType="slide"
-      visible
-      onRequestClose={close}
-      statusBarTranslucent
-    >
-      <View style={[styles.root, { backgroundColor: C.canvas, paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        {/* display row: close · number · backspace */}
-        <View style={[styles.displayRow, { direction: "ltr" }]}>
-          <Pressable
-            onPress={close}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            android_ripple={{ color: "rgba(128,128,128,0.2)", borderless: true, radius: 24 }}
-            style={styles.closeBtn}
-            accessibilityLabel={t("act.close")}
-          >
-            <Icon name="chevron-down" size={28} color={C.sub} />
-          </Pressable>
-          <View style={{ flex: 1, alignItems: "center", minWidth: 0 }}>
-            {number ? (
-              <Text
-                style={[styles.number, { color: C.ink }]}
-                adjustsFontSizeToFit
-                minimumFontScale={0.4}
-                numberOfLines={1}
-              >
-                {number.startsWith("*") || number.includes("#") ? number : prettyPhone(number, countryCode)}
-              </Text>
-            ) : (
-              <Text style={[styles.placeholder, { color: C.faint }]}>{t("kp.enterNumber")}</Text>
-            )}
-            {!!exactMatch && (
-              <Pressable
-                onPress={() => {
-                  setKeypadOpen(false);
-                  open({ type: "contact", recordID: exactMatch.recordID });
-                }}
-              >
-                <View style={[styles.exactPill, { backgroundColor: C.brandSoft }]}>
-                  <Avatar contact={exactMatch} size={22} />
-                  <Text style={{ color: C.brand, fontWeight: "700", fontSize: F.small }} numberOfLines={1}>
-                    {displayName(exactMatch)}
-                  </Text>
-                </View>
-              </Pressable>
-            )}
-          </View>
-          <Pressable
-            onPress={backspace}
-            onPressIn={startBackspaceHold}
-            onPressOut={stopHold}
-            style={styles.backspace}
-            android_ripple={{ color: "rgba(128,128,128,0.2)", borderless: true }}
-            accessibilityLabel={t("kp.deleteDigit")}
-          >
-            <Icon name="backspace-outline" size={26} color={number ? C.ink : C.faint} />
-          </Pressable>
-        </View>
+  const showList = digits.length >= 2 && listRows.length > 0;
 
-        {/* live matches / recents — the ONLY scrollable part */}
-        <FlatList
-          data={listRows}
-          keyExtractor={(item) => item.key}
-          renderItem={renderRow}
-          keyboardShouldPersistTaps="handled"
-          initialNumToRender={12}
-          windowSize={7}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 }}
-          ListEmptyComponent={
-            digits.length > 0 ? (
-              <EmptyState icon="magnify-close" title={t("sr.noResults")} hint={t("sr.tryHint")} />
-            ) : (
-              <View style={{ alignItems: "center", paddingVertical: 26 }}>
-                <Icon name="dialpad" size={34} color={C.faint} />
-                <Text style={{ color: C.sub, fontSize: F.small, marginTop: 8 }}>{t("kp.readyToConnect")}</Text>
-              </View>
-            )
-          }
-          style={{ flex: 1 }}
+  return (
+    <Modal transparent animationType="none" visible statusBarTranslucent onRequestClose={close}>
+      <View style={{ flex: 1, justifyContent: "flex-end" }}>
+        {/* scrim — tap anywhere above the panel closes (deepest hit target) */}
+        <AnimatedPressable
+          onPress={close}
+          accessibilityLabel={t("act.close")}
+          accessibilityRole="button"
+          style={{ ...StyleSheet.absoluteFillObject, backgroundColor: C.scrim, opacity: anim }}
         />
 
-        {/* keypad grid — FIXED at the bottom, always 100% visible */}
-        <View style={{ paddingHorizontal: 18, gap: 10, direction: "ltr" }}>
-          {[0, 1, 2, 3].map((row) => (
-            <View key={row} style={{ flexDirection: "row", gap: 14, justifyContent: "center" }}>
-              {KEYS.slice(row * 3, row * 3 + 3).map((k) => (
+        {/* panel */}
+        <Animated.View
+          style={[
+            styles.panel,
+            {
+              backgroundColor: C.canvas,
+              borderTopColor: C.line,
+              paddingBottom: Math.max(insets.bottom, 12),
+              maxHeight: Math.floor(height * 0.96),
+              opacity: anim,
+              transform: [
+                {
+                  translateY: anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [Math.min(height * 0.5, 420), 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          {/* header — grabber + speed-dial · title · close */}
+          <Pressable onPress={close} hitSlop={{ top: 6, bottom: 6 }} style={styles.grabberRow}>
+            <View style={[styles.grabber, { backgroundColor: C.line }]} />
+          </Pressable>
+          <View style={styles.headerRow}>
+            <Pressable
+              onPress={() => {
+                close();
+                open({ type: "speedDial" });
+              }}
+              hitSlop={10}
+              style={styles.headerBtn}
+              accessibilityLabel={t("kp.speedDial")}
+            >
+              <Icon name="grid" size={17} color={C.sub} />
+            </Pressable>
+            <Text style={styles.headerTitle}>{t("nav.keypad")}</Text>
+            <Pressable onPress={close} hitSlop={10} style={styles.headerBtn} accessibilityLabel={t("act.close")}>
+              <Icon name="close" size={18} color={C.sub} />
+            </Pressable>
+          </View>
+
+          {/* live matches — compact list, only while typing (shrinks first
+              when the panel hits its height cap on short screens) */}
+          {showList && (
+            <View style={{ maxHeight: Math.floor(height * 0.24), flexShrink: 1 }}>
+              <FlatList
+                data={listRows.slice(0, 40)}
+                keyExtractor={(item) => item.key}
+                renderItem={renderRow}
+                keyboardShouldPersistTaps="handled"
+                initialNumToRender={6}
+                maxToRenderPerBatch={8}
+                windowSize={5}
+                contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 4 }}
+                ListEmptyComponent={null}
+                style={{ flexGrow: 0 }}
+              />
+            </View>
+          )}
+
+          {/* number display — DIRECTLY above the keypad grid */}
+          <View style={[styles.displayRow, { direction: "ltr" }]}>
+            <View style={{ flex: 1, alignItems: "center", justifyContent: "center", minWidth: 0 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                {number ? (
+                  <Text
+                    style={[styles.number, { color: C.ink }]}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.4}
+                    numberOfLines={1}
+                  >
+                    {number.startsWith("*") || number.includes("#") ? number : prettyPhone(number, countryCode)}
+                  </Text>
+                ) : (
+                  <Text style={[styles.placeholder, { color: C.faint }]}>{t("kp.enterNumber")}</Text>
+                )}
+                {!!number && (
+                  <Pressable
+                    onPress={backspace}
+                    onPressIn={startBackspaceHold}
+                    onPressOut={stopHold}
+                    hitSlop={6}
+                    style={styles.backspace}
+                    accessibilityLabel={t("kp.deleteDigit")}
+                  >
+                    <Icon name="backspace-outline" size={21} color={C.sub} />
+                  </Pressable>
+                )}
+              </View>
+              {exactMatch ? (
                 <Pressable
-                  key={k.d}
-                  onPress={() => pressKey(k.d)}
-                  onLongPress={() => longPressKey(k.d)}
-                  delayLongPress={380}
-                  android_ripple={{ color: "rgba(128,128,128,0.22)", borderless: true, radius: keyW * 0.5 }}
+                  onPress={() => {
+                    close();
+                    open({ type: "contact", recordID: exactMatch.recordID });
+                  }}
                   style={({ pressed }) => [
-                    styles.key,
-                    {
-                      width: keyW,
-                      height: keyH,
-                      backgroundColor: pressed ? C.chip : C.card,
-                      borderColor: C.line,
-                      opacity: pressed ? 0.8 : 1,
-                    },
+                    styles.exactPill,
+                    { backgroundColor: pressed ? C.chip : C.brandSoft },
                   ]}
                 >
-                  <Text style={{ fontSize: Math.min(keyH * 0.42, 30), fontWeight: "600", color: C.ink }}>{k.d}</Text>
-                  {!!k.letters && (
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: C.faint, letterSpacing: 1.1, minHeight: 14 }}>
-                      {k.letters}
-                    </Text>
-                  )}
+                  <Avatar contact={exactMatch} size={20} />
+                  <Text style={{ color: C.brand, fontWeight: "700", fontSize: F.tiny }} numberOfLines={1}>
+                    {displayName(exactMatch)}
+                  </Text>
                 </Pressable>
-              ))}
+              ) : (
+                !!listRows[0] && (
+                  <Text style={{ color: C.brand, fontSize: F.tiny, fontWeight: "600", marginTop: 2 }} numberOfLines={1}>
+                    {listRows[0].title}
+                  </Text>
+                )
+              )}
             </View>
-          ))}
-        </View>
+          </View>
 
-        {/* call + add-contact row */}
-        <View style={[styles.controls, { direction: "ltr" }]}>
-          <Pressable
-            onPress={() => open({ type: "speedDial" })}
-            style={styles.sideBtn}
-            android_ripple={{ color: "rgba(128,128,128,0.2)", borderless: true }}
-            accessibilityLabel={t("kp.speedDial")}
-          >
-            <Icon name="grid" size={24} color={C.sub} />
-          </Pressable>
-          <Pressable
-            onPress={call}
-            disabled={!number}
-            android_ripple={{ color: "rgba(255,255,255,0.3)", borderless: true, radius: 40 }}
-            style={({ pressed }) => [
-              styles.callBtn,
-              { backgroundColor: number ? C.brand : C.faint, opacity: pressed ? 0.85 : 1 },
-            ]}
-            accessibilityLabel={t("kp.callNumber")}
-          >
-            <Icon name="phone" size={30} color="#fff" />
-          </Pressable>
-          <Pressable
-            onPress={addContact}
-            disabled={!number}
-            style={[styles.sideBtn, { opacity: number ? 1 : 0.4 }]}
-            android_ripple={{ color: "rgba(128,128,128,0.2)", borderless: true }}
-            accessibilityLabel={t("act.newContact")}
-          >
-            <Icon name="account-plus-outline" size={24} color={C.ink} />
-          </Pressable>
-        </View>
+          {/* keypad grid — max-w 300, centered, never scrolls */}
+          <View style={{ width: gridW, alignSelf: "center", gap: 10, direction: "ltr" }}>
+            {[0, 1, 2, 3].map((row) => (
+              <View key={row} style={{ flexDirection: "row", gap: 14, justifyContent: "center" }}>
+                {KEYS.slice(row * 3, row * 3 + 3).map((k) => (
+                  <Pressable
+                    key={k.d}
+                    onPress={() => pressKey(k.d)}
+                    onLongPress={() => longPressKey(k.d)}
+                    delayLongPress={380}
+                    android_ripple={{ color: "rgba(128,128,128,0.22)", borderless: true, radius: keyW * 0.5 }}
+                    style={({ pressed }) => [
+                      styles.key,
+                      {
+                        width: keyW,
+                        height: keyH,
+                        backgroundColor: pressed ? C.chip : C.card,
+                        opacity: pressed ? 0.85 : 1,
+                      },
+                    ]}
+                  >
+                    <Text style={{ fontSize: Math.min(keyH * 0.42, 26), fontWeight: "500", color: C.ink }}>
+                      {k.d}
+                    </Text>
+                    {!!k.letters && (
+                      <Text style={{ fontSize: 13, fontWeight: "600", color: C.faint, letterSpacing: 2, minHeight: 15 }}>
+                        {k.letters}
+                      </Text>
+                    )}
+                  </Pressable>
+                ))}
+              </View>
+            ))}
+          </View>
+
+          {/* video · call · add-contact */}
+          <View style={[styles.controls, { width: gridW, alignSelf: "center", direction: "ltr" }]}>
+            <Pressable
+              onPress={() => toast(t("kp.videoDemo"), "info")}
+              style={({ pressed }) => [
+                styles.sideBtn,
+                { borderColor: C.line, backgroundColor: pressed ? C.chip : C.card },
+              ]}
+              accessibilityLabel={t("kp.videoCall")}
+            >
+              <Icon name="video-outline" size={19} color={C.sub} />
+            </Pressable>
+            <Pressable
+              onPress={call}
+              disabled={!number}
+              android_ripple={{ color: "rgba(255,255,255,0.3)", borderless: true, radius: callSize * 0.5 }}
+              style={({ pressed }) => [
+                styles.callBtn,
+                { width: callSize, height: callSize, borderRadius: callSize / 2, backgroundColor: number ? C.brand : C.faint, opacity: pressed ? 0.86 : 1 },
+              ]}
+              accessibilityLabel={number ? t("kp.callNumber", { number }) : t("act.call")}
+            >
+              <Icon name="phone" size={26} color="#fff" />
+            </Pressable>
+            <Pressable
+              onPress={addContact}
+              disabled={!number}
+              style={({ pressed }) => [
+                styles.sideBtn,
+                { borderColor: C.line, backgroundColor: pressed ? C.chip : C.card, opacity: number ? 1 : 0.5 },
+              ]}
+              accessibilityLabel={t("act.newContact")}
+            >
+              <Icon name="account-plus-outline" size={20} color={C.sub} />
+            </Pressable>
+          </View>
+        </Animated.View>
       </View>
     </Modal>
   );
 };
 
+/* Pressable + Animated opacity — small helper (avoids Animated.Component typing noise) */
+const AnimatedPressable: React.FC<{
+  onPress: () => void;
+  accessibilityLabel?: string;
+  accessibilityRole?: "button";
+  style: object;
+}> = ({ onPress, accessibilityLabel, accessibilityRole, style }) => (
+  <Animated.View style={style} onStartShouldSetResponder={() => true} onResponderRelease={onPress} accessible accessibilityLabel={accessibilityLabel} accessibilityRole={accessibilityRole} />
+);
+
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  displayRow: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 58, paddingHorizontal: 12 },
-  closeBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
-  number: { fontSize: 28, fontWeight: "800", maxWidth: 230 },
-  placeholder: { fontSize: 20, fontWeight: "600" },
-  exactPill: {
+  panel: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    paddingTop: 8,
+    elevation: 18,
+    shadowColor: "#000",
+    shadowOpacity: 0.22,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: -6 },
+  },
+  grabberRow: { alignItems: "center", paddingBottom: 2 },
+  grabber: { width: 40, height: 4, borderRadius: 2 },
+  headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginTop: 2,
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingTop: 2,
+    paddingBottom: 6,
+    minHeight: 44,
   },
-  backspace: { width: 52, height: 44, alignItems: "center", justifyContent: "center" },
+  headerBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  headerTitle: { fontSize: F.small, fontWeight: "700", letterSpacing: 1, color: "#7a8c88" },
   match: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 11,
     borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    minHeight: 60,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    minHeight: 52,
   },
-  key: {
+  displayRow: {
+    minHeight: 62,
+    maxHeight: 84,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+    paddingVertical: 6,
+  },
+  number: { fontSize: 28, fontWeight: "500", letterSpacing: 1.2, maxWidth: 250 },
+  placeholder: { fontSize: F.small, fontWeight: "600", letterSpacing: 2.5, textTransform: "uppercase" },
+  exactPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
     borderRadius: 999,
-    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginTop: 3,
+  },
+  backspace: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  key: {
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
     gap: 1,
+    elevation: 2,
+    shadowColor: "#0e2a26",
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
   },
   controls: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 12,
-    marginBottom: 4,
-    paddingHorizontal: 22,
-    minHeight: 80,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    marginTop: 2,
+    minHeight: 76,
   },
-  callBtn: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center", elevation: 6 },
-  sideBtn: { width: 58, height: 58, borderRadius: 29, alignItems: "center", justifyContent: "center" },
+  callBtn: {
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 8,
+    shadowColor: "#16a085",
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  sideBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

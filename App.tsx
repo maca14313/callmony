@@ -167,16 +167,24 @@ const Shell: React.FC = () => {
   /* Dialer-style boot: on first launch ask for contacts + call log + phone
      (already-granted ones resolve silently), then load the address book and
      the system call log IMMEDIATELY — the app opens with Contacts and
-     Recents ready, like any built-in dialer. Both refresh when the user
-     returns to the app (e.g. after a call), throttled to one load per 10s —
-     re-serializing a large address book on EVERY foreground made the app
-     feel laggy exactly when the user came back to it. */
-  const lastLoadRef = useRef(0);
+     Recents ready, like any built-in dialer.
+     PERF: re-serializing a 2000-contact address book over the bridge on
+     EVERY foreground froze the app right when the user came back to it
+     (e.g. after hanging up). The call log still refreshes on every
+     foreground (10s throttle — it changes with every call), but contacts
+     only reload if they are older than 5 minutes. */
+  const lastLogRef = useRef(0);
+  const lastContactsRef = useRef(0);
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
-      if (Date.now() - lastLoadRef.current < 10000) return; // throttle
-      lastLoadRef.current = Date.now();
+    const loadLog = async () => {
+      if (Date.now() - lastLogRef.current < 10000) return; // throttle
+      lastLogRef.current = Date.now();
+      useApp.getState().loadSystemCalls();
+    };
+    const loadContacts = async (force = false) => {
+      if (!force && Date.now() - lastContactsRef.current < 300000) return; // 5 min
+      lastContactsRef.current = Date.now();
       const status = await checkContactsPermission();
       if (status === "authorized") {
         const list = await fetchAllContacts().catch(() => []);
@@ -188,7 +196,6 @@ const Shell: React.FC = () => {
           if (!cancelled && list.length) setDeviceContacts(list);
         }
       }
-      useApp.getState().loadSystemCalls();
     };
     const boot = async () => {
       if (Platform.OS === "android") {
@@ -202,12 +209,17 @@ const Shell: React.FC = () => {
           /* user can still grant later from the per-tab permission cards */
         }
       }
-      lastLoadRef.current = 0; // first load always runs
-      load();
+      lastLogRef.current = 0; // first load always runs
+      lastContactsRef.current = 0;
+      loadContacts(true);
+      loadLog();
     };
     boot();
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") load();
+      if (state === "active") {
+        loadLog();
+        loadContacts(false);
+      }
     });
     return () => {
       cancelled = true;
@@ -326,6 +338,7 @@ const Shell: React.FC = () => {
                 </Text>
                 <Text style={{ fontSize: F.tiny, color: C.sub }}>{t("hdr.tagline")}</Text>
               </View>
+              <IconBtn icon="calculator" size={40} onPress={() => open({ type: "calculator" })} />
               <IconBtn icon="magnify" size={40} onPress={() => open({ type: "search" })} />
               <IconBtn icon="cog-outline" size={40} onPress={() => open({ type: "settings" })} />
             </>
@@ -426,7 +439,6 @@ const MoreSheet: React.FC<{ onClose: () => void; onLanguage: () => void; overdue
   const tiles: { icon: string; label: string; badge?: number; run: () => void }[] = [
     { icon: "translate", label: native || "English", run: onLanguage },
     { icon: "bell-outline", label: t("tab.reminders"), badge: overdueCount, run: () => { setTab("reminders"); onClose(); } },
-    { icon: "magnify", label: t("act.search"), run: () => { open({ type: "search" }); onClose(); } },
     { icon: "swap-horizontal-circle-outline", label: t("spd.mergeDuplicates"), run: () => { open({ type: "merge" }); onClose(); } },
     { icon: "grid", label: t("spd.speedDial"), run: () => { open({ type: "speedDial" }); onClose(); } },
     { icon: "trash-can-outline", label: t("hdr.trash"), run: () => { setTab("trash"); onClose(); } },

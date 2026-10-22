@@ -1,10 +1,10 @@
 /* ContactPicker (owner chooser incl. General) + NumberPicker (which phone). */
 
-import React from "react";
+import React, { useMemo } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useApp, contactByRecord } from "../lib/store";
 import { useT, t as tr } from "../i18n";
-import { displayName, prettyPhone } from "../lib/utils";
+import { displayName, normalizePhone, prettyPhone } from "../lib/utils";
 import { contactOwnerId } from "../lib/types";
 import { F, useThemeColors } from "../theme";
 import { Avatar } from "./kit";
@@ -30,11 +30,17 @@ export const ContactPicker: React.FC<{
   const [q, setQ] = React.useState("");
 
   const filtered = q.trim()
-    ? contacts.filter(
-        (c) =>
-          displayName(c).toLowerCase().includes(q.toLowerCase()) ||
-          c.phones.some((p) => p.number.replace(/\D/g, "").includes(q.replace(/\D/g, "")))
-      )
+    ? contacts.filter((c) => {
+        const query = q.toLowerCase().trim();
+        const qDigits = query.replace(/\D/g, "");
+        if (displayName(c).toLowerCase().includes(query)) return true;
+        /* phone match ONLY for real digit queries — "" is included in every
+           number, which used to make every letter search match everything */
+        if (qDigits.length >= 2) {
+          return c.phones.some((p) => p.number.replace(/\D/g, "").includes(qDigits));
+        }
+        return false;
+      })
     : contacts;
 
   return (
@@ -91,7 +97,8 @@ export const ContactPicker: React.FC<{
   );
 };
 
-/** Pick which phone number of a contact to use. */
+/** Pick which phone number of a contact to use — the SAME number stored
+    in several formats (09…, +251…, plain duplicated rows) appears ONCE. */
 export const NumberPicker: React.FC<{
   recordID: string;
   onPick: (number: string) => void;
@@ -102,12 +109,25 @@ export const NumberPicker: React.FC<{
   const contact = useApp((s) => s.deviceContacts.find((c) => c.recordID === recordID));
   const countryCode = useApp((s) => s.settings.countryCode);
 
+  /* dedupe by normalized digits — the fix for “same number listed over and over” */
+  const unique = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { id: string; label: string; number: string }[] = [];
+    (contact?.phones ?? []).forEach((p) => {
+      const key = normalizePhone(p.number, countryCode).replace(/\D/g, "") || p.number.replace(/\D/g, "");
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(p);
+    });
+    return out;
+  }, [contact, countryCode]);
+
   return (
     <BottomSheet title={t("cd.chooseNumber")} onClose={onClose}>
       <View style={{ gap: 6, paddingBottom: 10 }}>
-        {(contact?.phones ?? []).map((p, i) => (
+        {unique.map((p, i) => (
           <Pressable
-            key={p.id || i}
+            key={p.id || `${p.number}-${i}`}
             android_ripple={{ color: "rgba(128,128,128,0.14)" }}
             onPress={() => onPick(p.number)}
             style={[styles.row, { borderColor: C.line, backgroundColor: C.card }]}
@@ -122,7 +142,7 @@ export const NumberPicker: React.FC<{
             </View>
           </Pressable>
         ))}
-        {!contact?.phones.length && (
+        {!unique.length && (
           <Text style={{ color: C.sub, textAlign: "center", paddingVertical: 14, fontSize: F.small }}>
             {t("cd.noPhone")}
           </Text>

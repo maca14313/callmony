@@ -1,9 +1,12 @@
 /* Recents tab — Android: the REAL system call log grouped by day with
-   direction filters. iOS: calls started from callmony. Rows are virtualized
-   and memoized (400+ calls scroll smoothly), every card resolves the contact
-   via the phone index (any local/international number format) and shows the
-   contact name + number + call info, and carries the same swipe actions as
-   the Contacts tab (swipe right → call · swipe left → WhatsApp / SMS). */
+   direction filters (single-row horizontal scroll chips). iOS: calls
+   started from callmony. Rows are virtualized and memoized (400+ calls
+   scroll smoothly), every card resolves the contact via the phone index
+   (any local/international number format) and carries the SAME swipe +
+   long-press actions as the Contacts tab:
+   swipe right → call · favorite   swipe left → WhatsApp · SMS.
+   Long-press opens the full action sheet (call / chat / copy number /
+   favorite / call history / new contact). */
 
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -49,83 +52,97 @@ interface RowProps {
   row: CallRow;
   countryCode: string;
   onTap: (row: CallRow) => void;
+  onLongPress: (row: CallRow) => void;
   onCall: (phone: string) => void;
   onWhatsApp: (phone: string) => void;
   onSMS: (phone: string) => void;
+  onToggleFav: (recordID: string) => void;
 }
 
-const CallCard: React.FC<RowProps> = memo(({ row, countryCode, onTap, onCall, onWhatsApp, onSMS }) => {
-  const C = useThemeColors(useApp((s) => s.settings.theme));
-  const t = useT();
-  const digits = row.phone.replace(/\D/g, "");
-  const hasRealNumber = digits.replace(/^0+/, "").length >= 3;
-  const title = row.contact
-    ? row.contact.displayName || row.contact.givenName || row.contact.familyName || row.name
-    : row.name || (hasRealNumber ? prettyPhone(row.phone, countryCode) : "") || t("cl.unknownNumber");
-  const meta =
-    row.direction === "missed"
-      ? { icon: "phone-missed", color: C.red, label: t("cd.missed") }
-      : row.direction === "incoming"
-        ? { icon: "phone-incoming", color: C.green, label: t("cd.incoming") }
-        : { icon: "phone-outgoing", color: C.brand, label: t("cd.outgoing") };
-  const callNumber = row.contact?.phones[0]?.number ?? row.phone;
+const CallCard: React.FC<RowProps> = memo(
+  ({ row, countryCode, onTap, onLongPress, onCall, onWhatsApp, onSMS, onToggleFav }) => {
+    const C = useThemeColors(useApp((s) => s.settings.theme));
+    const t = useT();
+    const digits = row.phone.replace(/\D/g, "");
+    const hasRealNumber = digits.replace(/^0+/, "").length >= 3;
+    const title = row.contact
+      ? row.contact.displayName || row.contact.givenName || row.contact.familyName || row.name
+      : row.name || (hasRealNumber ? prettyPhone(row.phone, countryCode) : "") || t("cl.unknownNumber");
+    const meta =
+      row.direction === "missed"
+        ? { icon: "phone-missed", color: C.red, label: t("cd.missed") }
+        : row.direction === "incoming"
+          ? { icon: "phone-incoming", color: C.green, label: t("cd.incoming") }
+          : { icon: "phone-outgoing", color: C.brand, label: t("cd.outgoing") };
+    const callNumber = row.contact?.phones[0]?.number ?? row.phone;
 
-  return (
-    <View style={{ marginBottom: 6 }}>
-      <SwipeRow
-        onTap={() => onTap(row)}
-        leftActions={hasRealNumber ? [{ icon: "phone", color: "#16a085", onPress: () => onCall(callNumber) }] : []}
-        rightActions={
-          hasRealNumber
-            ? [
-                { icon: "whatsapp", color: "#1faa53", onPress: () => onWhatsApp(callNumber) },
-                { icon: "message-text-outline", color: "#4a7d9b", onPress: () => onSMS(callNumber) },
-              ]
-            : []
-        }
-      >
-        <View style={[styles.callRow, { backgroundColor: C.card, borderColor: C.line }]}>
-          <Avatar contact={row.contact} size={44} />
-          <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-            <Text
-              style={{ fontSize: F.body, fontWeight: "700", color: row.direction === "missed" ? C.red : C.ink, flexShrink: 1 }}
-              numberOfLines={1}
-            >
-              {title}
-            </Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-              <Icon name={meta.icon} size={14} color={meta.color} />
-              <Text style={{ fontSize: F.tiny, color: C.sub }} numberOfLines={1}>
-                {meta.label} · {ft(row.at)}
-                {row.duration > 0 ? ` · ${durationStr(row.duration)}` : ""}
-              </Text>
-            </View>
-            {/* the matched number — so the card always carries real info */}
-            {hasRealNumber && (
-              <Text style={{ fontSize: F.tiny, color: C.faint }} numberOfLines={1}>
-                {prettyPhone(row.phone, countryCode)}
-              </Text>
-            )}
-          </View>
-          <View style={{ alignItems: "flex-end", gap: 4 }}>
-            <Text style={{ fontSize: F.tiny, color: C.faint }}>{relTime(row.at)}</Text>
-            {hasRealNumber && (
-              <Pressable
-                onPress={() => onCall(callNumber)}
-                hitSlop={8}
-                android_ripple={{ color: "rgba(128,128,128,0.2)", borderless: true }}
-                style={({ pressed }) => [styles.redial, { backgroundColor: pressed ? C.brandSoft : C.cardAlt }]}
-                accessibilityLabel={t("act.call")}
+    /* identical swipe set to the Contacts tab (plus favorite when known) */
+    const leftActions = hasRealNumber
+      ? [
+          { icon: "phone", color: "#16a085", onPress: () => onCall(callNumber) },
+          ...(row.contact
+            ? [{ icon: "star", color: "#b97d10", onPress: () => onToggleFav(row.contact!.recordID) }]
+            : []),
+        ]
+      : [];
+    const rightActions = hasRealNumber
+      ? [
+          { icon: "whatsapp", color: "#1faa53", onPress: () => onWhatsApp(callNumber) },
+          { icon: "message-text-outline", color: "#4a7d9b", onPress: () => onSMS(callNumber) },
+        ]
+      : [];
+
+    return (
+      <View style={{ marginBottom: 6 }}>
+        <SwipeRow
+          onTap={() => onTap(row)}
+          onLongPress={() => onLongPress(row)}
+          leftActions={leftActions}
+          rightActions={rightActions}
+        >
+          <View style={[styles.callRow, { backgroundColor: C.card, borderColor: C.line }]}>
+            <Avatar contact={row.contact} size={44} />
+            <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+              <Text
+                style={{ fontSize: F.body, fontWeight: "700", color: row.direction === "missed" ? C.red : C.ink, flexShrink: 1 }}
+                numberOfLines={1}
               >
-                <Icon name="phone-outline" size={20} color={C.brand} />
-              </Pressable>
-            )}
+                {title}
+              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                <Icon name={meta.icon} size={14} color={meta.color} />
+                <Text style={{ fontSize: F.tiny, color: C.sub }} numberOfLines={1}>
+                  {meta.label} · {ft(row.at)}
+                  {row.duration > 0 ? ` · ${durationStr(row.duration)}` : ""}
+                </Text>
+              </View>
+              {/* the matched number — so the card always carries real info */}
+              {hasRealNumber && (
+                <Text style={{ fontSize: F.tiny, color: C.faint }} numberOfLines={1}>
+                  {prettyPhone(row.phone, countryCode)}
+                </Text>
+              )}
+            </View>
+            <View style={{ alignItems: "flex-end", gap: 4 }}>
+              <Text style={{ fontSize: F.tiny, color: C.faint }}>{relTime(row.at)}</Text>
+              {hasRealNumber && (
+                <Pressable
+                  onPress={() => onCall(callNumber)}
+                  hitSlop={8}
+                  android_ripple={{ color: "rgba(128,128,128,0.2)", borderless: true }}
+                  style={({ pressed }) => [styles.redial, { backgroundColor: pressed ? C.brandSoft : C.cardAlt }]}
+                  accessibilityLabel={t("act.call")}
+                >
+                  <Icon name="phone-outline" size={20} color={C.brand} />
+                </Pressable>
+              )}
+            </View>
           </View>
-        </View>
-      </SwipeRow>
-    </View>
-  );
-});
+        </SwipeRow>
+      </View>
+    );
+  }
+);
 
 /* ---------------- screen ---------------- */
 
@@ -147,7 +164,7 @@ export const RecentsScreen: React.FC = () => {
   const systemCalls = useApp((s) => s.systemCalls);
   const [filter, setFilter] = useState<Filter>("all");
   const [refreshing, setRefreshing] = useState(false);
-  const [unknownSheet, setUnknownSheet] = useState<CallRow | null>(null);
+  const [sheetRow, setSheetRow] = useState<CallRow | null>(null);
 
   const perm: "loading" | "ok" | "denied" =
     Platform.OS !== "android"
@@ -246,13 +263,15 @@ export const RecentsScreen: React.FC = () => {
   const onTap = useCallback(
     (row: CallRow) => {
       if (row.contact) open({ type: "contact", recordID: row.contact.recordID });
-      else setUnknownSheet(row);
+      else setSheetRow(row);
     },
     [open]
   );
+  const onLongPress = useCallback((row: CallRow) => setSheetRow(row), []);
   const onCall = useCallback((phone: string) => {
     placeCall(phone);
   }, []);
+  const onToggleFav = useCallback((recordID: string) => useApp.getState().toggleFavorite(recordID), []);
   const onWhatsApp = useCallback(
     (phone: string) => openURL(waLink(phone, undefined, countryCode)),
     [countryCode]
@@ -273,13 +292,15 @@ export const RecentsScreen: React.FC = () => {
           row={item.row}
           countryCode={countryCode}
           onTap={onTap}
+          onLongPress={onLongPress}
           onCall={onCall}
           onWhatsApp={onWhatsApp}
           onSMS={onSMS}
+          onToggleFav={onToggleFav}
         />
       );
     },
-    [C.brand, countryCode, onTap, onCall, onWhatsApp, onSMS]
+    [C.brand, C.canvas, countryCode, onTap, onLongPress, onCall, onToggleFav, onWhatsApp, onSMS]
   );
 
   if (perm === "loading") {
@@ -333,19 +354,23 @@ export const RecentsScreen: React.FC = () => {
         </View>
       )}
 
-      {/* filters */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 10, flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+      {/* direction chips — single-row horizontal scroll, compact (webapp style) */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16, gap: 6, paddingTop: 10 }}
+        style={{ flexGrow: 0 }}
+      >
         <Chip label={t("act.all")} active={filter === "all"} onPress={() => setFilter("all")} />
         <Chip
-          label={t("cd.missed")}
-          count={missedCount}
+          label={missedCount > 0 ? `${t("cd.missed")} · ${missedCount}` : t("cd.missed")}
           danger={!filter.startsWith("missed") && missedCount > 0}
           active={filter === "missed"}
           onPress={() => setFilter("missed")}
         />
         <Chip label={t("cd.incoming")} active={filter === "incoming"} onPress={() => setFilter("incoming")} />
         <Chip label={t("cd.outgoing")} active={filter === "outgoing"} onPress={() => setFilter("outgoing")} />
-      </View>
+      </ScrollView>
 
       {/* virtualized call list */}
       <FlatList
@@ -354,10 +379,9 @@ export const RecentsScreen: React.FC = () => {
         renderItem={renderItem}
         stickyHeaderIndices={sticky.length ? sticky : undefined}
         keyboardShouldPersistTaps="handled"
-        initialNumToRender={14}
-        maxToRenderPerBatch={20}
-        windowSize={9}
-        removeClippedSubviews
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={5}
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 20 }}
         ListEmptyComponent={
           <EmptyState
@@ -377,22 +401,22 @@ export const RecentsScreen: React.FC = () => {
         onRefresh={() => load(true)}
       />
 
-      {/* unknown number sheet — standard BottomSheet: scrim / grabber / X / back all close it */}
-      {unknownSheet && (
-        <UnknownSheet
-          row={unknownSheet}
+      {/* per-row action sheet — full Contacts parity (long-press or unknown tap) */}
+      {sheetRow && (
+        <CallRowSheet
+          row={sheetRow}
           countryCode={countryCode}
-          onClose={() => setUnknownSheet(null)}
-          onDelete={unknownSheet.appId ? () => deleteRecent(unknownSheet.appId!) : undefined}
+          onClose={() => setSheetRow(null)}
+          onDelete={sheetRow.appId ? () => deleteRecent(sheetRow.appId!) : undefined}
         />
       )}
     </View>
   );
 };
 
-/* ---------------- unknown number actions ---------------- */
+/* ---------------- per-row actions (known + unknown numbers) ---------------- */
 
-const UnknownSheet: React.FC<{
+const CallRowSheet: React.FC<{
   row: CallRow;
   countryCode: string;
   onClose: () => void;
@@ -400,65 +424,120 @@ const UnknownSheet: React.FC<{
 }> = ({ row, countryCode, onClose, onDelete }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
   const t = useT();
+  const contactX = useApp((s) => s.contactX);
+  const toggleFavorite = useApp((s) => s.toggleFavorite);
   const digits = row.phone.replace(/\D/g, "");
   const hasRealNumber = digits.replace(/^0+/, "").length >= 3;
+  const callNumber = row.contact?.phones[0]?.number ?? row.phone;
+  const isFav = !!row.contact && contactX.some((x) => x.recordID === row.contact!.recordID && x.favorite);
 
-  return (
-    <BottomSheet title={hasRealNumber ? prettyPhone(row.phone, countryCode) : t("cl.unknownNumber")} onClose={onClose}>
-      <Text style={{ fontSize: F.small, color: C.sub, marginTop: 2, marginBottom: 4 }}>
-        {fd(row.at)} · {ft(row.at)}
-      </Text>
-      <View style={{ gap: 8, marginTop: 12, paddingBottom: 8 }}>
-        {hasRealNumber && (
-          <>
-            <Btn
-              label={t("act.call")}
-              icon="phone"
-              onPress={() => {
-                const p = row.phone;
-                onClose();
-                placeCall(p);
-              }}
-            />
-            <Btn
-              label={t("act.newContact")}
-              icon="account-plus-outline"
-              variant="soft"
-              onPress={async () => {
-                const p = row.phone;
-                onClose();
-                const saved = await openNewContactForm({ phone: p });
-                if (saved) toast(t("ce.contactSaved"), "ok");
-              }}
-            />
-            <Btn
-              label={t("act.copy")}
-              icon="content-copy"
-              variant="secondary"
-              onPress={async () => {
-                const ok = await copyText(row.phone);
-                toast(ok ? t("cd.numberCopied") : t("act.couldntCopy"), ok ? "ok" : "error");
-                onClose();
-              }}
-            />
-          </>
-        )}
-        {onDelete && (
-          <Btn
-            label={t("cd.deleteLog")}
-            icon="trash-can-outline"
-            variant="danger"
-            onPress={() => {
+  const items: { icon: string; label: string; color?: string; run: () => void; disabled?: boolean }[] = [
+    { icon: "phone", label: t("act.call"), run: () => hasRealNumber && placeCall(callNumber), disabled: !hasRealNumber },
+    {
+      icon: "whatsapp",
+      label: t("act.whatsapp"),
+      run: () => hasRealNumber && openURL(waLink(callNumber, undefined, countryCode)),
+      disabled: !hasRealNumber,
+    },
+    {
+      icon: "message-text-outline",
+      label: t("act.sms"),
+      run: () => hasRealNumber && openURL(smsLink(callNumber)),
+      disabled: !hasRealNumber,
+    },
+    {
+      icon: "content-copy",
+      label: t("cd.copyNumber"),
+      run: () =>
+        hasRealNumber &&
+        copyText(row.phone).then((ok) => toast(ok ? t("cd.numberCopied") : t("act.couldntCopy"), ok ? "ok" : "error")),
+      disabled: !hasRealNumber,
+    },
+    ...(row.contact
+      ? [
+          {
+            icon: isFav ? "star-off-outline" : "star",
+            label: isFav ? t("cd.removedFromFavorites") : t("cd.addToFavorites"),
+            run: () => toggleFavorite(row.contact!.recordID),
+          } as const,
+          {
+            icon: "account-circle-outline",
+            label: t("cd.callHistory"),
+            run: () => {
+              onClose();
+              useUI.getState().open({ type: "contact", recordID: row.contact!.recordID, initialSeg: "info" });
+            },
+          } as const,
+        ]
+      : [
+          {
+            icon: "account-plus-outline",
+            label: t("act.newContact"),
+            run: async () => {
+              const p = row.phone;
+              onClose();
+              const saved = await openNewContactForm({ phone: p });
+              if (saved) toast(t("ce.contactSaved"), "ok");
+            },
+          } as const,
+        ]),
+    ...(onDelete
+      ? [
+          {
+            icon: "trash-can-outline",
+            label: t("cd.deleteLog"),
+            color: C.red,
+            run: () => {
               onDelete();
               onClose();
               toast(t("cd.logDeleted"), "ok");
+            },
+          } as const,
+        ]
+      : []),
+  ];
+
+  const title = row.contact
+    ? row.contact.displayName || row.contact.givenName || t("misc.contact")
+    : hasRealNumber
+      ? prettyPhone(row.phone, countryCode)
+      : t("cl.unknownNumber");
+
+  return (
+    <BottomSheet title={title} onClose={onClose}>
+      <Text style={{ fontSize: F.small, color: C.sub, marginTop: 2, marginBottom: 4 }}>
+        {fd(row.at)} · {ft(row.at)}
+        {row.duration > 0 ? ` · ${durationStr(row.duration)}` : ""}
+      </Text>
+      <View style={{ gap: 4, marginTop: 12, paddingBottom: 8 }}>
+        {items.map((it) => (
+          <Pressable
+            key={it.label}
+            disabled={it.disabled}
+            android_ripple={{ color: "rgba(128,128,128,0.12)" }}
+            onPress={() => {
+              onClose();
+              setTimeout(it.run, 180);
             }}
-          />
-        )}
+            style={({ pressed }) => [
+              rowStyles.item,
+              { backgroundColor: pressed ? C.chip : "transparent", opacity: it.disabled ? 0.4 : 1 },
+            ]}
+          >
+            <Icon name={it.icon} size={21} color={it.color || C.sub} />
+            <Text style={{ fontSize: F.body, color: it.color || C.ink, fontWeight: "600", flexShrink: 1 }} numberOfLines={1}>
+              {it.label}
+            </Text>
+          </Pressable>
+        ))}
       </View>
     </BottomSheet>
   );
 };
+
+const rowStyles = StyleSheet.create({
+  item: { flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 10, paddingVertical: 13, borderRadius: 12, minHeight: 52 },
+});
 
 const styles = StyleSheet.create({
   dayWrap: { backgroundColor: "transparent", paddingBottom: 2 },

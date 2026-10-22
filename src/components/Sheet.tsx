@@ -23,16 +23,19 @@ import { useApp } from "../lib/store";
 import { useT } from "../i18n";
 import { F, useThemeColors } from "../theme";
 
-/** Full-screen overlay sheet — slide-up, header with back chevron. */
+/** Full-screen overlay sheet — slide-up, header with back chevron.
+    `headerLeft` (small avatar) + title + subtitle + `headerRight` actions
+    form a compact navigation-bar-style header. */
 export const Sheet: React.FC<{
   title: string;
   subtitle?: string;
   onBack: () => void;
+  headerLeft?: React.ReactNode;
   headerRight?: React.ReactNode;
   footer?: React.ReactNode;
   children: React.ReactNode;
   scroll?: boolean;
-}> = ({ title, subtitle, onBack, headerRight, footer, children, scroll = true }) => {
+}> = ({ title, subtitle, onBack, headerLeft, headerRight, footer, children, scroll = true }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
   const t = useT();
   const insets = useSafeAreaInsets();
@@ -51,8 +54,9 @@ export const Sheet: React.FC<{
             >
               <Icon name="chevron-left" size={26} color={C.ink} />
             </Pressable>
-            <View style={{ flex: 1, alignItems: "center" }}>
-              <Text style={{ fontSize: F.h2, fontWeight: "800", color: C.ink }} numberOfLines={1}>
+            {headerLeft}
+            <View style={{ flex: 1, alignItems: "center", minWidth: 0 }}>
+              <Text style={{ fontSize: F.h2, fontWeight: "800", color: C.ink }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                 {title}
               </Text>
               {!!subtitle && (
@@ -61,7 +65,7 @@ export const Sheet: React.FC<{
                 </Text>
               )}
             </View>
-            <View style={{ minWidth: 34, alignItems: "flex-end" }}>{headerRight}</View>
+            <View style={{ alignItems: "flex-end" }}>{headerRight}</View>
           </View>
           <View style={{ flex: 1 }}>
             {scroll ? (

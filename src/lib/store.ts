@@ -36,6 +36,7 @@ import type {
   Payment,
   Reminder,
   Settings,
+  SocialLink,
 } from "./types";
 import { scheduleReminderNotification, cancelReminderNotification } from "../native/notify";
 import { fetchSystemCalls, isPermissionDeniedError, type DeviceCall } from "../native/callLog";
@@ -69,6 +70,9 @@ interface AppState {
   setDeviceContacts: (list: DeviceContact[]) => void;
   toggleFavorite: (recordID: string) => void;
   setContactSpeedDial: (recordID: string, key: string | null) => void;
+  addSocial: (recordID: string, app: SocialLink["app"], handle: string) => void;
+  removeSocial: (recordID: string, socialId: ID) => void;
+  setPrimaryPhone: (recordID: string, number: string) => void;
 
   /* ledger */
   saveEntry: (e: Partial<LedgerEntry> & { id?: ID; ownerId: OwnerId }) => void;
@@ -236,6 +240,40 @@ export const useApp = create<AppState>((set, get) => ({
           ...contactX,
           { recordID, favorite: false, tags: [], speedDial: key ?? undefined, createdAt: now(), updatedAt: now() } as ContactX,
         ];
+    set({ contactX: next });
+    saveContactX(next);
+  },
+
+  /* socials — as many handles as the user wants, stored app-side */
+  addSocial: (recordID, app, handle) => {
+    const { contactX } = get();
+    const entry: SocialLink = { id: `soc-${Date.now()}-${Math.floor(Math.random() * 1e4)}`, app, handle: handle.trim() };
+    const existing = contactX.find((c) => c.recordID === recordID);
+    const next = existing
+      ? contactX.map((c) =>
+          c.recordID === recordID ? { ...c, socials: [...(c.socials ?? []), entry], updatedAt: now() } : c
+        )
+      : [...contactX, { recordID, favorite: false, tags: [], socials: [entry], createdAt: now(), updatedAt: now() } as ContactX];
+    set({ contactX: next });
+    saveContactX(next);
+  },
+
+  removeSocial: (recordID, socialId) => {
+    const { contactX } = get();
+    const next = contactX.map((c) =>
+      c.recordID === recordID ? { ...c, socials: (c.socials ?? []).filter((s) => s.id !== socialId), updatedAt: now() } : c
+    );
+    set({ contactX: next });
+    saveContactX(next);
+  },
+
+  /* the accurate number shown/dialed first for a contact */
+  setPrimaryPhone: (recordID, number) => {
+    const { contactX } = get();
+    const existing = contactX.find((c) => c.recordID === recordID);
+    const next = existing
+      ? contactX.map((c) => (c.recordID === recordID ? { ...c, primaryPhone: number, updatedAt: now() } : c))
+      : [...contactX, { recordID, favorite: false, tags: [], primaryPhone: number, createdAt: now(), updatedAt: now() } as ContactX];
     set({ contactX: next });
     saveContactX(next);
   },
@@ -1115,10 +1153,6 @@ export const contactByPhone = (phone: string): DeviceContact | undefined => {
   if (tail.length >= 7) {
     const hit = phoneIdxTail.get(tail);
     if (hit) return hit;
-  }
-  // last resort: one number is a suffix of the other (≥7 digits)
-  for (const [key, c] of phoneIdxFull) {
-    if (key.length >= 7 && (key.endsWith(d) || d.endsWith(key))) return c;
   }
   return undefined;
 };

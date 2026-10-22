@@ -125,8 +125,9 @@ export const GeneralScreen: React.FC = () => {
         </Card>
       )}
 
-      {/* segmented sections */}
+      {/* segmented sections — single-row side-scroll, compact */}
       <Segmented
+        scroll
         value={seg}
         onChange={(k) => setSeg(k as Seg)}
         options={[

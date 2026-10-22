@@ -49,6 +49,13 @@ export interface DeviceContact {
   hasPhoto: boolean;
 }
 
+/** A social-media handle attached app-side to a device contact. */
+export interface SocialLink {
+  id: ID;
+  app: "telegram" | "whatsapp" | "signal" | "instagram" | "x" | "other";
+  handle: string; // username, phone or URL
+}
+
 /** App-local extensions layered on top of a device contact. */
 export interface ContactX {
   recordID: string;
@@ -56,6 +63,8 @@ export interface ContactX {
   tags: string[];
   pinnedNote?: string;
   speedDial?: string; // '2'..'9'
+  socials?: SocialLink[]; // as many social links as the user wants
+  primaryPhone?: string; // the accurate number to display / dial first
   createdAt: number;
   updatedAt: number;
 }

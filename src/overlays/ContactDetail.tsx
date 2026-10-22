@@ -1,22 +1,29 @@
-/* ContactDetail — ledger-first contact sheet with quick actions and
-   segmented tabs (Ledger · Lists · Notes · Bank · Reminders · Info). */
+/* ContactDetail — compact navigation-bar header (avatar · name · accurate
+   number · star · ⋯), webapp 6×2 quick-action grid (12 tiles), horizontally
+   scrollable segmented tabs (Ledger · Lists · Notes · Bank · Reminders ·
+   Info), and a single vertical ScrollView so the whole top area scrolls.
+   The Info tab carries phones (per-number options), emails, UNLIMITED
+   socials (add as many as you want), addresses, birthday, work, notes and
+   the per-contact CALL HISTORY. Every button works: Telegram opens a saved
+   handle or offers to add one, More shares/copies/dials/edits. */
 
-import React, { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useMemo, useState } from "react";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useUI, type Overlay } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { ownerFullBalance, openListsPending } from "../lib/calc";
-import type { DeviceContact } from "../lib/types";
-import { displayName, fd, money, prettyPhone } from "../lib/utils";
+import type { DeviceContact, SocialLink } from "../lib/types";
+import { displayName, fd, ft, durationStr, money, normalizePhone, prettyPhone, copyText } from "../lib/utils";
 import { contactOwnerId } from "../lib/types";
 import { placeCall } from "../native/calls";
 import { openExistingContactEditor } from "../native/deviceContacts";
-import { openURL, smsLink, tgLink, waLink, reminderTemplates, fillTemplate } from "../lib/share";
+import { openURL, smsLink, tgLink, waLink, reminderTemplates, fillTemplate, socialUrl, mailtoLink, primaryPhone } from "../lib/share";
+import { shareContactVcard } from "../lib/exporters";
 import { F, useThemeColors } from "../theme";
-import { Avatar, Btn, Card, Money, Segmented, toast } from "../components/kit";
-import { Sheet } from "../components/Sheet";
+import { Avatar, Btn, Card, Chip, Field, Money, Segmented, toast } from "../components/kit";
+import { Sheet, BottomSheet } from "../components/Sheet";
 import { LedgerSection } from "../sections/LedgerSection";
 import { ListsSection } from "../sections/ListsSection";
 import { NotesSection } from "../sections/NotesSection";
@@ -26,24 +33,43 @@ import { NumberPicker } from "../components/ContactPicker";
 
 type Seg = "ledger" | "lists" | "notes" | "bank" | "reminders" | "info";
 
+const SOCIAL_APPS: { key: SocialLink["app"]; label: string; icon: string }[] = [
+  { key: "telegram", label: "Telegram", icon: "send" },
+  { key: "whatsapp", label: "WhatsApp", icon: "whatsapp" },
+  { key: "signal", label: "Signal", icon: "shield-half-full" },
+  { key: "instagram", label: "Instagram", icon: "instagram" },
+  { key: "x", label: "X", icon: "twitter" },
+  { key: "other", label: "Other", icon: "link-variant" },
+];
+
+const socialIcon = (app: SocialLink["app"]): string =>
+  SOCIAL_APPS.find((a) => a.key === app)?.icon ?? "link-variant";
+
 export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "contact" }> }> = ({ params }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
   const t = useT();
   const pop = useUI((s) => s.pop);
-  const open = useUI((s) => s.open);
   const contact = useApp((s) => s.deviceContacts.find((c) => c.recordID === params.recordID));
   const entries = useApp((s) => s.entries);
   const lists = useApp((s) => s.lists);
+  const contactX = useApp((s) => s.contactX);
   const countryCode = useApp((s) => s.settings.countryCode);
   const logMessage = useApp((s) => s.logMessage);
-  const [seg, setSeg] = useState<Seg>("ledger");
+  const [seg, setSeg] = useState<Seg>(params.initialSeg ?? "ledger");
   const [numPicker, setNumPicker] = useState<{ action: "call" | "sms" | "whatsapp" } | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [socialSheet, setSocialSheet] = useState<{ app: SocialLink["app"] } | null>(null);
+  const [phoneSheet, setPhoneSheet] = useState<string | null>(null);
 
   const ownerId = contact ? contactOwnerId(contact.recordID) : null;
+  const xEntry = contactX.find((x) => x.recordID === params.recordID);
+  const socials = xEntry?.socials ?? [];
+  const isFav = !!xEntry?.favorite;
   const balance = ownerId ? ownerFullBalance(entries, lists, ownerId) : 0;
   const pendingLists = ownerId ? openListsPending(lists, ownerId) : 0;
-  const phone = contact?.phones[0]?.number;
+  const phone = contact ? primaryPhone(contact) : undefined;
   const email = contact?.emails[0]?.address;
+  const tgSocial = socials.find((s) => s.app === "telegram");
 
   if (!contact) {
     return (
@@ -53,12 +79,14 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
     );
   }
 
+  /* ---------- multi-number routing ---------- */
   const runAction = (action: "call" | "sms" | "whatsapp") => {
-    if (contact!.phones.length > 1) {
+    const unique = dedupePhones(contact!.phones, countryCode);
+    if (unique.length > 1) {
       setNumPicker({ action });
       return;
     }
-    fireAction(action, contact!.phones[0]?.number);
+    fireAction(action, unique[0]?.number);
   };
 
   const fireAction = (action: "call" | "sms" | "whatsapp", number?: string) => {
@@ -84,35 +112,81 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
     setNumPicker(null);
   };
 
-  const quickActions = [
+  /* ---------- Telegram: saved handle, or offer to add one ---------- */
+  const fireTelegram = () => {
+    if (tgSocial) {
+      openURL(tgLink(tgSocial.handle));
+      return;
+    }
+    setSocialSheet({ app: "telegram" });
+  };
+
+  /* ---------- quick actions — the webapp 6×2 grid ---------- */
+  const quickActions: { icon: string; label: string; run: () => void; disabled?: boolean }[] = [
     { icon: "phone", label: t("act.call"), run: () => runAction("call"), disabled: !phone },
     { icon: "message-text-outline", label: t("act.sms"), run: () => runAction("sms"), disabled: !phone },
     { icon: "whatsapp", label: t("act.whatsapp"), run: () => runAction("whatsapp"), disabled: !phone },
-    { icon: "send-circle-outline", label: t("act.telegram"), run: () => phone && openURL(tgLink(`+${phone.replace(/\D/g, "")}`)), disabled: !phone },
-    { icon: "email-outline", label: t("act.email"), run: () => email && openURL(`mailto:${email}`), disabled: !email },
-    { icon: "book-outline", label: t("tab.ledger"), run: () => setSeg("ledger"), disabled: false },
+    { icon: "send", label: t("act.telegram"), run: fireTelegram },
+    { icon: "email-outline", label: t("act.email"), run: () => email && openURL(mailtoLink(email)), disabled: !email },
+    { icon: "book-outline", label: t("tab.ledger"), run: () => setSeg("ledger") },
+    { icon: "bank-outline", label: t("tab.bank"), run: () => setSeg("bank") },
+    { icon: "format-list-checks", label: t("tab.lists"), run: () => setSeg("lists") },
+    { icon: "note-text-outline", label: t("tab.notes"), run: () => setSeg("notes") },
+    { icon: "bell-outline", label: t("tab.reminders"), run: () => setSeg("reminders") },
+    { icon: "information-outline", label: t("tab.info"), run: () => setSeg("info") },
+    { icon: "dots-horizontal", label: t("act.more"), run: () => setMoreOpen(true) },
   ];
+
+  const toggleFav = () => {
+    useApp.getState().toggleFavorite(contact.recordID);
+    toast(isFav ? t("cd.removedFromFavorites") : t("cd.addToFavorites"), "ok");
+  };
+
+  const copyNumber = () =>
+    phone &&
+    copyText(phone).then((ok) => toast(ok ? t("cd.numberCopied") : t("act.couldntCopy"), ok ? "ok" : "error"));
+
+  const editContact = async () => {
+    const ok = await openExistingContactEditor(contact.recordID);
+    if (!ok) toast(t("act.edit") + " ✕", "error");
+  };
 
   return (
     <Sheet
       title={displayName(contact)}
-      subtitle={contact.company || undefined}
+      subtitle={phone ? prettyPhone(phone, countryCode) : contact.company || t("cd.noPhone")}
       onBack={pop}
+      headerLeft={<Avatar contact={contact} size={34} />}
+      headerRight={
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Pressable
+            onPress={toggleFav}
+            hitSlop={6}
+            accessibilityLabel={isFav ? t("cd.removeFavorite") : t("cd.addFavorite")}
+            style={{ width: 34, height: 38, alignItems: "center", justifyContent: "center" }}
+          >
+            <Icon name={isFav ? "star" : "star-outline"} size={20} color={isFav ? "#b97d10" : C.sub} />
+          </Pressable>
+          <Pressable
+            onPress={() => setMoreOpen(true)}
+            hitSlop={6}
+            accessibilityLabel={t("cd.moreActions")}
+            style={{ width: 30, height: 38, alignItems: "center", justifyContent: "center" }}
+          >
+            <Icon name="dots-vertical" size={20} color={C.sub} />
+          </Pressable>
+        </View>
+      }
       scroll={false}
     >
-      {/* hero */}
-      <View style={{ alignItems: "center", paddingTop: 8, paddingBottom: 14 }}>
-        <Avatar contact={contact} size={86} />
-        <Text style={{ fontSize: F.title, fontWeight: "800", color: C.ink, marginTop: 8, textAlign: "center" }}>
-          {displayName(contact)}
-        </Text>
-        {!!(contact.company || contact.jobTitle) && (
-          <Text style={{ fontSize: F.small, color: C.sub, marginTop: 2 }}>
-            {[contact.company, contact.jobTitle].filter(Boolean).join(" · ")}
-          </Text>
-        )}
-        <View style={{ alignItems: "center", marginTop: 8 }}>
-          <Money value={balance} signed colorize size={22} weight="800" />
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 40 }}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* compact hero — balance only (name/number live in the navbar) */}
+        <View style={{ alignItems: "center", paddingBottom: 12 }}>
+          <Money value={balance} signed colorize size={20} weight="800" />
           <Text style={{ fontSize: F.tiny, color: C.sub, marginTop: 2 }}>
             {balance > 0.005 ? t("cd.theyOweYou") : balance < -0.005 ? t("cd.youOweThem") : t("cd.settledUp")}
           </Text>
@@ -122,32 +196,41 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
             </Text>
           )}
         </View>
-      </View>
 
-      {/* quick actions */}
-      <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8, marginBottom: 14 }}>
-        {quickActions.map((a) => (
-          <Pressable
-            key={a.label}
-            disabled={a.disabled}
-            onPress={a.run}
-            android_ripple={{ color: "rgba(128,128,128,0.16)", borderless: true, radius: 40 }}
-            style={({ pressed }) => [
-              cdStyles.quick,
-              { backgroundColor: pressed ? C.brandSoft : C.card, borderColor: C.line, opacity: a.disabled ? 0.4 : 1 },
-            ]}
-          >
-            <Icon name={a.icon} size={21} color={a.disabled ? C.faint : C.brand} />
-            <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "700" }} numberOfLines={1}>
-              {a.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+        {/* quick actions — 6 per row × 2 rows, compact (webapp grid) */}
+        <View style={{ gap: 6, marginBottom: 14 }}>
+          {[0, 1].map((row) => (
+            <View key={row} style={{ flexDirection: "row", gap: 6 }}>
+              {quickActions.slice(row * 6, row * 6 + 6).map((a) => (
+                <Pressable
+                  key={a.label}
+                  disabled={a.disabled}
+                  onPress={a.run}
+                  android_ripple={{ color: "rgba(128,128,128,0.16)", borderless: true, radius: 40 }}
+                  style={({ pressed }) => [
+                    cdStyles.tile,
+                    { backgroundColor: pressed ? C.brandSoft : C.card, borderColor: C.line, opacity: a.disabled ? 0.4 : 1 },
+                  ]}
+                  accessibilityLabel={a.label}
+                >
+                  <Icon name={a.icon} size={19} color={a.disabled ? C.faint : C.brand} />
+                  <Text
+                    style={{ fontSize: F.tiny, color: C.sub, fontWeight: "700", textAlign: "center" }}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.6}
+                  >
+                    {a.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ))}
+        </View>
 
-      {/* segmented */}
-      <View style={{ marginBottom: 12 }}>
+        {/* segmented tabs — single-row side-scroll, compact */}
         <Segmented
+          scroll
           value={seg}
           onChange={(k) => setSeg(k as Seg)}
           options={[
@@ -159,18 +242,26 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
             { key: "info", label: t("tab.info") },
           ]}
         />
-      </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 30 }} keyboardShouldPersistTaps="handled">
-        {seg === "ledger" && ownerId && <LedgerSection ownerId={ownerId} />}
-        {seg === "lists" && ownerId && <ListsSection ownerId={ownerId} />}
-        {seg === "notes" && ownerId && <NotesSection ownerId={ownerId} />}
-        {seg === "bank" && ownerId && <BankSection ownerId={ownerId} />}
-        {seg === "reminders" && ownerId && <RemindersSection ownerId={ownerId} />}
-        {seg === "info" && <ContactInfo contact={contact} />}
+        <View style={{ marginTop: 12 }}>
+          {seg === "ledger" && ownerId && <LedgerSection ownerId={ownerId} />}
+          {seg === "lists" && ownerId && <ListsSection ownerId={ownerId} />}
+          {seg === "notes" && ownerId && <NotesSection ownerId={ownerId} />}
+          {seg === "bank" && ownerId && <BankSection ownerId={ownerId} />}
+          {seg === "reminders" && ownerId && <RemindersSection ownerId={ownerId} />}
+          {seg === "info" && (
+            <ContactInfo
+              contact={contact}
+              socials={socials}
+              onPhoneOptions={(number) => setPhoneSheet(number)}
+              onAddSocial={(app) => setSocialSheet({ app })}
+              onRemoveSocial={(id) => useApp.getState().removeSocial(contact.recordID, id)}
+            />
+          )}
+        </View>
       </ScrollView>
 
-      {/* number picker */}
+      {/* number picker (deduped) */}
       {numPicker && (
         <NumberPicker
           recordID={contact.recordID}
@@ -178,66 +269,479 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
           onClose={() => setNumPicker(null)}
         />
       )}
+
+      {/* header ⋯ / More tile — one shared sheet */}
+      {moreOpen && (
+        <ContactMoreSheet
+          onClose={() => setMoreOpen(false)}
+          name={displayName(contact)}
+          phone={phone}
+          email={email}
+          onEdit={editContact}
+          onCopy={copyNumber}
+          onShareVCard={() => shareContactVcard(contact)}
+          onAddSocial={(app) => setSocialSheet({ app })}
+        />
+      )}
+
+      {/* add-social sheet — as many socials as the user wants */}
+      {socialSheet && (
+        <AddSocialSheet
+          initialApp={socialSheet.app}
+          onClose={() => setSocialSheet(null)}
+          onSave={(app, handle) => {
+            useApp.getState().addSocial(contact.recordID, app, handle);
+            toast(t("ce.addSocial") + " ✓", "ok");
+          }}
+        />
+      )}
+
+      {/* per-phone options */}
+      {phoneSheet && (
+        <PhoneOptionsSheet
+          number={phoneSheet}
+          countryCode={countryCode}
+          isPrimary={phone?.replace(/\D/g, "") === phoneSheet.replace(/\D/g, "")}
+          onClose={() => setPhoneSheet(null)}
+          onSetPrimary={() => {
+            useApp.getState().setPrimaryPhone(contact.recordID, phoneSheet);
+            toast(t("cd.primaryUpdated"), "ok");
+          }}
+        />
+      )}
     </Sheet>
+  );
+};
+
+/* ---------- dedupe helper — the same number stored in several formats
+             (09…, +251…, duplicated rows) appears ONCE ---------- */
+const dedupePhones = (
+  phones: { id: string; label: string; number: string }[],
+  countryCode: string
+): { id: string; label: string; number: string }[] => {
+  const seen = new Set<string>();
+  const out: { id: string; label: string; number: string }[] = [];
+  phones.forEach((p) => {
+    const key = normalizePhone(p.number, countryCode).replace(/\D/g, "") || p.number.replace(/\D/g, "");
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(p);
+  });
+  return out;
+};
+
+/* ---------------- more sheet (header ⋯ + More tile) ---------------- */
+
+const ContactMoreSheet: React.FC<{
+  onClose: () => void;
+  name: string;
+  phone?: string;
+  email?: string;
+  onEdit: () => void;
+  onCopy: () => void;
+  onShareVCard: () => void;
+  onAddSocial: (app: SocialLink["app"]) => void;
+}> = ({ onClose, name, phone, email, onEdit, onCopy, onShareVCard, onAddSocial }) => {
+  const C = useThemeColors(useApp((s) => s.settings.theme));
+  const t = useT();
+  const countryCode = useApp((s) => s.settings.countryCode);
+
+  const items: { icon: string; label: string; sub?: string; run: () => void; disabled?: boolean }[] = [
+    { icon: "pencil-outline", label: t("cd.editContact"), run: onEdit },
+    { icon: "share-variant-outline", label: t("cd.shareVcard"), run: onShareVCard },
+    {
+      icon: "email-outline",
+      label: t("act.email"),
+      sub: email,
+      run: () => email && openURL(mailtoLink(email)),
+      disabled: !email,
+    },
+    {
+      icon: "content-copy",
+      label: t("cd.copyNumber"),
+      sub: phone ? prettyPhone(phone, countryCode) : undefined,
+      run: onCopy,
+      disabled: !phone,
+    },
+    {
+      icon: "dialpad",
+      label: t("cd.openInDialer"),
+      run: () => phone && openURL(`tel:${encodeURIComponent(phone)}`),
+      disabled: !phone,
+    },
+    { icon: "link-plus", label: t("ce.addSocial"), run: () => onAddSocial("telegram") },
+  ];
+
+  return (
+    <BottomSheet title={name} onClose={onClose}>
+      <View style={{ gap: 4, paddingBottom: 10 }}>
+        {items.map((it) => (
+          <Pressable
+            key={it.label}
+            disabled={it.disabled}
+            android_ripple={{ color: "rgba(128,128,128,0.12)" }}
+            onPress={() => {
+              onClose();
+              setTimeout(it.run, 180);
+            }}
+            style={({ pressed }) => [
+              cdStyles.menuItem,
+              { backgroundColor: pressed ? C.chip : "transparent", opacity: it.disabled ? 0.4 : 1 },
+            ]}
+          >
+            <Icon name={it.icon} size={21} color={C.sub} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600" }} numberOfLines={1}>
+                {it.label}
+              </Text>
+              {!!it.sub && (
+                <Text style={{ fontSize: F.tiny, color: C.faint }} numberOfLines={1}>
+                  {it.sub}
+                </Text>
+              )}
+            </View>
+          </Pressable>
+        ))}
+      </View>
+    </BottomSheet>
+  );
+};
+
+/* ---------------- add-social sheet ---------------- */
+
+const AddSocialSheet: React.FC<{
+  initialApp?: SocialLink["app"];
+  onClose: () => void;
+  onSave: (app: SocialLink["app"], handle: string) => void;
+}> = ({ initialApp = "telegram", onClose, onSave }) => {
+  const t = useT();
+  const [app, setApp] = useState<SocialLink["app"]>(initialApp);
+  const [handle, setHandle] = useState("");
+
+  const save = () => {
+    const h = handle.trim();
+    if (!h) {
+      toast(t("ce.socialPlaceholder"), "error");
+      return;
+    }
+    onSave(app, h);
+    onClose();
+  };
+
+  return (
+    <BottomSheet title={t("ce.addSocial")} onClose={onClose}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 4 }} style={{ flexGrow: 0 }}>
+        {SOCIAL_APPS.map((a) => (
+          <Chip key={a.key} label={a.label} icon={a.icon} active={app === a.key} onPress={() => setApp(a.key)} />
+        ))}
+      </ScrollView>
+      <View style={{ marginTop: 10 }}>
+        <Field
+          label={t("cd.socials")}
+          value={handle}
+          onChangeText={setHandle}
+          placeholder={t("ce.socialPlaceholder")}
+          autoFocus
+          onSubmitEditing={save}
+        />
+      </View>
+      <Btn label={t("act.save")} icon="check" onPress={save} disabled={!handle.trim()} style={{ marginTop: 4, marginBottom: 6 }} />
+    </BottomSheet>
+  );
+};
+
+/* ---------------- per-phone options ---------------- */
+
+const PhoneOptionsSheet: React.FC<{
+  number: string;
+  countryCode: string;
+  isPrimary: boolean;
+  onClose: () => void;
+  onSetPrimary: () => void;
+}> = ({ number, countryCode, isPrimary, onClose, onSetPrimary }) => {
+  const C = useThemeColors(useApp((s) => s.settings.theme));
+  const t = useT();
+
+  const items: { icon: string; label: string; run: () => void }[] = [
+    { icon: "phone", label: t("act.call"), run: () => placeCall(number) },
+    { icon: "whatsapp", label: t("act.whatsapp"), run: () => openURL(waLink(number, undefined, countryCode)) },
+    { icon: "message-text-outline", label: t("act.sms"), run: () => openURL(smsLink(number)) },
+    {
+      icon: "content-copy",
+      label: t("cd.copyNumber"),
+      run: () => copyText(number).then((ok) => toast(ok ? t("cd.numberCopied") : t("act.couldntCopy"), ok ? "ok" : "error")),
+    },
+    ...(isPrimary
+      ? []
+      : [{ icon: "star-outline", label: t("ce.setPrimaryNumber"), run: onSetPrimary }]),
+  ];
+
+  return (
+    <BottomSheet title={prettyPhone(number, countryCode)} onClose={onClose}>
+      <View style={{ gap: 4, paddingBottom: 10 }}>
+        {items.map((it) => (
+          <Pressable
+            key={it.label}
+            android_ripple={{ color: "rgba(128,128,128,0.12)" }}
+            onPress={() => {
+              onClose();
+              setTimeout(it.run, 180);
+            }}
+            style={({ pressed }) => [cdStyles.menuItem, { backgroundColor: pressed ? C.chip : "transparent" }]}
+          >
+            <Icon name={it.icon} size={21} color={C.sub} />
+            <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600", flexShrink: 1 }} numberOfLines={1}>
+              {it.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </BottomSheet>
   );
 };
 
 /* ---------------- info tab ---------------- */
 
-const ContactInfo: React.FC<{ contact: DeviceContact }> = ({ contact }) => {
+const ContactInfo: React.FC<{
+  contact: DeviceContact;
+  socials: SocialLink[];
+  onPhoneOptions: (number: string) => void;
+  onAddSocial: (app: SocialLink["app"]) => void;
+  onRemoveSocial: (id: string) => void;
+}> = ({ contact, socials, onPhoneOptions, onAddSocial, onRemoveSocial }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
   const t = useT();
   const countryCode = useApp((s) => s.settings.countryCode);
+  const systemCalls = useApp((s) => s.systemCalls);
+  const appRecents = useApp((s) => s.recents);
+  const ownerId = contactOwnerId(contact.recordID);
+  const primary = primaryPhone(contact);
+
+  /* per-contact call history — Android: real system log matched on any of
+     the contact's numbers; iOS: the app's own call log for this owner. */
+  const history = useMemo(() => {
+    if (Platform.OS === "android") {
+      const numbers = new Set(
+        contact.phones.map((p) => normalizePhone(p.number, countryCode).replace(/\D/g, "")).filter((d) => d.length >= 5)
+      );
+      return systemCalls
+        .filter((c) => {
+          const d = normalizePhone(c.phoneNumber ?? "", countryCode).replace(/\D/g, "");
+          return d.length >= 5 && numbers.has(d);
+        })
+        .slice(0, 30);
+    }
+    return appRecents.filter((r) => r.ownerId === ownerId).slice(0, 30);
+  }, [contact.phones, countryCode, systemCalls, appRecents, ownerId]);
 
   return (
     <View>
-      {!!contact.birthday && <Card style={{ marginBottom: 10 }}><Text style={{ fontSize: F.small, color: C.sub }}>🎂 {t("cd.birthday")}: {contact.birthday}</Text></Card>}
-
-      <InfoBlock title={t("cd.phones")}>
-        {contact.phones.map((p) => (
-          <View key={p.id} style={cdStyles.infoRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600" }}>{prettyPhone(p.number, countryCode)}</Text>
-              <Text style={{ fontSize: F.tiny, color: C.sub }}>{t(`cd.${p.label}`) !== `cd.${p.label}` ? t(`cd.${p.label}`) : p.label}</Text>
-            </View>
-            <Pressable onPress={() => placeCall(p.number)} hitSlop={6} style={[cdStyles.miniBtn, { backgroundColor: C.brandSoft }]}>
-              <Icon name="phone" size={17} color={C.brand} />
-            </Pressable>
+      {/* call history */}
+      <InfoBlock title={t("cd.callHistory")}>
+        {history.length === 0 ? (
+          <Muted text={t("cd.noCallsHint")} />
+        ) : (
+          <View style={{ gap: 2 }}>
+            {history.map((h) => {
+              const at = "timestamp" in h ? h.timestamp : h.at;
+              const dir =
+                h.direction === "missed"
+                  ? { icon: "phone-missed", color: C.red, label: t("cd.missed") }
+                  : h.direction === "incoming"
+                    ? { icon: "phone-incoming", color: C.green, label: t("cd.incoming") }
+                    : { icon: "phone-outgoing", color: C.brand, label: t("cd.outgoing") };
+              return (
+                <View key={h.id} style={cdStyles.historyRow}>
+                  <Icon name={dir.icon} size={15} color={dir.color} />
+                  <Text style={{ flex: 1, fontSize: F.tiny, color: C.sub }}>
+                    {dir.label} · {fd(at)} · {ft(at)}
+                    {h.duration > 0 ? ` · ${durationStr(h.duration)}` : ""}
+                  </Text>
+                </View>
+              );
+            })}
           </View>
-        ))}
+        )}
+      </InfoBlock>
+
+      {!!contact.birthday && (
+        <Card style={{ marginBottom: 10 }}>
+          <Text style={{ fontSize: F.small, color: C.sub }}>🎂 {t("cd.birthday")}: {contact.birthday}</Text>
+        </Card>
+      )}
+
+      {/* phones */}
+      <InfoBlock title={t("cd.phones")}>
+        {dedupePhones(contact.phones, countryCode).map((p) => {
+          const isPrimary = primary?.replace(/\D/g, "") === p.number.replace(/\D/g, "");
+          return (
+            <View key={p.id || p.number} style={cdStyles.infoRow}>
+              <Pressable style={{ flex: 1, minWidth: 0 }} onPress={() => onPhoneOptions(p.number)}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <View style={[cdStyles.labelChip, { backgroundColor: C.chip }]}>
+                    <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "700" }}>{p.label}</Text>
+                  </View>
+                  <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600", flexShrink: 1 }} numberOfLines={1}>
+                    {prettyPhone(p.number, countryCode)}
+                  </Text>
+                  {isPrimary && <Icon name="star" size={12} color="#b97d10" />}
+                  <Icon name="chevron-right" size={14} color={C.faint} />
+                </View>
+              </Pressable>
+              <Pressable
+                onPress={() =>
+                  copyText(p.number).then((ok) => toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error"))
+                }
+                hitSlop={6}
+                style={[cdStyles.miniBtn, { backgroundColor: C.brandSoft }]}
+                accessibilityLabel={`${t("act.copy")} ${p.number}`}
+              >
+                <Icon name="content-copy" size={15} color={C.brand} />
+              </Pressable>
+              <Pressable
+                onPress={() => placeCall(p.number)}
+                hitSlop={6}
+                style={[cdStyles.miniBtn, { backgroundColor: C.brandSoft }]}
+                accessibilityLabel={t("act.call")}
+              >
+                <Icon name="phone" size={15} color={C.brand} />
+              </Pressable>
+            </View>
+          );
+        })}
         {contact.phones.length === 0 && <Muted text={t("cd.noPhone")} />}
       </InfoBlock>
 
+      {/* emails */}
       <InfoBlock title={t("cd.emails")}>
         {contact.emails.map((e) => (
           <View key={e.id} style={cdStyles.infoRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600" }} numberOfLines={1}>{e.address}</Text>
-              <Text style={{ fontSize: F.tiny, color: C.sub }}>{e.label}</Text>
-            </View>
-            <Pressable onPress={() => openURL(`mailto:${e.address}`)} hitSlop={6} style={[cdStyles.miniBtn, { backgroundColor: C.brandSoft }]}>
-              <Icon name="email-outline" size={17} color={C.brand} />
+            <Pressable
+              style={{ flex: 1, minWidth: 0 }}
+              onPress={() =>
+                copyText(e.address).then((ok) => toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error"))
+              }
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <View style={[cdStyles.labelChip, { backgroundColor: C.chip }]}>
+                  <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "700" }}>{e.label}</Text>
+                </View>
+                <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600", flexShrink: 1 }} numberOfLines={1}>
+                  {e.address}
+                </Text>
+              </View>
+            </Pressable>
+            <Pressable
+              onPress={() => openURL(mailtoLink(e.address))}
+              hitSlop={6}
+              style={[cdStyles.miniBtn, { backgroundColor: C.brandSoft }]}
+              accessibilityLabel={`email ${e.address}`}
+            >
+              <Icon name="email-outline" size={15} color={C.brand} />
             </Pressable>
           </View>
         ))}
         {contact.emails.length === 0 && <Muted text={t("cd.noEmail")} />}
       </InfoBlock>
 
+      {/* socials — as many as the user wants */}
+      <InfoBlock title={t("cd.socials")}>
+        {socials.map((s) => {
+          const url = socialUrl(s);
+          return (
+            <View key={s.id} style={cdStyles.infoRow}>
+              <Pressable
+                style={{ flex: 1, minWidth: 0 }}
+                onPress={() => {
+                  if (url) openURL(url);
+                  else
+                    copyText(s.handle).then((ok) =>
+                      toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error")
+                    );
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <View style={[cdStyles.socialIcon, { backgroundColor: C.brandSoft }]}>
+                    <Icon name={socialIcon(s.app)} size={15} color={C.brand} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600" }} numberOfLines={1}>
+                      {s.handle}
+                    </Text>
+                    <Text style={{ fontSize: F.tiny, color: C.faint, textTransform: "uppercase", letterSpacing: 1 }}>
+                      {s.app}
+                    </Text>
+                  </View>
+                  <Icon name="chevron-right" size={14} color={C.faint} />
+                </View>
+              </Pressable>
+              <Pressable
+                onPress={() =>
+                  copyText(s.handle).then((ok) => toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error"))
+                }
+                hitSlop={6}
+                style={[cdStyles.miniBtn, { backgroundColor: C.brandSoft }]}
+                accessibilityLabel={`${t("act.copy")} ${s.app}`}
+              >
+                <Icon name="content-copy" size={15} color={C.brand} />
+              </Pressable>
+              <Pressable
+                onPress={() => onRemoveSocial(s.id)}
+                hitSlop={6}
+                style={[cdStyles.miniBtn, { backgroundColor: "rgba(214,69,69,0.12)" }]}
+                accessibilityLabel={t("ce.removeSocial")}
+              >
+                <Icon name="trash-can-outline" size={15} color={C.red} />
+              </Pressable>
+            </View>
+          );
+        })}
+        <Pressable
+          onPress={() => onAddSocial("telegram")}
+          style={[cdStyles.addSocialBtn, { borderColor: C.line, backgroundColor: C.cardAlt }]}
+          accessibilityLabel={t("ce.addSocial")}
+        >
+          <Icon name="plus" size={15} color={C.brand} />
+          <Text style={{ fontSize: F.small, color: C.brand, fontWeight: "700" }}>{t("ce.addSocial")}</Text>
+        </Pressable>
+      </InfoBlock>
+
+      {/* addresses */}
       {!!contact.addresses.length && (
         <InfoBlock title={t("cd.addresses")}>
           {contact.addresses.map((a) => (
-            <Text key={a.id} style={{ fontSize: F.small, color: C.ink, marginBottom: 4 }}>
-              {a.formatted} ({a.label})
-            </Text>
+            <Pressable
+              key={a.id}
+              onPress={() =>
+                copyText(a.formatted).then((ok) => toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error"))
+              }
+              style={{ marginBottom: 6 }}
+            >
+              <Text style={{ fontSize: F.small, color: C.ink }}>
+                {a.formatted} ({a.label})
+              </Text>
+            </Pressable>
           ))}
         </InfoBlock>
       )}
 
+      {/* work */}
+      {!!(contact.company || contact.jobTitle) && (
+        <InfoBlock title="Work">
+          <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600" }}>
+            {contact.company || "—"}
+          </Text>
+          {!!contact.jobTitle && <Text style={{ fontSize: F.tiny, color: C.sub }}>{contact.jobTitle}</Text>}
+        </InfoBlock>
+      )}
+
+      {/* notes */}
       {!!contact.note && (
         <InfoBlock title={t("cd.notesSection")}>
           <Text style={{ fontSize: F.small, color: C.sub, lineHeight: 20 }}>{contact.note}</Text>
         </InfoBlock>
       )}
+
       <Btn
         small
         label={t("act.edit")}
@@ -269,18 +773,33 @@ const InfoBlock: React.FC<{ title: string; children: React.ReactNode }> = ({ tit
 };
 
 const cdStyles = StyleSheet.create({
-  quick: {
+  tile: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: 4,
-    borderRadius: 16,
+    gap: 3,
+    borderRadius: 14,
     borderWidth: 1,
-    flexBasis: "30%",
-    flexGrow: 1,
-    maxWidth: 160,
-    paddingVertical: 10,
-    minHeight: 64,
+    paddingVertical: 8,
+    minHeight: 58,
+    minWidth: 0,
   },
+  menuItem: { flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 10, paddingVertical: 13, borderRadius: 12, minHeight: 52 },
   infoRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
   miniBtn: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+  labelChip: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  socialIcon: { width: 34, height: 34, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  historyRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 3, minHeight: 30 },
+  addSocialBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    paddingVertical: 10,
+    marginTop: 2,
+    minHeight: 44,
+  },
 });

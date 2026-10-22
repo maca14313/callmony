@@ -18,7 +18,7 @@ import { useApp } from "../lib/store";
 import { useUI, type Overlay } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { dueStatus } from "../lib/calc";
-import { displayName, ft, money, prettyPhone, vibrate } from "../lib/utils";
+import { displayName, ft, money, normalizePhone, prettyPhone, vibrate } from "../lib/utils";
 import { F, useThemeColors } from "../theme";
 import { Avatar, Btn, Card, EmptyState, IconBtn, Pill, confirm, toast } from "../components/kit";
 import { Sheet, BottomSheet } from "../components/Sheet";
@@ -40,12 +40,31 @@ export const SearchOverlay: React.FC = () => {
   const notes = useApp((s) => s.notes);
   const reminders = useApp((s) => s.reminders);
   const banks = useApp((s) => s.banks);
+  const countryCode = useApp((s) => s.settings.countryCode);
   const [q, setQ] = useState("");
 
   const ql = q.trim().toLowerCase();
+  const qDigits = ql.replace(/\D/g, "");
   const hitContacts = useMemo(
-    () => (ql.length >= 2 ? contacts.filter((c) => displayName(c).toLowerCase().includes(ql)).slice(0, 5) : []),
-    [ql, contacts]
+    () =>
+      ql.length >= 2
+        ? contacts
+            .filter((c) => {
+              if (displayName(c).toLowerCase().includes(ql)) return true;
+              /* dialer-style phone search — raw digits (09…) AND normalized
+                 (+251…) both match, same as the keypad */
+              if (qDigits.length >= 2) {
+                return c.phones.some((p) => {
+                  const raw = p.number.replace(/\D/g, "");
+                  const norm = normalizePhone(p.number, countryCode).replace(/\D/g, "");
+                  return raw.includes(qDigits) || norm.includes(qDigits);
+                });
+              }
+              return false;
+            })
+            .slice(0, 6)
+        : [],
+    [ql, qDigits, contacts, countryCode]
   );
   const hitEntries = useMemo(
     () =>

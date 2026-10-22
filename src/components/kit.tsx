@@ -6,6 +6,7 @@ import {
   Image,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -409,22 +410,31 @@ export const EmptyState: React.FC<{
   );
 };
 
+/* Segmented — compact tab strip. When `scroll` is set the options live in a
+   single-row horizontal ScrollView (webapp style: “Ledger · Lists · …”),
+   never wrapping and never pushing content off-screen. */
 export const Segmented: React.FC<{
   options: { key: string; label: string; count?: number }[];
   value: string;
   onChange: (key: string) => void;
   scroll?: boolean;
 }> = ({ options, value, onChange, scroll }) => {
-  const wrapStyle = scroll
-    ? { flexDirection: "row" as const }
-    : { flexDirection: "row" as const, flexWrap: "wrap" as const };
-  return (
-    <View style={[{ gap: 6 }, wrapStyle]}>
-      {options.map((o) => (
-        <Chip key={o.key} label={o.label} active={value === o.key} count={o.count} onPress={() => onChange(o.key)} />
-      ))}
-    </View>
-  );
+  const chips = options.map((o) => (
+    <Chip key={o.key} label={o.label} active={value === o.key} count={o.count} onPress={() => onChange(o.key)} />
+  ));
+  if (scroll) {
+    return (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 6, paddingRight: 16 }}
+        style={{ flexGrow: 0 }}
+      >
+        {chips}
+      </ScrollView>
+    );
+  }
+  return <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>{chips}</View>;
 };
 
 export const Field: React.FC<{
