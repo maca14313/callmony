@@ -203,29 +203,10 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
       >
-        {/* hero — 1:1 with the webapp: XL avatar · name + edit · company ·
-            BalancePill · label · open-lists note */}
-        <View style={{ alignItems: "center", paddingBottom: 14 }}>
-          <Avatar contact={contact} size={72} />
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 7, marginTop: 10 }}>
-            <Text style={{ fontSize: 22, fontWeight: "800", color: C.ink, letterSpacing: -0.3 }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65}>
-              {displayName(contact)}
-            </Text>
-            <Pressable
-              onPress={editContact}
-              hitSlop={8}
-              accessibilityLabel={t("cd.editContact")}
-              style={[cdStyles.heroEdit, { backgroundColor: C.cardAlt, borderColor: C.line }]}
-            >
-              <Icon name="pencil-outline" size={14} color={C.sub} />
-            </Pressable>
-          </View>
-          {!!contact.company && (
-            <Text style={{ fontSize: F.tiny, color: C.sub, marginTop: 2 }} numberOfLines={1}>
-              {contact.jobTitle ? `${contact.jobTitle} · ` : ""}
-              {contact.company}
-            </Text>
-          )}
+        {/* balance line — the ONLY hero remnant (user request): the name,
+            number, avatar, star and ⋯ live in the nav bar above; here it is
+            just the balance + owes status, compact and centered */}
+        <View style={cdStyles.balanceLine}>
           <View
             style={[
               cdStyles.balancePill,
@@ -233,17 +214,23 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
                 backgroundColor:
                   Math.abs(balance) < 0.005 ? C.cardAlt : balance > 0 ? "rgba(22,160,133,0.14)" : "rgba(214,69,69,0.12)",
                 borderColor: C.line,
+                marginTop: 0,
               },
             ]}
           >
-            <Money value={balance} signed colorize size={16} weight="800" />
+            <Icon
+              name={balance > 0.005 ? "arrow-bottom-left" : balance < -0.005 ? "arrow-top-right" : "scale-balance"}
+              size={13}
+              color={balance > 0.005 ? C.green : balance < -0.005 ? C.red : C.sub}
+            />
+            <Money value={balance} signed colorize size={15} weight="800" />
           </View>
-          <Text style={{ fontSize: F.tiny, color: C.sub, marginTop: 5, fontWeight: "500" }}>
+          <Text style={{ fontSize: F.small, color: C.sub, fontWeight: "600" }}>
             {balance > 0.005 ? t("cd.theyOweYou") : balance < -0.005 ? t("cd.youOweThem") : t("cd.settledUp")}
           </Text>
           {pendingLists > 0.005 && (
-            <Text style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>
-              {t("lg.openLists")}: <Money value={pendingLists} signed size={11} weight="600" />
+            <Text style={{ fontSize: 11, color: C.faint }}>
+              ({t("lg.openLists")}: <Money value={pendingLists} signed size={11} weight="600" />)
             </Text>
           )}
         </View>
@@ -896,8 +883,8 @@ const InfoBlock: React.FC<{ title: string; children: React.ReactNode }> = ({ tit
 };
 
 const cdStyles = StyleSheet.create({
-  heroEdit: { width: 30, height: 30, borderRadius: 11, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  balancePill: { marginTop: 10, borderRadius: 999, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 6 },
+  balanceLine: { flexDirection: "row", alignItems: "center", justifyContent: "center", flexWrap: "wrap", gap: 7, paddingBottom: 12, paddingTop: 2 },
+  balancePill: { borderRadius: 999, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 4, flexDirection: "row", alignItems: "center", gap: 5 },
   tile: {
     flex: 1,
     alignItems: "center",

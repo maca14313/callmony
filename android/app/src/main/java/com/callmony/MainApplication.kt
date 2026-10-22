@@ -34,6 +34,9 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    // v1.5.2 — capture native crashes to filesDir/last-crash.txt so the next
+    // open can SHOW the user what actually killed the app (invisible today).
+    CrashReporter.install(this)
     SoLoader.init(this, false)
     if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
       // If you opted-in for the New Architecture, we load the native entry point for this app.

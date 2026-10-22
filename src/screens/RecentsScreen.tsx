@@ -121,22 +121,6 @@ const CallCard: React.FC<RowProps> = memo(
                 >
                   {title}
                 </Text>
-                {/* credit status — same tinted pill as the Contacts rows */}
-                {balance !== 0 && (
-                  <View
-                    style={[
-                      styles.balancePill,
-                      { backgroundColor: balance > 0 ? "rgba(22,160,133,0.13)" : "rgba(214,69,69,0.11)" },
-                    ]}
-                  >
-                    <Icon
-                      name={balance > 0 ? "arrow-bottom-left" : "arrow-top-right"}
-                      size={11}
-                      color={balance > 0 ? C.green : C.red}
-                    />
-                    <Money value={balance} colorize signed size={12} />
-                  </View>
-                )}
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
                 <Icon name={meta.icon} size={13} color={meta.color} />
@@ -145,11 +129,35 @@ const CallCard: React.FC<RowProps> = memo(
                   {row.duration > 0 ? ` · ${durationStr(row.duration)}` : ""}
                 </Text>
               </View>
-              {/* the matched number — so the card always carries real info */}
-              {hasRealNumber && (
-                <Text style={{ fontSize: F.tiny, color: C.faint }} numberOfLines={1}>
-                  {prettyPhone(row.phone, countryCode)}
-                </Text>
+              {/* balance + owes-status — IN THE PLACE of the phone number line
+                  (user request): the pill rides right after the in/out text;
+                  the raw number only shows when there is no credit to report */}
+              {balance !== 0 ? (
+                <View
+                  style={[
+                    styles.balancePill,
+                    { backgroundColor: balance > 0 ? "rgba(22,160,133,0.13)" : "rgba(214,69,69,0.11)", alignSelf: "flex-start" },
+                  ]}
+                >
+                  <Icon
+                    name={balance > 0 ? "arrow-bottom-left" : "arrow-top-right"}
+                    size={11}
+                    color={balance > 0 ? C.green : C.red}
+                  />
+                  <Money value={balance} colorize signed size={12} />
+                  <Text
+                    style={{ fontSize: 11, fontWeight: "700", color: balance > 0 ? C.green : C.red }}
+                    numberOfLines={1}
+                  >
+                    · {balance > 0 ? t("cd.theyOweYou") : t("cd.youOweThem")}
+                  </Text>
+                </View>
+              ) : (
+                hasRealNumber && (
+                  <Text style={{ fontSize: F.tiny, color: C.faint }} numberOfLines={1}>
+                    {prettyPhone(row.phone, countryCode)}
+                  </Text>
+                )
               )}
             </View>
             <View style={{ alignItems: "flex-end", gap: 4 }}>
@@ -408,35 +416,36 @@ export const RecentsScreen: React.FC = () => {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* credit summary strip — SAME as the Contacts tab (user request) */}
+      {/* credit summary strip — COMPACT (user request): three tight cards
+          that stay informative without eating the first screen */}
       {(owedToYou > 0.005 || youOwe > 0.005) && (
         <View style={[styles.statsRow, { borderColor: C.line }]}>
           <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
               <View style={[styles.statDot, { backgroundColor: "rgba(22,160,133,0.18)" }]}>
-                <Icon name="arrow-bottom-left" size={12} color={C.green} />
+                <Icon name="arrow-bottom-left" size={11} color={C.green} />
               </View>
-              <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("cd.toReceive")}</Text>
+              <Text style={{ fontSize: 11, color: C.sub, fontWeight: "600" }} numberOfLines={1}>{t("cd.toReceive")}</Text>
             </View>
-            <Money value={Math.abs(owedToYou)} colorize size={17} weight="800" />
+            <Money value={Math.abs(owedToYou)} colorize size={14} weight="800" />
           </View>
           <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
               <View style={[styles.statDot, { backgroundColor: "rgba(214,69,69,0.14)" }]}>
-                <Icon name="arrow-top-right" size={12} color={C.red} />
+                <Icon name="arrow-top-right" size={11} color={C.red} />
               </View>
-              <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("cd.toPay")}</Text>
+              <Text style={{ fontSize: 11, color: C.sub, fontWeight: "600" }} numberOfLines={1}>{t("cd.toPay")}</Text>
             </View>
-            <Money value={-Math.abs(youOwe)} colorize size={17} weight="800" />
+            <Money value={-Math.abs(youOwe)} colorize size={14} weight="800" />
           </View>
           <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
               <View style={[styles.statDot, { backgroundColor: C.brandSoft }]}>
-                <Icon name="scale-balance" size={12} color={C.brand} />
+                <Icon name="scale-balance" size={11} color={C.brand} />
               </View>
-              <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("lg.net")}</Text>
+              <Text style={{ fontSize: 11, color: C.sub, fontWeight: "600" }} numberOfLines={1}>{t("lg.net")}</Text>
             </View>
-            <Money value={Math.abs(owedToYou) - Math.abs(youOwe)} colorize size={17} weight="800" />
+            <Money value={Math.abs(owedToYou) - Math.abs(youOwe)} colorize size={14} weight="800" />
           </View>
         </View>
       )}
@@ -467,24 +476,33 @@ export const RecentsScreen: React.FC = () => {
         </View>
       )}
 
-      {/* direction + credit chips — single-row horizontal scroll (webapp style) */}
+      {/* filters — TWO COMPACT ROWS (user request): direction chips on their
+          row, credit chips (They owe / You owe) on a row of their own */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, gap: 6, paddingTop: 10, paddingBottom: 8, alignItems: "center" }}
+        contentContainerStyle={{ paddingHorizontal: 16, gap: 5, paddingTop: 8, paddingBottom: 3, alignItems: "center" }}
         style={{ flexGrow: 0 }}
       >
-        <Chip label={t("act.all")} active={filter === "all"} onPress={() => setFilter("all")} />
+        <Chip compact label={t("act.all")} active={filter === "all"} onPress={() => setFilter("all")} />
         <Chip
+          compact
           label={missedCount > 0 ? `${t("cd.missed")} · ${missedCount}` : t("cd.missed")}
           danger={!filter.startsWith("missed") && missedCount > 0}
           active={filter === "missed"}
           onPress={() => setFilter("missed")}
         />
-        <Chip label={t("cd.incoming")} active={filter === "incoming"} onPress={() => setFilter("incoming")} />
-        <Chip label={t("cd.outgoing")} active={filter === "outgoing"} onPress={() => setFilter("outgoing")} />
-        <Chip label={t("cd.theyOweYou")} active={filter === "theyOwe"} onPress={() => setFilter("theyOwe")} />
-        <Chip label={t("cd.youOweThem")} active={filter === "youOwe"} onPress={() => setFilter("youOwe")} />
+        <Chip compact label={t("cd.incoming")} active={filter === "incoming"} onPress={() => setFilter("incoming")} />
+        <Chip compact label={t("cd.outgoing")} active={filter === "outgoing"} onPress={() => setFilter("outgoing")} />
+      </ScrollView>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16, gap: 5, paddingTop: 1, paddingBottom: 6, alignItems: "center" }}
+        style={{ flexGrow: 0 }}
+      >
+        <Chip compact icon="arrow-bottom-left" label={t("cd.theyOweYou")} active={filter === "theyOwe"} onPress={() => setFilter("theyOwe")} />
+        <Chip compact icon="arrow-top-right" label={t("cd.youOweThem")} active={filter === "youOwe"} onPress={() => setFilter("youOwe")} />
       </ScrollView>
 
       {/* virtualized call list with infinite scroll */}
@@ -676,9 +694,9 @@ const rowStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  statsRow: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth },
-  statCard: { flex: 1, borderRadius: 16, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 9, gap: 3, minWidth: 0 },
-  statDot: { width: 20, height: 20, borderRadius: 7, alignItems: "center", justifyContent: "center" },
+  statsRow: { flexDirection: "row", gap: 6, paddingHorizontal: 16, paddingTop: 6, borderTopWidth: StyleSheet.hairlineWidth },
+  statCard: { flex: 1, borderRadius: 12, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 5, gap: 2, minWidth: 0 },
+  statDot: { width: 16, height: 16, borderRadius: 6, alignItems: "center", justifyContent: "center" },
   dayWrap: { backgroundColor: "transparent", paddingBottom: 2 },
   dayChip: { alignSelf: "flex-start", borderRadius: 8, paddingHorizontal: 9, paddingVertical: 2, marginTop: 8 },
   dayHeader: { fontSize: F.small, fontWeight: "800" },

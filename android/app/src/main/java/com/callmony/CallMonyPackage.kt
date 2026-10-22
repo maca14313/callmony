@@ -10,11 +10,17 @@ import com.facebook.react.uimanager.ViewManager
  *  - ImmediateCallModule — real immediate calls via the default phone app
  *  - SysCallLogModule    — the device's real system call log
  *  - EmailModule         — email composer with backup attachments
+ *  - DiagModule          — crash reports + boot breadcrumbs (v1.5.2)
  */
 class CallMonyPackage : ReactPackage {
 
     override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> =
-        listOf(ImmediateCallModule(reactContext), SysCallLogModule(reactContext), EmailModule(reactContext))
+        listOf(
+            ImmediateCallModule(reactContext),
+            SysCallLogModule(reactContext),
+            EmailModule(reactContext),
+            DiagModule(reactContext),
+        )
 
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =
         emptyList()

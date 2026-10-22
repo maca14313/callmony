@@ -111,28 +111,33 @@ const ContactRowBody: React.FC<{
           {isFav && <Icon name="star" size={13} color="#b97d10" />}
           {isBlocked && <Pill label={t("cd.blocked")} tone="red" />}
         </View>
-        <Text style={{ fontSize: F.small, color: C.sub }} numberOfLines={1}>
-          {contact.phones[0]
-            ? prettyPhone(contact.phones[0].number, countryCode)
-            : contact.emails[0]?.address || contact.company || t("cd.noPhone")}
-        </Text>
+        {/* balance + owes-status — IN THE PLACE of the phone-number line
+            (user request); the number only shows when there is no credit */}
+        {balance !== 0 ? (
+          <View
+            style={[
+              styles.balancePill,
+              { backgroundColor: balance > 0 ? "rgba(22,160,133,0.13)" : "rgba(214,69,69,0.11)", alignSelf: "flex-start" },
+            ]}
+          >
+            <Icon
+              name={balance > 0 ? "arrow-bottom-left" : "arrow-top-right"}
+              size={11}
+              color={balance > 0 ? C.green : C.red}
+            />
+            <Money value={balance} colorize signed size={12} />
+            <Text style={{ fontSize: 11, fontWeight: "700", color: balance > 0 ? C.green : C.red }} numberOfLines={1}>
+              · {balance > 0 ? t("cd.theyOweYou") : t("cd.youOweThem")}
+            </Text>
+          </View>
+        ) : (
+          <Text style={{ fontSize: F.small, color: C.sub }} numberOfLines={1}>
+            {contact.phones[0]
+              ? prettyPhone(contact.phones[0].number, countryCode)
+              : contact.emails[0]?.address || contact.company || t("cd.noPhone")}
+          </Text>
+        )}
       </View>
-      {/* credit status — tinted pill with a direction arrow, not bare text */}
-      {balance !== 0 && (
-        <View
-          style={[
-            styles.balancePill,
-            { backgroundColor: balance > 0 ? "rgba(22,160,133,0.13)" : "rgba(214,69,69,0.11)" },
-          ]}
-        >
-          <Icon
-            name={balance > 0 ? "arrow-bottom-left" : "arrow-top-right"}
-            size={12}
-            color={balance > 0 ? C.green : C.red}
-          />
-          <Money value={balance} colorize signed size={14} />
-        </View>
-      )}
       <Icon name="chevron-right" size={20} color={C.faint} />
     </View>
   );

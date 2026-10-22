@@ -313,28 +313,35 @@ export const Chip: React.FC<{
   icon?: string;
   danger?: boolean;
   count?: number;
-}> = ({ label, active, onPress, icon, danger, count }) => {
+  /** v1.5.2 — space-saving chip (Recents filters): tighter padding + font */
+  compact?: boolean;
+}> = ({ label, active, onPress, icon, danger, count, compact }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
   const body = (
     <View
       style={[
         styles.chip,
+        compact ? styles.chipCompact : null,
         {
           backgroundColor: active ? C.brand : C.chip,
           borderColor: active ? C.brand : C.line,
         },
       ]}
     >
-      {!!icon && <Icon name={icon} size={15} color={active ? C.onBrand : danger ? C.red : C.sub} />}
+      {!!icon && <Icon name={icon} size={compact ? 13 : 15} color={active ? C.onBrand : danger ? C.red : C.sub} />}
       <Text
         numberOfLines={1}
-        style={{ fontSize: 14, fontWeight: active ? "700" : "500", color: active ? C.onBrand : danger ? C.red : C.ink }}
+        style={{
+          fontSize: compact ? 12 : 14,
+          fontWeight: active ? "700" : "500",
+          color: active ? C.onBrand : danger ? C.red : C.ink,
+        }}
       >
         {label}
       </Text>
       {!!count && count > 0 && (
-        <View style={[styles.chipCount, { backgroundColor: active ? C.onBrand : danger ? C.red : C.brand }]}>
-          <Text style={{ fontSize: 13, fontWeight: "700", color: active ? C.brand : "#fff" }}>{count > 9 ? "9+" : count}</Text>
+        <View style={[styles.chipCount, compact ? styles.chipCountCompact : null, { backgroundColor: active ? C.onBrand : danger ? C.red : C.brand }]}>
+          <Text style={{ fontSize: compact ? 11 : 13, fontWeight: "700", color: active ? C.brand : "#fff" }}>{count > 9 ? "9+" : count}</Text>
         </View>
       )}
     </View>
@@ -562,6 +569,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 5,
   },
+  chipCompact: { paddingHorizontal: 9, paddingVertical: 4, minHeight: 28, gap: 4 },
+  chipCountCompact: { minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 4 },
   card: { borderRadius: 18, borderWidth: 1, padding: 16 },
   sectionHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10, marginTop: 4 },
   empty: { alignItems: "center", paddingVertical: 36, paddingHorizontal: 28 },

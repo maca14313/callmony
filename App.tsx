@@ -42,6 +42,8 @@ import { SearchOverlay, SpeedDialOverlay, MergeOverlay, AboutOverlay, AlarmDialo
 import { loadCachedContacts } from "./src/native/deviceContacts";
 import { setupCallKeep } from "./src/native/callkeep";
 import { maybeAutoSync } from "./src/lib/backup";
+import { bootMark } from "./src/native/diag";
+import { isSafeMode } from "./src/boot/crash-firewall";
 
 const App: React.FC = () => {
   const hydrated = useApp((s) => s.hydrated);
@@ -49,6 +51,7 @@ const App: React.FC = () => {
   /* BOOT: hydrate the persisted store. A 5s bail-out guarantees the app can
      never get stuck on the splash screen, even if storage misbehaves. */
   useEffect(() => {
+    bootMark("app-mounted");
     let done = false;
     const finish = () => {
       if (!done) {
@@ -60,6 +63,7 @@ const App: React.FC = () => {
     useApp
       .getState()
       .hydrate()
+      .then(() => bootMark("hydrated"))
       .catch(() => undefined)
       .finally(finish);
     return () => clearTimeout(bail);
@@ -181,7 +185,16 @@ const Shell: React.FC = () => {
     let cancelled = false;
     let syncTimer: ReturnType<typeof setTimeout> | null = null;
 
+    /* SAFE MODE (>= 3 failed boots): every native-touching boot step is
+       skipped so the user can always get in; the banner explains why and a
+       stable session lifts it automatically on the next open. */
+    if (isSafeMode()) {
+      bootMark("shell-safe-mode");
+      return;
+    }
+
     const boot = async () => {
+      bootMark("shell-boot");
       /* 1 — cached contacts snapshot: instant, off the UI thread's way */
       try {
         const cache = await loadCachedContacts();
@@ -212,6 +225,7 @@ const Shell: React.FC = () => {
          from the OS in the background (10 s throttle on foreground) */
       lastLogRef.current = 0;
       useApp.getState().loadSystemCalls();
+      bootMark("boot-done");
     };
 
     const onForeground = () => {

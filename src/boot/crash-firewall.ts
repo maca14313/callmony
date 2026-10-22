@@ -49,7 +49,10 @@ export const subscribeCrash = (fn: () => void): (() => void) => {
 };
 
 /* consecutive-boot-failure tracking (persisted) — drives the "Reset data"
-   recommendation when the app keeps failing at startup */
+   recommendation when the app keeps failing at startup, and SAFE MODE:
+   after 3 failed boots the app opens with every native-touching boot step
+   paused (no permission prompts, no call-log read, no cache load, no
+   notifications, no auto-sync) so the user is never locked out. */
 export const readBootFails = async (): Promise<number> => {
   try {
     const v = await AsyncStorage.getItem(BOOT_FAILS_KEY);
@@ -67,6 +70,18 @@ const bumpBootFails = async (): Promise<void> => {
 export const resetBootFails = async (): Promise<void> => {
   try { await AsyncStorage.removeItem(BOOT_FAILS_KEY); } catch { /* noop */ }
 };
+
+/* ---------------- safe mode ---------------- */
+
+let safeModeActive = false;
+
+/** Turn safe mode on/off (SafeRoot decides from bootFails BEFORE mounting
+ *  the real app; effects read it via isSafeMode()). */
+export const setSafeMode = (v: boolean): void => { safeModeActive = v; };
+
+/** true while the app booted in safe mode — native-touching boot steps stay
+ *  paused; the banner offers returning to normal mode on the next open. */
+export const isSafeMode = (): boolean => safeModeActive;
 
 /** Wipe EVERYTHING (AsyncStorage + disk caches) — the recovery hatch.
  *  RNFS is required lazily so this module (imported from index.js) keeps a

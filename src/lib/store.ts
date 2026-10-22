@@ -20,6 +20,7 @@ import {
 import { entryRemaining, itemPaid, lineTotal, nextOccurrence, listTotals } from "./calc";
 import { normalizePhone, todayStr, uid } from "./utils";
 import { saveCachedContacts, fetchAllContacts, checkContactsPermission } from "../native/deviceContacts";
+import { isSafeMode } from "../boot/crash-firewall";
 import type {
   BankAccount,
   CalcList,
@@ -216,10 +217,13 @@ export const useApp = create<AppState>((set, get) => ({
     } catch {
       /* snapshot is optional */
     }
-    // (re)schedule reminder notifications after boot
-    data.reminders
-      .filter((r) => !r.deletedAt && !r.done)
-      .forEach((r) => scheduleReminderNotification(r));
+    // (re)schedule reminder notifications after boot — native calls stay
+    // PAUSED in safe mode so a crashing boot can always be recovered
+    if (!isSafeMode()) {
+      data.reminders
+        .filter((r) => !r.deletedAt && !r.done)
+        .forEach((r) => scheduleReminderNotification(r));
+    }
   },
 
   pushUndo: (label, apply) => set({ lastUndo: { label, apply } }),

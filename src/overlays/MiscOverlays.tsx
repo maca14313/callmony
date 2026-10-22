@@ -17,10 +17,11 @@ import Contacts from "react-native-contacts";
 import { useApp } from "../lib/store";
 import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
-import { dueStatus } from "../lib/calc";
+import { dueStatus, ownerFullBalance } from "../lib/calc";
+import { contactOwnerId } from "../lib/types";
 import { displayName, ft, money, prettyPhone, searchContacts, vibrate } from "../lib/utils";
 import { F, useThemeColors } from "../theme";
-import { Avatar, Btn, Card, EmptyState, IconBtn, Pill, confirm, toast } from "../components/kit";
+import { Avatar, Btn, Card, EmptyState, IconBtn, Money, Pill, confirm, toast } from "../components/kit";
 import { Sheet } from "../components/Sheet";
 import { ContactPicker } from "../components/ContactPicker";
 import { placeCall } from "../native/calls";
@@ -99,9 +100,20 @@ export const SearchOverlay: React.FC = () => {
 
       {hitContacts.length > 0 && (
         <ResultGroup title={t("nav.contacts")}>
-          {hitContacts.map((c) => (
-            <HitRow key={c.recordID} icon="account-circle-outline" title={displayName(c)} sub={c.phones[0] ? prettyPhone(c.phones[0].number) : t("cd.noPhone")} onPress={() => open({ type: "contact", recordID: c.recordID })} />
-          ))}
+          {hitContacts.map((c) => {
+            const balance = ownerFullBalance(entries, lists, contactOwnerId(c.recordID));
+            return (
+              <HitRow
+                key={c.recordID}
+                icon="account-circle-outline"
+                title={displayName(c)}
+                sub={c.phones[0] ? prettyPhone(c.phones[0].number) : t("cd.noPhone")}
+                balance={balance}
+                owesLabel={balance > 0 ? t("cd.theyOweYou") : balance < 0 ? t("cd.youOweThem") : undefined}
+                onPress={() => open({ type: "contact", recordID: c.recordID })}
+              />
+            );
+          })}
         </ResultGroup>
       )}
       {hitEntries.length > 0 && (
@@ -153,14 +165,43 @@ const ResultGroup: React.FC<{ title: string; children: React.ReactNode }> = ({ t
   );
 };
 
-const HitRow: React.FC<{ icon: string; title: string; sub?: string; onPress: () => void }> = ({ icon, title, sub, onPress }) => {
+const HitRow: React.FC<{
+  icon: string;
+  title: string;
+  sub?: string;
+  /** v1.5.2 — credit status (balance + owes label) shown on contact hits,
+      same pill as the Recents/Contacts cards (user request) */
+  balance?: number;
+  owesLabel?: string;
+  onPress: () => void;
+}> = ({ icon, title, sub, balance, owesLabel, onPress }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
+  const hasBalance = balance !== undefined && balance !== 0;
   return (
     <Pressable android_ripple={{ color: "rgba(128,128,128,0.12)" }} onPress={onPress} style={({ pressed }) => [searchStyles.hit, { backgroundColor: pressed ? C.chip : C.card, borderColor: C.line }]}>
       <Icon name={icon} size={19} color={C.sub} />
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: F.small, fontWeight: "700", color: C.ink }} numberOfLines={1}>{title}</Text>
-        {!!sub && <Text style={{ fontSize: F.tiny, color: C.sub }} numberOfLines={1}>{sub}</Text>}
+        {!!sub && (
+          <Text style={{ fontSize: F.tiny, color: C.sub }} numberOfLines={1}>
+            {hasBalance && owesLabel ? `${owesLabel} · ${sub}` : sub}
+          </Text>
+        )}
+        {hasBalance && (
+          <View
+            style={[
+              searchStyles.hitPill,
+              { backgroundColor: balance > 0 ? "rgba(22,160,133,0.13)" : "rgba(214,69,69,0.11)" },
+            ]}
+          >
+            <Icon
+              name={balance > 0 ? "arrow-bottom-left" : "arrow-top-right"}
+              size={11}
+              color={balance > 0 ? C.green : C.red}
+            />
+            <Money value={balance} colorize signed size={12} />
+          </View>
+        )}
       </View>
       <Icon name="chevron-right" size={18} color={C.faint} />
     </Pressable>
@@ -482,6 +523,10 @@ export const AlarmDialog: React.FC = () => {
 const searchStyles = StyleSheet.create({
   input: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, height: 48, fontSize: F.body, marginBottom: 14 },
   hit: { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 5, minHeight: 54 },
+  hitPill: {
+    flexDirection: "row", alignItems: "center", gap: 2, borderRadius: 999,
+    paddingHorizontal: 7, paddingVertical: 2, alignSelf: "flex-start", marginTop: 2,
+  },
 });
 
 const spStyles = StyleSheet.create({
