@@ -380,6 +380,7 @@ export const KeypadSheet: React.FC = () => {
                 initialNumToRender={6}
                 maxToRenderPerBatch={8}
                 windowSize={5}
+                removeClippedSubviews={false}
                 contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 4 }}
                 ListEmptyComponent={null}
                 style={{ flexGrow: 0 }}

@@ -494,7 +494,11 @@ export const ContactsScreen: React.FC = () => {
         </Pressable>
       </View>
 
-      {/* virtualized list with infinite scroll */}
+      {/* virtualized list with infinite scroll.
+          removeClippedSubviews MUST stay false — Android defaults it to true,
+          and a data swap while cells are clipped makes manageChildren insert
+          into a native parent with 0 attached children → IndexOutOfBoundsException
+          (the v1.5.2 boot crash, stack: ReactClippingViewManager.addView). */}
       <FlatList
         data={pagedItems}
         keyExtractor={(item) => item.key}
@@ -504,6 +508,7 @@ export const ContactsScreen: React.FC = () => {
         initialNumToRender={12}
         maxToRenderPerBatch={12}
         windowSize={7}
+        removeClippedSubviews={false}
         onEndReached={onEndReached}
         onEndReachedThreshold={3}
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 28 }}
