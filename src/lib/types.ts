@@ -52,7 +52,7 @@ export interface DeviceContact {
 /** A social-media handle attached app-side to a device contact. */
 export interface SocialLink {
   id: ID;
-  app: "telegram" | "whatsapp" | "signal" | "instagram" | "x" | "other";
+  app: "telegram" | "whatsapp" | "signal" | "viber" | "instagram" | "x" | "other";
   handle: string; // username, phone or URL
 }
 
@@ -277,6 +277,11 @@ export interface Settings {
   notifAsked: boolean;
   blockedNumbers: string[];
   speedDial?: Record<string, string>; // keypad digit → recordID
+  /* auto email sync — build backup (data + contacts vCard) on schedule and
+     open the email composer with everything attached */
+  autoBackupEmail?: string;
+  autoBackupEvery?: number; // 0 = off · 1 = daily · 7 = weekly
+  lastAutoSyncAt?: number;
 }
 
 export interface BackupFile {

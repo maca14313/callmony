@@ -4,7 +4,7 @@
    About · Danger zone. */
 
 import React, { memo, useState } from "react";
-import { Alert, Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import DocumentPicker from "react-native-document-picker";
 import RNFS from "react-native-fs";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
@@ -14,6 +14,7 @@ import { LANGUAGES, useT } from "../i18n";
 import { hashPin, relTime } from "../lib/utils";
 import { COUNTRY_CODES, CURRENCIES } from "../lib/types";
 import { shareText } from "../lib/share";
+import { syncNow } from "../lib/backup";
 import { exportContactsCsv, exportContactsVcard, exportTransactionsCsv } from "../lib/exporters";
 import { requestNotificationPermission } from "../native/notify";
 import { fetchAllContacts } from "../native/deviceContacts";
@@ -34,6 +35,8 @@ export const SettingsOverlay: React.FC = () => {
   const setDeviceContacts = useApp((s) => s.setDeviceContacts);
   const [langSheet, setLangSheet] = useState(false);
   const [pinSheet, setPinSheet] = useState<"set" | "change" | "remove" | null>(null);
+  /* email-sync state (kept local; persisted on blur / on sync) */
+  const [syncEmail, setSyncEmail] = useState(settings.autoBackupEmail ?? "");
 
   const language = LANGUAGES.find((l) => l.code === settings.language);
 
@@ -260,6 +263,60 @@ export const SettingsOverlay: React.FC = () => {
           <Text style={{ fontSize: F.tiny, color: C.faint }}>
             {t("bkp.lastBackup")}: {relTime(settings.lastBackupAt)}
             {Date.now() - settings.lastBackupAt > 30 * 86400000 ? ` · ${t("bkp.stale")}` : ""}
+          </Text>
+        ) : null}
+      </Card>
+
+      {/* email sync — auto backup straight into the user's email */}
+      <SectionHeader title={t("st.emailSyncSection")} />
+      <Card style={{ marginBottom: 12 }}>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
+          <View style={[setStyles.syncIcon, { backgroundColor: C.brandSoft }]}>
+            <Icon name="email-sync-outline" size={18} color={C.brand} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ fontSize: F.body, fontWeight: "700", color: C.ink }}>{t("bkp.roundTrip")}</Text>
+            <Text style={{ fontSize: F.tiny, color: C.sub, marginTop: 2, lineHeight: 16 }}>{t("bkp.autoNote")}</Text>
+          </View>
+        </View>
+        <Text style={{ fontSize: F.small, fontWeight: "600", color: C.sub, marginBottom: 4 }}>{t("bkp.emailTo")}</Text>
+        <TextInput
+          value={syncEmail}
+          onChangeText={setSyncEmail}
+          placeholder={t("bkp.emailPh")}
+          placeholderTextColor={C.faint}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={[setStyles.emailInput, { borderColor: C.line, backgroundColor: C.inputBg, color: C.ink }]}
+          onBlur={() => updateSettings({ autoBackupEmail: syncEmail.trim() || undefined })}
+        />
+        <Text style={{ fontSize: F.small, fontWeight: "600", color: C.sub, marginTop: 8, marginBottom: 6 }}>{t("bkp.autoEvery")}</Text>
+        <Segmented
+          value={String(settings.autoBackupEvery ?? 0)}
+          onChange={(k) => updateSettings({ autoBackupEvery: Number(k) })}
+          options={[
+            { key: "0", label: t("bkp.off") },
+            { key: "1", label: t("bkp.daily") },
+            { key: "7", label: t("bkp.weekly") },
+          ]}
+        />
+        <Btn
+          small
+          label={t("bkp.syncNow")}
+          icon="email-fast-outline"
+          variant="soft"
+          disabled={!syncEmail.trim()}
+          onPress={async () => {
+            updateSettings({ autoBackupEmail: syncEmail.trim() || undefined });
+            const res = await syncNow();
+            toast(res === "sent" ? t("bkp.syncDone") : t("bkp.syncFail"), res === "sent" ? "ok" : "error");
+          }}
+          style={{ marginTop: 10 }}
+        />
+        {settings.lastAutoSyncAt ? (
+          <Text style={{ fontSize: F.tiny, color: C.faint, marginTop: 8 }}>
+            {t("bkp.lastSync")}: {relTime(settings.lastAutoSyncAt)}
           </Text>
         ) : null}
       </Card>
@@ -506,6 +563,8 @@ const pinFlowStyles = StyleSheet.create({
 const setStyles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 4 },
   pill: { borderRadius: 999, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 7, minHeight: 36, justifyContent: "center" },
+  syncIcon: { width: 40, height: 40, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  emailInput: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, height: 46, fontSize: F.body },
 });
 
 const pinStyles = StyleSheet.create({

@@ -217,6 +217,89 @@ export const t9Match = (number: string, name: string): boolean => {
   return false;
 };
 
+/* ---------------- scored contact search (global search overlay) ----------------
+   Matches ANY of: name (word-prefix > substring) · company · job title ·
+   email · note · phone (prefix > dialer-style suffix > substring, in BOTH
+   the raw “09…” and normalized “+251…” formats). Ranked by score so the
+   best hit is always first. */
+
+export interface ScoredContact<T> {
+  contact: T;
+  score: number;
+}
+
+export const scoreContact = <T extends {
+  givenName?: string;
+  familyName?: string;
+  displayName?: string;
+  company?: string;
+  jobTitle?: string;
+  note?: string;
+  phones: { number: string }[];
+  emails: { address: string }[];
+}>(
+  c: T,
+  q: string,
+  nameOf: (c: T) => string,
+  countryCode: string
+): number => {
+  if (!q) return 0;
+  const name = nameOf(c).toLowerCase();
+  const words = name.split(/\s+/).filter(Boolean);
+  let score = 0;
+
+  /* name — word-prefix ranks highest (dialer behavior) */
+  if (words.some((w) => w.startsWith(q))) score = Math.max(score, 6);
+  else if (name.includes(q)) score = Math.max(score, 4);
+  /* company / job title */
+  const company = `${c.company || ""} ${c.jobTitle || ""}`.toLowerCase().trim();
+  if (company && company.includes(q)) score = Math.max(score, 3);
+  /* email */
+  if (c.emails.some((e) => (e.address || "").toLowerCase().includes(q))) score = Math.max(score, 3);
+  /* note */
+  if ((c.note || "").toLowerCase().includes(q)) score = Math.max(score, 2);
+
+  /* phone — digits only, both formats, prefix > suffix > substring */
+  const digits = q.replace(/\D/g, "");
+  if (digits.length >= 2) {
+    for (const p of c.phones) {
+      const raw = p.number.replace(/\D/g, "");
+      const norm = normalizePhone(p.number, countryCode).replace(/\D/g, "");
+      if (raw.startsWith(digits) || norm.startsWith(digits)) {
+        score = Math.max(score, 5);
+        break;
+      }
+      if (raw.endsWith(digits) || norm.endsWith(digits)) {
+        score = Math.max(score, 4.5);
+        continue;
+      }
+      if (raw.includes(digits) || norm.includes(digits)) {
+        score = Math.max(score, 3.5);
+      }
+    }
+  }
+  return score;
+};
+
+/** Ranked contact search — use wherever a list of contacts is filtered. */
+export const searchContacts = <T extends Parameters<typeof scoreContact>[0]>(
+  contacts: T[],
+  query: string,
+  nameOf: (c: T) => string,
+  countryCode: string,
+  limit = Infinity
+): ScoredContact<T>[] => {
+  const q = query.trim().toLowerCase();
+  if (q.length < 1) return [];
+  const out: ScoredContact<T>[] = [];
+  for (const c of contacts) {
+    const s = scoreContact(c, q, nameOf, countryCode);
+    if (s > 0) out.push({ contact: c, score: s });
+  }
+  out.sort((a, b) => b.score - a.score || nameOf(a.contact).localeCompare(nameOf(b.contact)));
+  return out.slice(0, limit);
+};
+
 /* ---------------- misc ---------------- */
 
 export const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

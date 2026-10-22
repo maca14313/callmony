@@ -16,7 +16,7 @@ export const openURL = async (url: string): Promise<boolean> => {
   }
 };
 
-export const smsLink = (number: string, text?: string, countryCode = "ET"): string => {
+export const smsLink = (number: string, text?: string): string => {
   const sep = Platform.OS === "ios" ? "&" : "?";
   return `sms:${number}${text ? `${sep}body=${encodeURIComponent(text)}` : ""}`;
 };
@@ -29,6 +29,12 @@ export const waLink = (number: string, text?: string, countryCode = "ET"): strin
 
 export const tgLink = (handle: string): string => {
   const h = handle.trim().replace(/^@/, "");
+  /* numeric handle = a phone number → +<e164> deep link (same builder the
+     webapp uses for telegramHandle(contact) fallbacks) */
+  if (/^\+?[\d\s()-]+$/.test(h)) {
+    const digits = h.replace(/\D/g, "");
+    if (digits.length >= 6) return `https://t.me/+${digits}`;
+  }
   return `https://t.me/${encodeURIComponent(h)}`;
 };
 
@@ -97,6 +103,41 @@ export const socialUrl = (s: SocialLink): string | null => {
       return /^https?:\/\//i.test(h) ? h : null;
   }
 };
+
+/* ---------------- social links BUILT FROM A PHONE NUMBER ----------------
+   Every messaging app that accepts a phone-number deep link gets one
+   generated straight from the contact's number — no handle needed:
+     WhatsApp  → https://wa.me/<e164>
+     Telegram  → https://t.me/+<e164>       (same as the web edition)
+     Signal    → https://signal.me/#p/<e164>
+     Viber     → viber://chat?number=%2B<e164>
+   Instagram / X / other need real usernames → null. */
+
+export const NUMBER_SOCIAL_APPS: SocialLink["app"][] = ["whatsapp", "telegram", "signal", "viber"];
+
+export const socialLinkFromNumber = (
+  app: SocialLink["app"],
+  number: string,
+  countryCode = "ET"
+): string | null => {
+  const e164 = normalizePhone(number, countryCode).replace(/\D/g, "");
+  if (!e164 || e164.length < 6) return null;
+  switch (app) {
+    case "whatsapp":
+      return `https://wa.me/${e164}`;
+    case "telegram":
+      return `https://t.me/+${e164}`;
+    case "signal":
+      return `https://signal.me/#p/%2B${e164}`;
+    case "viber":
+      return `viber://chat?number=%2B${e164}`;
+    default:
+      return null;
+  }
+};
+
+/** True when the app can open a chat from a bare phone number. */
+export const appTakesNumber = (app: SocialLink["app"]): boolean => NUMBER_SOCIAL_APPS.includes(app);
 
 /** Payment-reminder message templates (same as the web edition). */
 export const reminderTemplates = [

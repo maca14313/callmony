@@ -19,7 +19,7 @@ import { displayName, fd, ft, durationStr, money, normalizePhone, prettyPhone, c
 import { contactOwnerId } from "../lib/types";
 import { placeCall } from "../native/calls";
 import { openExistingContactEditor } from "../native/deviceContacts";
-import { openURL, smsLink, tgLink, waLink, reminderTemplates, fillTemplate, socialUrl, mailtoLink, primaryPhone } from "../lib/share";
+import { openURL, smsLink, tgLink, waLink, reminderTemplates, fillTemplate, socialUrl, socialLinkFromNumber, NUMBER_SOCIAL_APPS, appTakesNumber, mailtoLink, primaryPhone } from "../lib/share";
 import { shareContactVcard } from "../lib/exporters";
 import { F, useThemeColors } from "../theme";
 import { Avatar, Btn, Card, Chip, Field, Money, Segmented, toast } from "../components/kit";
@@ -37,6 +37,7 @@ const SOCIAL_APPS: { key: SocialLink["app"]; label: string; icon: string }[] = [
   { key: "telegram", label: "Telegram", icon: "send" },
   { key: "whatsapp", label: "WhatsApp", icon: "whatsapp" },
   { key: "signal", label: "Signal", icon: "shield-half-full" },
+  { key: "viber", label: "Viber", icon: "phone-classic" },
   { key: "instagram", label: "Instagram", icon: "instagram" },
   { key: "x", label: "X", icon: "twitter" },
   { key: "other", label: "Other", icon: "link-variant" },
@@ -112,10 +113,15 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
     setNumPicker(null);
   };
 
-  /* ---------- Telegram: saved handle, or offer to add one ---------- */
+  /* ---------- Telegram: saved handle, else a +<number> link (web parity) ---------- */
   const fireTelegram = () => {
     if (tgSocial) {
       openURL(tgLink(tgSocial.handle));
+      return;
+    }
+    const byNumber = phone ? socialLinkFromNumber("telegram", phone, countryCode) : null;
+    if (byNumber) {
+      openURL(byNumber);
       return;
     }
     setSocialSheet({ app: "telegram" });
@@ -148,7 +154,11 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
 
   const editContact = async () => {
     const ok = await openExistingContactEditor(contact.recordID);
-    if (!ok) toast(t("act.edit") + " ✕", "error");
+    if (!ok) {
+      toast(t("act.edit") + " ✕", "error");
+      return;
+    }
+    useApp.getState().refreshDeviceContacts(); // pick up OS edits at once
   };
 
   return (
@@ -184,15 +194,47 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
       >
-        {/* compact hero — balance only (name/number live in the navbar) */}
-        <View style={{ alignItems: "center", paddingBottom: 12 }}>
-          <Money value={balance} signed colorize size={20} weight="800" />
-          <Text style={{ fontSize: F.tiny, color: C.sub, marginTop: 2 }}>
+        {/* hero — 1:1 with the webapp: XL avatar · name + edit · company ·
+            BalancePill · label · open-lists note */}
+        <View style={{ alignItems: "center", paddingBottom: 14 }}>
+          <Avatar contact={contact} size={72} />
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 7, marginTop: 10 }}>
+            <Text style={{ fontSize: 22, fontWeight: "800", color: C.ink, letterSpacing: -0.3 }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65}>
+              {displayName(contact)}
+            </Text>
+            <Pressable
+              onPress={editContact}
+              hitSlop={8}
+              accessibilityLabel={t("cd.editContact")}
+              style={[cdStyles.heroEdit, { backgroundColor: C.cardAlt, borderColor: C.line }]}
+            >
+              <Icon name="pencil-outline" size={14} color={C.sub} />
+            </Pressable>
+          </View>
+          {!!contact.company && (
+            <Text style={{ fontSize: F.tiny, color: C.sub, marginTop: 2 }} numberOfLines={1}>
+              {contact.jobTitle ? `${contact.jobTitle} · ` : ""}
+              {contact.company}
+            </Text>
+          )}
+          <View
+            style={[
+              cdStyles.balancePill,
+              {
+                backgroundColor:
+                  Math.abs(balance) < 0.005 ? C.cardAlt : balance > 0 ? "rgba(22,160,133,0.14)" : "rgba(214,69,69,0.12)",
+                borderColor: C.line,
+              },
+            ]}
+          >
+            <Money value={balance} signed colorize size={16} weight="800" />
+          </View>
+          <Text style={{ fontSize: F.tiny, color: C.sub, marginTop: 5, fontWeight: "500" }}>
             {balance > 0.005 ? t("cd.theyOweYou") : balance < -0.005 ? t("cd.youOweThem") : t("cd.settledUp")}
           </Text>
           {pendingLists > 0.005 && (
-            <Text style={{ fontSize: F.tiny, color: C.amber, marginTop: 2 }}>
-              {t("lg.openLists")}: {money(pendingLists)}
+            <Text style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>
+              {t("lg.openLists")}: <Money value={pendingLists} signed size={11} weight="600" />
             </Text>
           )}
         </View>
@@ -288,6 +330,8 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
       {socialSheet && (
         <AddSocialSheet
           initialApp={socialSheet.app}
+          phoneNumber={phone}
+          countryCode={countryCode}
           onClose={() => setSocialSheet(null)}
           onSave={(app, handle) => {
             useApp.getState().addSocial(contact.recordID, app, handle);
@@ -411,12 +455,30 @@ const ContactMoreSheet: React.FC<{
 
 const AddSocialSheet: React.FC<{
   initialApp?: SocialLink["app"];
+  phoneNumber?: string;
+  countryCode: string;
   onClose: () => void;
   onSave: (app: SocialLink["app"], handle: string) => void;
-}> = ({ initialApp = "telegram", onClose, onSave }) => {
+}> = ({ initialApp = "telegram", phoneNumber, countryCode, onClose, onSave }) => {
+  const C = useThemeColors(useApp((s) => s.settings.theme));
   const t = useT();
   const [app, setApp] = useState<SocialLink["app"]>(initialApp);
-  const [handle, setHandle] = useState("");
+  const [handle, setHandle] = useState(() =>
+    /* number-based apps pre-fill with the contact's own number — one tap
+       saves a working link built from that number */
+    appTakesNumber(initialApp) && phoneNumber ? prettyPhone(phoneNumber, countryCode) : ""
+  );
+
+  /* switching app re-prefills only when the field is empty or still holds
+     the previous auto number — never wipes something the user typed */
+  const pickApp = (key: SocialLink["app"]) => {
+    const auto = appTakesNumber(key) && phoneNumber ? prettyPhone(phoneNumber, countryCode) : "";
+    const wasAuto =
+      !handle.trim() ||
+      (phoneNumber && handle.replace(/\D/g, "") === phoneNumber.replace(/\D/g, ""));
+    setApp(key);
+    if (wasAuto) setHandle(auto);
+  };
 
   const save = () => {
     const h = handle.trim();
@@ -428,13 +490,20 @@ const AddSocialSheet: React.FC<{
     onClose();
   };
 
+  const numberBased = appTakesNumber(app);
+
   return (
     <BottomSheet title={t("ce.addSocial")} onClose={onClose}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 4 }} style={{ flexGrow: 0 }}>
         {SOCIAL_APPS.map((a) => (
-          <Chip key={a.key} label={a.label} icon={a.icon} active={app === a.key} onPress={() => setApp(a.key)} />
+          <Chip key={a.key} label={a.label} icon={a.icon} active={app === a.key} onPress={() => pickApp(a.key)} />
         ))}
       </ScrollView>
+      {!!numberBased && !!phoneNumber && (
+        <Text style={{ fontSize: F.tiny, color: C.sub, marginTop: 8, marginBottom: -2 }}>
+          {t("ce.socialFromNumber")}
+        </Text>
+      )}
       <View style={{ marginTop: 10 }}>
         <Field
           label={t("cd.socials")}
@@ -644,8 +713,49 @@ const ContactInfo: React.FC<{
         {contact.emails.length === 0 && <Muted text={t("cd.noEmail")} />}
       </InfoBlock>
 
-      {/* socials — as many as the user wants */}
+      {/* socials — saved links PLUS auto links built from the phone number */}
       <InfoBlock title={t("cd.socials")}>
+        {/* auto rows: every messaging app that takes a number, generated from
+            this contact's primary number (skipped when already saved) */}
+        {primary &&
+          NUMBER_SOCIAL_APPS.filter((app) => !socials.some((s) => s.app === app)).map((app) => {
+            const url = socialLinkFromNumber(app, primary, countryCode);
+            if (!url) return null;
+            const label = SOCIAL_APPS.find((a) => a.key === app)?.label ?? app;
+            return (
+              <View key={`auto-${app}`} style={cdStyles.infoRow}>
+                <Pressable
+                  style={{ flex: 1, minWidth: 0 }}
+                  onPress={() => openURL(url)}
+                  accessibilityLabel={`${label} — ${t("ce.fromNumber")}`}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <View style={[cdStyles.socialIcon, { backgroundColor: C.brandSoft }]}>
+                      <Icon name={socialIcon(app)} size={15} color={C.brand} />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600" }} numberOfLines={1}>
+                        {label} · {prettyPhone(primary, countryCode)}
+                      </Text>
+                      <Text style={{ fontSize: F.tiny, color: C.faint, textTransform: "uppercase", letterSpacing: 1 }}>
+                        {t("ce.fromNumber")}
+                      </Text>
+                    </View>
+                    <Icon name="chevron-right" size={14} color={C.faint} />
+                  </View>
+                </Pressable>
+                <Pressable
+                  onPress={() => openURL(url)}
+                  hitSlop={6}
+                  style={[cdStyles.miniBtn, { backgroundColor: C.brandSoft }]}
+                  accessibilityLabel={label}
+                >
+                  <Icon name="open-in-new" size={15} color={C.brand} />
+                </Pressable>
+              </View>
+            );
+          })}
+        {/* saved socials — as many as the user wants */}
         {socials.map((s) => {
           const url = socialUrl(s);
           return (
@@ -749,7 +859,11 @@ const ContactInfo: React.FC<{
         variant="soft"
         onPress={async () => {
           const ok = await openExistingContactEditor(contact.recordID);
-          if (!ok) toast(t("act.edit") + " ✕", "error");
+          if (!ok) {
+            toast(t("act.edit") + " ✕", "error");
+            return;
+          }
+          useApp.getState().refreshDeviceContacts(); // pick up OS edits at once
         }}
         style={{ alignSelf: "flex-start", marginTop: 4 }}
       />
@@ -773,6 +887,8 @@ const InfoBlock: React.FC<{ title: string; children: React.ReactNode }> = ({ tit
 };
 
 const cdStyles = StyleSheet.create({
+  heroEdit: { width: 30, height: 30, borderRadius: 11, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  balancePill: { marginTop: 10, borderRadius: 999, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 6 },
   tile: {
     flex: 1,
     alignItems: "center",

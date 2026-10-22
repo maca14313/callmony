@@ -19,6 +19,7 @@ import {
 } from "./db";
 import { entryRemaining, itemPaid, lineTotal, nextOccurrence, listTotals } from "./calc";
 import { normalizePhone, todayStr, uid } from "./utils";
+import { saveCachedContacts, fetchAllContacts, checkContactsPermission } from "../native/deviceContacts";
 import type {
   BankAccount,
   CalcList,
@@ -28,7 +29,6 @@ import type {
   ID,
   LedgerEntry,
   LedgerGroup,
-  LinkRef,
   ListItem,
   MessageLog,
   Note,
@@ -68,6 +68,10 @@ interface AppState {
 
   /* device contacts */
   setDeviceContacts: (list: DeviceContact[]) => void;
+  /** when the deviceContacts array was last synced with the OS (ms). */
+  contactsLoadedAt: number;
+  /** re-query the OS address book right now (after an in-app contact edit). */
+  refreshDeviceContacts: () => Promise<void>;
   toggleFavorite: (recordID: string) => void;
   setContactSpeedDial: (recordID: string, key: string | null) => void;
   addSocial: (recordID: string, app: SocialLink["app"], handle: string) => void;
@@ -159,6 +163,7 @@ const now = () => Date.now();
 export const useApp = create<AppState>((set, get) => ({
   hydrated: false,
   deviceContacts: [],
+  contactsLoadedAt: 0,
   systemCalls: [],
   callLogPerm: "unknown",
 
@@ -214,7 +219,28 @@ export const useApp = create<AppState>((set, get) => ({
 
   /* ---------------- device contacts ---------------- */
 
-  setDeviceContacts: (list) => set({ deviceContacts: list }),
+  /* every set also refreshes the disk snapshot (debounced inside) so the
+     next cold start opens with contacts instantly, no bridge round-trip */
+  setDeviceContacts: (list) => {
+    set({ deviceContacts: list, contactsLoadedAt: Date.now() });
+    saveCachedContacts(list);
+  },
+
+  /* immediate OS re-query — used after contact create/edit sheets so the
+     change is visible the moment the user returns (no 5-min TTL wait) */
+  refreshDeviceContacts: async () => {
+    try {
+      const status = await checkContactsPermission();
+      if (status !== "authorized") return;
+      const list = await fetchAllContacts();
+      if (list.length) {
+        set({ deviceContacts: list, contactsLoadedAt: Date.now() });
+        saveCachedContacts(list);
+      }
+    } catch {
+      /* leave the current list in place */
+    }
+  },
 
   toggleFavorite: (recordID) => {
     const { contactX } = get();

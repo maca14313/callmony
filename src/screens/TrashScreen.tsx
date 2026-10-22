@@ -24,7 +24,6 @@ interface TrashRow {
 }
 
 export const TrashScreen: React.FC = () => {
-  const C = useThemeColors(useApp((s) => s.settings.theme));
   const t = useT();
   const s = useApp();
   const [filter, setFilter] = useState<TrashType>("all");
@@ -173,7 +172,6 @@ export const TrashScreen: React.FC = () => {
 
 const TrashRowCard: React.FC<{ row: TrashRow }> = ({ row }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
-  const t = useT();
   const ownerName = useOwnerName(row.ownerId);
   return (
     <Card style={{ marginBottom: 8 }}>

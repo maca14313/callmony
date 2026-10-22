@@ -10,7 +10,7 @@ import { listTotals } from "../lib/calc";
 import { relTime } from "../lib/utils";
 import type { CalcList, ListKind, OwnerId } from "../lib/types";
 import { F, useThemeColors } from "../theme";
-import { Btn, Card, Chip, EmptyState, IconBtn, Money, Pill, SectionHeader, confirm, toast, toastUndo } from "../components/kit";
+import { Btn, Card, EmptyState, Money, Pill, SectionHeader, confirm, toast, toastUndo } from "../components/kit";
 import { SwipeRow } from "../components/SwipeRow";
 import { BottomSheet } from "../components/Sheet";
 

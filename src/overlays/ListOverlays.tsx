@@ -26,8 +26,6 @@ export const ListDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "lis
   const lists = useApp((s) => s.lists);
   const saveList = useApp((s) => s.saveList);
   const addListItem = useApp((s) => s.addListItem);
-  const updateListItem = useApp((s) => s.updateListItem);
-  const removeListItem = useApp((s) => s.removeListItem);
   const markAllPaid = useApp((s) => s.markAllPaid);
   const clearPaid = useApp((s) => s.clearPaid);
   const duplicateList = useApp((s) => s.duplicateList);
@@ -50,6 +48,13 @@ export const ListDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "lis
   const [tax, setTax] = useState("");
   const [extra, setExtra] = useState("");
 
+  /* hooks MUST run before the not-found early return (React contract) */
+  const isCalc = list?.kind === "calculating";
+  const rows: { key: string; items: ListItem[] }[] = useMemo(() => {
+    if (!list || !isCalc || !groupSame) return [{ key: "all", items: list?.items ?? [] }];
+    return groupItems(list.items).map((g, i) => ({ key: `g${i}`, items: g }));
+  }, [list, groupSame, isCalc]);
+
   if (!list) {
     return (
       <Sheet title={t("ls.listNotFound")} subtitle={t("ls.listNotFoundHint")} onBack={pop}>
@@ -59,7 +64,6 @@ export const ListDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "lis
   }
 
   const totals = listTotals(list);
-  const isCalc = list.kind === "calculating";
 
   const menu = () => {
     Alert.alert(list.title, undefined, [
@@ -138,11 +142,6 @@ export const ListDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "lis
     setIPrice("");
     toast(t("ls.itemAdded"), "ok");
   };
-
-  const rows: { key: string; items: ListItem[] }[] = useMemo(() => {
-    if (!isCalc || !groupSame) return [{ key: "all", items: list.items }];
-    return groupItems(list.items).map((g, i) => ({ key: `g${i}`, items: g }));
-  }, [list.items, groupSame, isCalc]);
 
   return (
     <Sheet

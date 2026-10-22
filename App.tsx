@@ -39,8 +39,9 @@ import { ListDetailOverlay, ListEditOverlay } from "./src/overlays/ListOverlays"
 import { NoteEditOverlay, ReminderEditOverlay, BankEditOverlay } from "./src/overlays/Editors";
 import { SettingsOverlay, LockScreen } from "./src/overlays/SettingsOverlay";
 import { SearchOverlay, SpeedDialOverlay, MergeOverlay, AboutOverlay, AlarmDialog } from "./src/overlays/MiscOverlays";
-import { fetchAllContacts, requestContactsPermission, checkContactsPermission } from "./src/native/deviceContacts";
+import { loadCachedContacts, CONTACTS_TTL } from "./src/native/deviceContacts";
 import { setupCallKeep } from "./src/native/callkeep";
+import { maybeAutoSync } from "./src/lib/backup";
 
 const App: React.FC = () => {
   const hydrated = useApp((s) => s.hydrated);
@@ -161,20 +162,15 @@ const Shell: React.FC = () => {
   const open = useUI((s) => s.open);
   const reminders = useApp((s) => s.reminders);
   const settings = useApp((s) => s.settings);
-  const setDeviceContacts = useApp((s) => s.setDeviceContacts);
   const [langSheet, setLangSheet] = useState(false);
 
-  /* Dialer-style boot: on first launch ask for contacts + call log + phone
-     (already-granted ones resolve silently), then load the address book and
-     the system call log IMMEDIATELY — the app opens with Contacts and
-     Recents ready, like any built-in dialer.
-     PERF: re-serializing a 2000-contact address book over the bridge on
-     EVERY foreground froze the app right when the user came back to it
-     (e.g. after hanging up). The call log still refreshes on every
-     foreground (10s throttle — it changes with every call), but contacts
-     only reload if they are older than 5 minutes. */
+  /* Dialer-style boot with a DISK SNAPSHOT: the cached address book is
+     applied the moment the shell mounts (contacts tab is ready instantly —
+     zero bridge traffic), then the OS is only queried when the snapshot is
+     older than CONTACTS_TTL (5 min). The call log still refreshes on every
+     foreground (10 s throttle — it changes with every call). Result: opening
+     the app with 5000 contacts is as fast as with 50. */
   const lastLogRef = useRef(0);
-  const lastContactsRef = useRef(0);
   useEffect(() => {
     let cancelled = false;
     const loadLog = async () => {
@@ -183,21 +179,16 @@ const Shell: React.FC = () => {
       useApp.getState().loadSystemCalls();
     };
     const loadContacts = async (force = false) => {
-      if (!force && Date.now() - lastContactsRef.current < 300000) return; // 5 min
-      lastContactsRef.current = Date.now();
-      const status = await checkContactsPermission();
-      if (status === "authorized") {
-        const list = await fetchAllContacts().catch(() => []);
-        if (!cancelled && list.length) setDeviceContacts(list);
-      } else if (status === "undetermined") {
-        const asked = await requestContactsPermission();
-        if (asked === "authorized") {
-          const list = await fetchAllContacts().catch(() => []);
-          if (!cancelled && list.length) setDeviceContacts(list);
-        }
-      }
+      if (!force && Date.now() - useApp.getState().contactsLoadedAt < CONTACTS_TTL) return;
+      useApp.getState().refreshDeviceContacts();
     };
     const boot = async () => {
+      /* 1 — cached snapshot first: instant contacts, no spinner */
+      const cache = await loadCachedContacts();
+      if (!cancelled && cache) {
+        useApp.setState({ deviceContacts: cache.list, contactsLoadedAt: cache.savedAt });
+      }
+      /* 2 — permissions + fresh load (only when the snapshot is stale) */
       if (Platform.OS === "android") {
         try {
           await PermissionsAndroid.requestMultiple([
@@ -209,23 +200,26 @@ const Shell: React.FC = () => {
           /* user can still grant later from the per-tab permission cards */
         }
       }
+      loadContacts(!cache); // no cache → force a real load
       lastLogRef.current = 0; // first load always runs
-      lastContactsRef.current = 0;
-      loadContacts(true);
       loadLog();
+      /* auto email sync also fires on cold start when due */
+      maybeAutoSync().catch(() => undefined);
     };
     boot();
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") {
         loadLog();
         loadContacts(false);
+        /* auto email sync — opens the composer when the schedule is due */
+        maybeAutoSync().catch(() => undefined);
       }
     });
     return () => {
       cancelled = true;
       sub.remove();
     };
-  }, [setDeviceContacts]);
+  }, []);
 
   /* iOS CallKit registration (calls register with the native calling system) */
   useEffect(() => {

@@ -21,6 +21,19 @@ lives on the device. Contacts and the call log come from the phone itself.
   module reads the same `CallLog.Calls` provider the stock dialer uses) before
   you finish reading the splash screen. Contacts and Recents are ready
   instantly, and refresh whenever you return to the app.
+- **Instant cold starts (big address books)** — the address book is kept as a
+  disk snapshot: opening the app with 5000 contacts is as fast as with 50.
+  The OS is only re-queried when the snapshot is older than 5 minutes (or
+  right after you edit a contact in-app) — never on every open.
+- **Social links built from phone numbers** — WhatsApp · Telegram · Signal ·
+  Viber chats open straight from the contact's number (`wa.me`, `t.me/+`,
+  `signal.me/#p`, `viber://chat`) — no usernames needed, and any number of
+  extra socials can be saved per contact.
+- **Auto email sync** — on a schedule (daily / weekly) callmony builds a full
+  backup (JSON: ledger, lists, notes, reminders, banks, settings) **plus a
+  vCard of every contact** and opens your email app with both attached and
+  the recipient pre-filled — you just press Send. No accounts, no SMTP
+  credentials, nothing ever leaves the device except that email.
 - **Contacts** — the whole address book in a fast searchable list (A–Z
   sections, swipe actions, favorites, speed dial, merge duplicates, per-number
   actions), edited through the native OS editors.
@@ -64,7 +77,7 @@ Local build notes:
 - Write `sdk.dir=<path-to-android-sdk>` into `android/local.properties`.
 - `gradle.properties` is tuned for machines with 2–4 GB RAM (1280 MB heap,
   in-process Kotlin). With more memory you can raise `org.gradle.jvmargs`.
-- The build produces `callmony-v1.1.0-release.apk` (~61 MB, all 4 ABIs).
+- The build produces `callmony-v1.4.0-release.apk` (~61 MB, all 4 ABIs).
 
 The release keystore (`android/app/callmony-release.keystore`) is committed for
 easy sideloading. For Play Store distribution, generate your own keystore and

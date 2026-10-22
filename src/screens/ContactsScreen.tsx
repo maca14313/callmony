@@ -16,7 +16,6 @@ import { displayName, normalizePhone, prettyPhone } from "../lib/utils";
 import type { DeviceContact } from "../lib/types";
 import {
   checkContactsPermission,
-  fetchAllContacts,
   openExistingContactEditor,
   openNewContactForm,
   requestContactsPermission,
@@ -40,6 +39,10 @@ const openSettings = async () => {
     /* noop */
   }
 };
+
+/* "undetermined" → ask once; anything else passes through unchanged */
+const requestIfUndetermined = async (status: string): Promise<string> =>
+  status === "undetermined" ? requestContactsPermission() : status;
 
 /* ---------------- one memoized contact row ---------------- */
 
@@ -128,7 +131,6 @@ export const ContactsScreen: React.FC = () => {
   const lists = useApp((s) => s.lists);
   const contactX = useApp((s) => s.contactX);
   const blocked = useApp((s) => s.settings.blockedNumbers);
-  const setDeviceContacts = useApp((s) => s.setDeviceContacts);
   const countryCode = useApp((s) => s.settings.countryCode);
 
   const [perm, setPerm] = useState<PermState>(contacts.length > 0 ? "authorized" : "loading");
@@ -136,33 +138,18 @@ export const ContactsScreen: React.FC = () => {
   const [sort, setSort] = useState<SortMode>("az");
   const [menuFor, setMenuFor] = useState<string | null>(null);
 
-  const load = useCallback(
-    async (silent = false) => {
-      if (!silent) setPerm("loading");
-      const status = await checkContactsPermission();
-      if (status === "authorized") {
-        try {
-          const list = await fetchAllContacts();
-          setDeviceContacts(list);
-          setPerm("authorized");
-        } catch {
-          setPerm("denied");
-        }
-      } else if (status === "undetermined") {
-        const asked = await requestContactsPermission();
-        if (asked === "authorized") {
-          const list = await fetchAllContacts();
-          setDeviceContacts(list);
-          setPerm("authorized");
-        } else {
-          setPerm("denied");
-        }
-      } else {
-        setPerm("denied");
-      }
-    },
-    [setDeviceContacts]
-  );
+  /* fallback loader — normally boot already filled the store from the disk
+     snapshot (instant); this only runs when the cache was empty */
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setPerm("loading");
+    const status = await checkContactsPermission();
+    if (status === "authorized" || (await requestIfUndetermined(status)) === "authorized") {
+      await useApp.getState().refreshDeviceContacts();
+      setPerm("authorized");
+    } else {
+      setPerm("denied");
+    }
+  }, []);
 
   useEffect(() => {
     if (contacts.length > 0) return; // already loaded at boot — nothing to do
@@ -310,7 +297,10 @@ export const ContactsScreen: React.FC = () => {
 
   const newContact = useCallback(async () => {
     const saved = await openNewContactForm({});
-    if (saved) toast(t("ce.contactSaved"), "ok");
+    if (saved) {
+      toast(t("ce.contactSaved"), "ok");
+      useApp.getState().refreshDeviceContacts(); // show it immediately
+    }
   }, [t]);
 
   if (perm === "loading") {
@@ -362,10 +352,10 @@ export const ContactsScreen: React.FC = () => {
 
       {/* favorites strip — one tap opens the contact */}
       {favContacts.length > 0 && (
-        <View style={{ paddingTop: 10 }}>
+        <View style={{ paddingTop: 10, paddingBottom: 2 }}>
           <ScrollView
             horizontal
-            contentContainerStyle={{ paddingHorizontal: 16, gap: 14 }}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 14, alignItems: "center", paddingBottom: 4 }}
             showsHorizontalScrollIndicator={false}
           >
             {favContacts.map((c) => (
@@ -388,7 +378,7 @@ export const ContactsScreen: React.FC = () => {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, gap: 6, paddingTop: 10 }}
+        contentContainerStyle={{ paddingHorizontal: 16, gap: 6, paddingTop: 10, paddingBottom: 8, alignItems: "center" }}
         style={{ flexGrow: 0 }}
       >
         <Chip label={t("act.all")} active={filter === "all"} onPress={() => setFilter("all")} />
@@ -438,7 +428,7 @@ export const ContactsScreen: React.FC = () => {
         initialNumToRender={10}
         maxToRenderPerBatch={10}
         windowSize={5}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 20 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 28 }}
         ListEmptyComponent={
           <EmptyState
             icon="account-search-outline"
@@ -540,7 +530,8 @@ const ContactMenuSheet: React.FC<{
 
   async function editNow() {
     onClose();
-    openExistingContactEditor(recordID);
+    const ok = await openExistingContactEditor(recordID);
+    if (ok) useApp.getState().refreshDeviceContacts(); // pick up OS edits at once
   }
 
   return (

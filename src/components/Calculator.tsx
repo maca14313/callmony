@@ -10,7 +10,7 @@ import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { copyText, vibrate } from "../lib/utils";
 import { F, useThemeColors } from "../theme";
-import { confirm, toast } from "./kit";
+import { toast } from "./kit";
 import { Sheet } from "./Sheet";
 
 /* -------- safe expression evaluator (no eval, shunting-yard) -------- */

@@ -195,7 +195,6 @@ export const Avatar: React.FC<{ contact?: DeviceContact | null; size?: number; p
   size = 46,
   photo,
 }) => {
-  const C = useThemeColors(useApp((s) => s.settings.theme));
   const palette = avatarColors(contact);
   const source = photo || contact?.thumbnailPath;
   if (source) {
@@ -427,7 +426,7 @@ export const Segmented: React.FC<{
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 6, paddingRight: 16 }}
+        contentContainerStyle={{ gap: 6, paddingRight: 16, paddingBottom: 6, alignItems: "center" }}
         style={{ flexGrow: 0 }}
       >
         {chips}

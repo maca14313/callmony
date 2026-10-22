@@ -1,7 +1,7 @@
 /* Reminders tab — status + kind filters, notification opt-in card. */
 
 import React, { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useUI } from "../lib/ui-store";
@@ -10,7 +10,7 @@ import { dueStatus } from "../lib/calc";
 import type { ReminderKind } from "../lib/types";
 import { requestNotificationPermission } from "../native/notify";
 import { F, useThemeColors } from "../theme";
-import { Btn, Card, Chip, EmptyState, Segmented } from "../components/kit";
+import { Btn, Card, Chip, Segmented } from "../components/kit";
 import { RemindersSection } from "../sections/RemindersSection";
 
 type Status = "overdue" | "today" | "upcoming" | "done" | "all";
@@ -36,7 +36,7 @@ export const RemindersScreen: React.FC = () => {
   }, [reminders]);
 
   const askNotifications = async () => {
-    const ok = await requestNotificationPermission();
+    await requestNotificationPermission();
     updateSettings({ notifAsked: true });
     // simple inline feedback via the chip row
   };
@@ -95,6 +95,3 @@ export const RemindersScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  // reserved
-});

@@ -332,10 +332,10 @@ export const RecentsScreen: React.FC = () => {
     <View style={{ flex: 1 }}>
       {/* favorites strip */}
       {favContacts.length > 0 && (
-        <View style={{ paddingTop: 10 }}>
+        <View style={{ paddingTop: 10, paddingBottom: 2 }}>
           <ScrollView
             horizontal
-            contentContainerStyle={{ paddingHorizontal: 16, gap: 14 }}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 14, alignItems: "center", paddingBottom: 4 }}
             showsHorizontalScrollIndicator={false}
           >
             {favContacts.map((c) => (
@@ -358,7 +358,7 @@ export const RecentsScreen: React.FC = () => {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, gap: 6, paddingTop: 10 }}
+        contentContainerStyle={{ paddingHorizontal: 16, gap: 6, paddingTop: 10, paddingBottom: 8, alignItems: "center" }}
         style={{ flexGrow: 0 }}
       >
         <Chip label={t("act.all")} active={filter === "all"} onPress={() => setFilter("all")} />
@@ -382,7 +382,7 @@ export const RecentsScreen: React.FC = () => {
         initialNumToRender={10}
         maxToRenderPerBatch={10}
         windowSize={5}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 20 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 28 }}
         ListEmptyComponent={
           <EmptyState
             icon="history"
@@ -477,7 +477,10 @@ const CallRowSheet: React.FC<{
               const p = row.phone;
               onClose();
               const saved = await openNewContactForm({ phone: p });
-              if (saved) toast(t("ce.contactSaved"), "ok");
+              if (saved) {
+                toast(t("ce.contactSaved"), "ok");
+                useApp.getState().refreshDeviceContacts(); // show it at once
+              }
             },
           } as const,
         ]),

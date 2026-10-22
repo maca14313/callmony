@@ -9,7 +9,7 @@ import { useT } from "../i18n";
 import { relTime } from "../lib/utils";
 import type { Note, OwnerId } from "../lib/types";
 import { F, useThemeColors } from "../theme";
-import { Btn, Card, EmptyState, confirm, toast, toastUndo } from "../components/kit";
+import { Btn, Card, EmptyState, confirm, toastUndo } from "../components/kit";
 import { SwipeRow } from "../components/SwipeRow";
 
 const NOTE_COLORS = ["#E4EDE7", "#F7E8DF", "#E5E8F9", "#F4E5EE", "#F4EEDB"];

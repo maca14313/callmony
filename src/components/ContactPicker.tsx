@@ -4,7 +4,7 @@ import React, { useMemo } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useApp, contactByRecord } from "../lib/store";
 import { useT, t as tr } from "../i18n";
-import { displayName, normalizePhone, prettyPhone } from "../lib/utils";
+import { displayName, normalizePhone, prettyPhone, searchContacts } from "../lib/utils";
 import { contactOwnerId } from "../lib/types";
 import { F, useThemeColors } from "../theme";
 import { Avatar } from "./kit";
@@ -29,18 +29,10 @@ export const ContactPicker: React.FC<{
   const countryCode = useApp((s) => s.settings.countryCode);
   const [q, setQ] = React.useState("");
 
+  /* scored search — name word-prefix, company, email and BOTH phone
+     formats (+251… and 09…), ranked best-first */
   const filtered = q.trim()
-    ? contacts.filter((c) => {
-        const query = q.toLowerCase().trim();
-        const qDigits = query.replace(/\D/g, "");
-        if (displayName(c).toLowerCase().includes(query)) return true;
-        /* phone match ONLY for real digit queries — "" is included in every
-           number, which used to make every letter search match everything */
-        if (qDigits.length >= 2) {
-          return c.phones.some((p) => p.number.replace(/\D/g, "").includes(qDigits));
-        }
-        return false;
-      })
+    ? searchContacts(contacts, q, displayName, countryCode).map((x) => x.contact)
     : contacts;
 
   return (

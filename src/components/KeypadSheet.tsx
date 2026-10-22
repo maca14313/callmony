@@ -301,7 +301,10 @@ export const KeypadSheet: React.FC = () => {
   const addContact = async () => {
     if (!number) return;
     const saved = await openNewContactForm({ phone: number });
-    if (saved) toast(t("ce.contactSaved"), "ok");
+    if (saved) {
+      toast(t("ce.contactSaved"), "ok");
+      useApp.getState().refreshDeviceContacts(); // show it at once
+    }
   };
 
   const renderRow = useCallback(

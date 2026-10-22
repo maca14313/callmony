@@ -15,13 +15,13 @@ import {
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import Contacts from "react-native-contacts";
 import { useApp } from "../lib/store";
-import { useUI, type Overlay } from "../lib/ui-store";
+import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { dueStatus } from "../lib/calc";
-import { displayName, ft, money, normalizePhone, prettyPhone, vibrate } from "../lib/utils";
+import { displayName, ft, money, prettyPhone, searchContacts, vibrate } from "../lib/utils";
 import { F, useThemeColors } from "../theme";
 import { Avatar, Btn, Card, EmptyState, IconBtn, Pill, confirm, toast } from "../components/kit";
-import { Sheet, BottomSheet } from "../components/Sheet";
+import { Sheet } from "../components/Sheet";
 import { ContactPicker } from "../components/ContactPicker";
 import { placeCall } from "../native/calls";
 import { findDuplicateContacts } from "../native/deviceContacts";
@@ -42,29 +42,20 @@ export const SearchOverlay: React.FC = () => {
   const banks = useApp((s) => s.banks);
   const countryCode = useApp((s) => s.settings.countryCode);
   const [q, setQ] = useState("");
+  /* debounce the query — typing on a 5000-contact book stays at 60fps */
+  const [debouncedQ, setDebouncedQ] = useState("");
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedQ(q), 140);
+    return () => clearTimeout(id);
+  }, [q]);
 
-  const ql = q.trim().toLowerCase();
-  const qDigits = ql.replace(/\D/g, "");
+  const ql = debouncedQ.trim().toLowerCase();
   const hitContacts = useMemo(
     () =>
-      ql.length >= 2
-        ? contacts
-            .filter((c) => {
-              if (displayName(c).toLowerCase().includes(ql)) return true;
-              /* dialer-style phone search — raw digits (09…) AND normalized
-                 (+251…) both match, same as the keypad */
-              if (qDigits.length >= 2) {
-                return c.phones.some((p) => {
-                  const raw = p.number.replace(/\D/g, "");
-                  const norm = normalizePhone(p.number, countryCode).replace(/\D/g, "");
-                  return raw.includes(qDigits) || norm.includes(qDigits);
-                });
-              }
-              return false;
-            })
-            .slice(0, 6)
+      ql.length >= 1
+        ? searchContacts(contacts, ql, displayName, countryCode, 12).map((x) => x.contact)
         : [],
-    [ql, qDigits, contacts, countryCode]
+    [ql, contacts, countryCode]
   );
   const hitEntries = useMemo(
     () =>
@@ -103,8 +94,8 @@ export const SearchOverlay: React.FC = () => {
         placeholderTextColor={C.faint}
         style={[searchStyles.input, { borderColor: C.line, backgroundColor: C.inputBg, color: C.ink }]}
       />
-      {ql.length < 2 && <Text style={{ color: C.sub, fontSize: F.small, textAlign: "center", paddingVertical: 20 }}>{t("sr.keepTyping")}</Text>}
-      {ql.length >= 2 && total === 0 && <EmptyState icon="magnify-close" title={t("sr.noResults")} hint={t("sr.tryHint")} />}
+      {ql.length < 1 && <Text style={{ color: C.sub, fontSize: F.small, textAlign: "center", paddingVertical: 20 }}>{t("sr.keepTyping")}</Text>}
+      {ql.length >= 1 && total === 0 && <EmptyState icon="magnify-close" title={t("sr.noResults")} hint={t("sr.tryHint")} />}
 
       {hitContacts.length > 0 && (
         <ResultGroup title={t("nav.contacts")}>

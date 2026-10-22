@@ -1,11 +1,27 @@
 /* Device contacts — react-native-contacts wrapper.
-   All contacts are fetched from the phone's address book on launch. */
+   The address book is loaded ONCE per stale window and kept as a disk
+   snapshot (JSON file): the app opens with contacts INSTANTLY from the
+   cache — the OS is only queried again when the snapshot is older than
+   CONTACTS_TTL (5 min) or after an in-app contact edit. A 5000-contact
+   book never re-serializes over the bridge on every open. */
 
 import { Platform, PermissionsAndroid } from "react-native";
 import Contacts from "react-native-contacts";
+import RNFS from "react-native-fs";
 import type { DeviceContact } from "../lib/types";
 
 export type PermState = "authorized" | "denied" | "undetermined";
+
+/** contacts older than this are re-fetched from the OS (ms). */
+export const CONTACTS_TTL = 5 * 60 * 1000;
+
+const CACHE_FILE = `${RNFS.DocumentDirectoryPath}/contacts-cache.json`;
+
+export interface ContactsCache {
+  savedAt: number;
+  count: number;
+  list: DeviceContact[];
+}
 
 const normalizeLabel = (label: string): string => {
   const l = (label || "").toLowerCase().replace(/[_\s]/g, "");
@@ -109,6 +125,42 @@ export const fetchAllContacts = async (): Promise<DeviceContact[]> => {
     (a.displayName || "~").localeCompare(b.displayName || "~")
   );
   return list;
+};
+
+/* ---------------- disk snapshot ---------------- */
+
+/** Read the cached snapshot — resolves null when there is none. */
+export const loadCachedContacts = async (): Promise<ContactsCache | null> => {
+  try {
+    const txt = await RNFS.readFile(CACHE_FILE, "utf8");
+    const parsed = JSON.parse(txt) as ContactsCache;
+    if (!parsed || !Array.isArray(parsed.list) || parsed.list.length === 0) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Persist the snapshot (debounced — a favorite toggle must not rewrite a
+    3 MB file). Runs off the next tick so it can never block first paint. */
+export const saveCachedContacts = (list: DeviceContact[]): void => {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    const payload: ContactsCache = { savedAt: Date.now(), count: list.length, list };
+    RNFS.writeFile(CACHE_FILE, JSON.stringify(payload), "utf8").catch(() => undefined);
+  }, 1500);
+};
+
+/** Drop the snapshot (e.g. permission revoked / wipe). */
+export const clearContactsCache = async (): Promise<void> => {
+  try {
+    await RNFS.unlink(CACHE_FILE);
+  } catch {
+    /* file may not exist */
+  }
 };
 
 /** Full photo for one contact (contact detail hero). */

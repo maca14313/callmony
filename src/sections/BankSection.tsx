@@ -2,7 +2,7 @@
    holder link to contacts. */
 
 import React, { useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useUI } from "../lib/ui-store";

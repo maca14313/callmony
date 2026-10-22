@@ -2,7 +2,7 @@
    kind chips, snooze actions, done toggle. Used by General, ContactDetail
    and the Reminders tab. */
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
