@@ -192,7 +192,9 @@ export const AM: Record<string, string> = {
   "ce.setPhoto": "የእውቂያ ፎቶ አድርግ",
   "ce.birthdayLabel": "የልደት ቀን",
 
-  "kp.enterNumber": "ቁጥር አስገባ",
+  "kp.enterNumber": "ቁጥር አስገባ",  "kp.paste": "ከቅዱስ ሰሌዳ ለጥፍ",
+  "kp.noNumberInClipboard": "በቅዱስ ሰሌዳው ላይ የስልክ ቁጥር አልተገኘም",
+
   "kp.readyToConnect": "ለመገናኘት ዝግጁ",
   "kp.maxDigits": "ከፍተኛው የቁጥር ርዝመት ላይ ደርሰሃል",
   "kp.speedDial": "ፈጣን መደወያ",

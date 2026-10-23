@@ -19,6 +19,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Clipboard from "@react-native-clipboard/clipboard";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useUI } from "../lib/ui-store";
@@ -293,6 +294,31 @@ export const KeypadSheet: React.FC = () => {
     setNumber((n) => (n.length >= 24 ? n : n + d));
   };
 
+  /* v1.6.5 — PASTE (user report: "why can't I paste phone number on the
+     keypad"): the keypad display is custom-drawn Text, so there was no
+     system paste affordance at all. A clipboard button beside the display
+     + long-press on the display both paste. The clipboard text is
+     sanitized to keypad characters only (digits · leading + · * · #) so a
+     copied address or sentence can never garbage the dialer. */
+  const pasteFromClipboard = async () => {
+    try {
+      const raw = (await Clipboard.getString()) ?? "";
+      /* keep only dialable chars; a single leading + survives, inner junk
+         (spaces, dashes, dots, parentheses) is stripped */
+      const stripped = raw.replace(/[\s\-().\u2013\u2014]/g, "");
+      const m = stripped.match(/^\+?[0-9*#]+$/);
+      const clean = m ? m[0] : "";
+      if (!clean) {
+        toast(t("kp.noNumberInClipboard"), "info");
+        return;
+      }
+      setNumber(clean.slice(0, 24));
+      vibrate(12);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+
   const longPressKey = (d: string) => {
     if (d === "0") {
       setNumber((n) => (n.length >= 24 ? n : n + "+"));
@@ -433,9 +459,16 @@ export const KeypadSheet: React.FC = () => {
             </View>
           )}
 
-          {/* number display — DIRECTLY above the keypad grid */}
+          {/* number display — DIRECTLY above the keypad grid. v1.6.5:
+              long-press the display = paste from clipboard. */}
           <View style={[styles.displayRow, { direction: "ltr" }]}>
-            <View style={{ flex: 1, alignItems: "center", justifyContent: "center", minWidth: 0 }}>
+            <Pressable
+              onLongPress={pasteFromClipboard}
+              delayLongPress={400}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityLabel={t("kp.paste")}
+              style={{ flex: 1, alignItems: "center", justifyContent: "center", minWidth: 0 }}
+            >
               <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                 {number ? (
                   <Text
@@ -459,6 +492,19 @@ export const KeypadSheet: React.FC = () => {
                     accessibilityLabel={t("kp.deleteDigit")}
                   >
                     <Icon name="backspace-outline" size={21} color={C.sub} />
+                  </Pressable>
+                )}
+                {/* v1.6.5 — visible PASTE button: long-press works too, but a
+                    visible clipboard icon is discoverable. Shown while the
+                    display is empty (backspace takes the slot otherwise). */}
+                {!number && (
+                  <Pressable
+                    onPress={pasteFromClipboard}
+                    hitSlop={6}
+                    style={styles.backspace}
+                    accessibilityLabel={t("kp.paste")}
+                  >
+                    <Icon name="clipboard-text-outline" size={20} color={C.sub} />
                   </Pressable>
                 )}
               </View>
@@ -485,7 +531,7 @@ export const KeypadSheet: React.FC = () => {
                   </Text>
                 )
               )}
-            </View>
+            </Pressable>
           </View>
 
           {/* keypad grid — max-w 300, centered, never scrolls */}

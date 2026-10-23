@@ -200,7 +200,9 @@ export const OM: Record<string, string> = {
   "ce.birthdayLabel": "Guyyaa dhalachuu",
 
   /* keypad */
-  "kp.enterNumber": "Lakkoofsa galchi",
+  "kp.enterNumber": "Lakkoofsa galchi",  "kp.paste": "Warraabbii irraa maxxansi",
+  "kp.noNumberInClipboard": "Lakkoofsa bilbila warraabbii keessatti hin argamne",
+
   "kp.readyToConnect": "Wal qunnamuuf qophaa'e",
   "kp.maxDigits": "Lakkoofsi dheerina daangaa ga'eera",
   "kp.speedDial": "Bilbila saffisaa",

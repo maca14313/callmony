@@ -200,7 +200,9 @@ export const EN: Record<string, string> = {
   "ce.birthdayLabel": "Birthday",
 
   /* keypad */
-  "kp.enterNumber": "Enter a number",
+  "kp.enterNumber": "Enter a number",  "kp.paste": "Paste from clipboard",
+  "kp.noNumberInClipboard": "No phone number found in the clipboard",
+
   "kp.readyToConnect": "Ready to connect",
   "kp.maxDigits": "Maximum number length reached",
   "kp.speedDial": "Speed dial",

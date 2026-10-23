@@ -200,7 +200,9 @@ export const AR: Record<string, string> = {
   "ce.birthdayLabel": "عيد الميلاد",
 
   /* keypad */
-  "kp.enterNumber": "أدخل رقمًا",
+  "kp.enterNumber": "أدخل رقمًا",  "kp.paste": "لصق من الحافظة",
+  "kp.noNumberInClipboard": "لا يوجد رقم هاتف في الحافظة",
+
   "kp.readyToConnect": "جاهز للاتصال",
   "kp.maxDigits": "تم بلوغ الطول الأقصى للرقم",
   "kp.speedDial": "الاتصال السريع",

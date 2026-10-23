@@ -185,7 +185,9 @@ export const TI: Record<string, string> = {
   "ce.tagsPlaceholder": "ኣቅሪባይ፣ vip",
   "ce.setPhoto": "ስእሊ እውቂያ ኣቐምጥ",
   "ce.birthdayLabel": "ዕለት ልደት",
-  "kp.enterNumber": "ቁፅሪ ኣእቱ",
+  "kp.enterNumber": "ቁፅሪ ኣእቱ",  "kp.paste": "ካብ ኪልብቦርድ ምልጣይ",
+  "kp.noNumberInClipboard": "ቁፅሪ ስልኊ ኣብ ኪልብቦርድ ዘይተረኽበ",
+
   "kp.readyToConnect": "ንምድወል ዝተዳለ",
   "kp.maxDigits": "ዝነኣ ርዚንቲ ቁፅሪ ተበጽሐ",
   "kp.speedDial": "ቐጽቢ ደውል",

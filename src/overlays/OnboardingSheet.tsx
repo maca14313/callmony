@@ -8,13 +8,13 @@
    SettingsOverlay (region section) — this sheet is first-run only. */
 
 import React, { useMemo, useState } from "react";
-import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
+import { Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useT } from "../i18n";
 import { COUNTRY_CODES, CURRENCIES } from "../lib/types";
 import { F, useThemeColors } from "../theme";
-import { Sheet } from "../components/Sheet";
 import { Btn, Field } from "../components/kit";
 
 /* CURRENCIES (types.ts) + the common regional set, so the first-run picker
@@ -41,6 +41,7 @@ const otherCode = (v: string): string => v.trim().toUpperCase().replace(/[^A-Z]/
 export const OnboardingSheet: React.FC = () => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
   const t = useT();
+  const insets = useSafeAreaInsets();
   const savedCurrency = useApp((s) => s.settings.currency);
   const savedCountry = useApp((s) => s.settings.countryCode);
   const updateSettings = useApp((s) => s.updateSettings);
@@ -76,17 +77,38 @@ export const OnboardingSheet: React.FC = () => {
   };
 
   return (
-    <Sheet
-      title={t("ob.title")}
-      subtitle={t("hdr.tagline")}
-      onBack={save}
-      footer={
-        /* v1.6.3 — BIG and safely padded (the "cropped from bottom" report
-           hit this button twice): 56px tall, and the Sheet footer now pads
-           ≥28px under it on Android no matter what insets the Modal reports. */
-        <Btn label={t("ob.getStarted")} icon="arrow-right" onPress={save} style={{ flex: 1, minHeight: 56 }} />
-      }
-    >
+    /* v1.6.5 — DEDICATED FULL-SCREEN modal (the "Get started cropped from
+       bottom" report hit THREE builds while this lived in the generic Sheet):
+       the button is no longer a sheet footer — it is pinned in its own
+       container under a flex:1 ScrollView, with a hard 36px bottom floor
+       plus the real safe-area inset. Nothing above it can squeeze it, no
+       keyboard can cover it (adjustResize + dismiss on scroll/tap), and the
+       same button also sits at the end of the scroll content. */
+    <Modal animationType="slide" visible onRequestClose={save}>
+      <View style={[obStyles.root, { backgroundColor: C.canvas, paddingTop: insets.top }]}>
+        {/* header — back chevron ALSO saves (defaults are preselected, so
+            the sheet can never trap the user) */}
+        <View style={[obStyles.header, { borderBottomColor: C.line }]}>
+          <Pressable onPress={save} hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }} style={obStyles.backBtn} accessibilityRole="button" accessibilityLabel={t("act.back")}>
+            <Icon name="chevron-left" size={26} color={C.ink} />
+          </Pressable>
+          <View style={{ flex: 1, alignItems: "center", minWidth: 0 }}>
+            <Text style={{ fontSize: F.h2, fontWeight: "800", color: C.ink }} numberOfLines={1}>
+              {t("ob.title")}
+            </Text>
+            <Text style={{ fontSize: F.tiny, color: C.sub }} numberOfLines={1}>
+              {t("hdr.tagline")}
+            </Text>
+          </View>
+          <View style={{ width: 38 }} />
+        </View>
+
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 18, paddingBottom: 24 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={"on-drag"}
+        >
       {/* welcome — brand logo tile, matching the splash look */}
       <View style={{ alignItems: "center", marginBottom: 18 }}>
         <View style={[obStyles.logo, { backgroundColor: C.brand }]}>
@@ -193,22 +215,37 @@ export const OnboardingSheet: React.FC = () => {
         )}
       </View>
 
-      {/* v1.6.2/v1.6.3 — an in-content Get-started button at the very END
-          of the scroll: on any screen/keyboard state the user can always
-          scroll to a fully visible save button, even if the fixed footer is
-          covered. v1.6.3: taller + generous bottom margin for ROMs where the
-          modal extends under the gesture bar. */}
+      {/* in-content Get-started at the very END of the scroll — always
+          reachable by scrolling, even if something exotic covers the pinned
+          bottom button. */}
       <Btn
         label={t("ob.getStarted")}
         icon="arrow-right"
         onPress={save}
-        style={{ marginTop: 18, marginBottom: 28, minHeight: 58 }}
+        style={{ marginTop: 18, marginBottom: 12, minHeight: 58 }}
       />
-    </Sheet>
+        </ScrollView>
+
+        {/* THE big button — pinned outside the scroll, hard floor under it */}
+        <View style={[obStyles.footer, { borderTopColor: C.line, paddingBottom: Math.max(insets.bottom, 36) }]}>
+          <Btn label={t("ob.getStarted")} icon="arrow-right" onPress={save} style={{ flex: 1, minHeight: 58 }} />
+        </View>
+      </View>
+    </Modal>
   );
 };
 
 const obStyles = StyleSheet.create({
+  root: { flex: 1 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  backBtn: { width: 38, height: 44, alignItems: "center", justifyContent: "center" },
+  footer: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, paddingTop: 12 },
   logo: { width: 74, height: 74, borderRadius: 24, alignItems: "center", justifyContent: "center" },
   label: { fontSize: F.small, fontWeight: "600", marginBottom: 8 },
   pill: {
