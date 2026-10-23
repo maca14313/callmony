@@ -1,7 +1,7 @@
 /* Editors — NoteEdit · ReminderEdit · BankEdit overlays. */
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useUI, type Overlay } from "../lib/ui-store";
@@ -9,6 +9,7 @@ import { useT } from "../i18n";
 import { dateStr, fd, ft, parseDueLocal } from "../lib/utils";
 import type { ReminderKind, Repeat } from "../lib/types";
 import { notificationsEnabled, requestNotificationPermission } from "../native/notify";
+import { isBatteryExempt, requestBatteryExemption } from "../native/diag";
 import { F, useThemeColors } from "../theme";
 import { Btn, Chip, Field, SectionHeader, confirm, toast } from "../components/kit";
 import { Sheet } from "../components/Sheet";
@@ -169,6 +170,19 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
           useApp.getState().updateSettings({ notifAsked: true });
         })
         .catch(() => undefined);
+    }
+    /* v1.6.7 — ONE-TIME battery-exemption ask (ported from v1.6.4): OEM
+       battery savers (Tecno/Infinix/Xiaomi/Samsung) force-kill background
+       apps and drop their scheduled alarms — the #1 field cause of
+       "reminders don't work when the app is closed". Shown once per
+       install, right when the user starts relying on ringing reminders. */
+    if (Platform.OS === "android" && !useApp.getState().settings.batteryAsked) {
+      isBatteryExempt()
+        .then(async (exempt) => {
+          if (exempt === false) await requestBatteryExemption();
+        })
+        .catch(() => undefined)
+        .finally(() => useApp.getState().updateSettings({ batteryAsked: true }));
     }
     saveReminder({
       id: existing?.id,

@@ -294,24 +294,48 @@ export const KeypadSheet: React.FC = () => {
     setNumber((n) => (n.length >= 24 ? n : n + d));
   };
 
-  /* v1.6.6 — PASTE (user report: "why can't I paste phone number on the
-     keypad"): the keypad display is custom-drawn Text, so Android has no
-     paste target here. A clipboard button beside the display + long-press
-     the display both paste. Clipboard text is sanitized to dialable
-     characters (digits · leading + · * · #) so pasting a messy message
-     still extracts the number. */
+  /* v1.6.6/v1.6.7 — PASTE (user report: "why can't I paste phone number on
+     the keypad"): the keypad display is custom-drawn Text, so Android has no
+     paste target here. Clipboard button beside the display + long-press
+     the display (300 ms) both paste. v1.6.7 hardening after "why can't I
+     paste by long-pressing the number display":
+     - LENIENT extraction: the strict "whole clipboard is a number" pass
+       stays, but a copied "call me at 0912 345 678" now extracts the
+       number instead of failing with "no number in clipboard"
+       (>= 9 digits so dates / random numbers in text don't false-positive)
+     - the paste button is visible whenever the clipboard likely holds
+       text (Clipboard.hasString on sheet open) — not only while the
+       display is empty
+     - 300 ms long-press (400 read as "not working") + a Pasted toast so
+       the success is unmistakable */
+  const [clipHas, setClipHas] = useState(false);
+  useEffect(() => {
+    Clipboard.hasString().then(setClipHas).catch(() => setClipHas(false));
+  }, []);
+
   const pasteFromClipboard = async () => {
     try {
       const raw = (await Clipboard.getString()) ?? "";
-      const stripped = raw.replace(/[\s\-().\u2013\u2014]/g, "");
-      const m = stripped.match(/^\+?[0-9*#]+$/);
-      const clean = m ? m[0] : "";
+      /* pass 1 — strict: the entire clipboard is a dialable string */
+      const strict = raw.replace(/[\s\-().\u2013\u2014]/g, "");
+      const m = strict.match(/^\+?[0-9*#]+$/);
+      let clean = m ? m[0] : "";
+      /* pass 2 — lenient: first number-like run anywhere in the text */
+      if (!clean) {
+        const g = raw.match(/\+?[0-9][0-9\s\-().\u2013\u2014]{6,}[0-9*#]/);
+        if (g) {
+          const digits = g[0].replace(/[\s\-().\u2013\u2014]/g, "");
+          if (digits.replace(/\D/g, "").length >= 9) clean = digits;
+        }
+      }
       if (!clean) {
         toast(t("kp.noNumberInClipboard"), "info");
         return;
       }
       setNumber(clean.slice(0, 24));
+      setClipHas(true);
       vibrate(12);
+      toast(t("kp.pasted"), "ok");
     } catch {
       /* clipboard unavailable */
     }
@@ -458,11 +482,11 @@ export const KeypadSheet: React.FC = () => {
           )}
 
           {/* number display — DIRECTLY above the keypad grid. Long-press
-              the display = paste from clipboard (v1.6.6). */}
+              the display (300 ms) = paste from clipboard (v1.6.6/v1.6.7). */}
           <View style={[styles.displayRow, { direction: "ltr" }]}>
             <Pressable
               onLongPress={pasteFromClipboard}
-              delayLongPress={400}
+              delayLongPress={300}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               accessibilityLabel={t("kp.paste")}
               style={{ flex: 1, alignItems: "center", justifyContent: "center", minWidth: 0 }}
@@ -480,6 +504,20 @@ export const KeypadSheet: React.FC = () => {
                 ) : (
                   <Text style={[styles.placeholder, { color: C.faint }]}>{t("kp.enterNumber")}</Text>
                 )}
+                {/* v1.6.7 — the PASTE button is ALWAYS available while the
+                    clipboard likely holds text (hasString on sheet open),
+                    not only while the display is empty — the user must be
+                    able to paste over a half-typed number too. */}
+                {(clipHas || !number) && (
+                  <Pressable
+                    onPress={pasteFromClipboard}
+                    hitSlop={6}
+                    style={styles.backspace}
+                    accessibilityLabel={t("kp.paste")}
+                  >
+                    <Icon name="clipboard-text-outline" size={20} color={C.sub} />
+                  </Pressable>
+                )}
                 {!!number && (
                   <Pressable
                     onPress={backspace}
@@ -490,18 +528,6 @@ export const KeypadSheet: React.FC = () => {
                     accessibilityLabel={t("kp.deleteDigit")}
                   >
                     <Icon name="backspace-outline" size={21} color={C.sub} />
-                  </Pressable>
-                )}
-                {/* v1.6.6 — visible PASTE button (shown while the display is
-                    empty; backspace takes the slot otherwise). */}
-                {!number && (
-                  <Pressable
-                    onPress={pasteFromClipboard}
-                    hitSlop={6}
-                    style={styles.backspace}
-                    accessibilityLabel={t("kp.paste")}
-                  >
-                    <Icon name="clipboard-text-outline" size={20} color={C.sub} />
                   </Pressable>
                 )}
               </View>

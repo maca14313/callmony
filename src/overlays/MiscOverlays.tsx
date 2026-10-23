@@ -23,7 +23,8 @@ import { Avatar, Btn, Card, EmptyState, IconBtn, Money, Pill, confirm, toast } f
 import { Sheet } from "../components/Sheet";
 import { ContactPicker } from "../components/ContactPicker";
 import { placeCall } from "../native/calls";
-import { deleteDeviceContact, findDuplicateContacts, loadContactForEdit, saveContactEdit } from "../native/deviceContacts";
+import { Linking } from "react-native";
+import { deleteDeviceContact, findDuplicateContacts, loadContactForEdit, requestContactsPermission, saveContactEdit } from "../native/deviceContacts";
 import type { DeviceContact, Reminder } from "../lib/types";
 
 /* ================= Search ================= */
@@ -41,6 +42,23 @@ export const SearchOverlay: React.FC = () => {
   const banks = useApp((s) => s.banks);
   const countryCode = useApp((s) => s.settings.countryCode);
   const [q, setQ] = useState("");
+  /* v1.6.7 — READ_CONTACTS denied: search can only ever hit the app's own
+     data. One tap re-asks (or opens the app settings on the second tap). */
+  const contactsPerm = useApp((s) => s.contactsPerm);
+  const [askedOnce, setAskedOnce] = useState(false);
+  const askContacts = async () => {
+    if (askedOnce) {
+      Linking.openSettings().catch(() => undefined);
+      return;
+    }
+    setAskedOnce(true);
+    const status = await requestContactsPermission();
+    if (status === "authorized") {
+      setAskedOnce(false);
+      toast(t("cd.contactsReady"), "ok");
+      useApp.getState().refreshDeviceContacts().catch(() => undefined);
+    }
+  };
   /* debounce the query — typing on a 5000-contact book stays at 60fps */
   const [debouncedQ, setDebouncedQ] = useState("");
   useEffect(() => {
@@ -114,6 +132,20 @@ export const SearchOverlay: React.FC = () => {
         style={[searchStyles.input, { borderColor: C.line, backgroundColor: C.inputBg, color: C.ink }]}
       />
       {ql.length < 1 && <Text style={{ color: C.sub, fontSize: F.small, textAlign: "center", paddingVertical: 20 }}>{t("sr.keepTyping")}</Text>}
+      {contactsPerm === "denied" && contacts.length === 0 && (
+        <Pressable
+          onPress={askContacts}
+          style={[searchStyles.contactsRow, { borderColor: "rgba(185,125,16,0.35)" }]}
+          accessibilityRole="button"
+          accessibilityLabel={t("cd.contactsLocked")}
+        >
+          <Icon name="account-lock-outline" size={16} color={C.amber} />
+          <Text style={{ flex: 1, fontSize: F.tiny, fontWeight: "700", color: C.sub }} numberOfLines={2}>
+            {t("cd.contactsLockedHint")}
+          </Text>
+          <Btn small label={askedOnce ? t("perm.openSettings") : t("st.allow")} onPress={askContacts} />
+        </Pressable>
+      )}
       {ql.length >= 1 && total === 0 && <EmptyState icon="magnify-close" title={t("sr.noResults")} hint={t("sr.tryHint")} />}
 
       {hitContacts.length > 0 && (
@@ -453,7 +485,7 @@ export const AboutOverlay: React.FC = () => {
         <Text style={{ fontSize: F.hero, fontWeight: "800", color: C.ink, marginTop: 8 }}>callmony</Text>
         <Text style={{ fontSize: F.small, color: C.sub }}>{t("hdr.tagline")}</Text>
         <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
-          <Pill label={`${t("st.version")} 1.6.6`} tone="brand" />
+          <Pill label={`${t("st.version")} 1.6.7`} tone="brand" />
           <Pill label={t("about.offline")} tone="green" icon="cloud-off-outline" />
         </View>
       </View>
@@ -577,6 +609,17 @@ export const AlarmDialog: React.FC = () => {
 
 const searchStyles = StyleSheet.create({
   input: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, height: 48, fontSize: F.body, marginBottom: 14 },
+  contactsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    backgroundColor: "rgba(185,125,16,0.08)",
+    marginBottom: 12,
+  },
   hit: { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 5, minHeight: 54 },
   hitPill: {
     flexDirection: "row", alignItems: "center", gap: 2, borderRadius: 999,

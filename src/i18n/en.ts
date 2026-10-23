@@ -202,7 +202,11 @@ export const EN: Record<string, string> = {
   /* keypad */
   "kp.enterNumber": "Enter a number",  "kp.paste": "Paste from clipboard",
   "kp.noNumberInClipboard": "No phone number found in the clipboard",
+  "kp.pasted": "Pasted from clipboard",
   "cd.newContact": "New",
+  "cd.contactsLocked": "Contacts access is off",
+  "cd.contactsLockedHint": "Allow access so names, search and favorites work",
+  "cd.contactsReady": "Contacts ready",
 
   "kp.readyToConnect": "Ready to connect",
   "kp.maxDigits": "Maximum number length reached",

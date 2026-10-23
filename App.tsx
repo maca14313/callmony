@@ -45,7 +45,7 @@ import { setupCallKeep } from "./src/native/callkeep";
 import { maybeAutoSync, autoSnapshot } from "./src/lib/backup";
 import { bootMark, setNavBarColor } from "./src/native/diag";
 import { isSafeMode } from "./src/boot/crash-firewall";
-import { handleNotifeeEvent } from "./src/native/notify";
+import { ensureReminderReadiness, handleNotifeeEvent } from "./src/native/notify";
 import notifee from "@notifee/react-native";
 
 const App: React.FC = () => {
@@ -217,12 +217,18 @@ const Shell: React.FC = () => {
 
       /* 2 — permissions, THEN the call log read (on first run the dialogs
          must resolve before we query — otherwise a transient "denied"
-         flash covers Recents; on later boots this resolves instantly) */
+         flash covers Recents; on later boots this resolves instantly).
+         v1.6.7 — READ_CONTACTS rides along: with the Contacts TAB hidden
+         nothing else ever asked, and a fresh install (or an Android
+         permission auto-reset) left the address book empty — search,
+         keypad matching and Recents name-resolution all silently died.
+         One requestMultiple = one dialog group, asked once per install. */
       if (Platform.OS === "android") {
         try {
           await PermissionsAndroid.requestMultiple([
             PermissionsAndroid.PERMISSIONS.READ_CALL_LOG,
             PermissionsAndroid.PERMISSIONS.CALL_PHONE,
+            PermissionsAndroid.PERMISSIONS.READ_CONTACTS,
           ]);
         } catch {
           /* the denied card in Recents handles refusal */
@@ -249,10 +255,38 @@ const Shell: React.FC = () => {
       setTimeout(() => {
         if (!cancelled) autoSnapshot().catch(() => undefined);
       }, 10000);
+      /* v1.6.7 — REMINDER READINESS (deferred 8 s so the OS dialog never
+         covers the first paint): channel + one-time notification-permission
+         ask for users who already have reminders + SELF-HEAL re-arm of any
+         alarm the OS dropped. This is the ported v1.6.4 system — without
+         it, an OEM battery-saver kill or a permission reset left reminders
+         dead forever ("reminders still don't work"). */
+      setTimeout(() => {
+        if (!cancelled) runReminderReadiness();
+      }, 8000);
       bootMark("boot-done");
     };
 
+    const runReminderReadiness = () => {
+      try {
+        const s = useApp.getState();
+        const autoAsk = s.reminders.length > 0 && !s.settings.notifAsked;
+        ensureReminderReadiness(s.reminders, { autoAskPermission: autoAsk })
+          .then((res) => {
+            if (res.asked) useApp.getState().updateSettings({ notifAsked: true });
+          })
+          .catch(() => undefined);
+      } catch {
+        /* never block boot */
+      }
+    };
+
     const onForeground = () => {
+      /* v1.6.7 — self-heal reminders on foreground return (throttled inside
+         ensureReminderReadiness): OEM battery savers kill scheduled alarms
+         while the user is away; re-arming here is what keeps them ringing
+         day after day. */
+      runReminderReadiness();
       /* call log refresh (throttled) + contacts refresh silently (v1.6.6:
          the Contacts tab is hidden but search/keypad matching still need a
          fresh address book) when the snapshot went stale */

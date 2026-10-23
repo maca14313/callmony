@@ -95,4 +95,46 @@ class DiagModule(reactContext: ReactApplicationContext) :
             promise.reject("diag", e.message ?: "setNavBarColor failed")
         }
     }
+
+    /* ---------------- v1.6.7 — reminder reliability (battery saver) ----------------
+     * OEM battery managers (Tecno/Infinix/Xiaomi/Samsung "app sleep") are the
+     * #1 reason scheduled alarms never fire while the app is closed:
+     * a force-killed process loses its AlarmManager entries on many of these
+     * builds. The battery-optimization exemption is the only reliable fix.
+     * Ported back from v1.6.4 (the v1.6.2 revert dropped it). */
+
+    @ReactMethod
+    fun isIgnoringBatteryOptimizations(promise: Promise) {
+        try {
+            val pm = reactApplicationContext.getSystemService(android.content.Context.POWER_SERVICE)
+                    as android.os.PowerManager
+            promise.resolve(pm.isIgnoringBatteryOptimizations(reactApplicationContext.packageName))
+        } catch (e: Exception) {
+            promise.reject("diag", e.message ?: "battery check failed")
+        }
+    }
+
+    @ReactMethod
+    fun requestIgnoreBatteryOptimizations(promise: Promise) {
+        try {
+            val activity = currentActivity
+            if (activity == null) {
+                promise.resolve(false)
+                return
+            }
+            val pm = activity.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+            if (pm.isIgnoringBatteryOptimizations(activity.packageName)) {
+                promise.resolve(true)
+                return
+            }
+            val intent = android.content.Intent(
+                android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                android.net.Uri.parse("package:" + activity.packageName)
+            )
+            activity.startActivity(intent)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("diag", e.message ?: "battery request failed")
+        }
+    }
 }

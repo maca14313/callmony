@@ -275,6 +275,9 @@ export interface Settings {
   startTab?: string;
   lastBackupAt?: number;
   notifAsked: boolean;
+  /** v1.6.7 — the battery-exemption dialog was shown once (reminders that
+      survive OEM battery savers while the app is closed). */
+  batteryAsked?: boolean;
   blockedNumbers: string[];
   speedDial?: Record<string, string>; // keypad digit → recordID
   /* auto email sync — build backup (data + contacts vCard) on schedule and

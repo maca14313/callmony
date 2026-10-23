@@ -55,3 +55,35 @@ export const clearCrashReport = async (): Promise<void> => {
     /* noop */
   }
 };
+
+/* ---------------- v1.6.7 — reminder reliability (battery saver) ----------------
+   OEM battery managers (Tecno/Infinix/Xiaomi/Samsung "app sleep") are the
+   #1 reason scheduled alarms never fire while the app is closed.
+   isBatteryExempt() reports the real OS state; requestBatteryExemption()
+   opens the one-tap system dialog (ported back from v1.6.4 — the v1.6.2
+   revert had dropped it). */
+
+interface DiagBatteryNative {
+  isIgnoringBatteryOptimizations(): Promise<boolean>;
+  requestIgnoreBatteryOptimizations(): Promise<boolean>;
+}
+
+const DiagBattery = Diag as unknown as DiagBatteryNative | undefined;
+
+export const isBatteryExempt = async (): Promise<boolean | null> => {
+  if (Platform.OS !== "android" || !DiagBattery) return null;
+  try {
+    return await DiagBattery.isIgnoringBatteryOptimizations();
+  } catch {
+    return null;
+  }
+};
+
+export const requestBatteryExemption = async (): Promise<boolean> => {
+  if (Platform.OS !== "android" || !DiagBattery) return false;
+  try {
+    return await DiagBattery.requestIgnoreBatteryOptimizations();
+  } catch {
+    return false;
+  }
+};

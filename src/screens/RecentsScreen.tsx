@@ -23,7 +23,7 @@ import { useT } from "../i18n";
 import { copyText, dayGroup, durationStr, fd, ft, prettyPhone, relTime } from "../lib/utils";
 import type { DeviceContact } from "../lib/types";
 import { placeCall } from "../native/calls";
-import { openNewContactForm } from "../native/deviceContacts";
+import { openNewContactForm, requestContactsPermission } from "../native/deviceContacts";
 import { requestCallLogPermission } from "../native/callLog";
 import { openURL, smsLink, waLink } from "../lib/share";
 import { F, useThemeColors } from "../theme";
@@ -198,6 +198,18 @@ const DayFilters: React.FC<{
   missedCount: number;
 }> = ({ filter, onSet, missedCount }) => {
   const t = useT();
+  /* v1.6.7 — ＋ NEW-CONTACT chip BESIDE the favorites (star) chip (user
+     request: "add the + icon for adding new contact beside the favourite
+     icons in recents"). Self-contained: opens the OS create-contact form
+     and refreshes the address book on save. The favorites STRIP below also
+     ends with a ＋ tile — both "beside the favorites" spots are covered. */
+  const openNewContact = async () => {
+    const saved = await openNewContactForm({});
+    if (saved) {
+      toast(t("ce.contactSaved"), "ok");
+      useApp.getState().refreshDeviceContacts().catch(() => undefined);
+    }
+  };
   return (
     <View style={styles.dayFilters}>
       <Chip compact label={t("act.all")} active={filter === "all"} onPress={() => onSet("all")} />
@@ -213,6 +225,7 @@ const DayFilters: React.FC<{
       <Chip iconOnly icon="phone-incoming" label={t("cd.incoming")} active={filter === "incoming"} onPress={() => onSet("incoming")} />
       <Chip iconOnly icon="phone-outgoing" label={t("cd.outgoing")} active={filter === "outgoing"} onPress={() => onSet("outgoing")} />
       <Chip iconOnly icon="star" label={t("cd.favorites")} active={filter === "favorites"} onPress={() => onSet("favorites")} />
+      <Chip iconOnly icon="account-plus" label={t("act.newContact")} onPress={openNewContact} />
     </View>
   );
 };
@@ -237,11 +250,33 @@ export const RecentsScreen: React.FC = () => {
   const favSet = useMemo(() => new Set(favorites), [favorites]);
 
   const callLogPerm = useApp((s) => s.callLogPerm);
+  const contactsPerm = useApp((s) => s.contactsPerm);
   const systemCalls = useApp((s) => s.systemCalls);
   const [filter, setFilter] = useState<Filter>("all");
   const [refreshing, setRefreshing] = useState(false);
   const [sheetRow, setSheetRow] = useState<CallRow | null>(null);
   const [page, setPage] = useState(1);
+
+  /* v1.6.7 — READ_CONTACTS was denied (fresh install / permission reset with
+     the Contacts tab hidden): names, search, keypad matches and favorites
+     are all empty until it is granted. First tap re-asks (the OS dialog
+     shows again unless it was a permanent denial); the SECOND tap goes
+     straight to the app settings page — the only place a permanent denial
+     can be undone. The pill disappears the moment access is granted. */
+  const [contactsAskedOnce, setContactsAskedOnce] = useState(false);
+  const askContacts = useCallback(async () => {
+    if (contactsAskedOnce) {
+      openSettings();
+      return;
+    }
+    setContactsAskedOnce(true);
+    const status = await requestContactsPermission();
+    if (status === "authorized") {
+      setContactsAskedOnce(false);
+      toast(t("cd.contactsReady"), "ok");
+      useApp.getState().refreshDeviceContacts().catch(() => undefined);
+    }
+  }, [contactsAskedOnce, t]);
 
   /* silent background refresh — NEVER a blocking full-screen spinner:
      the disk snapshot (applied during hydrate) is already on screen */
@@ -488,6 +523,29 @@ export const RecentsScreen: React.FC = () => {
             <Money value={Math.abs(owedToYou) - Math.abs(youOwe)} colorize size={12} weight="800" compact />
           </View>
         </View>
+      )}
+
+      {/* v1.6.7 — contacts access OFF: the one-tap fix for the empty address
+          book (search / keypad matching / saved-card resolution all need it) */}
+      {contactsPerm === "denied" && contacts.length === 0 && (
+        <Pressable
+          onPress={askContacts}
+          android_ripple={{ color: "rgba(128,128,128,0.14)" }}
+          style={[styles.contactsLockedRow, { borderColor: "rgba(185,125,16,0.35)" }]}
+          accessibilityRole="button"
+          accessibilityLabel={t("cd.contactsLocked")}
+        >
+          <Icon name="account-lock-outline" size={18} color={C.amber} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ fontSize: F.small, fontWeight: "800", color: C.ink }} numberOfLines={1}>
+              {t("cd.contactsLocked")}
+            </Text>
+            <Text style={{ fontSize: F.tiny, color: C.sub }} numberOfLines={2}>
+              {t("cd.contactsLockedHint")}
+            </Text>
+          </View>
+          <Btn small label={contactsAskedOnce ? t("perm.openSettings") : t("st.allow")} onPress={askContacts} />
+        </Pressable>
       )}
 
       {/* favorites strip — v1.6.6: ALWAYS visible (works with zero
@@ -760,6 +818,18 @@ const styles = StyleSheet.create({
   statLabel: { flexDirection: "row", alignItems: "center", gap: 3 },
   statLabelTxt: { fontSize: 10, lineHeight: 12, fontWeight: "600" },
   oweRow: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 3 },
+  contactsLockedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    backgroundColor: "rgba(185,125,16,0.08)",
+  },
   fallbackRow: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 16, paddingBottom: 4 },
   dayWrap: { flexDirection: "row", alignItems: "center", gap: 6, paddingTop: 6, paddingBottom: 3, backgroundColor: "transparent" },
   dayChip: { borderRadius: 8, paddingHorizontal: 9, paddingVertical: 2 },

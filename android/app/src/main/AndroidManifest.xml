@@ -61,6 +61,10 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <!-- Reminders re-scheduled after device reboot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- v1.6.7 — battery-optimization exemption dialog (reminders that ring
+         while the app is closed on Tecno/Infinix/Xiaomi/Samsung: OEM battery
+         savers force-kill the app and drop its scheduled alarms otherwise). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Haptic feedback. -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />

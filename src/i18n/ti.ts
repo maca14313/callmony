@@ -187,7 +187,11 @@ export const TI: Record<string, string> = {
   "ce.birthdayLabel": "ዕለት ልደት",
   "kp.enterNumber": "ቁፅሪ ኣእቱ",  "kp.paste": "ካብ ኪልብቦርድ ምልጣይ",
   "kp.noNumberInClipboard": "ቁፅሪ ስልኊ ኣብ ኪልብቦርድ ዘይተረኽበ",
+  "kp.pasted": "ካብ ኪልብቦርድ ተለጢፉ ኣሎ",
   "cd.newContact": "ስጉምኒ",
+  "cd.contactsLocked": "መስገጥታ ኣፍቃላት ተዓጢቑ እዩ",
+  "cd.contactsLockedHint": "ኽእለት ስምዓት፣ ምድላይን ተወዳጅታትን ንኽሰርሑ ፍቐዱ",
+  "cd.contactsReady": "ኣፍቃላት ዝግጁ እዮን",
 
   "kp.readyToConnect": "ንምድወል ዝተዳለ",
   "kp.maxDigits": "ዝነኣ ርዚንቲ ቁፅሪ ተበጽሐ",

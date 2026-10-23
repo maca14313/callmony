@@ -202,7 +202,11 @@ export const AR: Record<string, string> = {
   /* keypad */
   "kp.enterNumber": "أدخل رقمًا",  "kp.paste": "لصق من الحافظة",
   "kp.noNumberInClipboard": "لا يوجد رقم هاتف في الحافظة",
+  "kp.pasted": "تم اللصق من الحافظة",
   "cd.newContact": "جديد",
+  "cd.contactsLocked": "الوصول إلى جهات الاتصال متوقف",
+  "cd.contactsLockedHint": "اسمح بالوصول حتى تعمل الأسماء والبحث والمفضلة",
+  "cd.contactsReady": "جهات الاتصال جاهزة",
 
   "kp.readyToConnect": "جاهز للاتصال",
   "kp.maxDigits": "تم بلوغ الطول الأقصى للرقم",

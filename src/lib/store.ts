@@ -19,7 +19,7 @@ import {
 } from "./db";
 import { entryRemaining, itemPaid, lineTotal, nextOccurrence, listTotals } from "./calc";
 import { normalizePhone, todayStr, uid } from "./utils";
-import { saveCachedContacts, fetchAllContacts, checkContactsPermission } from "../native/deviceContacts";
+import { saveCachedContacts, fetchAllContacts, checkContactsPermission, requestContactsPermission } from "../native/deviceContacts";
 import { isSafeMode } from "../boot/crash-firewall";
 import type {
   BankAccount,
@@ -51,6 +51,11 @@ interface AppState {
   systemCalls: DeviceCall[];
   callLogPerm: "unknown" | "granted" | "denied";
   loadSystemCalls: () => Promise<void>;
+  /* v1.6.7 — contacts access state: "denied" lets Recents / Search offer
+     the one-tap fix (the address book silently empty was the root cause of
+     "search not working" + "every card shows as unsaved" when the Contacts
+     tab got hidden — nothing ever asked for READ_CONTACTS anymore). */
+  contactsPerm: "unknown" | "granted" | "denied";
   contactX: ContactX[];
   entries: LedgerEntry[];
   groups: LedgerGroup[];
@@ -165,6 +170,7 @@ export const useApp = create<AppState>((set, get) => ({
   hydrated: false,
   deviceContacts: [],
   contactsLoadedAt: 0,
+  contactsPerm: "unknown",
   systemCalls: [],
   callLogPerm: "unknown",
 
@@ -244,11 +250,23 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   /* immediate OS re-query — used after contact create/edit sheets so the
-     change is visible the moment the user returns (no 5-min TTL wait) */
+     change is visible the moment the user returns (no 5-min TTL wait).
+     v1.6.7 — ROOT-CAUSE fix: the Contacts TAB used to be the only place
+     READ_CONTACTS was ever requested; hiding it left a fresh install (or a
+     permission reset) with an EMPTY address book forever — no search hits,
+     no keypad matches, every Recents card "unsaved". The permission dialog
+     now fires here (undetermined path) AND at boot (requestMultiple). */
   refreshDeviceContacts: async () => {
     try {
-      const status = await checkContactsPermission();
-      if (status !== "authorized") return;
+      let status = await checkContactsPermission();
+      if (status === "undetermined") {
+        status = await requestContactsPermission();
+      }
+      if (status !== "authorized") {
+        set({ contactsPerm: "denied" });
+        return;
+      }
+      set({ contactsPerm: "granted" });
       const list = await fetchAllContacts();
       if (list.length) {
         set({ deviceContacts: list, contactsLoadedAt: Date.now() });

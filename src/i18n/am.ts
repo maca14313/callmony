@@ -194,7 +194,11 @@ export const AM: Record<string, string> = {
 
   "kp.enterNumber": "ቁጥር አስገባ",  "kp.paste": "ከቅዱስ ሰሌዳ ለጥፍ",
   "kp.noNumberInClipboard": "በቅዱስ ሰሌዳው ላይ የስልክ ቁጥር አልተገኘም",
+  "kp.pasted": "ከቅዱስ ሰሌዳ ተለጥፏል",
   "cd.newContact": "አዲስ",
+  "cd.contactsLocked": "የእውቂያ መዳረሻ የጠፋ ነው",
+  "cd.contactsLockedHint": "ስሞች፣ ፍለጋ እና ተወዳጆች እንዲሠሩ መዳረሻ ይፍቀዱ",
+  "cd.contactsReady": "እውቂያዎች ዝግጁ ናቸው",
 
   "kp.readyToConnect": "ለመገናኘት ዝግጁ",
   "kp.maxDigits": "ከፍተኛው የቁጥር ርዝመት ላይ ደርሰሃል",

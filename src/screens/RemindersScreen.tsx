@@ -12,7 +12,7 @@ import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { dueStatus } from "../lib/calc";
 import type { ReminderKind } from "../lib/types";
-import { notificationsEnabled, requestNotificationPermission } from "../native/notify";
+import { notificationsEnabled, openNotificationSettingsDeep, requestNotificationPermission } from "../native/notify";
 import { F, useThemeColors } from "../theme";
 import { Btn, Card, Chip, Pill, Segmented, toast } from "../components/kit";
 import { RemindersSection } from "../sections/RemindersSection";
@@ -49,6 +49,14 @@ export const RemindersScreen: React.FC = () => {
     setNotifOn(ok);
     updateSettings({ notifAsked: true });
     toast(ok ? t("rm.notifGranted") : t("rm.notifDeclined"), ok ? "ok" : "info");
+    /* v1.6.7 — after the FIRST denial Android never re-shows the runtime
+       dialog; the one place the user can still flip notifications on is
+       the app's notification settings page. Route them straight there
+       instead of leaving a dead "Turn on" button. */
+    if (!ok) {
+      const deep = await openNotificationSettingsDeep();
+      if (!deep) openSettings();
+    }
   };
 
   const openSettings = async () => {

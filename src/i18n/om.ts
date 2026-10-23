@@ -202,7 +202,11 @@ export const OM: Record<string, string> = {
   /* keypad */
   "kp.enterNumber": "Lakkoofsa galchi",  "kp.paste": "Warraabbii irraa maxxansi",
   "kp.noNumberInClipboard": "Lakkoofsa bilbila warraabbii keessatti hin argamne",
+  "kp.pasted": "Warraabbii irraa maxxanfame",
   "cd.newContact": "Haaraa",
+  "cd.contactsLocked": "Seensa qunnamtii cufameera",
+  "cd.contactsLockedHint": "Maqaa, barbaaddii fi jaallatamtota hojjatanii deebisuuf seensa hayyami",
+  "cd.contactsReady": "Qunnamtoonni safaramaniiru",
 
   "kp.readyToConnect": "Wal qunnamuuf qophaa'e",
   "kp.maxDigits": "Lakkoofsi dheerina daangaa ga'eera",
