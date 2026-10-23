@@ -85,8 +85,8 @@ android {
         applicationId "com.callmony"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 12
-        versionName "1.6.2"
+        versionCode 13
+        versionName "1.6.3"
     }
 
     // release signing (keystore committed for easy sideloading; replace with

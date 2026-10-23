@@ -14,12 +14,12 @@ import { LANGUAGES, useT } from "../i18n";
 import { hashPin, relTime } from "../lib/utils";
 import { COUNTRY_CODES, CURRENCIES } from "../lib/types";
 import { shareText } from "../lib/share";
-import { syncNow } from "../lib/backup";
+import { autoSnapshot, syncNow } from "../lib/backup";
 import { exportContactsCsv, exportContactsVcard, exportTransactionsCsv } from "../lib/exporters";
 import { requestNotificationPermission } from "../native/notify";
 import { fetchAllContacts } from "../native/deviceContacts";
 import { F, useThemeColors } from "../theme";
-import { Btn, Card, Divider, SectionHeader, Segmented, confirm, toast } from "../components/kit";
+import { Btn, Card, Divider, Pill, SectionHeader, Segmented, confirm, toast } from "../components/kit";
 import { Sheet, BottomSheet } from "../components/Sheet";
 import { LanguageSheet } from "../components/LanguageSheet";
 
@@ -249,6 +249,52 @@ export const SettingsOverlay: React.FC = () => {
             />
           </>
         )}
+      </Card>
+
+      {/* v1.6.3 — DATA SAFETY (user request: "no data should be lost it
+          should be the safest app in the world"): one card that SHOWS the
+          three independent layers and when each last ran. */}
+      <SectionHeader title={t("st.safetyTitle")} />
+      <Card style={{ marginBottom: 12 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <View style={[setStyles.syncIcon, { backgroundColor: C.brandSoft }]}>
+            <Icon name="shield-check-outline" size={18} color={C.brand} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ fontSize: F.body, fontWeight: "700", color: C.ink }}>{t("st.safetyTitle")}</Text>
+            <Text style={{ fontSize: F.tiny, color: C.sub, marginTop: 2, lineHeight: 16 }}>{t("st.safetyHint")}</Text>
+          </View>
+        </View>
+        <View style={{ gap: 7, marginBottom: 4 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Icon name="cloud-check-outline" size={15} color={C.green} />
+            <Text style={{ flex: 1, fontSize: F.tiny, color: C.sub }}>{t("st.safetyCloud")}</Text>
+            <Pill label="ON" tone="green" icon="check-circle-outline" />
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Icon name="content-save-check-outline" size={15} color={C.green} />
+            <Text style={{ flex: 1, fontSize: F.tiny, color: C.sub }} numberOfLines={2}>
+              {t("st.safetySnapshot")}
+              {settings.lastSnapshotAt ? `: ${relTime(settings.lastSnapshotAt)}` : ""}
+            </Text>
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Icon name="trash-can-outline" size={15} color={C.green} />
+            <Text style={{ flex: 1, fontSize: F.tiny, color: C.sub }}>{t("st.safetyTrash")}</Text>
+            <Pill label="ON" tone="green" icon="check-circle-outline" />
+          </View>
+        </View>
+        <Btn
+          small
+          label={t("st.snapshotNow")}
+          icon="camera-check-outline"
+          variant="soft"
+          style={{ marginTop: 8 }}
+          onPress={async () => {
+            const ok = await autoSnapshot(true);
+            toast(ok ? t("st.snapshotDone") : t("bkp.syncFail"), ok ? "ok" : "error");
+          }}
+        />
       </Card>
 
       {/* backup */}

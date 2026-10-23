@@ -43,12 +43,45 @@ export const DEFAULT_SETTINGS: Settings = {
 const read = async <T>(key: string, fallback: T): Promise<T> => {
   try {
     const raw = await AsyncStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
+    if (!raw) {
+      /* v1.6.3 — primary miss: try the mirror before giving up (a corrupted
+         or half-lost primary write must never read as "empty collection") */
+      const mirrored = await AsyncStorage.getItem(mirrorKey(key));
+      if (mirrored) {
+        try {
+          return JSON.parse(mirrored) as T;
+        } catch {
+          /* both bad → fallback */
+        }
+      }
+      return fallback;
+    }
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      /* v1.6.3 — primary parse failure (interrupted write / bit rot):
+         the mirror key holds the last good copy of this collection */
+      const mirrored = await AsyncStorage.getItem(mirrorKey(key));
+      if (mirrored) {
+        try {
+          return JSON.parse(mirrored) as T;
+        } catch {
+          /* mirror bad too → fallback */
+        }
+      }
+      return fallback;
+    }
   } catch {
     return fallback;
   }
 };
+
+/* v1.6.3 — every collection is stored TWICE: `callmony.entries` (primary)
+   and `callmony.mirror.entries` (the safety copy). AsyncStorage itself
+   commits atomically per key (SQLite transaction), so a torn write can
+   only ever damage ONE of the two — reads fall back to the healthy copy.
+   The mirror also rides along in Android Auto Backup + local snapshots. */
+const mirrorKey = (key: string): string => key.replace(/^callmony\./, "callmony.mirror.");
 
 /* v1.5.1 — shape-sanitized read: stored JSON with the WRONG shape (e.g.
    after an interrupted write or an app update) must never poison the store
@@ -66,9 +99,16 @@ const readObj = async <T extends object>(key: string, fallback: T): Promise<T> =
 
 const write = async (key: string, value: unknown): Promise<void> => {
   try {
-    await AsyncStorage.setItem(key, JSON.stringify(value));
+    const json = JSON.stringify(value);
+    /* primary first (reads hit it), then the mirror copy (v1.6.3 safety).
+       A failure writing the mirror is logged-by-silence: the primary is
+       still authoritative; a failure writing the PRIMARY leaves the
+       previous good value in place (atomic per key). */
+    await AsyncStorage.setItem(key, json);
+    AsyncStorage.setItem(mirrorKey(key), json).catch(() => undefined);
   } catch {
-    /* storage full / unavailable — app keeps working in memory */
+    /* storage full / unavailable — app keeps working in memory; the
+       previous on-disk value (and its mirror) remain intact */
   }
 };
 
@@ -126,7 +166,7 @@ export const saveSettings = (settings: Settings) => write(K.settings, settings);
 
 export const wipeStorage = async (): Promise<void> => {
   try {
-    await AsyncStorage.multiRemove(Object.values(K));
+    await AsyncStorage.multiRemove([...Object.values(K), ...Object.values(K).map(mirrorKey)]);
   } catch {
     /* noop */
   }

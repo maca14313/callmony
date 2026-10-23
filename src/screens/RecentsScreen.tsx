@@ -217,6 +217,60 @@ const DayFilters: React.FC<{
   );
 };
 
+/* ---------------- v1.6.3 — all-contacts owe card ---------------- */
+
+/* A THEY-OWE / YOU-OWE row in the Recents tab: one address-book contact
+   (NOT limited to numbers in the call log), its live balance front and
+   center. Tap opens the full ContactDetail (ledger, settle-up, reminder…). */
+const OweCard: React.FC<{ contact: DeviceContact; balance: number; countryCode: string }> = memo(
+  ({ contact, balance, countryCode }) => {
+    const C = useThemeColors(useApp((s) => s.settings.theme));
+    const t = useT();
+    const open = useUI((s) => s.open);
+    const name = contact.displayName || contact.givenName || contact.familyName || t("misc.contact");
+    const phone = contact.phones[0]?.number;
+    return (
+      <View style={{ marginBottom: 6 }}>
+        <Pressable
+          onPress={() => open({ type: "contact", recordID: contact.recordID })}
+          android_ripple={{ color: "rgba(128,128,128,0.1)" }}
+          style={({ pressed }) => [styles.callRow, { backgroundColor: pressed ? C.brandSoft : C.card, borderColor: C.line }]}
+          accessibilityRole="button"
+          accessibilityLabel={`${name}, ${balance > 0 ? t("cd.theyOweYou") : t("cd.youOweThem")}`}
+        >
+          <View style={[styles.avatarRing, { borderColor: C.brandSoft }]}>
+            <Avatar contact={contact} size={44} />
+          </View>
+          <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+            <Text style={{ fontSize: F.body, fontWeight: "700", color: C.ink }} numberOfLines={1}>
+              {name}
+            </Text>
+            <Text style={{ fontSize: F.tiny, color: C.faint }} numberOfLines={1}>
+              {phone ? prettyPhone(phone, countryCode) : contact.company || ""}
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.balancePill,
+              { backgroundColor: balance > 0 ? "rgba(22,160,133,0.13)" : "rgba(214,69,69,0.11)" },
+            ]}
+          >
+            <Icon
+              name={balance > 0 ? "arrow-bottom-left" : "arrow-top-right"}
+              size={12}
+              color={balance > 0 ? C.green : C.red}
+            />
+            <Money value={Math.abs(balance)} colorize signed size={13} compact />
+            <Text style={{ fontSize: 10, fontWeight: "700", color: balance > 0 ? C.green : C.red }} numberOfLines={1}>
+              · {balance > 0 ? t("cd.theyOweYou") : t("cd.youOweThem")}
+            </Text>
+          </View>
+        </Pressable>
+      </View>
+    );
+  }
+);
+
 /* ---------------- screen ---------------- */
 
 export const RecentsScreen: React.FC = () => {
@@ -335,24 +389,36 @@ export const RecentsScreen: React.FC = () => {
   }, [systemCalls, appRecents, contacts]);
 
   /* direction + credit + favorites filters (Contacts-tab parity) */
+  /* v1.6.3 — THEY OWE / YOU OWE come from ALL contacts (user request: "the
+     recent they owe you and you owe them should show from all of the
+     contacts not just from recents"): every address-book contact with a
+     nonzero balance, largest first — the call log is NOT the source. */
+  const oweMode = filter === "theyOwe" || filter === "youOwe";
+  const oweItems = useMemo(() => {
+    if (!oweMode) return [] as { kind: "owe"; key: string; contact: DeviceContact; balance: number }[];
+    const sign = filter === "theyOwe" ? 1 : -1;
+    return contacts
+      .map((contact) => ({ contact, balance: Math.round((balances.get(contact.recordID) ?? 0) * 100) / 100 }))
+      .filter((x) => (sign > 0 ? x.balance > 0.005 : x.balance < -0.005))
+      .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
+      .map((x) => ({ kind: "owe" as const, key: `O-${x.contact.recordID}`, contact: x.contact, balance: x.balance }));
+  }, [oweMode, filter, contacts, balances]);
+
   const filtered = useMemo(() => {
-    if (filter === "theyOwe" || filter === "youOwe") {
-      return rows.filter((r) => {
-        if (!r.contact) return false;
-        const b = balances.get(r.contact.recordID) ?? 0;
-        return filter === "theyOwe" ? b > 0.005 : b < -0.005;
-      });
-    }
+    if (oweMode) return rows; /* unused in owe mode */
     if (filter === "favorites") return rows.filter((r) => !!r.contact && favSet.has(r.contact.recordID));
     return filter === "all" ? rows : rows.filter((r) => r.direction === filter);
-  }, [rows, filter, balances, favSet]);
+  }, [rows, filter, oweMode, favSet]);
   const missedCount = useMemo(() => rows.filter((r) => r.direction === "missed").length, [rows]);
 
   /* flattened virtualized items + sticky day headers (+ balance per row) */
   const { items, sticky } = useMemo(() => {
     type Item =
       | { kind: "day"; key: string; label: string }
-      | { kind: "call"; key: string; row: CallRow; balance: number };
+      | { kind: "call"; key: string; row: CallRow; balance: number }
+      | { kind: "owe"; key: string; contact: DeviceContact; balance: number };
+    /* owe views list ALL contacts with balances — no day headers */
+    if (oweMode) return { items: oweItems as Item[], sticky: [] as number[] };
     const out: Item[] = [];
     const stickyIdx: number[] = [];
     let current = "";
@@ -371,7 +437,7 @@ export const RecentsScreen: React.FC = () => {
       });
     });
     return { items: out, sticky: stickyIdx };
-  }, [filtered, balances]);
+  }, [oweMode, oweItems, filtered, balances]);
 
   /* infinite scroll — feed the list in pages of PAGE rows */
   const pagedItems = useMemo(() => items.slice(0, page * PAGE), [items, page]);
@@ -388,9 +454,27 @@ export const RecentsScreen: React.FC = () => {
     [favorites, contacts]
   );
 
+  /* v1.6.3 — the ＋ NEW-CONTACT tile at the end of the favorites strip
+     (user request: "add the + icon for adding new contact beside the
+     favourite icons in the recent"). The strip is ALWAYS visible so the
+     ＋ is reachable even with zero favorites. */
+  const addContact = useCallback(async () => {
+    const saved = await openNewContactForm({});
+    if (saved) {
+      toast(t("ce.contactSaved"), "ok");
+      useApp.getState().refreshDeviceContacts().catch(() => undefined);
+    }
+  }, [t]);
+
   const onTap = useCallback(
     (row: CallRow) => {
       if (row.contact) open({ type: "contact", recordID: row.contact.recordID });
+      /* v1.6.3 — unsaved numbers open a CONTACT-DETAIL experience (user
+         request: "even if the phone number isn't saved it should go to
+         contact detail, so it will also be saved"): save-to-contacts hero,
+         quick actions, and this number's call history. */
+      else if (row.phone.replace(/\D/g, "").replace(/^0+/, "").length >= 3)
+        open({ type: "unknownContact", phone: row.phone, name: row.name });
       else setSheetRow(row);
     },
     [open]
@@ -407,7 +491,11 @@ export const RecentsScreen: React.FC = () => {
   const onSMS = useCallback((phone: string) => openURL(smsLink(phone)), []);
 
   const renderItem = useCallback(
-    ({ item }: { item: { kind: "day"; key: string; label: string } | { kind: "call"; key: string; row: CallRow; balance: number } }) => {
+    ({ item }: { item: { kind: "day"; key: string; label: string } | { kind: "call"; key: string; row: CallRow; balance: number } | { kind: "owe"; key: string; contact: DeviceContact; balance: number } }) => {
+      /* v1.6.3 — owe views render ALL-CONTACT balance cards */
+      if (item.kind === "owe") {
+        return <OweCard contact={item.contact} balance={item.balance} countryCode={countryCode} />;
+      }
       if (item.kind === "day") {
         /* v1.5.3 — the day header IS the filter row (user request): the day
            chip on the left, flexible spacer, then the direction filters
@@ -490,14 +578,14 @@ export const RecentsScreen: React.FC = () => {
         </View>
       )}
 
-      {/* favorites strip */}
-      {favContacts.length > 0 && (
-        <View style={{ paddingTop: 10, paddingBottom: 2 }}>
-          <ScrollView
-            horizontal
-            contentContainerStyle={{ paddingHorizontal: 16, gap: 14, alignItems: "center", paddingBottom: 4 }}
-            showsHorizontalScrollIndicator={false}
-          >
+      {/* favorites strip + ＋ new-contact tile — v1.6.3: ALWAYS visible
+          (the ＋ must be reachable even with zero favorites) */}
+      <View style={{ paddingTop: 10, paddingBottom: 2 }}>
+        <ScrollView
+          horizontal
+          contentContainerStyle={{ paddingHorizontal: 16, gap: 14, alignItems: "center", paddingBottom: 4 }}
+          showsHorizontalScrollIndicator={false}
+        >
             {favContacts.map((c) => (
               <Pressable
                 key={c.recordID}
@@ -512,9 +600,22 @@ export const RecentsScreen: React.FC = () => {
                 </Text>
               </Pressable>
             ))}
+            {/* the ＋ tile — create a contact straight from Recents */}
+            <Pressable
+              onPress={addContact}
+              accessibilityRole="button"
+              accessibilityLabel={t("act.newContact")}
+              style={{ alignItems: "center", width: 62 }}
+            >
+              <View style={[styles.favRing, { borderColor: C.brand, backgroundColor: C.brandSoft }]}>
+                <Icon name="account-plus" size={26} color={C.brand} />
+              </View>
+              <Text style={{ fontSize: F.tiny, color: C.brand, marginTop: 4, fontWeight: "700" }} numberOfLines={1}>
+                {t("cd.newContactTile")}
+              </Text>
+            </Pressable>
           </ScrollView>
         </View>
-      )}
 
       {/* credit filters — the ONLY chip row left above the list (v1.5.3):
           They owe / You owe on a row of their own; the direction chips now
@@ -524,9 +625,10 @@ export const RecentsScreen: React.FC = () => {
         <Chip compact icon="arrow-top-right" label={t("cd.youOweThem")} active={filter === "youOwe"} onPress={() => setFilter("youOwe")} />
       </View>
 
-      {/* a filter that empties the list leaves NO day headers to host the
-          direction chips — this slim standalone row keeps them reachable */}
-      {items.length === 0 && (
+      {/* a filter that empties the CALL list leaves no day headers to host
+          the direction chips — this slim standalone row keeps them reachable
+          (owe views have their own all-contacts data source) */}
+      {items.length === 0 && !oweMode && (
         <View style={styles.fallbackRow}>
           <DayFilters filter={filter} onSet={setFilter} missedCount={missedCount} />
         </View>
@@ -558,7 +660,13 @@ export const RecentsScreen: React.FC = () => {
           ) : null
         }
         ListEmptyComponent={
-          callLogPerm === "unknown" && systemCalls.length === 0 ? (
+          oweMode ? (
+            <EmptyState
+              icon="hand-coin-outline"
+              title={filter === "theyOwe" ? t("cd.nobodyOwesYou") : t("cd.youOweNobody")}
+              hint={t("cd.oweEmptyHint")}
+            />
+          ) : callLogPerm === "unknown" && systemCalls.length === 0 ? (
             /* first paint before the (background) permission/log read finishes —
                an inline loader, the app stays fully usable */
             <View style={{ alignItems: "center", justifyContent: "center", paddingTop: 80, gap: 12 }}>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v1.6.3 — Android Auto Backup rules (Android 11 and older use this file).
+     callmony is 100% offline: the entire ledger lives in AsyncStorage's
+     SQLite database ("databases/RKStorage") and the safety snapshots
+     live under "files/". Both ride along to Google Drive so a lost, reset or
+     reinstalled phone restores every birr of data automatically. Only the
+     included domains are backed up — cache never leaves the device. -->
+<full-backup-content>
+    <include domain="database" path="." />
+    <include domain="file" path="." />
+    <include domain="sharedpref" path="." />
+</full-backup-content>

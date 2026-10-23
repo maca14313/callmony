@@ -13,6 +13,8 @@ interface DiagNative {
   clearCrashReport(): Promise<boolean>;
   readBootMarks(): Promise<string>;
   setNavBarColor(color: string, lightIcons: boolean): Promise<boolean>;
+  isIgnoringBatteryOptimizations(): Promise<boolean>;
+  requestIgnoreBatteryOptimizations(): Promise<boolean>;
 }
 
 const Diag = NativeModules.CallMonyDiag as DiagNative | undefined;
@@ -53,5 +55,28 @@ export const clearCrashReport = async (): Promise<void> => {
     await Diag.clearCrashReport();
   } catch {
     /* noop */
+  }
+};
+
+/* ---------------- v1.6.3 — reminder reliability (battery saver) ----------------
+   OEM battery managers (Tecno/Infinix/Xiaomi/Samsung "app sleep") are the
+   #1 reason scheduled alarms never fire. isBatteryExempt() reports the real
+   OS state; requestBatteryExemption() opens the one-tap system dialog. */
+
+export const isBatteryExempt = async (): Promise<boolean | null> => {
+  if (Platform.OS !== "android" || !Diag) return null;
+  try {
+    return await Diag.isIgnoringBatteryOptimizations();
+  } catch {
+    return null;
+  }
+};
+
+export const requestBatteryExemption = async (): Promise<boolean> => {
+  if (Platform.OS !== "android" || !Diag) return false;
+  try {
+    return await Diag.requestIgnoreBatteryOptimizations();
+  } catch {
+    return false;
   }
 };

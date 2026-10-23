@@ -81,7 +81,10 @@ export const OnboardingSheet: React.FC = () => {
       subtitle={t("hdr.tagline")}
       onBack={save}
       footer={
-        <Btn label={t("ob.getStarted")} icon="arrow-right" onPress={save} style={{ flex: 1 }} />
+        /* v1.6.3 — BIG and safely padded (the "cropped from bottom" report
+           hit this button twice): 56px tall, and the Sheet footer now pads
+           ≥28px under it on Android no matter what insets the Modal reports. */
+        <Btn label={t("ob.getStarted")} icon="arrow-right" onPress={save} style={{ flex: 1, minHeight: 56 }} />
       }
     >
       {/* welcome — brand logo tile, matching the splash look */}
@@ -190,14 +193,16 @@ export const OnboardingSheet: React.FC = () => {
         )}
       </View>
 
-      {/* v1.6.2 — an in-content Get-started button at the very END of the
-          scroll: on any screen/keyboard state the user can always scroll to
-          a fully visible save button, even if the fixed footer is covered. */}
+      {/* v1.6.2/v1.6.3 — an in-content Get-started button at the very END
+          of the scroll: on any screen/keyboard state the user can always
+          scroll to a fully visible save button, even if the fixed footer is
+          covered. v1.6.3: taller + generous bottom margin for ROMs where the
+          modal extends under the gesture bar. */}
       <Btn
         label={t("ob.getStarted")}
         icon="arrow-right"
         onPress={save}
-        style={{ marginTop: 18, marginBottom: 8, minHeight: 54 }}
+        style={{ marginTop: 18, marginBottom: 28, minHeight: 58 }}
       />
     </Sheet>
   );

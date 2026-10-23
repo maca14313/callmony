@@ -8,7 +8,12 @@ import { useUI, type Overlay } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { dateStr, fd, ft, parseDueLocal } from "../lib/utils";
 import type { ReminderKind, Repeat } from "../lib/types";
-import { notificationsEnabled, requestNotificationPermission } from "../native/notify";
+import {
+  isReminderArmed,
+  notificationsEnabled,
+  openNotificationSettingsDeep,
+  requestNotificationPermission,
+} from "../native/notify";
 import { F, useThemeColors } from "../theme";
 import { Btn, Chip, Field, SectionHeader, confirm, toast } from "../components/kit";
 import { Sheet } from "../components/Sheet";
@@ -134,7 +139,12 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
   }, []);
 
   const askNotifications = async () => {
-    const ok = await requestNotificationPermission();
+    let ok = await requestNotificationPermission();
+    if (!ok) {
+      /* v1.6.3 — denied once → the runtime dialog never re-shows; the app's
+         notification SETTINGS page is the only real fix */
+      ok = await openNotificationSettingsDeep();
+    }
     setNotifOn(ok);
     useApp.getState().updateSettings({ notifAsked: true });
     if (ok) toast(t("rm.notifGranted"), "ok");
@@ -182,6 +192,27 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
     });
     toast(existing ? t("rm.reminderUpdated") : t("rm.reminderSaved"), "ok");
     pop();
+    /* v1.6.3 — VERIFY the OS really armed the alarm (getTriggerNotification-
+       Ids): "Scheduled ✓ — will ring" vs a clear warning. The user can now
+       SEE the difference between a reminder that will ring and one that
+       will only fire while the app is open. */
+    const savedId = existing?.id;
+    const dueMs = due.getTime();
+    setTimeout(async () => {
+      try {
+        const state = useApp.getState();
+        const rec = savedId
+          ? state.reminders.find((r) => r.id === savedId)
+          : state.reminders[0];
+        if (rec && !rec.done) {
+          const armed = await isReminderArmed(rec.id);
+          if (armed) toast(t("rm.armedToast", { time: ft(rec.snoozedUntil ?? rec.dueAt) }), "ok");
+          else if (dueMs > Date.now()) toast(t("rm.notArmedToast"), "info");
+        }
+      } catch {
+        /* diagnostics only */
+      }
+    }, 900);
   };
 
   return (

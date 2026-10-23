@@ -2,7 +2,7 @@
    kind chips, snooze actions, done toggle. Used by General, ContactDetail
    and the Reminders tab. */
 
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
@@ -11,6 +11,7 @@ import { useT } from "../i18n";
 import { dueStatus } from "../lib/calc";
 import { fd, ft } from "../lib/utils";
 import type { Reminder, ReminderKind, OwnerId } from "../lib/types";
+import { armedReminderIds } from "../native/notify";
 import { F, useThemeColors } from "../theme";
 import { Btn, Card, EmptyState, IconBtn, Pill, confirm, toast, toastUndo } from "../components/kit";
 import { SwipeRow } from "../components/SwipeRow";
@@ -30,6 +31,23 @@ export const RemindersSection: React.FC<{
   const reopenReminder = useApp((s) => s.reopenReminder);
   const snoozeReminder = useApp((s) => s.snoozeReminder);
   const deleteReminder = useApp((s) => s.deleteReminder);
+
+  /* v1.6.3 — the OS scheduler's own answer to “will this really ring?”:
+     every not-done future reminder shows a live armed ✓ (checked against
+     notifee's trigger list; refreshed whenever reminders change or the app
+     returns from the foreground). */
+  const [armed, setArmed] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let alive = true;
+    armedReminderIds()
+      .then((ids) => {
+        if (alive) setArmed(ids);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [reminders]);
 
   const filtered = useMemo(() => {
     let list = reminders.filter((r) => !r.deletedAt);
@@ -131,6 +149,14 @@ export const RemindersSection: React.FC<{
                           {fd(r.snoozedUntil ?? r.dueAt)} · {ft(r.snoozedUntil ?? r.dueAt)}
                         </Text>
                         {r.repeat !== "none" && <Icon name="repeat" size={13} color={C.sub} />}
+                        {/* v1.6.3 — armed in the OS scheduler right now ✓ */}
+                        {!r.done && !r.deletedAt && Math.max(r.snoozedUntil ?? r.dueAt, 0) > Date.now() && (
+                          <Icon
+                            name={armed.has(r.id) ? "bell-check-outline" : "bell-outline"}
+                            size={13}
+                            color={armed.has(r.id) ? C.green : C.faint}
+                          />
+                        )}
                       </View>
                     </View>
                     <IconBtn

@@ -284,6 +284,10 @@ export interface Settings {
   lastAutoSyncAt?: number;
   /** v1.6.0 — first-run onboarding (currency + country code) completed */
   onboarded?: boolean;
+  /** v1.6.3 — local safety snapshot: an automatic copy of ALL app data in
+     the app's own backups/ folder (which itself rides along in Android
+     Auto Backup). "No data should be lost — the safest app in the world." */
+  lastSnapshotAt?: number;
 }
 
 export interface BackupFile {

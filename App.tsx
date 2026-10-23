@@ -28,12 +28,17 @@ import { KeypadSheet } from "./src/components/KeypadSheet";
 import { CalculatorSheet } from "./src/components/Calculator";
 import { LanguageSheet } from "./src/components/LanguageSheet";
 import { BottomSheet } from "./src/components/Sheet";
-import { ContactsScreen } from "./src/screens/ContactsScreen";
+/* v1.6.3 — Contacts tab parked (user request: "for now we dont need the
+   contacts"). The screen file, data pipeline, search index and editor all
+   stay — see docs/contacts-implementation.md for the full summary and the
+   one-line way to bring the tab back. Recents now covers balances for ALL
+   contacts, and a ＋ tile in the favorites strip creates contacts. */
 import { RecentsScreen } from "./src/screens/RecentsScreen";
 import { GeneralScreen } from "./src/screens/GeneralScreen";
 import { RemindersScreen } from "./src/screens/RemindersScreen";
 import { TrashScreen } from "./src/screens/TrashScreen";
 import { ContactDetailOverlay } from "./src/overlays/ContactDetail";
+import { UnknownContactOverlay } from "./src/overlays/UnknownContact";
 import { EntryEditOverlay } from "./src/overlays/EntryEdit";
 import { ListDetailOverlay, ListEditOverlay } from "./src/overlays/ListOverlays";
 import { NoteEditOverlay, ReminderEditOverlay, BankEditOverlay } from "./src/overlays/Editors";
@@ -42,7 +47,7 @@ import { SearchOverlay, SpeedDialOverlay, MergeOverlay, AboutOverlay, AlarmDialo
 import { OnboardingSheet } from "./src/overlays/OnboardingSheet";
 import { loadCachedContacts } from "./src/native/deviceContacts";
 import { setupCallKeep } from "./src/native/callkeep";
-import { maybeAutoSync } from "./src/lib/backup";
+import { maybeAutoSync, autoSnapshot } from "./src/lib/backup";
 import { bootMark, setNavBarColor } from "./src/native/diag";
 import { isSafeMode } from "./src/boot/crash-firewall";
 import { handleNotifeeEvent } from "./src/native/notify";
@@ -183,9 +188,9 @@ const Shell: React.FC = () => {
         no bridge traffic, no spinner).
      2. The system call log is refreshed in the background from the snapshot
         cache first (instant Recents), then re-read from the OS.
-     3. The OS address book is NEVER queried at boot — the Contacts tab
-        fetches it itself the first time it is opened (and then only when
-        the snapshot is older than CONTACTS_TTL).
+     3. The OS address book re-query is DEFERRED 4 s (v1.6.3 — the Contacts
+        tab is parked, so this is the only thing keeping names/balances
+        fresh; it never touches the boot path).
      4. Auto email sync never fires on a cold open (it would cover the app
         with a composer); it only runs after returning to the foreground,
         deferred by 12 s so the UI is fully settled first. */
@@ -214,7 +219,6 @@ const Shell: React.FC = () => {
         /* cache is optional */
       }
       if (cancelled) return;
-
       /* 2 — permissions, THEN the call log read (on first run the dialogs
          must resolve before we query — otherwise a transient "denied"
          flash covers Recents; on later boots this resolves instantly) */
@@ -234,19 +238,32 @@ const Shell: React.FC = () => {
          from the OS in the background (10 s throttle on foreground) */
       lastLogRef.current = 0;
       useApp.getState().loadSystemCalls();
+      /* v1.6.3 — the Contacts tab is parked, so the OS address book would
+         never refresh on its own. A DEFERRED (4 s) silent re-query keeps
+         names / favorites / owe-balances fresh without touching the boot
+         path — the snapshot renders first, always. */
+      setTimeout(() => {
+        if (!cancelled) useApp.getState().refreshDeviceContacts().catch(() => undefined);
+      }, 4000);
+      /* v1.6.3 — SAFETY SNAPSHOT (deferred 10 s, throttled 6 h): the whole
+         data set lands in Documents/backups/ on every session — the local
+         layer of the no-data-loss guarantee, itself carried by Android
+         Auto Backup. */
+      setTimeout(() => {
+        if (!cancelled) autoSnapshot().catch(() => undefined);
+      }, 10000);
       bootMark("boot-done");
     };
 
     const onForeground = () => {
-      /* call log refresh (throttled) + contacts only refresh silently if
-         the Contacts tab is (or was) in use and the snapshot went stale */
+      /* call log refresh (throttled) + contacts refresh silently (v1.6.3:
+         still needed with the Contacts tab parked — balances resolve from
+         the address book) when the snapshot went stale */
       if (Date.now() - lastLogRef.current >= 10000) {
         lastLogRef.current = Date.now();
         useApp.getState().loadSystemCalls();
       }
-      if (useUI.getState().tab === "contacts") {
-        useApp.getState().refreshDeviceContacts();
-      }
+      useApp.getState().refreshDeviceContacts().catch(() => undefined);
       /* auto email sync — only on FOREGROUND RETURN, deferred 12 s */
       if (syncTimer) clearTimeout(syncTimer);
       syncTimer = setTimeout(() => maybeAutoSync().catch(() => undefined), 12000);
@@ -356,7 +373,7 @@ const Shell: React.FC = () => {
   const overdueCount = reminders.filter((r) => !r.deletedAt && !r.done && dueStatus(r.snoozedUntil ?? r.dueAt) === "overdue").length;
 
   const headerTitle =
-    tab === "contacts" ? t("nav.contacts") : tab === "recents" ? t("nav.recents") : tab === "general" ? t("hdr.general") : tab === "reminders" ? t("tab.reminders") : t("hdr.trash");
+    tab === "recents" ? t("nav.recents") : tab === "general" ? t("hdr.general") : tab === "reminders" ? t("tab.reminders") : t("hdr.trash");
 
   return (
     <View
@@ -401,7 +418,6 @@ const Shell: React.FC = () => {
 
       {/* content — the bottom nav is a flex sibling, it never covers content */}
       <View style={{ flex: 1 }}>
-        {tab === "contacts" && <ContactsScreen />}
         {tab === "recents" && <RecentsScreen />}
         {tab === "general" && <GeneralScreen />}
         {tab === "reminders" && <RemindersScreen />}
@@ -447,6 +463,8 @@ const OverlayHost: React.FC<{ overlay: ReturnType<typeof useUI.getState>["overla
   switch (overlay.type) {
     case "contact":
       return <ContactDetailOverlay params={overlay} />;
+    case "unknownContact":
+      return <UnknownContactOverlay params={overlay} />;
     case "entryEdit":
       return <EntryEditOverlay params={overlay} />;
     case "list":

@@ -453,7 +453,7 @@ export const AboutOverlay: React.FC = () => {
         <Text style={{ fontSize: F.hero, fontWeight: "800", color: C.ink, marginTop: 8 }}>callmony</Text>
         <Text style={{ fontSize: F.small, color: C.sub }}>{t("hdr.tagline")}</Text>
         <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
-          <Pill label={`${t("st.version")} 1.6.2`} tone="brand" />
+          <Pill label={`${t("st.version")} 1.6.3`} tone="brand" />
           <Pill label={t("about.offline")} tone="green" icon="cloud-off-outline" />
         </View>
       </View>

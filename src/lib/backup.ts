@@ -115,3 +115,29 @@ export const maybeAutoSync = async (): Promise<void> => {
   if (lastAutoSyncAt && Date.now() - lastAutoSyncAt < autoBackupEvery * 86400000) return;
   await syncNow();
 };
+
+/* ---------------- v1.6.3 — automatic local SAFETY SNAPSHOTS ----------------
+   "No data should be lost — the safest app in the world." On every app open
+   (throttled to 6h) the FULL data set is written to
+   Documents/backups/callmony-backup-auto-<stamp>.json next to the email
+   backups. The folder is inside Android Auto Backup's scope (files domain),
+   so the snapshots survive even an uninstall→reinstall on a new phone via
+   Google's device restore — THREE independent copies of everything:
+     1. AsyncStorage primary + mirror (crash/torn-write safe)
+     2. local snapshot files (app data restore)
+     3. Google Auto Backup (device loss/reset) + optional email backups   */
+
+const SNAPSHOT_THROTTLE = 6 * 3600 * 1000;
+
+export const autoSnapshot = async (force = false): Promise<boolean> => {
+  try {
+    const { lastSnapshotAt } = useApp.getState().settings;
+    if (!force && lastSnapshotAt && Date.now() - lastSnapshotAt < SNAPSHOT_THROTTLE) return false;
+    const files = await writeBackupFiles();
+    if (!files.length) return false;
+    useApp.getState().updateSettings({ lastSnapshotAt: Date.now() });
+    return true;
+  } catch {
+    return false;
+  }
+};

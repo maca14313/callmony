@@ -1,19 +1,32 @@
 /* Local notifications — notifee (reminders while the app is closed).
-   v1.6.2 — "reminders don't remind" root causes fixed:
-   1. EXACT ALARMS: `alarmManager: {allowWhileIdle: true}` needs the
-      SCHEDULE_EXACT_ALARM / USE_EXACT_ALARM permissions on Android 12+ —
-      without them createTriggerNotification THROWS and the silent catch
-      meant NO notification was ever scheduled. The permissions are now in
-      the manifest, plus a WorkManager fallback if exact scheduling still
-      fails (inexact beats silent).
-   2. QUICK ACTIONS on the notification itself: "Done" and "Snooze 10m"
-      work while the app is closed (background headless task in index.js)
-      and while it is open (onForegroundEvent in App.tsx).
-   3. The notification permission is requested when a reminder is SAVED —
-      not only from the Reminders tab card. */
+   v1.6.3 — "reminders STILL don't work" final root causes addressed:
+   1. NOTIFICATION PERMISSION: after ONE denial Android never re-shows the
+      runtime dialog — requestPermission() just returns false forever. The
+      only real fix is the notification SETTINGS page, so
+      openNotificationSettingsDeep() now exists and every status card offers
+      it. (v1.6.2 only called requestPermission — on denied devices the
+      reminder saved silently and never rang.)
+   2. EXACT ALARMS: `alarmManager: {allowWhileIdle: true}` needs
+      SCHEDULE_EXACT_ALARM / USE_EXACT_ALARM on Android 12+; the state is
+      now VISIBLE (exactAlarmsAllowed()) and fixable in one tap
+      (openAlarmPermissionSettings()).
+   3. OEM BATTERY KILLERS (the big one on Tecno/Infinix/Xiaomi/Samsung):
+      battery savers kill background alarms. isBatteryExempt() /
+      requestBatteryExemption() (DiagModule) expose + fix it.
+   4. VERIFICATION: after every schedule we CHECK the trigger really armed
+      (getTriggerNotificationIds) — reminders list shows a live "armed"
+      state, save toasts "Scheduled ✓", and a 20-second TEST ALERT proves
+      the whole chain end-to-end. */
 
 import { Platform } from "react-native";
-import notifee, { AndroidImportance, RepeatFrequency, TriggerType, type Event } from "@notifee/react-native";
+import notifee, {
+  AndroidCategory,
+  AndroidImportance,
+  AndroidVisibility,
+  RepeatFrequency,
+  TriggerType,
+  type Event,
+} from "@notifee/react-native";
 import type { Reminder } from "../lib/types";
 import { nextOccurrence } from "../lib/calc";
 import { t } from "../i18n";
@@ -56,6 +69,117 @@ export const notificationsEnabled = async (): Promise<boolean> => {
   }
 };
 
+/** v1.6.3 — the REAL fixer for a denied permission: opens this app's
+    notification settings page (the runtime dialog can never be re-shown
+    after the first denial). */
+export const openNotificationSettingsDeep = async (): Promise<boolean> => {
+  try {
+    await notifee.openNotificationSettings();
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** v1.6.3 — can the app schedule EXACT alarms (Android 12+ special access)? */
+export const exactAlarmsAllowed = async (): Promise<boolean> => {
+  try {
+    const settings = await notifee.getNotificationSettings();
+    // alarm: 1 = ENABLED, 0 = DISABLED, -1 = NOT_SUPPORTED (pre-12 → fine)
+    const alarm = (settings as { alarm?: number }).alarm;
+    return alarm === undefined ? true : alarm >= 0 ? alarm === 1 : true;
+  } catch {
+    return true; // assume fine — the schedule call itself will fall back
+  }
+};
+
+/** v1.6.3 — one-tap deep link to the exact-alarms special access page. */
+export const openExactAlarmSettings = async (): Promise<boolean> => {
+  try {
+    await notifee.openAlarmPermissionSettings();
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** v1.6.3 — is this reminder's notification really armed in the OS right now? */
+export const isReminderArmed = async (id: string): Promise<boolean> => {
+  try {
+    const ids = await notifee.getTriggerNotificationIds();
+    return ids.includes(`reminder-${id}`);
+  } catch {
+    return false;
+  }
+};
+
+/** v1.6.3 — the ids of every reminder currently armed in the OS scheduler. */
+export const armedReminderIds = async (): Promise<Set<string>> => {
+  try {
+    const ids = await notifee.getTriggerNotificationIds();
+    return new Set(ids.filter((x) => x.startsWith("reminder-")).map((x) => x.slice("reminder-".length)));
+  } catch {
+    return new Set();
+  }
+};
+
+/** v1.6.3 — TEST ALERT: proves the entire chain (permission → channel →
+    scheduler → heads-up notification) in ~20 seconds. Returns success so
+    the UI can tell the user what to look for. */
+export const sendTestAlert = async (): Promise<boolean> => {
+  try {
+    await ensureChannel();
+    await notifee.createTriggerNotification(
+      {
+        id: "reminder-test",
+        title: t("rm.testTitle"),
+        subtitle: "callmony",
+        body: t("rm.testBody"),
+        android: {
+          channelId: CHANNEL_ID,
+          smallIcon: "ic_launcher",
+          category: AndroidCategory.ALARM,
+          visibility: AndroidVisibility.PUBLIC,
+          pressAction: { id: "default" },
+          autoCancel: true,
+        },
+        ios: { sound: "default" },
+      },
+      {
+        type: TriggerType.TIMESTAMP,
+        timestamp: Date.now() + 20000,
+        alarmManager: { allowWhileIdle: true },
+      }
+    );
+    return true;
+  } catch {
+    /* exact-alarm refused → inexact still proves the chain */
+    try {
+      await notifee.createTriggerNotification(
+        {
+          id: "reminder-test",
+          title: t("rm.testTitle"),
+          subtitle: "callmony",
+          body: t("rm.testBody"),
+          android: {
+            channelId: CHANNEL_ID,
+            smallIcon: "ic_launcher",
+            category: AndroidCategory.ALARM,
+            visibility: AndroidVisibility.PUBLIC,
+            pressAction: { id: "default" },
+            autoCancel: true,
+          },
+          ios: { sound: "default" },
+        },
+        { type: TriggerType.TIMESTAMP, timestamp: Date.now() + 20000 }
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+};
+
 const kindLabel = (r: Reminder): string => {
   switch (r.kind) {
     case "payment":
@@ -71,13 +195,16 @@ const kindLabel = (r: Reminder): string => {
   }
 };
 
-/** (Re)schedule the local notification for a reminder. */
-export const scheduleReminderNotification = async (r: Reminder): Promise<void> => {
+/** (Re)schedule the local notification for a reminder.
+    v1.6.3 — returns true when the trigger is REALLY armed in the OS
+    (verified via getTriggerNotificationIds), so callers can show the
+    user a live "Scheduled ✓" instead of trusting a silent catch. */
+export const scheduleReminderNotification = async (r: Reminder): Promise<boolean> => {
   try {
     await cancelReminderNotification(r.id);
-    if (r.done || r.deletedAt) return;
+    if (r.done || r.deletedAt) return false;
     const due = r.snoozedUntil ?? r.dueAt;
-    if (due <= Date.now()) return; // in-app alarm handles it
+    if (due <= Date.now()) return false; // in-app alarm handles it
     await ensureChannel();
 
     const repeatable = r.repeat === "daily" || r.repeat === "weekly";
@@ -89,6 +216,11 @@ export const scheduleReminderNotification = async (r: Reminder): Promise<void> =
       android: {
         channelId: CHANNEL_ID,
         smallIcon: "ic_launcher",
+        /* v1.6.3 — ALARM category + public lockscreen visibility: the
+           reminder behaves like an alarm (Doze-exempt, lock-screen safe)
+           instead of a quiet message. */
+        category: AndroidCategory.ALARM,
+        visibility: AndroidVisibility.PUBLIC,
         pressAction: { id: "default" },
         autoCancel: true,
         /* quick actions — v1.6.2 "advanced reminders": resolve the reminder
@@ -127,8 +259,12 @@ export const scheduleReminderNotification = async (r: Reminder): Promise<void> =
         trigger(false) as Parameters<typeof notifee.createTriggerNotification>[1]
       );
     }
+    /* VERIFY — don't trust the try/catch: the OS scheduler is the source
+       of truth for "will this actually ring". */
+    return await isReminderArmed(r.id);
   } catch {
     /* notifications unavailable — reminders still fire in-app */
+    return false;
   }
 };
 
@@ -190,7 +326,6 @@ const getStore = (): StoreApi | null => {
 /** Handle a notifee press/action event (shared by foreground + background). */
 export const handleNotifeeEvent = async (event: Event): Promise<void> => {
   try {
-    const type = (event as { type?: number }).type ?? -1;
     const detail = (event as { detail?: { pressAction?: { id?: string }; notification?: { id?: string } } }).detail;
     const actionId = detail?.pressAction?.id;
     const notifId = detail?.notification?.id ?? "";
