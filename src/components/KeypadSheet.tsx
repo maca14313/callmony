@@ -106,7 +106,7 @@ const MatchRow: React.FC<{
               size={11}
               color={row.balance > 0 ? C.green : C.red}
             />
-            <Money value={row.balance} colorize signed size={12} />
+            <Money value={row.balance} colorize signed size={12} compact />
             <Text style={{ fontSize: 11, fontWeight: "700", color: row.balance > 0 ? C.green : C.red }} numberOfLines={1}>
               · {row.balance > 0 ? t("cd.theyOweYou") : t("cd.youOweThem")}
             </Text>

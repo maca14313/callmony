@@ -12,6 +12,7 @@ interface DiagNative {
   readCrashReport(): Promise<string>;
   clearCrashReport(): Promise<boolean>;
   readBootMarks(): Promise<string>;
+  setNavBarColor(color: string, lightIcons: boolean): Promise<boolean>;
 }
 
 const Diag = NativeModules.CallMonyDiag as DiagNative | undefined;
@@ -22,6 +23,18 @@ export const bootMark = (label: string): void => {
     Diag.mark(label);
   } catch {
     /* diagnostics must never affect the boot path */
+  }
+};
+
+/* v1.6.1 — keep the system navigation bar in sync with the resolved app
+   theme (the static styles.xml color is light-only, so dark mode used to
+   leave a mismatched bar). fire-and-forget: never blocks, never throws. */
+export const setNavBarColor = (color: string, lightIcons: boolean): void => {
+  if (Platform.OS !== "android" || !Diag) return;
+  try {
+    void Diag.setNavBarColor(color, lightIcons).catch(() => undefined);
+  } catch {
+    /* cosmetics — never crash over it */
   }
 };
 

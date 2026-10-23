@@ -13,7 +13,6 @@ import {
   View,
 } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
-import Contacts from "react-native-contacts";
 import { useApp } from "../lib/store";
 import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
@@ -24,7 +23,7 @@ import { Avatar, Btn, Card, EmptyState, IconBtn, Money, Pill, confirm, toast } f
 import { Sheet } from "../components/Sheet";
 import { ContactPicker } from "../components/ContactPicker";
 import { placeCall } from "../native/calls";
-import { findDuplicateContacts } from "../native/deviceContacts";
+import { deleteDeviceContact, findDuplicateContacts, loadContactForEdit, saveContactEdit } from "../native/deviceContacts";
 import type { DeviceContact, Reminder } from "../lib/types";
 
 /* ================= Search ================= */
@@ -218,7 +217,7 @@ const HitRow: React.FC<{
               size={11}
               color={balance > 0 ? C.green : C.red}
             />
-            <Money value={balance} colorize signed size={12} />
+            <Money value={balance} colorize signed size={12} compact />
             <Text style={{ fontSize: 11, fontWeight: "700", color: balance > 0 ? C.green : C.red }} numberOfLines={1}>
               · {balance > 0 ? t("cd.theyOweYou") : t("cd.youOweThem")}
             </Text>
@@ -341,27 +340,42 @@ export const MergeOverlay: React.FC = () => {
     const ok = await confirm(t("spd.mergeTitle"), t("spd.mergeMsg", { name: displayName(primary) }), t("spd.mergeBtn"), true);
     if (!ok) return;
     try {
-      const all = await Contacts.getContactsMatchingString("");
-      const rawPrimary = all.find((c) => c.recordID === primary.recordID);
-      const rawDup = all.find((c) => c.recordID === duplicate.recordID);
-      if (!rawPrimary || !rawDup) return;
-      // union phone numbers
-      const dupPhones = rawDup.phoneNumbers.filter(
-        (p) => !rawPrimary.phoneNumbers.some((x) => x.number.replace(/\D/g, "") === p.number.replace(/\D/g, ""))
+      /* v1.6.1 — merge through our own ContactEditModule: loads every number
+         of BOTH contacts, unions them, saves with row-scoped ops (the old
+         react-native-contacts updateContact path corrupted rows / lost
+         numbers), then deletes the duplicate record. */
+      const [rawPrimary] = await Promise.all([
+        loadContactForEdit(primary.recordID),
+        loadContactForEdit(duplicate.recordID),
+      ]);
+      if (!rawPrimary) return;
+      const dupPhones = duplicate.phones.filter(
+        (p) =>
+          !rawPrimary.phoneNumbers.some(
+            (x) => x.number.replace(/\D/g, "") === p.number.replace(/\D/g, "")
+          )
       );
-      const updated = {
+      const dupEmails = duplicate.emails.filter(
+        (e) => !rawPrimary.emailAddresses.some((x) => x.email.toLowerCase() === e.address.toLowerCase())
+      );
+      const saved = await saveContactEdit({
         ...rawPrimary,
-        phoneNumbers: [...rawPrimary.phoneNumbers, ...dupPhones],
+        phoneNumbers: [
+          ...rawPrimary.phoneNumbers,
+          ...dupPhones.map((p) => ({ label: p.label, number: p.number })),
+        ],
         emailAddresses: [
           ...rawPrimary.emailAddresses,
-          ...rawDup.emailAddresses.filter(
-            (e) => !rawPrimary.emailAddresses.some((x) => x.email === e.email)
-          ),
+          ...dupEmails.map((e) => ({ label: e.label, email: e.address })),
         ],
-      };
-      await Contacts.updateContact(updated);
-      await Contacts.deleteContact(rawDup);
+      });
+      if (!saved) {
+        toast(t("bkp.restoreFailed"), "error");
+        return;
+      }
+      await deleteDeviceContact(duplicate.recordID);
       toast(t("spd.contactsMerged"), "ok");
+      await useApp.getState().refreshDeviceContacts();
       rescan();
     } catch {
       toast(t("bkp.restoreFailed"), "error");

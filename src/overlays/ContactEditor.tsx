@@ -1,20 +1,25 @@
 /* ContactEditor — the IN-APP editor for an existing device contact (replaces
    the OS external editor). Given / family / company + editable phone rows
    (label picker mobile→work→home→other · number · remove · add) + email rows.
-   It loads the RAW react-native-contacts row (every field and internal ID
-   kept), mutates ONLY the fields the user edited, then updateContact applies
-   the whole row — note, birthday, addresses and every other OS field survive
-   the edit untouched. */
+
+   v1.6.1 — load/save go through our own ContactEditModule (Android) which
+   1. ALWAYS settles the promise (the old bridge could hang forever on a
+      full-screen spinner the user could not escape), and
+   2. never loses numbers: the editor merges the OS row with the app's cached
+      copy (union by normalized digits) before saving, and blocks a save that
+      would drop every number of a contact that still has some. */
 
 import React, { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
-import Contacts from "react-native-contacts";
 import { useApp } from "../lib/store";
 import { useT } from "../i18n";
-import type { DeviceContact } from "../lib/types";
-import { getRawContactById, updateRawContact } from "../native/deviceContacts";
-import { displayName } from "../lib/utils";
+import { displayName, normalizePhone } from "../lib/utils";
+import {
+  loadContactForEdit,
+  saveContactEdit,
+  type ContactEditData,
+} from "../native/deviceContacts";
 import { F, useThemeColors } from "../theme";
 import { Btn, Field, Spinner, toast } from "../components/kit";
 import { Sheet } from "../components/Sheet";
@@ -40,55 +45,16 @@ interface EmailRow {
   address: string;
 }
 
-/** Best-effort RAW row built from the app's DeviceContact map — only used
-   when getContactById comes back null (bridge hiccup). Keeps every field
-   the app knows about so a save never wipes what it cannot see. */
-const rawFromDevice = (c: DeviceContact): Contacts.Contact => {
-  const m = c.birthday ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(c.birthday) : null;
-  return {
-    recordID: c.recordID,
-    backTitle: "",
-    company: c.company ?? "",
-    displayName: c.displayName,
-    familyName: c.familyName || "",
-    givenName: c.givenName || "",
-    middleName: "",
-    jobTitle: c.jobTitle ?? "",
-    phoneNumbers: c.phones.map((p) => ({ label: p.label, number: p.number })),
-    hasThumbnail: !!c.hasPhoto,
-    thumbnailPath: c.thumbnailPath ?? "",
-    isStarred: false,
-    postalAddresses: c.addresses.map((a) => ({
-      label: a.label,
-      formattedAddress: a.formatted,
-      street: "",
-      pobox: "",
-      neighborhood: "",
-      city: "",
-      region: "",
-      state: "",
-      postCode: "",
-      country: "",
-    })),
-    prefix: "",
-    suffix: "",
-    department: "",
-    birthday: m
-      ? { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) }
-      : { year: 0, month: 0, day: 0 },
-    imAddresses: [],
-    urlAddresses: [],
-    note: c.note ?? "",
-    emailAddresses: c.emails.map((e) => ({ label: e.label, email: e.address })),
-  };
-};
+/** hard bail for the native load — the editor can never spin forever */
+const LOAD_TIMEOUT_MS = 6000;
 
 export const ContactEditor: React.FC<{ recordID: string; onClose: () => void }> = ({ recordID, onClose }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
   const t = useT();
+  const countryCode = useApp((s) => s.settings.countryCode);
   const contact = useApp((s) => s.deviceContacts.find((c) => c.recordID === recordID));
-  const rawRef = useRef<Contacts.Contact | null>(null);
-  const [loading, setLoading] = useState(true);
+  const dataRef = useRef<ContactEditData | null>(null);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "failed">("loading");
   const [saving, setSaving] = useState(false);
   const [given, setGiven] = useState("");
   const [family, setFamily] = useState("");
@@ -96,28 +62,68 @@ export const ContactEditor: React.FC<{ recordID: string; onClose: () => void }> 
   const [phones, setPhones] = useState<PhoneRow[]>([]);
   const [emails, setEmails] = useState<EmailRow[]>([]);
 
-  /* load the raw OS row once (fallback: the app's DeviceContact map) */
-  useEffect(() => {
+  const applyData = (data: ContactEditData) => {
+    dataRef.current = data;
+    setGiven(data.givenName || "");
+    setFamily(data.familyName || "");
+    setCompany(data.company || "");
+    setPhones((data.phoneNumbers || []).map((p) => ({ label: p.label, number: p.number })));
+    setEmails((data.emailAddresses || []).map((e) => ({ label: e.label, address: e.email })));
+  };
+
+  /* load the OS row once — with a hard timeout so a stuck bridge call can
+     never trap the user on a spinner (v1.6.1, user report: "the loading is
+     still there and the app is not usable when it's on") */
+  const load = () => {
     let alive = true;
+    setLoadState("loading");
+    const timer = setTimeout(() => {
+      if (alive) setLoadState((s) => (s === "loading" ? "failed" : s));
+    }, LOAD_TIMEOUT_MS);
     (async () => {
-      const raw = await getRawContactById(recordID);
+      const loaded = await loadContactForEdit(recordID);
       if (!alive) return;
-      const fallback = useApp.getState().deviceContacts.find((c) => c.recordID === recordID);
-      const base = raw ?? (fallback ? rawFromDevice(fallback) : null);
-      if (base) {
-        rawRef.current = base;
-        setGiven(base.givenName || "");
-        setFamily(base.familyName || "");
-        setCompany(base.company || "");
-        setPhones((base.phoneNumbers || []).map((p) => ({ label: p.label, number: p.number })));
-        setEmails((base.emailAddresses || []).map((e) => ({ label: e.label, address: e.email })));
+
+      /* defensive merge — if the native load came back with FEWER numbers
+         than the app's own cached copy (bridge hiccup, partial read), union
+         them so a save can never wipe numbers the app knows about */
+      if (loaded) {
+        const data = loaded; // const → type narrowing survives the closures below
+        const cached = useApp.getState().deviceContacts.find((c) => c.recordID === recordID);
+        if (cached && cached.phones.length) {
+          const have = new Set(
+            data.phoneNumbers.map((p) => normalizePhone(p.number, countryCode).replace(/\D/g, ""))
+          );
+          cached.phones.forEach((p) => {
+            const key = normalizePhone(p.number, countryCode).replace(/\D/g, "");
+            if (key && !have.has(key)) data.phoneNumbers.push({ label: p.label, number: p.number });
+          });
+        }
+        if (cached && cached.emails.length) {
+          const have = new Set(data.emailAddresses.map((e) => e.email.toLowerCase()));
+          cached.emails.forEach((e) => {
+            if (e.address && !have.has(e.address.toLowerCase()))
+              data.emailAddresses.push({ label: e.label, email: e.address });
+          });
+        }
       }
-      setLoading(false);
+
+      clearTimeout(timer);
+      if (!alive) return;
+      if (loaded) {
+        applyData(loaded);
+        setLoadState("ready");
+      } else {
+        setLoadState("failed");
+      }
     })();
     return () => {
       alive = false;
+      clearTimeout(timer);
     };
-  }, [recordID]);
+  };
+
+  useEffect(() => load(), [recordID]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setPhone = (i: number, patch: Partial<PhoneRow>) =>
     setPhones((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -127,26 +133,34 @@ export const ContactEditor: React.FC<{ recordID: string; onClose: () => void }> 
   const removeEmail = (i: number) => setEmails((rows) => rows.filter((_, idx) => idx !== i));
 
   const save = async () => {
-    const raw = rawRef.current;
+    const data = dataRef.current;
     const cleanPhones = phones
       .map((p) => ({ label: p.label, number: p.number.trim() }))
       .filter((p) => p.number);
     const cleanEmails = emails
       .map((e) => ({ label: e.label, email: e.address.trim() }))
       .filter((e) => e.email);
-    if (!raw || (!given.trim() && !family.trim() && !company.trim() && cleanPhones.length === 0)) {
+    if (!data || (!given.trim() && !family.trim() && !company.trim() && cleanPhones.length === 0)) {
       toast(t("ce.atLeastOne"), "error");
       return;
     }
-    /* mutate ONLY the edited fields — every other property of the raw OS
-       row (note, birthday, addresses, URLs, …) stays exactly as loaded */
-    raw.givenName = given.trim();
-    raw.familyName = family.trim();
-    raw.company = company.trim();
-    raw.phoneNumbers = cleanPhones;
-    raw.emailAddresses = cleanEmails;
+    /* guard: a contact that HAD numbers must not be saved with zero — the
+       remove button is per-row, wiping them all is almost always accidental */
+    if (data.phoneNumbers.length > 0 && cleanPhones.length === 0) {
+      toast(t("ce.atLeastOnePhone"), "error");
+      return;
+    }
     setSaving(true);
-    const ok = await updateRawContact(raw);
+    const ok = await saveContactEdit({
+      recordID: data.recordID,
+      givenName: given.trim(),
+      middleName: data.middleName ?? "",
+      familyName: family.trim(),
+      company: company.trim(),
+      jobTitle: data.jobTitle ?? "",
+      phoneNumbers: cleanPhones,
+      emailAddresses: cleanEmails,
+    });
     setSaving(false);
     if (!ok) {
       toast(t("cd.saveFailed"), "error");
@@ -157,22 +171,28 @@ export const ContactEditor: React.FC<{ recordID: string; onClose: () => void }> 
     onClose();
   };
 
-  if (loading) {
+  if (loadState === "loading") {
     return (
       <Sheet title={t("ce.editContact")} onBack={onClose} scroll={false}>
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 60 }}>
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 60, gap: 14 }}>
           <Spinner />
+          <Text style={{ fontSize: F.small, color: C.faint }}>{t("cd.loadingContacts")}</Text>
         </View>
       </Sheet>
     );
   }
 
-  if (!rawRef.current) {
+  if (loadState === "failed") {
     return (
       <Sheet title={t("ce.editContact")} subtitle={t("cd.notFound")} onBack={onClose}>
-        <Text style={{ color: C.sub, fontSize: F.body, textAlign: "center", paddingVertical: 30 }}>
-          {t("cd.notFoundHint")}
-        </Text>
+        <View style={{ alignItems: "center", paddingVertical: 26, gap: 12 }}>
+          <Icon name="cloud-alert-outline" size={40} color={C.faint} />
+          <Text style={{ fontSize: F.body, color: C.sub, textAlign: "center" }}>{t("ce.loadFailed")}</Text>
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Btn label={t("act.cancel")} variant="ghost" onPress={onClose} style={{ flex: 1 }} />
+            <Btn label={t("act.retry")} icon="refresh" onPress={load} style={{ flex: 1 }} />
+          </View>
+        </View>
       </Sheet>
     );
   }
@@ -190,7 +210,7 @@ export const ContactEditor: React.FC<{ recordID: string; onClose: () => void }> 
             label={t("act.save")}
             icon="content-save-outline"
             onPress={() => void save()}
-            disabled={saving}
+            loading={saving}
             style={{ flex: 1 }}
           />
         </View>

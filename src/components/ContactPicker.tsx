@@ -5,10 +5,10 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp, contactByRecord } from "../lib/store";
 import { useT, t as tr } from "../i18n";
-import { displayName, normalizePhone, prettyPhone, searchContacts } from "../lib/utils";
+import { copyText, displayName, normalizePhone, prettyPhone, searchContacts } from "../lib/utils";
 import { contactOwnerId } from "../lib/types";
 import { F, useThemeColors } from "../theme";
-import { Avatar } from "./kit";
+import { Avatar, toast } from "./kit";
 import { BottomSheet } from "./Sheet";
 
 export interface OwnerOption {
@@ -126,6 +126,12 @@ export const NumberPicker: React.FC<{
             key={p.id || `${p.number}-${i}`}
             android_ripple={{ color: "rgba(128,128,128,0.14)" }}
             onPress={() => onPick(p.number)}
+            /* v1.6.1 — long-press a number row to COPY it (user request:
+               "long-press copies numbers wherever it is, even in the options") */
+            onLongPress={() =>
+              copyText(p.number).then((ok) => toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error"))
+            }
+            delayLongPress={400}
             style={[styles.row, { borderColor: C.line, backgroundColor: C.card }]}
           >
             <View style={{ flex: 1 }}>
@@ -136,6 +142,7 @@ export const NumberPicker: React.FC<{
                 {t(`cd.${p.label === "other" ? "other" : p.label}`) !== `cd.${p.label}` ? t(`cd.${p.label}`) : p.label}
               </Text>
             </View>
+            <Icon name="content-copy" size={15} color={C.faint} />
           </Pressable>
         ))}
         {!unique.length && (

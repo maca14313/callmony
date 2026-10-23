@@ -5,7 +5,7 @@
    CONTACTS_TTL (5 min) or after an in-app contact edit. A 5000-contact
    book never re-serializes over the bridge on every open. */
 
-import { Platform, PermissionsAndroid } from "react-native";
+import { NativeModules, PermissionsAndroid, Platform } from "react-native";
 import Contacts from "react-native-contacts";
 import RNFS from "react-native-fs";
 import type { DeviceContact } from "../lib/types";
@@ -206,16 +206,67 @@ export const openExistingContactEditor = async (recordID: string): Promise<boole
   }
 };
 
-/* ---------------- in-app raw editing (WRITE_CONTACTS) ---------------- */
+/* ---------------- in-app contact editing (WRITE_CONTACTS) ---------------- */
 
-/** Fetch the RAW react-native-contacts object for one record — the complete
-    OS row with every field and internal ID, so an edit mutates ONLY what the
-    user changed and updateContact can apply the whole row without dropping
-    anything (emails/addresses/birthday/note stay intact). */
-export const getRawContactById = async (recordID: string): Promise<Contacts.Contact | null> => {
+/* v1.6.1 — editing goes through our OWN ContactEditModule on Android.
+   react-native-contacts' updateContact rewrites the MIMETYPE of every data
+   row of the contact (corrupting notes/addresses) and scopes its
+   delete+re-insert to ONE rawContactId while a contact's numbers can live
+   across several raw rows — that mismatch made contacts LOSE phone numbers
+   after an in-app edit, and its AsyncTask bridge can die without settling
+   the promise (the forever-spinner editor). Our module loads/saves with
+   row-id-scoped operations and ALWAYS settles. */
+
+export interface EditablePhone {
+  label: string;
+  number: string;
+}
+export interface EditableEmail {
+  label: string;
+  email: string;
+}
+export interface ContactEditData {
+  recordID: string;
+  givenName: string;
+  middleName?: string;
+  familyName: string;
+  company: string;
+  jobTitle?: string;
+  phoneNumbers: EditablePhone[];
+  emailAddresses: EditableEmail[];
+}
+
+interface ContactEditNative {
+  loadContact(contactId: string): Promise<ContactEditData | null>;
+  saveContact(fields: ContactEditData): Promise<boolean>;
+}
+
+const ContactEdit = NativeModules.CallMonyContactEdit as ContactEditNative | undefined;
+
+/** Load every editable field of one contact — all phones/emails across all
+    of the contact's raw rows. Resolves null when not found / unavailable. */
+export const loadContactForEdit = async (recordID: string): Promise<ContactEditData | null> => {
+  if (Platform.OS === "android" && ContactEdit) {
+    try {
+      return await ContactEdit.loadContact(recordID);
+    } catch {
+      return null;
+    }
+  }
+  /* iOS — react-native-contacts' own editor is safe there */
   try {
     const raw = await Contacts.getContactById(recordID);
-    return raw ?? null;
+    if (!raw) return null;
+    return {
+      recordID: raw.recordID,
+      givenName: raw.givenName || "",
+      middleName: raw.middleName || "",
+      familyName: raw.familyName || "",
+      company: raw.company || "",
+      jobTitle: raw.jobTitle || "",
+      phoneNumbers: (raw.phoneNumbers || []).map((p) => ({ label: normalizeLabel(p.label), number: p.number })),
+      emailAddresses: (raw.emailAddresses || []).map((e) => ({ label: normalizeLabel(e.label), email: e.email })),
+    };
   } catch {
     return null;
   }
@@ -244,13 +295,41 @@ const ensureWritePermission = async (): Promise<boolean> => {
   }
 };
 
-/** Persist a mutated raw contact (must come from getContactById — or be built
-    keeping every original field). Requests WRITE_CONTACTS when needed. */
-export const updateRawContact = async (raw: Contacts.Contact): Promise<boolean> => {
+/** Persist the edited fields (name/company/phones/emails). ONLY those —
+    note, birthday, addresses and photos are never touched. */
+export const saveContactEdit = async (data: ContactEditData): Promise<boolean> => {
+  const allowed = await ensureWritePermission();
+  if (!allowed) return false;
+  if (Platform.OS === "android" && ContactEdit) {
+    try {
+      await ContactEdit.saveContact(data);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /* iOS — mutate the freshly loaded raw row so nothing else is dropped */
   try {
-    const allowed = await ensureWritePermission();
-    if (!allowed) return false;
+    const raw = await Contacts.getContactById(data.recordID);
+    if (!raw) return false;
+    raw.givenName = data.givenName;
+    raw.middleName = data.middleName ?? "";
+    raw.familyName = data.familyName;
+    raw.company = data.company;
+    raw.jobTitle = data.jobTitle ?? "";
+    raw.phoneNumbers = data.phoneNumbers.map((p) => ({ label: p.label, number: p.number }));
+    raw.emailAddresses = data.emailAddresses.map((e) => ({ label: e.label, email: e.email }));
     await Contacts.updateContact(raw);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** Delete a contact from the OS address book (merge-duplicates flow). */
+export const deleteDeviceContact = async (recordID: string): Promise<boolean> => {
+  try {
+    await Contacts.deleteContact({ recordID } as Contacts.Contact);
     return true;
   } catch {
     return false;

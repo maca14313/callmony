@@ -9,7 +9,7 @@ import { useApp } from "../lib/store";
 import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { entrySignedRemaining, listTotals, r2 } from "../lib/calc";
-import { displayName, money } from "../lib/utils";
+import { compactMoney, displayName } from "../lib/utils";
 import { F, useThemeColors } from "../theme";
 import { Avatar, Card, Money, Segmented, SectionHeader } from "../components/kit";
 import { LedgerSection } from "../sections/LedgerSection";
@@ -97,20 +97,20 @@ export const GeneralScreen: React.FC = () => {
         <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
           <View style={[genStyles.stat, { borderColor: C.line }]}>
             <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("lg.income")}</Text>
-            <Money value={global.income} size={16} weight="800" fit />
+            <Money value={global.income} size={16} weight="800" fit compact />
           </View>
           <View style={[genStyles.stat, { borderColor: C.line }]}>
             <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("lg.expense")}</Text>
-            <Money value={-global.expense} size={16} weight="800" fit />
+            <Money value={-global.expense} size={16} weight="800" fit compact />
           </View>
           <View style={[genStyles.stat, { borderColor: C.brand, backgroundColor: C.brandSoft }]}>
             <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("lg.net")}</Text>
-            <Money value={global.net} colorize size={16} weight="800" fit />
+            <Money value={global.net} colorize size={16} weight="800" fit compact />
           </View>
         </View>
         {global.listsPending > 0.005 && (
           <Text style={{ fontSize: F.tiny, color: C.amber, marginTop: 8 }}>
-            {t("lg.openLists")}: {money(global.listsPending)}
+            {t("lg.openLists")}: {compactMoney(global.listsPending)}
           </Text>
         )}
       </Card>
@@ -121,14 +121,14 @@ export const GeneralScreen: React.FC = () => {
         {owedToYou > 0.005 && (
           <View style={[genStyles.chipStat, { backgroundColor: "rgba(29,154,107,0.12)" }]}>
             <Text style={{ fontSize: F.tiny, color: C.green, fontWeight: "800" }}>
-              {t("gv.owedToYou")} {money(owedToYou)}
+              {t("gv.owedToYou")} {compactMoney(owedToYou)}
             </Text>
           </View>
         )}
         {youOwe > 0.005 && (
           <View style={[genStyles.chipStat, { backgroundColor: "rgba(214,69,69,0.1)" }]}>
             <Text style={{ fontSize: F.tiny, color: C.red, fontWeight: "800" }}>
-              {t("gv.youOwe")} {money(youOwe)}
+              {t("gv.youOwe")} {compactMoney(youOwe)}
             </Text>
           </View>
         )}
@@ -148,7 +148,7 @@ export const GeneralScreen: React.FC = () => {
               <Text style={{ flex: 1, fontSize: F.small, color: C.ink, fontWeight: "600" }} numberOfLines={1}>
                 {displayName(c)}
               </Text>
-              <Money value={balance} signed colorize size={14} />
+              <Money value={balance} signed colorize size={14} compact />
             </Pressable>
           ))}
         </Card>

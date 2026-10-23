@@ -11,6 +11,7 @@ import com.facebook.react.uimanager.ViewManager
  *  - SysCallLogModule    — the device's real system call log
  *  - EmailModule         — email composer with backup attachments
  *  - DiagModule          — crash reports + boot breadcrumbs (v1.5.2)
+ *  - ContactEditModule   — safe in-app contact editing (v1.6.1)
  */
 class CallMonyPackage : ReactPackage {
 
@@ -20,6 +21,7 @@ class CallMonyPackage : ReactPackage {
             SysCallLogModule(reactContext),
             EmailModule(reactContext),
             DiagModule(reactContext),
+            ContactEditModule(reactContext),
         )
 
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =

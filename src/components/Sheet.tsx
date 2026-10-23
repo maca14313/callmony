@@ -22,6 +22,7 @@ import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useT } from "../i18n";
 import { F, useThemeColors } from "../theme";
+import { Toaster } from "./kit";
 
 /** Full-screen overlay sheet — slide-up, header with back chevron.
     `headerLeft` (small avatar) + title + subtitle + `headerRight` actions
@@ -91,6 +92,11 @@ export const Sheet: React.FC<{
               {footer}
             </View>
           )}
+          {/* v1.6.1 — the toast layer INSIDE the modal window: a shell-only
+              toast was invisible while any sheet was open (native Modals are
+              stacked above the app view → "toast shows in another place").
+              pointerEvents box-none: taps pass straight through to the sheet. */}
+          <Toaster />
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -157,6 +163,9 @@ export const BottomSheet: React.FC<{
             )}
           </View>
         </KeyboardAvoidingView>
+        {/* v1.6.1 — toast layer inside this modal window too (see Sheet):
+            floats above the partial sheet; box-none so taps pass through. */}
+        <Toaster />
       </View>
     </Modal>
   );

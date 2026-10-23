@@ -22,7 +22,7 @@ import { useUI } from "./src/lib/ui-store";
 import { useT } from "./src/i18n";
 import { dueStatus } from "./src/lib/calc";
 import { F, useThemeColors } from "./src/theme";
-import { Toaster, ConfirmHost, IconBtn, Pill } from "./src/components/kit";
+import { Toaster, ConfirmHost, IconBtn, Pill, Chip } from "./src/components/kit";
 import { BottomNav } from "./src/components/BottomNav";
 import { KeypadSheet } from "./src/components/KeypadSheet";
 import { CalculatorSheet } from "./src/components/Calculator";
@@ -44,7 +44,7 @@ import { loadCachedContacts } from "./src/native/deviceContacts";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { setupCallKeep } from "./src/native/callkeep";
 import { maybeAutoSync } from "./src/lib/backup";
-import { bootMark } from "./src/native/diag";
+import { bootMark, setNavBarColor } from "./src/native/diag";
 import { isSafeMode } from "./src/boot/crash-firewall";
 
 const App: React.FC = () => {
@@ -279,6 +279,13 @@ const Shell: React.FC = () => {
     AsyncStorage.setItem("cm.lastTab", tab).catch(() => undefined);
   }, [tab]);
 
+  /* v1.6.1 — system navigation bar follows the RESOLVED theme: dark mode no
+     longer leaves a mismatched (light/black) bar under the gesture area.
+     values-night covers the cold start; this keeps it synced afterwards. */
+  useEffect(() => {
+    setNavBarColor(C.canvas, C.mode === "light");
+  }, [C.canvas, C.mode]);
+
   /* lock on first load when a PIN is set */
   useEffect(() => {
     if (settings.pinHash) useUI.getState().setLocked(true);
@@ -485,10 +492,20 @@ const MoreSheet: React.FC<{ onClose: () => void; onLanguage: () => void; overdue
   const setTab = useUI((s) => s.setTab);
   const open = useUI((s) => s.open);
   const language = useApp((s) => s.settings.language);
+  const theme = useApp((s) => s.settings.theme);
+  const updateSettings = useApp((s) => s.updateSettings);
+  const [themeSheet, setThemeSheet] = useState(false);
   const native = { en: "English", am: "አማርኛ", om: "Afaan Oromoo", ar: "العربية", ti: "ትግርኛ" }[language ?? "en"];
 
   const tiles: { icon: string; label: string; badge?: number; run: () => void }[] = [
     { icon: "translate", label: native || "English", run: onLanguage },
+    /* v1.6.1 — Theme lives here too (user request), one tap from anywhere:
+       opens a compact Light/Dark/Auto chooser, same action as Settings. */
+    {
+      icon: theme === "dark" ? "weather-night" : theme === "light" ? "weather-sunny" : "theme-light-dark",
+      label: `${t("st.theme")} · ${theme === "dark" ? t("st.dark") : theme === "light" ? t("st.light") : t("st.auto")}`,
+      run: () => setThemeSheet(true),
+    },
     { icon: "bell-outline", label: t("tab.reminders"), badge: overdueCount, run: () => { setTab("reminders"); onClose(); } },
     { icon: "swap-horizontal-circle-outline", label: t("spd.mergeDuplicates"), run: () => { open({ type: "merge" }); onClose(); } },
     { icon: "grid", label: t("spd.speedDial"), run: () => { open({ type: "speedDial" }); onClose(); } },
@@ -522,6 +539,30 @@ const MoreSheet: React.FC<{ onClose: () => void; onLanguage: () => void; overdue
       <View style={{ alignItems: "center", paddingVertical: 6 }}>
         <Pill label={t("misc.offlineReady")} tone="green" icon="cloud-off-outline" />
       </View>
+
+      {/* theme chooser — the SAME action the Settings sheet performs */}
+      {themeSheet && (
+        <BottomSheet title={t("st.theme")} onClose={() => setThemeSheet(false)} noScroll>
+          <View style={{ flexDirection: "row", gap: 8, paddingVertical: 8, paddingBottom: 16 }}>
+            {([
+              { key: "light", label: t("st.light"), icon: "weather-sunny" },
+              { key: "dark", label: t("st.dark"), icon: "weather-night" },
+              { key: "auto", label: t("st.auto"), icon: "theme-light-dark" },
+            ] as const).map((o) => (
+              <Chip
+                key={o.key}
+                label={o.label}
+                icon={o.icon}
+                active={theme === o.key}
+                onPress={() => {
+                  updateSettings({ theme: o.key });
+                  setThemeSheet(false);
+                }}
+              />
+            ))}
+          </View>
+        </BottomSheet>
+      )}
     </BottomSheet>
   );
 };

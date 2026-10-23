@@ -125,7 +125,7 @@ const ContactRowBody: React.FC<{
               size={11}
               color={balance > 0 ? C.green : C.red}
             />
-            <Money value={balance} colorize signed size={12} />
+            <Money value={balance} colorize signed size={12} compact />
             <Text style={{ fontSize: 11, fontWeight: "700", color: balance > 0 ? C.green : C.red }} numberOfLines={1}>
               · {balance > 0 ? t("cd.theyOweYou") : t("cd.youOweThem")}
             </Text>
@@ -401,21 +401,21 @@ export const ContactsScreen: React.FC = () => {
               <Icon name="arrow-bottom-left" size={10} color={C.green} />
               <Text style={[styles.statLabelTxt, { color: C.sub }]} numberOfLines={1}>{t("cd.toReceive")}</Text>
             </View>
-            <Money value={Math.abs(owedToYou)} colorize size={12} weight="800" />
+            <Money value={Math.abs(owedToYou)} colorize size={12} weight="800" compact />
           </View>
           <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
             <View style={styles.statLabel}>
               <Icon name="arrow-top-right" size={10} color={C.red} />
               <Text style={[styles.statLabelTxt, { color: C.sub }]} numberOfLines={1}>{t("cd.toPay")}</Text>
             </View>
-            <Money value={-Math.abs(youOwe)} colorize size={12} weight="800" />
+            <Money value={-Math.abs(youOwe)} colorize size={12} weight="800" compact />
           </View>
           <View style={[styles.statCard, { backgroundColor: C.brandSoft, borderColor: C.brandSoft }]}>
             <View style={styles.statLabel}>
               <Icon name="scale-balance" size={10} color={C.brand} />
               <Text style={[styles.statLabelTxt, { color: C.brand, fontWeight: "700" }]} numberOfLines={1}>{t("lg.net")}</Text>
             </View>
-            <Money value={Math.abs(owedToYou) - Math.abs(youOwe)} colorize size={12} weight="800" />
+            <Money value={Math.abs(owedToYou) - Math.abs(youOwe)} colorize size={12} weight="800" compact />
           </View>
         </View>
       )}

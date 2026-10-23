@@ -61,4 +61,38 @@ class DiagModule(reactContext: ReactApplicationContext) :
             promise.reject("diag", e.message ?: "read failed")
         }
     }
+
+    /**
+     * v1.6.1 — keep the SYSTEM navigation bar in sync with the app theme.
+     * The static styles.xml color is light-only; when the user picks the dark
+     * theme (or the OS switches to dark) the JS side calls this with the
+     * resolved canvas color so the area under the gesture/button bar matches
+     * the app instead of flashing light (user report: "black/white bar that
+     * does not match in dark mode").
+     *  color      — #rrggbb canvas color for the nav bar background
+     *  lightIcons — true → dark icons on a light bar; false → light icons
+     */
+    @ReactMethod
+    fun setNavBarColor(color: String, lightIcons: Boolean, promise: Promise) {
+        try {
+            val activity = currentActivity
+            if (activity == null) {
+                promise.resolve(false)
+                return
+            }
+            activity.runOnUiThread {
+                try {
+                    activity.window.navigationBarColor = android.graphics.Color.parseColor(color)
+                    val controller =
+                        androidx.core.view.WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+                    controller.isAppearanceLightNavigationBars = lightIcons
+                } catch (_: Throwable) {
+                    /* best-effort: never crash over cosmetics */
+                }
+            }
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("diag", e.message ?: "setNavBarColor failed")
+        }
+    }
 }

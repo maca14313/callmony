@@ -63,6 +63,12 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
   const [socialSheet, setSocialSheet] = useState<{ app: SocialLink["app"] } | null>(null);
   const [phoneSheet, setPhoneSheet] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  /* v1.6.1 — unified choosers: every contact action tile opens a picker with
+     add/edit rows (user request): telegram → handle/number chooser, email →
+     address chooser, and a dedicated “＋ add to this contact” tile. */
+  const [tgPicker, setTgPicker] = useState(false);
+  const [emailPicker, setEmailPicker] = useState(false);
+  const [addSheet, setAddSheet] = useState(false);
 
   const ownerId = contact ? contactOwnerId(contact.recordID) : null;
   const xEntry = contactX.find((x) => x.recordID === params.recordID);
@@ -72,7 +78,6 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
   const pendingLists = ownerId ? openListsPending(lists, ownerId) : 0;
   const phone = contact ? primaryPhone(contact) : undefined;
   const email = contact?.emails[0]?.address;
-  const tgSocial = socials.find((s) => s.app === "telegram");
 
   if (!contact) {
     return (
@@ -82,14 +87,18 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
     );
   }
 
-  /* ---------- multi-number routing ---------- */
+  /* ---------- multi-number routing — v1.6.1: the chooser opens for EVERY
+     number-based action (call / sms / whatsapp), single number or not. The
+     sheet always carries the “Add or edit numbers” row, so adding or fixing
+     numbers is reachable from every tile (user request: “unify: tapping
+     message/social/+ opens a chooser sheet with add/edit options”). ---------- */
   const runAction = (action: "call" | "sms" | "whatsapp") => {
     const unique = dedupePhones(contact!.phones, countryCode);
-    if (unique.length > 1) {
-      setNumPicker({ action });
+    if (!unique.length) {
+      toast(t("cd.noPhone"), "error");
       return;
     }
-    fireAction(action, unique[0]?.number);
+    setNumPicker({ action });
   };
 
   const fireAction = (action: "call" | "sms" | "whatsapp", number?: string) => {
@@ -115,34 +124,20 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
     setNumPicker(null);
   };
 
-  /* ---------- Telegram: saved handle, else a +<number> link (web parity) ---------- */
-  const fireTelegram = () => {
-    if (tgSocial) {
-      openWithFeedback(tgLink(tgSocial.handle), t("act.couldntOpen"));
-      return;
-    }
-    const byNumber = phone ? socialLinkFromNumber("telegram", phone, countryCode) : null;
-    if (byNumber) {
-      openWithFeedback(byNumber, t("act.couldntOpen"));
-      return;
-    }
-    setSocialSheet({ app: "telegram" });
-  };
+  /* ---------- Telegram: the chooser lists saved handles AND every number
+     (a tg: link is built from it), plus add-handle / add-edit-numbers rows.
+     Same interaction as the call tile — the unified pattern the user asked
+     for twice. ---------- */
+  const fireTelegram = () => setTgPicker(true);
 
-  /* ---------- Email: always tappable — clear feedback either way ---------- */
-  const fireEmail = () => {
-    if (!email) {
-      toast(t("cd.noEmail"), "error");
-      return;
-    }
-    openWithFeedback(mailtoLink(email), t("act.couldntOpen"));
-  };
+  /* ---------- Email: chooser over every address + add/edit ---------- */
+  const fireEmail = () => setEmailPicker(true);
 
   /* ---------- quick actions — the webapp 6×2 grid ---------- */
   const quickActions: { icon: string; label: string; run: () => void; disabled?: boolean }[] = [
-    { icon: "phone", label: t("act.call"), run: () => runAction("call"), disabled: !phone },
-    { icon: "message-text-outline", label: t("act.sms"), run: () => runAction("sms"), disabled: !phone },
-    { icon: "whatsapp", label: t("act.whatsapp"), run: () => runAction("whatsapp"), disabled: !phone },
+    { icon: "phone", label: t("act.call"), run: () => runAction("call"), disabled: !contact.phones.length },
+    { icon: "message-text-outline", label: t("act.sms"), run: () => runAction("sms"), disabled: !contact.phones.length },
+    { icon: "whatsapp", label: t("act.whatsapp"), run: () => runAction("whatsapp"), disabled: !contact.phones.length },
     { icon: "send", label: t("act.telegram"), run: fireTelegram },
     { icon: "email-outline", label: t("act.email"), run: fireEmail },
     { icon: "book-outline", label: t("tab.ledger"), run: () => setSeg("ledger") },
@@ -151,7 +146,9 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
     { icon: "note-text-outline", label: t("tab.notes"), run: () => setSeg("notes") },
     { icon: "bell-outline", label: t("tab.reminders"), run: () => setSeg("reminders") },
     { icon: "information-outline", label: t("tab.info"), run: () => setSeg("info") },
-    { icon: "dots-horizontal", label: t("act.more"), run: () => setMoreOpen(true) },
+    /* v1.6.1 — the “＋” tile (replaces the More tile; the header ⋯ still
+       opens the More sheet): an add/edit chooser for this contact */
+    { icon: "plus", label: t("cd.addToContact"), run: () => setAddSheet(true) },
   ];
 
   const toggleFav = () => {
@@ -228,14 +225,14 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
               size={13}
               color={balance > 0.005 ? C.green : balance < -0.005 ? C.red : C.sub}
             />
-            <Money value={balance} signed colorize size={15} weight="800" fit />
+            <Money value={balance} signed colorize size={15} weight="800" fit compact />
           </View>
           <Text style={{ fontSize: F.small, color: C.sub, fontWeight: "600" }}>
             {balance > 0.005 ? t("cd.theyOweYou") : balance < -0.005 ? t("cd.youOweThem") : t("cd.settledUp")}
           </Text>
           {pendingLists > 0.005 && (
             <Text style={{ fontSize: 11, color: C.faint }}>
-              ({t("lg.openLists")}: <Money value={pendingLists} signed size={11} weight="600" />)
+              ({t("lg.openLists")}: <Money value={pendingLists} signed size={11} weight="600" compact />)
             </Text>
           )}
         </View>
@@ -310,6 +307,59 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
           onClose={() => setNumPicker(null)}
           onAddEditNumbers={() => {
             setNumPicker(null);
+            setEditorOpen(true);
+          }}
+        />
+      )}
+
+      {/* telegram chooser — saved handles + every number + add rows */}
+      {tgPicker && (
+        <TelegramPicker
+          socials={socials.filter((s) => s.app === "telegram")}
+          numbers={dedupePhones(contact.phones, countryCode).map((p) => p.number)}
+          countryCode={countryCode}
+          onClose={() => setTgPicker(false)}
+          onAddHandle={() => {
+            setTgPicker(false);
+            setSocialSheet({ app: "telegram" });
+          }}
+          onAddEditNumbers={() => {
+            setTgPicker(false);
+            setEditorOpen(true);
+          }}
+        />
+      )}
+
+      {/* email chooser — every address + add/edit */}
+      {emailPicker && (
+        <EmailPicker
+          emails={contact.emails.map((e) => e.address)}
+          onClose={() => setEmailPicker(false)}
+          onAddEditEmails={() => {
+            setEmailPicker(false);
+            setEditorOpen(true);
+          }}
+        />
+      )}
+
+      {/* ＋ add-to-contact chooser */}
+      {addSheet && (
+        <AddToContactSheet
+          onClose={() => setAddSheet(false)}
+          onAddPhone={() => {
+            setAddSheet(false);
+            setEditorOpen(true);
+          }}
+          onAddEmail={() => {
+            setAddSheet(false);
+            setEditorOpen(true);
+          }}
+          onAddSocial={() => {
+            setAddSheet(false);
+            setSocialSheet({ app: "telegram" });
+          }}
+          onEdit={() => {
+            setAddSheet(false);
             setEditorOpen(true);
           }}
         />
@@ -434,6 +484,14 @@ const ContactMoreSheet: React.FC<{
               onClose();
               setTimeout(it.run, 180);
             }}
+            /* v1.6.1 — long-press copies the email/number shown in the row
+               (user request: "long-press copies numbers/emails wherever it
+               is, even in the options") */
+            onLongPress={() =>
+              it.sub &&
+              copyText(it.sub).then((ok) => toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error"))
+            }
+            delayLongPress={400}
             style={({ pressed }) => [
               cdStyles.menuItem,
               { backgroundColor: pressed ? C.chip : "transparent", opacity: it.disabled ? 0.4 : 1 },
@@ -562,6 +620,13 @@ const PhoneOptionsSheet: React.FC<{
               onClose();
               setTimeout(it.run, 180);
             }}
+            /* v1.6.1 — long-press ANY option row to copy the number (user
+               request: “long-press copies numbers wherever it is, even in the
+               options”) */
+            onLongPress={() =>
+              copyText(number).then((ok) => toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error"))
+            }
+            delayLongPress={400}
             style={({ pressed }) => [cdStyles.menuItem, { backgroundColor: pressed ? C.chip : "transparent" }]}
           >
             <Icon name={it.icon} size={21} color={C.sub} />
@@ -570,6 +635,175 @@ const PhoneOptionsSheet: React.FC<{
             </Text>
           </Pressable>
         ))}
+      </View>
+    </BottomSheet>
+  );
+};
+
+/* ---------------- v1.6.1 unified choosers ---------------- */
+
+/** shared row for the chooser sheets — long-press copies the value */
+const ChooserRow: React.FC<{
+  icon: string;
+  title: string;
+  sub?: string;
+  copyValue?: string;
+  onPress: () => void;
+}> = ({ icon, title, sub, copyValue, onPress }) => {
+  const C = useThemeColors(useApp((s) => s.settings.theme));
+  const t = useT();
+  return (
+    <Pressable
+      android_ripple={{ color: "rgba(128,128,128,0.14)" }}
+      onPress={onPress}
+      onLongPress={() =>
+        copyValue &&
+        copyText(copyValue).then((ok) => toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error"))
+      }
+      delayLongPress={400}
+      style={[cdStyles.row, { borderColor: C.line, backgroundColor: C.card }]}
+      accessibilityLabel={title}
+    >
+      <View style={[cdStyles.socialIcon, { backgroundColor: C.brandSoft }]}>
+        <Icon name={icon} size={16} color={C.brand} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ fontSize: F.body, fontWeight: "700", color: C.ink }} numberOfLines={1}>
+          {title}
+        </Text>
+        {!!sub && (
+          <Text style={{ fontSize: F.tiny, color: C.sub }} numberOfLines={1}>
+            {sub}
+          </Text>
+        )}
+      </View>
+      <Icon name="chevron-right" size={16} color={C.faint} />
+    </Pressable>
+  );
+};
+
+/** trailing dashed “add / edit” row shared by every chooser */
+const ChooserAddRow: React.FC<{ icon: string; label: string; onPress: () => void }> = ({ icon, label, onPress }) => {
+  const C = useThemeColors(useApp((s) => s.settings.theme));
+  return (
+    <Pressable
+      android_ripple={{ color: "rgba(128,128,128,0.14)" }}
+      onPress={onPress}
+      style={[cdStyles.addRow, { borderColor: C.line }]}
+      accessibilityLabel={label}
+    >
+      <Icon name={icon} size={16} color={C.brand} />
+      <Text style={{ fontSize: F.small, color: C.brand, fontWeight: "700" }}>{label}</Text>
+    </Pressable>
+  );
+};
+
+/** Telegram — saved handles, a link per number, add-handle + add/edit rows */
+const TelegramPicker: React.FC<{
+  socials: SocialLink[];
+  numbers: string[];
+  countryCode: string;
+  onClose: () => void;
+  onAddHandle: () => void;
+  onAddEditNumbers: () => void;
+}> = ({ socials, numbers, countryCode, onClose, onAddHandle, onAddEditNumbers }) => {
+  const C = useThemeColors(useApp((s) => s.settings.theme));
+  const t = useT();
+  return (
+    <BottomSheet title={t("act.telegram")} onClose={onClose}>
+      <View style={{ gap: 6, paddingBottom: 10 }}>
+        {socials.map((s) => (
+          <ChooserRow
+            key={s.id}
+            icon="send"
+            title={s.handle}
+            sub="Telegram"
+            copyValue={s.handle}
+            onPress={() => {
+              onClose();
+              setTimeout(() => openWithFeedback(tgLink(s.handle), t("act.couldntOpen")), 160);
+            }}
+          />
+        ))}
+        {numbers.map((n) => {
+          const url = socialLinkFromNumber("telegram", n, countryCode);
+          if (!url) return null;
+          return (
+            <ChooserRow
+              key={n}
+              icon="phone"
+              title={prettyPhone(n, countryCode)}
+              sub={t("ce.fromNumber")}
+              copyValue={n}
+              onPress={() => {
+                onClose();
+                setTimeout(() => openWithFeedback(url, t("act.couldntOpen")), 160);
+              }}
+            />
+          );
+        })}
+        {!socials.length && !numbers.length && (
+          <Text style={{ color: C.sub, textAlign: "center", paddingVertical: 14, fontSize: F.small }}>
+            {t("cd.noPhone")}
+          </Text>
+        )}
+        <ChooserAddRow icon="plus" label={t("ce.addSocial")} onPress={onAddHandle} />
+        <ChooserAddRow icon="pencil-outline" label={t("cd.addOrEditNumbers")} onPress={onAddEditNumbers} />
+      </View>
+    </BottomSheet>
+  );
+};
+
+/** Email — one row per address + add/edit */
+const EmailPicker: React.FC<{
+  emails: string[];
+  onClose: () => void;
+  onAddEditEmails: () => void;
+}> = ({ emails, onClose, onAddEditEmails }) => {
+  const C = useThemeColors(useApp((s) => s.settings.theme));
+  const t = useT();
+  return (
+    <BottomSheet title={t("cd.chooseEmail")} onClose={onClose}>
+      <View style={{ gap: 6, paddingBottom: 10 }}>
+        {emails.map((e) => (
+          <ChooserRow
+            key={e}
+            icon="email-outline"
+            title={e}
+            copyValue={e}
+            onPress={() => {
+              onClose();
+              setTimeout(() => openWithFeedback(mailtoLink(e), t("act.couldntOpen")), 160);
+            }}
+          />
+        ))}
+        {!emails.length && (
+          <Text style={{ color: C.sub, textAlign: "center", paddingVertical: 14, fontSize: F.small }}>
+            {t("cd.noEmail")}
+          </Text>
+        )}
+        <ChooserAddRow icon="plus" label={t("ce.addEmail")} onPress={onAddEditEmails} />
+      </View>
+    </BottomSheet>
+  );
+};
+
+/** ＋ add-to-contact — which kind of thing to add (or edit everything) */
+const AddToContactSheet: React.FC<{
+  onClose: () => void;
+  onAddPhone: () => void;
+  onAddEmail: () => void;
+  onAddSocial: () => void;
+  onEdit: () => void;
+}> = ({ onClose, onAddPhone, onAddEmail, onAddSocial, onEdit }) => {
+  const t = useT();
+  return (
+    <BottomSheet title={t("cd.addToContact")} onClose={onClose}>
+      <View style={{ gap: 6, paddingBottom: 10 }}>
+        <ChooserRow icon="phone-plus" title={t("ce.addPhone")} onPress={onAddPhone} />
+        <ChooserRow icon="email-plus-outline" title={t("ce.addEmail")} onPress={onAddEmail} />
+        <ChooserRow icon="link-plus" title={t("ce.addSocial")} onPress={onAddSocial} />
+        <ChooserAddRow icon="pencil-outline" label={t("cd.editContact")} onPress={onEdit} />
       </View>
     </BottomSheet>
   );
@@ -935,6 +1169,29 @@ const cdStyles = StyleSheet.create({
   labelChip: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   socialIcon: { width: 34, height: 34, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   historyRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 3, minHeight: 30 },
+  /* v1.6.1 — unified chooser sheets (ChooserRow / ChooserAddRow) */
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 58,
+  },
+  addRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    paddingVertical: 10,
+    marginTop: 2,
+    minHeight: 44,
+  },
   addSocialBtn: {
     flexDirection: "row",
     alignItems: "center",

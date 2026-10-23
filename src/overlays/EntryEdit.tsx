@@ -74,6 +74,16 @@ export const EntryEditOverlay: React.FC<{ params: Extract<Overlay, { type: "entr
   const liveAmount = items.length ? itemsTotal(items) : Number(amount) || 0;
   const editing = !!existing;
 
+  /* v1.6.1 — the amount field is typed free-hand: keep it strictly numeric
+     (digits + ONE decimal separator, comma tolerated) so keyboardType
+     "decimal-pad" and the calculator return always land in a Number()-safe
+     string — and the save path can never see garbage like "1.2.3". */
+  const sanitizeAmount = (v: string): string => {
+    const cleaned = v.replace(/,/g, ".").replace(/[^0-9.]/g, "");
+    const first = cleaned.indexOf(".");
+    return first === -1 ? cleaned : cleaned.slice(0, first + 1) + cleaned.slice(first + 1).replace(/\./g, "");
+  };
+
   const resetLineForm = () => {
     setLiName("");
     setLiQty("1");
@@ -194,37 +204,54 @@ export const EntryEditOverlay: React.FC<{ params: Extract<Overlay, { type: "entr
         ))}
       </View>
 
-      {/* amount */}
+      {/* amount — v1.6.1: THE INPUT IS THE HERO. The old row put a huge
+          auto-shrinking formatted Text next to a tiny 90px input — on narrow
+          screens the label-like display swallowed the tap target and users
+          reported "can't write on the entry amount". Now the input is the
+          big, obvious, full-width element and the formatted value is a small
+          caption underneath. */}
       <View style={{ marginBottom: 6 }}>
         <Text style={{ fontSize: F.small, color: C.sub, fontWeight: "600", marginBottom: 6 }}>
           {t("lg.entryAmount")}
         </Text>
-        <View style={[styles.amountRow, { borderColor: C.brand, backgroundColor: C.brandSoft }]}>
-          <Text style={{ fontSize: 26, fontWeight: "800", color: C.brand, flex: 1 }} adjustsFontSizeToFit minimumFontScale={0.4}>
-            {money(liveAmount)}
-          </Text>
-          {!items.length && (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        {!items.length ? (
+          <View>
+            <View style={[styles.amountRow, { borderColor: C.brand, backgroundColor: C.brandSoft }]}>
               <TextInput
                 value={amount}
-                onChangeText={setAmount}
+                onChangeText={(v) => setAmount(sanitizeAmount(v))}
                 keyboardType="decimal-pad"
                 placeholder="0"
                 placeholderTextColor={C.faint}
-                style={{ fontSize: 18, fontWeight: "700", color: C.brand, minWidth: 90, textAlign: "right" }}
+                editable
+                showSoftInputOnFocus
+                autoCorrect={false}
+                autoCapitalize="none"
+                importantForAutofill="no"
+                maxLength={15}
+                style={{ flex: 1, minWidth: 0, fontSize: 26, fontWeight: "800", color: C.brand, minHeight: 56, paddingVertical: 6, textAlign: "left" }}
               />
-              <IconBtn icon="calculator" size={36} onPress={() => openCalculator((v) => setAmount(String(v)))} />
+              <IconBtn icon="calculator" size={40} onPress={() => openCalculator((v) => setAmount(sanitizeAmount(String(v))))} />
             </View>
-          )}
-          {!!items.length && (
+            {!!Number(amount) && (
+              <Text style={{ fontSize: F.small, color: C.sub, marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
+                = {money(Number(amount) || 0)}
+              </Text>
+            )}
+          </View>
+        ) : (
+          <View style={[styles.amountRow, { borderColor: C.brand, backgroundColor: C.brandSoft }]}>
+            <Text style={{ fontSize: 26, fontWeight: "800", color: C.brand, flex: 1 }} adjustsFontSizeToFit minimumFontScale={0.4}>
+              {money(liveAmount)}
+            </Text>
             <View style={{ alignItems: "flex-end", gap: 2 }}>
               <Text style={{ fontSize: F.tiny, color: C.sub }}>{t("lg.autoFromItems")}</Text>
               <Text style={{ fontSize: F.small, color: C.sub, fontWeight: "700" }}>
                 {t("lg.itemsCount", { n: itemsCount(items) })}
               </Text>
             </View>
-          )}
-        </View>
+          </View>
+        )}
       </View>
 
       {/* line items */}
@@ -473,10 +500,11 @@ const styles = StyleSheet.create({
   amountRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 6,
     borderRadius: 18,
     borderWidth: 1.5,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 8,
     minHeight: 74,
   },
   lineItem: {

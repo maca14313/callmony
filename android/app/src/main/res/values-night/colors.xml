@@ -1,0 +1,9 @@
+<resources>
+    <!-- v1.6.1 — cold-start dark mode: the app theme is DayNight, so when the
+         OS is in dark mode the launch background / status + nav bars use the
+         DARK canvas instead of flashing light before JS runs. The runtime
+         (DiagModule.setNavBarColor) then keeps the nav bar synced with the
+         in-app theme setting. -->
+    <color name="brand">#2fc4a6</color>
+    <color name="canvas">#0e1514</color>
+</resources>

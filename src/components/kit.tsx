@@ -16,11 +16,18 @@ import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { create } from "zustand";
 import { useApp } from "../lib/store";
 import { useT } from "../i18n";
-import { avatarColors, displayName, initialsOf, money as fmtMoney } from "../lib/utils";
+import { avatarColors, displayName, initialsOf, money as fmtMoney, compactMoney } from "../lib/utils";
 import type { DeviceContact } from "../lib/types";
 import { F, ThemeColors, useThemeColors } from "../theme";
 
 /* ---------------- toast ---------------- */
+
+/* v1.6.1 — the Toaster renders BOTH at the shell root AND inside every
+   Sheet/BottomSheet Modal. Native Modals are separate windows that sit ABOVE
+   the app view, so a shell-only toast was invisible while a sheet was open —
+   the user saw "the toast in another place" (behind the sheet). Mounting the
+   same store-driven Toaster inside each modal puts it on top of whatever the
+   user is looking at; only the top-most instance is visible. */
 
 interface ToastItem {
   id: number;
@@ -172,12 +179,17 @@ export const Money: React.FC<{
   /** v1.5.4 — large-number-safe: shrink further (0.42) so the FULL grouped
       number always renders instead of being truncated. */
   fit?: boolean;
-}> = ({ value, currency, signed, colorize, size = 15, weight = "600", fit }) => {
+  /** v1.6.1 — huge-number-safe: |value| ≥ 100,000 renders as 1.2M/999K so
+      entry cards / pills / stat boxes never blow up their surroundings
+      (user report: "huge values affecting the components around it"). */
+  compact?: boolean;
+}> = ({ value, currency, signed, colorize, size = 15, weight = "600", fit, compact }) => {
   const appCurrency = useApp((s) => s.settings.currency);
   const hide = useApp((s) => s.settings.hideBalances);
   const C = useThemeColors(useApp((s) => s.settings.theme));
   if (hide) return <Text style={{ fontSize: size, fontWeight: weight, color: C.faint }}>•••</Text>;
-  const text = fmtMoney(value, currency || appCurrency, { signed });
+  const cur = currency || appCurrency;
+  const text = compact && Math.abs(value) >= 100000 ? compactMoney(value, cur, { signed }) : fmtMoney(value, cur, { signed });
   const color = colorize ? (value > 0 ? C.green : value < 0 ? C.red : C.sub) : undefined;
   return (
     <Text
@@ -246,8 +258,12 @@ export const Btn: React.FC<{
   style?: object;
   disabled?: boolean;
   small?: boolean;
-}> = ({ label, onPress, variant = "primary", icon, style, disabled, small }) => {
+  /** v1.6.1 — busy state: replaces the icon with a spinner and blocks taps
+      (user request: save buttons should show a spinner while they work). */
+  loading?: boolean;
+}> = ({ label, onPress, variant = "primary", icon, style, disabled, small, loading }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
+  const off = disabled || loading;
   const bg =
     variant === "primary"
       ? C.brand
@@ -269,16 +285,20 @@ export const Btn: React.FC<{
   return (
     <Pressable
       onPress={onPress}
-      disabled={disabled}
+      disabled={off}
       android_ripple={{ color: "rgba(128,128,128,0.18)", borderless: false }}
       style={({ pressed }) => [
         styles.btn,
         small && styles.btnSmall,
-        { backgroundColor: bg, opacity: disabled ? 0.45 : pressed ? 0.88 : 1, borderColor: C.line, borderWidth: variant === "secondary" ? 1 : 0 },
+        { backgroundColor: bg, opacity: off ? 0.45 : pressed ? 0.88 : 1, borderColor: C.line, borderWidth: variant === "secondary" ? 1 : 0 },
         style,
       ]}
     >
-      {!!icon && <Icon name={icon} size={18} color={fg} />}
+      {loading ? (
+        <Spinner size="small" />
+      ) : (
+        !!icon && <Icon name={icon} size={18} color={fg} />
+      )}
       {!!label && <Text style={{ color: fg, fontSize: small ? 14 : 16, fontWeight: "600" }}>{label}</Text>}
     </Pressable>
   );

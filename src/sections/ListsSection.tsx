@@ -122,7 +122,7 @@ export const ListsSection: React.FC<{ ownerId: OwnerId }> = ({ ownerId }) => {
                   </View>
                   {isCalc ? (
                     <View style={{ alignItems: "flex-end", gap: 2 }}>
-                      <Money value={totals.grand} size={15} weight="800" />
+                      <Money value={totals.grand} size={15} weight="800" compact />
                       {totals.pending > 0.005 ? (
                         <Pill label={`${totals.count - totals.paidCount}/${totals.count}`} tone="amber" />
                       ) : (

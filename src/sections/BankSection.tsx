@@ -55,7 +55,7 @@ export const BankSection: React.FC<{ ownerId: OwnerId }> = ({ ownerId }) => {
         <Btn small label={t("bk.addAccount")} icon="plus" onPress={() => open({ type: "bankEdit", ownerId })} />
         {totalBalance !== 0 && (
           <View style={{ marginLeft: "auto" }}>
-            <Money value={totalBalance} size={16} weight="800" />
+            <Money value={totalBalance} size={16} weight="800" compact />
           </View>
         )}
       </View>
@@ -97,7 +97,7 @@ export const BankSection: React.FC<{ ownerId: OwnerId }> = ({ ownerId }) => {
                     {b.holderName || t("bk.holderOptional")}
                   </Text>
                 </View>
-                {b.balance != null && <Money value={b.balance} size={15} />}
+                {b.balance != null && <Money value={b.balance} size={15} compact />}
                 <IconBtn icon={revealed.has(b.id) ? "eye-off-outline" : "eye-outline"} size={34} onPress={() => toggleReveal(b.id)} />
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 }}>

@@ -15,7 +15,7 @@ import {
   itemsTotal,
   openListsPending,
 } from "../lib/calc";
-import { fd, money, todayStr, copyText } from "../lib/utils";
+import { compactMoney, fd, todayStr, copyText } from "../lib/utils";
 import type { EntryKind, LedgerEntry, OwnerId } from "../lib/types";
 import { shareStatement, entriesToCsv, statementText } from "../lib/exporters";
 import { shareText, openURL, waLink } from "../lib/share";
@@ -121,7 +121,7 @@ export const LedgerSection: React.FC<{ ownerId: OwnerId }> = ({ ownerId }) => {
         <Card style={{ marginBottom: 10, padding: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Icon name="information-outline" size={18} color={C.amber} />
           <Text style={{ fontSize: F.tiny, color: C.amber, flex: 1 }}>
-            {t("lg.openLists")}: {money(pendingLists)} · {t("lg.countedInBalance")}
+            {t("lg.openLists")}: {compactMoney(pendingLists)} · {t("lg.countedInBalance")}
           </Text>
         </Card>
       )}
@@ -169,10 +169,10 @@ export const LedgerSection: React.FC<{ ownerId: OwnerId }> = ({ ownerId }) => {
                         {g.title}
                       </Text>
                       <Text style={{ fontSize: F.tiny, color: C.sub }}>
-                        {t("lg.entriesCount", { n: totals.count })} · {t("lg.paid")} {money(totals.paid)}
+                        {t("lg.entriesCount", { n: totals.count })} · {t("lg.paid")} {compactMoney(totals.paid)}
                       </Text>
                     </View>
-                    <Money value={totals.remaining} signed colorize size={15} />
+                    <Money value={totals.remaining} signed colorize size={15} compact />
                     <IconBtn
                       icon="dots-vertical"
                       size={32}
@@ -384,11 +384,11 @@ export const EntryCard: React.FC<{ entry: LedgerEntry; running: number }> = ({ e
             )}
           </View>
           <Text style={{ fontSize: F.tiny, color: C.sub }}>
-            {fd(entry.date)} · {t("lg.balance")} {money(running)}
+            {fd(entry.date)} · {t("lg.balance")} {compactMoney(running)}
             {entry.payments.length > 0 ? ` · ${t("lg.payments")} ${entry.payments.length}` : ""}
           </Text>
         </View>
-        <Money value={signed} signed colorize size={16} weight="800" />
+        <Money value={signed} signed colorize size={16} weight="800" compact />
         <Icon name={expanded ? "chevron-up" : "chevron-down"} size={20} color={C.faint} />
       </Pressable>
 
@@ -405,10 +405,10 @@ export const EntryCard: React.FC<{ entry: LedgerEntry; running: number }> = ({ e
                 <View key={it.id} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 4 }}>
                   <Text style={{ flex: 1, fontSize: F.small, color: C.ink }}>
                     {it.name} {it.qty}
-                    {it.unit ? ` ${it.unit}` : ""} × {money(it.price)}
+                    {it.unit ? ` ${it.unit}` : ""} × {compactMoney(it.price)}
                   </Text>
                   <Text style={{ fontSize: F.small, fontWeight: "700", color: C.ink }}>
-                    {money(it.qty * it.price)}
+                    {compactMoney(it.qty * it.price)}
                   </Text>
                 </View>
               ))}
@@ -417,7 +417,7 @@ export const EntryCard: React.FC<{ entry: LedgerEntry; running: number }> = ({ e
                   {t("lg.total")} · {itemsCount(entry.items)}
                 </Text>
                 <Text style={{ fontSize: F.body, fontWeight: "800", color: C.brand }}>
-                  {money(itemsTotal(entry.items))}
+                  {compactMoney(itemsTotal(entry.items))}
                 </Text>
               </View>
             </View>
@@ -437,7 +437,7 @@ export const EntryCard: React.FC<{ entry: LedgerEntry; running: number }> = ({ e
             <View key={p.id} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 4, gap: 8 }}>
               <Text style={{ width: 18, fontSize: F.tiny, color: C.faint }}>{i + 1}.</Text>
               <Text style={{ flex: 1, fontSize: F.small, color: C.ink }}>
-                {fd(p.date)} · {money(p.amount)}
+                {fd(p.date)} · {compactMoney(p.amount)}
                 {p.auto ? ` · ${p.auto}` : ""}
                 {p.method ? ` · ${p.method}` : ""}
                 {p.note ? ` · ${p.note}` : ""}
@@ -448,14 +448,14 @@ export const EntryCard: React.FC<{ entry: LedgerEntry; running: number }> = ({ e
           {remaining > 0.005 && (
             <View style={{ marginBottom: 6 }}>
               <Pill
-                label={paid > 0 ? `${t("lg.paid")} ${money(paid)} / ${money(entry.amount)}` : `${t("lg.pending")} ${money(remaining)}`}
+                label={paid > 0 ? `${t("lg.paid")} ${compactMoney(paid)} / ${compactMoney(entry.amount)}` : `${t("lg.pending")} ${compactMoney(remaining)}`}
                 tone={paid > 0 ? "amber" : "red"}
               />
             </View>
           )}
           {remaining < -0.005 && (
             <View style={{ marginBottom: 6 }}>
-              <Pill label={`${t("lg.overpaidBy")} ${money(-remaining)}`} tone="green" />
+              <Pill label={`${t("lg.overpaidBy")} ${compactMoney(-remaining)}`} tone="green" />
             </View>
           )}
           {Math.abs(remaining) <= 0.005 && (
@@ -502,7 +502,7 @@ export const EntryCard: React.FC<{ entry: LedgerEntry; running: number }> = ({ e
         <BottomSheet title={t("lg.addPayment")} onClose={() => setPaySheet(false)}>
           <Field label={t("lg.paymentAmount")} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0" />
           {remaining > 0.005 && (
-            <Btn small label={`${t("lg.fillRemaining")}: ${money(remaining)}`} variant="soft" onPress={() => setAmount(String(remaining))} style={{ marginBottom: 12, alignSelf: "flex-start" }} />
+            <Btn small label={`${t("lg.fillRemaining")}: ${compactMoney(remaining)}`} variant="soft" onPress={() => setAmount(String(remaining))} style={{ marginBottom: 12, alignSelf: "flex-start" }} />
           )}
           <Field label={t("lg.paymentDate")} value={payDate} onChangeText={setPayDate} placeholder="YYYY-MM-DD" />
           <Field label={t("lg.paymentNote")} value={payNote} onChangeText={setPayNote} placeholder={t("lg.optionalNote")} />
@@ -559,7 +559,7 @@ const toggleCollapse = (
 const StatCard: React.FC<{ label: string; value: number; C: ReturnType<typeof useThemeColors>; strong?: boolean }> = ({ label, value, C, strong }) => (
   <View style={[statStyles.card, { backgroundColor: strong ? C.brandSoft : C.card, borderColor: strong ? C.brand : C.line }]}>
     <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{label}</Text>
-    <Money value={value} colorize size={16} weight="800" />
+    <Money value={value} colorize size={16} weight="800" compact />
   </View>
 );
 

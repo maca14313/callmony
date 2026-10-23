@@ -55,13 +55,14 @@ export const money = (n: number, currency = "ETB", opts?: { signed?: boolean }):
   return n < 0 ? `−${body}` : body;
 };
 
-export const compactMoney = (n: number, currency = "ETB"): string => {
+export const compactMoney = (n: number, currency = "ETB", opts?: { signed?: boolean }): string => {
   const abs = Math.abs(n);
   if (abs >= 100000) {
     const v = abs >= 1000000 ? `${(abs / 1000000).toFixed(1)}M` : `${(abs / 1000).toFixed(0)}K`;
-    return `${n < 0 ? "−" : ""}${v} ${currencySymbol(currency)}`;
+    const sign = opts?.signed && n !== 0 ? (n > 0 ? "+" : "−") : n < 0 ? "−" : "";
+    return `${sign}${v} ${currencySymbol(currency)}`;
   }
-  return money(n, currency);
+  return money(n, currency, opts);
 };
 
 /* ---------------- dates (localized via i18n registry) ---------------- */
@@ -112,6 +113,88 @@ export const ft = (epoch: number): string => {
   const ampm = h < 12 ? "AM" : "PM";
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12}:${String(d.getMinutes()).padStart(2, "0")} ${ampm}`;
+};
+
+/* ---------------- forgiving date + time entry (v1.6.1) ----------------
+   The reminder editor takes free-text date/time. The old parser fed
+   `new Date(`${date}T${time}`)` — anything but exactly "YYYY-MM-DD" +
+   "HH:MM" (e.g. "9:00 AM" like the placeholder suggested, or 01/06/2025)
+   produced NaN → the "Pick a valid date and time" dead-end the user hit.
+   These parsers accept every reasonable spelling instead. */
+
+/** "2026-01-09" | "09-01-2026" | "9/1/26" | "2026.1.9" | "jan 9" … → {y,m,d}
+    Day-first for ambiguous d/m/y (non-US convention); 2-digit years land in
+    the 2000s. Month names (en) accepted. Returns null when unreadable. */
+export const parseDateInput = (input: string, base?: Date): { y: number; m: number; d: number } | null => {
+  const s = (input || "").trim().toLowerCase();
+  if (!s) return null;
+  const b = base ?? new Date();
+
+  /* relative words */
+  if (s === "today" || s === "tod" || s === "t") return { y: b.getFullYear(), m: b.getMonth() + 1, d: b.getDate() };
+  if (/^tom(?:orrow)?$/.test(s)) { const t = new Date(b.getTime() + 86400000); return { y: t.getFullYear(), m: t.getMonth() + 1, d: t.getDate() }; }
+  if (/^yes(?:terday)?$/.test(s)) { const t = new Date(b.getTime() - 86400000); return { y: t.getFullYear(), m: t.getMonth() + 1, d: t.getDate() }; }
+
+  /* month-name forms: "jan 9", "9 jan", "january 9 2026" */
+  const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const words = s.replace(/,/g, " ").split(/\s+/).filter(Boolean);
+  const monthWordIdx = words.findIndex((w) => MONTHS.some((mo) => w.startsWith(mo) && w.length <= 9));
+  if (monthWordIdx !== -1) {
+    const m = MONTHS.findIndex((mo) => words[monthWordIdx].startsWith(mo)) + 1;
+    const nums = words.filter((_, i) => i !== monthWordIdx).map(Number).filter((n) => !isNaN(n));
+    if (nums.length >= 1) {
+      const d = nums[0];
+      const y = nums.length >= 2 ? (nums[1] < 100 ? 2000 + nums[1] : nums[1]) : b.getFullYear();
+      if (d >= 1 && d <= 31 && m >= 1 && m <= 12 && y > 1900) return { y, m, d };
+    }
+    return null;
+  }
+
+  /* numeric forms split by - / . (and optional trailing time — ignored) */
+  const datePart = s.split(/[ T]/)[0];
+  const parts = datePart.split(/[-/.]/).map((x) => Number(x)).filter((n) => !isNaN(n));
+  if (parts.length < 3) return null;
+  const [a, c, e] = parts as [number, number, number];
+  if (a >= 1000) {
+    /* YYYY-MM-DD */
+    const y = a, m = c, d = e;
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) return { y, m, d };
+    return null;
+  }
+  /* D-M-Y (day first — the dominant non-US layout) */
+  const d = a, m = c;
+  const y = e < 100 ? 2000 + e : e;
+  if (m >= 1 && m <= 12 && d >= 1 && d <= 31 && y > 1900) return { y, m, d };
+  /* M-D-Y fallback when day-first is impossible */
+  if (a <= 12 && c > 12 && c <= 31) return { y, m: a, d: c };
+  return null;
+};
+
+/** "9" | "9:00" | "9.30" | "9:5" | "14:30" | "2 pm" | "9:00 AM" | "09:00:00"
+    → {h, minute}. Returns null when unreadable. */
+export const parseTimeInput = (input: string): { h: number; minute: number } | null => {
+  const s = (input || "").trim().toLowerCase();
+  if (!s) return null;
+  const am = /\b(a\.?m\.?|am|morning)\b/.test(s);
+  const pm = /\b(p\.?m\.?|pm|evening|night)\b/.test(s);
+  const m = /^(\d{1,2})(?:[:.](\d{1,2}))?(?::(\d{2}))?$/.exec(s.replace(/\s*(a\.?m\.?|p\.?m\.?|am|pm|morning|evening|night)\s*$/, "").trim());
+  if (!m) return null;
+  let h = Number(m[1]);
+  const minute = m[2] ? Number(m[2]) : 0;
+  if (h > 24 || minute > 59) return null;
+  if (pm && h < 12) h += 12;
+  if (am && h === 12) h = 0;
+  if (h === 24) h = 0;
+  return { h, minute };
+};
+
+/** Combine the two into a real Date (null when either side is unreadable). */
+export const parseDueLocal = (dateInput: string, timeInput: string, base?: Date): Date | null => {
+  const d = parseDateInput(dateInput, base);
+  const tm = parseTimeInput(timeInput);
+  if (!d || !tm) return null;
+  const dt = new Date(d.y, d.m - 1, d.d, tm.h, tm.minute, 0, 0);
+  return isNaN(dt.getTime()) ? null : dt;
 };
 
 export const relTime = (epoch: number): string => {

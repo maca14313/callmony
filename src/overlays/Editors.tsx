@@ -6,7 +6,7 @@ import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useUI, type Overlay } from "../lib/ui-store";
 import { useT } from "../i18n";
-import { dateStr, fd, ft } from "../lib/utils";
+import { dateStr, fd, ft, parseDueLocal } from "../lib/utils";
 import type { ReminderKind, Repeat } from "../lib/types";
 import { F, useThemeColors } from "../theme";
 import { Btn, Chip, Field, SectionHeader, confirm, toast } from "../components/kit";
@@ -127,8 +127,11 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
   const [ownerId, setOwnerId] = useState<string>(existing?.ownerId ?? params.ownerId);
 
   const duePreview = useMemo(() => {
-    const d = new Date(`${date}T${time.length === 8 ? time : `${time}`}`);
-    return isNaN(d.getTime()) ? null : d;
+    /* v1.6.1 — forgiving parser: accepts 9:00 AM / 14:30 / 9.30 / 2 pm and
+       09-01-2026 / Jan 9 / today / tomorrow — the old `${date}T${time}`
+       parser NaN'd on everything but the exact ISO shape, which is why the
+       user kept hitting "Pick a valid date and time". */
+    return parseDueLocal(date, time);
   }, [date, time]);
 
   const save = async () => {
@@ -205,6 +208,28 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
           <Field label={t("rm.dueTime")} value={time} onChangeText={setTime} placeholder="9:00 AM" />
         </View>
       </View>
+      {/* quick date chips — one tap instead of typing */}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+        {[
+          { label: t("rm.today"), at: Date.now() },
+          { label: t("rm.tomorrow"), at: Date.now() + 86400000 },
+          { label: t("rm.nextWeek"), at: Date.now() + 7 * 86400000 },
+        ].map((q) => (
+          <Chip
+            key={q.label}
+            compact
+            label={q.label}
+            icon="calendar-plus"
+            onPress={() => setDate(dateStr(q.at))}
+          />
+        ))}
+        {["9:00 AM", "1:00 PM", "6:00 PM", "8:00 PM"].map((tt) => (
+          <Chip key={tt} compact label={tt} icon="clock-outline" onPress={() => setTime(tt)} />
+        ))}
+      </View>
+      <Text style={{ fontSize: F.tiny, color: C.faint, marginBottom: 10 }}>
+        {t("rm.dateFormatsHint")}
+      </Text>
       {duePreview && (
         <Text style={{ fontSize: F.tiny, color: C.faint, marginBottom: 10 }}>
           {t("rm.due")}: {fd(duePreview)} · {ft(duePreview.getTime())}
