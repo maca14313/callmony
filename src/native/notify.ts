@@ -301,6 +301,45 @@ export const rescheduleAll = async (reminders: Reminder[]): Promise<void> => {
   }
 };
 
+/* ---------------- v1.6.4 — reminder READINESS (self-healing) ----------------
+   The REAL upgrade path behind "reminders still don't work": users coming
+   from versions that never asked for the notification permission (v1.5.x)
+   have reminders that are silently un-ringing. On every app open (throttled
+   5 minutes):
+     1. the alarm channel exists,
+     2. the notification permission is asked ONCE — only when the user
+        already has reminders and was never asked before (the dialog shows
+        at most one time per install; after a denial Android never re-shows
+        it and this becomes an instant no-op),
+     3. every alarm the OS reports as NOT armed is re-armed — OEM battery
+        savers (Tecno/Infinix/Xiaomi/Samsung) kill scheduled alarms in the
+        field, and without this they used to stay dead forever. */
+let readinessAt = 0;
+
+export const ensureReminderReadiness = async (
+  reminders: Reminder[],
+  opts: { autoAskPermission?: boolean } = {}
+): Promise<{ asked: boolean; granted: boolean; rearmed: number }> => {
+  if (Platform.OS !== "android") return { asked: false, granted: false, rearmed: 0 };
+  const now = Date.now();
+  if (now - readinessAt < 5 * 60000) return { asked: false, granted: false, rearmed: 0 };
+  readinessAt = now;
+  await ensureChannel().catch(() => undefined);
+  const pending = reminders.filter((r) => !r.done && !r.deletedAt);
+  if (!pending.length) return { asked: false, granted: false, rearmed: 0 };
+  let asked = false;
+  let granted = false;
+  if (opts.autoAskPermission && !(await notificationsEnabled())) {
+    asked = true; // the dialog was shown (or is already denied — instant no-op)
+    granted = await requestNotificationPermission();
+  }
+  /* SELF-HEAL — re-arm anything the OS is not holding right now */
+  const armed = await armedReminderIds();
+  const missing = pending.filter((r) => !armed.has(r.id));
+  if (missing.length) await rescheduleAll(missing);
+  return { asked, granted, rearmed: missing.length };
+};
+
 /* ---------------- notification event handling (Done / Snooze 10m) ----------------
    Runs from App.tsx (foreground) AND the headless background task in
    index.js (app closed). The store is required lazily so the

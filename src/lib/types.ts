@@ -275,6 +275,9 @@ export interface Settings {
   startTab?: string;
   lastBackupAt?: number;
   notifAsked: boolean;
+  /** v1.6.4 — the one-time battery-exemption dialog (OEM alarm killer) was
+      already offered at the first reminder save; never auto-shown again. */
+  batteryAsked?: boolean;
   blockedNumbers: string[];
   speedDial?: Record<string, string>; // keypad digit → recordID
   /* auto email sync — build backup (data + contacts vCard) on schedule and

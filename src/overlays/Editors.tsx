@@ -1,7 +1,7 @@
 /* Editors — NoteEdit · ReminderEdit · BankEdit overlays. */
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useUI, type Overlay } from "../lib/ui-store";
@@ -14,6 +14,7 @@ import {
   openNotificationSettingsDeep,
   requestNotificationPermission,
 } from "../native/notify";
+import { isBatteryExempt, requestBatteryExemption } from "../native/diag";
 import { F, useThemeColors } from "../theme";
 import { Btn, Chip, Field, SectionHeader, confirm, toast } from "../components/kit";
 import { Sheet } from "../components/Sheet";
@@ -179,6 +180,19 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
           useApp.getState().updateSettings({ notifAsked: true });
         })
         .catch(() => undefined);
+    }
+    /* v1.6.4 — one-time BATTERY EXEMPTION, asked at the exact moment the
+       user starts relying on ringing reminders: OEM battery savers
+       (Tecno/Infinix/Xiaomi/Samsung) are the #1 field killer of scheduled
+       alarms. A single system dialog ("Allow callmony to always run in
+       the background?"), never shown again either way. */
+    if (Platform.OS === "android" && !useApp.getState().settings.batteryAsked) {
+      isBatteryExempt()
+        .then(async (exempt) => {
+          if (exempt === false) await requestBatteryExemption();
+        })
+        .catch(() => undefined)
+        .finally(() => useApp.getState().updateSettings({ batteryAsked: true }));
     }
     saveReminder({
       id: existing?.id,

@@ -50,7 +50,7 @@ import { setupCallKeep } from "./src/native/callkeep";
 import { maybeAutoSync, autoSnapshot } from "./src/lib/backup";
 import { bootMark, setNavBarColor } from "./src/native/diag";
 import { isSafeMode } from "./src/boot/crash-firewall";
-import { handleNotifeeEvent } from "./src/native/notify";
+import { ensureReminderReadiness, handleNotifeeEvent } from "./src/native/notify";
 import notifee from "@notifee/react-native";
 
 const App: React.FC = () => {
@@ -252,10 +252,38 @@ const Shell: React.FC = () => {
       setTimeout(() => {
         if (!cancelled) autoSnapshot().catch(() => undefined);
       }, 10000);
+      /* v1.6.4 — REMINDER READINESS (deferred 8 s): the upgrade path from
+         v1.5.x (which never asked for the notification permission) is why
+         reminders "still don't work" — the user already HAS reminders that
+         can't ring. This makes the channel exist, asks ONCE (only when they
+         already have reminders and were never asked), and re-arms every
+         alarm the OEM's battery saver killed. Throttled 5 min inside
+         notify.ts so the foreground hook below is cheap. */
+      setTimeout(() => {
+        if (!cancelled) runReminderReadiness();
+      }, 8000);
       bootMark("boot-done");
     };
 
+    const runReminderReadiness = () => {
+      try {
+        const s = useApp.getState();
+        const autoAsk = s.reminders.length > 0 && !s.settings.notifAsked;
+        ensureReminderReadiness(s.reminders, { autoAskPermission: autoAsk })
+          .then((res) => {
+            if (res.asked) useApp.getState().updateSettings({ notifAsked: true });
+          })
+          .catch(() => undefined);
+      } catch {
+        /* never block boot */
+      }
+    };
+
     const onForeground = () => {
+      /* v1.6.4 — self-heal reminders on foreground return (throttled):
+         OEM battery savers kill scheduled alarms while the user is away;
+         re-arming here is what keeps them ringing day after day. */
+      runReminderReadiness();
       /* call log refresh (throttled) + contacts refresh silently (v1.6.3:
          still needed with the Contacts tab parked — balances resolve from
          the address book) when the snapshot went stale */
