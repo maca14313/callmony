@@ -7,11 +7,6 @@ export type Tab = "contacts" | "recents" | "general" | "reminders" | "trash";
 
 export type Overlay =
   | { type: "contact"; recordID: string; initialSeg?: "ledger" | "lists" | "notes" | "bank" | "reminders" | "info" }
-  /* v1.6.3 — tapping a call card whose number is NOT in the address book
-     opens a contact-detail experience for the raw number (user request:
-     "even if the phone number isn't saved it should go to contact detail,
-     so it will also be saved") — save-to-contacts is the hero action. */
-  | { type: "unknownContact"; phone: string; name?: string }
   | { type: "list"; listId: string }
   | { type: "listEdit"; listId?: string; ownerId: string; kind?: "calculating" | "simple" | "checklist" | "todo" }
   | { type: "entryEdit"; entryId?: string; ownerId: string; entryType?: "credit" | "debit"; kind?: EntryKind; groupId?: string }

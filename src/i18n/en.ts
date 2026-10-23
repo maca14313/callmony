@@ -202,6 +202,7 @@ export const EN: Record<string, string> = {
   /* keypad */
   "kp.enterNumber": "Enter a number",  "kp.paste": "Paste from clipboard",
   "kp.noNumberInClipboard": "No phone number found in the clipboard",
+  "cd.newContact": "New",
 
   "kp.readyToConnect": "Ready to connect",
   "kp.maxDigits": "Maximum number length reached",
@@ -1062,51 +1063,4 @@ export const EN: Record<string, string> = {
   "ob.other": "Other",
   "ob.otherPh": "e.g. JPY",
   "ob.getStarted": "Get started",
-
-  /* ---- v1.6.3 — reminder health (the three real failure points, each
-          live from the OS and fixable in one tap) + test alert ---- */
-  "rm.healthTitle": "Reminder health",
-  "rm.healthNotif": "Notifications",
-  "rm.healthExact": "Exact alarms",
-  "rm.exactOnHint": "Allowed — reminders fire exactly on time",
-  "rm.exactOffHint": "Blocked by the system — reminders may be delayed or silent",
-  "rm.fixExact": "Allow",
-  "rm.exactUnsupported": "Not available on this Android version",
-  "rm.healthBattery": "Battery protection",
-  "rm.batteryOnHint": "callmony is exempt — battery saving can't stop your alarms",
-  "rm.batteryOffHint": "Battery saver may kill reminders in the background",
-  "rm.fixBattery": "Protect app",
-  "rm.batteryManual": "Open your phone's battery settings and allow callmony to run",
-  "rm.testAlert": "Test alert",
-  "rm.testHint": "Rings in ~20 seconds — try it with the app closed",
-  "rm.testGo": "Send test",
-  "rm.testTitle": "Test reminder",
-  "rm.testBody": "Reminders work! This is your test alert. 🔔",
-  "rm.testSent": "Test alert set — watch for it in ~20 seconds",
-  "rm.testFail": "Could not schedule the test — check the items above",
-  "rm.armedCount": "{n} armed",
-  "rm.notifOpenSettings": "Opening notification settings…",
-  "rm.armedToast": "Scheduled ✓ — will ring at {time}",
-  "rm.notArmedToast": "Saved, but the alarm could not be armed — open Reminders → health check",
-
-  /* ---- v1.6.3 — unsaved-number contact detail ---- */
-  "cd.unsavedNumber": "Not saved in contacts",
-  "cd.saveToContacts": "Save to contacts",
-  "cd.saveToContactsHint": "Add a name and keep everything you track with this number",
-  "cd.callHistoryFor": "Calls with this number",
-  "cd.unsavedHint": "Nothing is saved until you press Save to contacts.",
-  "cd.newContactTile": "New",
-  "cd.nobodyOwesYou": "Nobody owes you anything 🎉",
-  "cd.youOweNobody": "You don't owe anyone 🎉",
-  "cd.oweEmptyHint": "Balances appear here as soon as you add ledger entries.",
-  "ce.contactSaveFailed": "Couldn't save the contact",
-
-  /* ---- v1.6.3 — data safety card ---- */
-  "st.safetyTitle": "Data safety",
-  "st.safetyHint": "Your data lives in three independent layers — a crash, a reset or a lost phone can't take it away.",
-  "st.safetyCloud": "Cloud backup (Google) — restores on reinstall",
-  "st.safetySnapshot": "Local safety snapshot",
-  "st.safetyTrash": "Deletes go to Trash first",
-  "st.snapshotNow": "Snapshot now",
-  "st.snapshotDone": "Safety snapshot saved",
 };

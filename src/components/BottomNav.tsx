@@ -1,12 +1,8 @@
-/* Bottom navigation — 4 icon-only tabs (Recents · Keypad · General ·
-   More). v1.6.3 — the Contacts tab is parked (user request: "for now we
-   dont need the contacts"): Recents now carries the ALL-contacts
-   they-owe/you-owe views and a ＋ add-contact tile beside the favorites,
-   so the address book stays fully reachable. The calculator lives in the
-   top navbar. Tapping the keypad tab opens the dialer sheet OVER the
-   Recents tab (dialer-style). A flex sibling of the content column with
-   safe-area padding: it can never cover or overlap any component. 64px
-   touch targets. */
+/* Bottom navigation — 5 icon-only tabs (Recents · Contacts · Keypad ·
+   General · More). The calculator moved to the top navbar. Tapping the
+   keypad tab opens the dialer sheet OVER the Recents tab (dialer-style).
+   A flex sibling of the content column with safe-area padding: it can
+   never cover or overlap any component. 64px touch targets. */
 
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";

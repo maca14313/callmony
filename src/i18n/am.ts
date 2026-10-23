@@ -194,6 +194,7 @@ export const AM: Record<string, string> = {
 
   "kp.enterNumber": "ቁጥር አስገባ",  "kp.paste": "ከቅዱስ ሰሌዳ ለጥፍ",
   "kp.noNumberInClipboard": "በቅዱስ ሰሌዳው ላይ የስልክ ቁጥር አልተገኘም",
+  "cd.newContact": "አዲስ",
 
   "kp.readyToConnect": "ለመገናኘት ዝግጁ",
   "kp.maxDigits": "ከፍተኛው የቁጥር ርዝመት ላይ ደርሰሃል",
@@ -1002,50 +1003,4 @@ export const AM: Record<string, string> = {
   "ob.other": "ሌላ",
   "ob.otherPh": "ለምሳሌ JPY",
   "ob.getStarted": "ጀምር",
-
-  /* ---- v1.6.3 — የማስታወሻ ጤንነት + ሙከራ ማንቂያ ---- */
-  "rm.healthTitle": "የማስታወሻ ጤንነት",
-  "rm.healthNotif": "ማሳወቂያዎች",
-  "rm.healthExact": "ትክክለኛ ማኅበራዊ ሰዓት",
-  "rm.exactOnHint": "ተፈቅዷል — ማስታወሻዎች በትክክለኛው ሰዓት ይሰማሉ",
-  "rm.exactOffHint": "በስርዓቱ ታግዷል — ማስታወሻዎች ሊዘገዩ ወይም ሊጸኑ ይችላሉ",
-  "rm.fixExact": "ፍቀድ",
-  "rm.exactUnsupported": "በዚህ የአንድሮይድ ቅጠል አይገኝም",
-  "rm.healthBattery": "የባትሪ ጥበቃ",
-  "rm.batteryOnHint": "callmony ተጠብቋል — የባትሪ ቆጣቢ ማንቂያዎችዎን አያቆምም",
-  "rm.batteryOffHint": "የባትሪ ቆጣቢ ማስታወሻዎችን በጀርባ ሊገድል ይችላል",
-  "rm.fixBattery": "መተግበሪያውን ጠብቅ",
-  "rm.batteryManual": "የስልክዎን የባትሪ ቅንብሮች ክፈተና callmony እንዲሰራ ፍቀድ",
-  "rm.testAlert": "ሙከራ ማንቂያ",
-  "rm.testHint": "በ~20 ሰከንድ ይሰማል — መተግበሪያው ተዘግቶ ሞክረው",
-  "rm.testGo": "ሙከራ ላክ",
-  "rm.testTitle": "የሙከራ ማስታወሻ",
-  "rm.testBody": "ማስታወሻዎች ይሰማሉ! ይህ የሙከራ ማንቂያዎ ነው። 🔔",
-  "rm.testSent": "የሙከራ ማንቂያ ተዘጋጅቷል — በ~20 ሰከንድ ይጠብቁት",
-  "rm.testFail": "ሙከራው መዘጋጀት አልቻለም — ከላይ ያሉትን ይፈትሹ",
-  "rm.armedCount": "{n} ታጅበዋል",
-  "rm.notifOpenSettings": "የማሳወቂያ ቅንብሮች በመክፈት ላይ…",
-  "rm.armedToast": "ታጅቧል ✓ — በ{time} ይሰማል",
-  "rm.notArmedToast": "ተቀምጧል፣ ግን ማንቂያው አልታጅበም — ማስታወሻዎች → የጤንነት ፍተሻ ይክፈቱ",
-
-  /* ---- v1.6.3 — ያልተቀመጠ ቁጥር የእውቂያ ዝርዝር ---- */
-  "cd.unsavedNumber": "በእውቂያዎች አልተቀመጠም",
-  "cd.saveToContacts": "ወደ እውቂያዎች አስቀምጥ",
-  "cd.saveToContactsHint": "ስም ይጨምሩ እና ከዚህ ቁጥር ጋር የሚከታተሉትን ሁሉ ይያዙ",
-  "cd.callHistoryFor": "ከዚህ ቁጥር ጋር ያሉ ጥሪዎች",
-  "cd.unsavedHint": "አስቀምጠው እስኪነ኱ ምንም አይቀመጥም።",
-  "cd.newContactTile": "አዲስ",
-  "cd.nobodyOwesYou": "ማንም አይገባዎትም 🎉",
-  "cd.youOweNobody": "ለማንም አይገቡም 🎉",
-  "cd.oweEmptyHint": "የሂሳብ መዝገብ ሲጨምሩ ሚዛኖች እዚህ ይታያሉ።",
-  "ce.contactSaveFailed": "እውቂያውን ማስቀመጥ አልተቻለም",
-
-  /* ---- v1.6.3 — የመረጃ ደህንነት ---- */
-  "st.safetyTitle": "የመረጃ ደህንነት",
-  "st.safetyHint": "መረጃዎ በሶስት ገላሽ ንብርብሮች ይኖራል — ብልሽት፣ ማጥፋት ወይም የጠፋ ስልክ ሊወስደው አይችልም።",
-  "st.safetyCloud": "የደመና መጠባበቂያ (Google) — በመልሶ መትከል ይመለሳል",
-  "st.safetySnapshot": "የአካባቢ ደህንነት ቅጂ",
-  "st.safetyTrash": "መሰረዞች መጀመሪያ ወደ ቆሻሻ ይሄዳሉ",
-  "st.snapshotNow": "አሁን ቅጂ ያድርጉ",
-  "st.snapshotDone": "የደህንነት ቅጂ ተቀምጧል",
 };

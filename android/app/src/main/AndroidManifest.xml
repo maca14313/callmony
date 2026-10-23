@@ -61,16 +61,11 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <!-- Reminders re-scheduled after device reboot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- v1.6.3 — Reminder reliability on aggressive OEMs (Tecno/Infinix/
-         Xiaomi/Samsung "app sleep"): lets the app show the one-tap
-         "ignore battery optimizations" dialog so scheduled reminder alarms
-         can't be silently killed in the background. -->
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Haptic feedback. -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
-    <!-- v1.6.3 — "safest app in the world": Android Auto Backup (Google
+    <!-- v1.6.6 — "safest app in the world": Android Auto Backup (Google
          Drive) now carries the whole app data set (AsyncStorage ledger,
          local snapshots, crash logs) so a lost/reset/reinstalled phone
          restores everything automatically. backup_rules.xml (≤ Android 11)

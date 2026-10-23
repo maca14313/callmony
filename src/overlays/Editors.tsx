@@ -1,20 +1,14 @@
 /* Editors — NoteEdit · ReminderEdit · BankEdit overlays. */
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Platform, Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useUI, type Overlay } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { dateStr, fd, ft, parseDueLocal } from "../lib/utils";
 import type { ReminderKind, Repeat } from "../lib/types";
-import {
-  isReminderArmed,
-  notificationsEnabled,
-  openNotificationSettingsDeep,
-  requestNotificationPermission,
-} from "../native/notify";
-import { isBatteryExempt, requestBatteryExemption } from "../native/diag";
+import { notificationsEnabled, requestNotificationPermission } from "../native/notify";
 import { F, useThemeColors } from "../theme";
 import { Btn, Chip, Field, SectionHeader, confirm, toast } from "../components/kit";
 import { Sheet } from "../components/Sheet";
@@ -140,12 +134,7 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
   }, []);
 
   const askNotifications = async () => {
-    let ok = await requestNotificationPermission();
-    if (!ok) {
-      /* v1.6.3 — denied once → the runtime dialog never re-shows; the app's
-         notification SETTINGS page is the only real fix */
-      ok = await openNotificationSettingsDeep();
-    }
+    const ok = await requestNotificationPermission();
     setNotifOn(ok);
     useApp.getState().updateSettings({ notifAsked: true });
     if (ok) toast(t("rm.notifGranted"), "ok");
@@ -181,19 +170,6 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
         })
         .catch(() => undefined);
     }
-    /* v1.6.4 — one-time BATTERY EXEMPTION, asked at the exact moment the
-       user starts relying on ringing reminders: OEM battery savers
-       (Tecno/Infinix/Xiaomi/Samsung) are the #1 field killer of scheduled
-       alarms. A single system dialog ("Allow callmony to always run in
-       the background?"), never shown again either way. */
-    if (Platform.OS === "android" && !useApp.getState().settings.batteryAsked) {
-      isBatteryExempt()
-        .then(async (exempt) => {
-          if (exempt === false) await requestBatteryExemption();
-        })
-        .catch(() => undefined)
-        .finally(() => useApp.getState().updateSettings({ batteryAsked: true }));
-    }
     saveReminder({
       id: existing?.id,
       ownerId: ownerId as never,
@@ -206,27 +182,6 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
     });
     toast(existing ? t("rm.reminderUpdated") : t("rm.reminderSaved"), "ok");
     pop();
-    /* v1.6.3 — VERIFY the OS really armed the alarm (getTriggerNotification-
-       Ids): "Scheduled ✓ — will ring" vs a clear warning. The user can now
-       SEE the difference between a reminder that will ring and one that
-       will only fire while the app is open. */
-    const savedId = existing?.id;
-    const dueMs = due.getTime();
-    setTimeout(async () => {
-      try {
-        const state = useApp.getState();
-        const rec = savedId
-          ? state.reminders.find((r) => r.id === savedId)
-          : state.reminders[0];
-        if (rec && !rec.done) {
-          const armed = await isReminderArmed(rec.id);
-          if (armed) toast(t("rm.armedToast", { time: ft(rec.snoozedUntil ?? rec.dueAt) }), "ok");
-          else if (dueMs > Date.now()) toast(t("rm.notArmedToast"), "info");
-        }
-      } catch {
-        /* diagnostics only */
-      }
-    }, 900);
   };
 
   return (

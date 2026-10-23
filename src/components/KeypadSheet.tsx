@@ -294,17 +294,15 @@ export const KeypadSheet: React.FC = () => {
     setNumber((n) => (n.length >= 24 ? n : n + d));
   };
 
-  /* v1.6.5 — PASTE (user report: "why can't I paste phone number on the
-     keypad"): the keypad display is custom-drawn Text, so there was no
-     system paste affordance at all. A clipboard button beside the display
-     + long-press on the display both paste. The clipboard text is
-     sanitized to keypad characters only (digits · leading + · * · #) so a
-     copied address or sentence can never garbage the dialer. */
+  /* v1.6.6 — PASTE (user report: "why can't I paste phone number on the
+     keypad"): the keypad display is custom-drawn Text, so Android has no
+     paste target here. A clipboard button beside the display + long-press
+     the display both paste. Clipboard text is sanitized to dialable
+     characters (digits · leading + · * · #) so pasting a messy message
+     still extracts the number. */
   const pasteFromClipboard = async () => {
     try {
       const raw = (await Clipboard.getString()) ?? "";
-      /* keep only dialable chars; a single leading + survives, inner junk
-         (spaces, dashes, dots, parentheses) is stripped */
       const stripped = raw.replace(/[\s\-().\u2013\u2014]/g, "");
       const m = stripped.match(/^\+?[0-9*#]+$/);
       const clean = m ? m[0] : "";
@@ -459,8 +457,8 @@ export const KeypadSheet: React.FC = () => {
             </View>
           )}
 
-          {/* number display — DIRECTLY above the keypad grid. v1.6.5:
-              long-press the display = paste from clipboard. */}
+          {/* number display — DIRECTLY above the keypad grid. Long-press
+              the display = paste from clipboard (v1.6.6). */}
           <View style={[styles.displayRow, { direction: "ltr" }]}>
             <Pressable
               onLongPress={pasteFromClipboard}
@@ -494,9 +492,8 @@ export const KeypadSheet: React.FC = () => {
                     <Icon name="backspace-outline" size={21} color={C.sub} />
                   </Pressable>
                 )}
-                {/* v1.6.5 — visible PASTE button: long-press works too, but a
-                    visible clipboard icon is discoverable. Shown while the
-                    display is empty (backspace takes the slot otherwise). */}
+                {/* v1.6.6 — visible PASTE button (shown while the display is
+                    empty; backspace takes the slot otherwise). */}
                 {!number && (
                   <Pressable
                     onPress={pasteFromClipboard}

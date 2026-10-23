@@ -44,14 +44,6 @@ export const Sheet: React.FC<{
   const t = useT();
   const insets = useSafeAreaInsets();
 
-  /* v1.6.3 — MODAL INSETS FALLBACK (the onboarding "big btn cropped from
-     bottom", reported twice): on Android, react-native-safe-area-context
-     reports 0 bottom inset inside a Modal window on several OEM ROMs that
-     force edge-to-edge — a 16px footer pad then lets the system gesture
-     bar swallow the button. A guaranteed 28px floor keeps every footer
-     button fully tappable on every device. */
-  const footerPadBottom = Math.max(insets.bottom, Platform.OS === "android" ? 28 : 16);
-
   return (
     <Modal transparent animationType="slide" visible onRequestClose={onBack}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -88,13 +80,7 @@ export const Sheet: React.FC<{
           </View>
           <View style={{ flex: 1 }}>
             {scroll ? (
-              <ScrollView
-                contentContainerStyle={styles.sheetBody}
-                keyboardShouldPersistTaps="handled"
-                /* v1.6.3 — dragging the list closes the keyboard: the country
-                   search keyboard can never sit over the footer button */
-                keyboardDismissMode={Platform.OS === "android" ? "on-drag" : "interactive"}
-              >
+              <ScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
                 {children}
               </ScrollView>
             ) : (
@@ -102,7 +88,7 @@ export const Sheet: React.FC<{
             )}
           </View>
           {!!footer && (
-            <View style={[styles.sheetFooter, { borderTopColor: C.line, paddingBottom: footerPadBottom }]}>
+            <View style={[styles.sheetFooter, { borderTopColor: C.line, paddingBottom: Math.max(insets.bottom, 16) }]}>
               {footer}
             </View>
           )}
@@ -195,10 +181,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   backBtn: { width: 38, height: 44, alignItems: "center", justifyContent: "center" },
-  /* v1.6.3 — bottom padding 40 → 64: even on ROMs where the modal window
-     extends under the gesture bar, the last control of every sheet stays
-     fully visible after scrolling to the end. */
-  sheetBody: { padding: 18, paddingBottom: 64 },
+  sheetBody: { padding: 18, paddingBottom: 40 },
   sheetFooter: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, paddingTop: 12 },
   scrim: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
   bottomSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, elevation: 12 },

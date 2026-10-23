@@ -275,9 +275,6 @@ export interface Settings {
   startTab?: string;
   lastBackupAt?: number;
   notifAsked: boolean;
-  /** v1.6.4 — the one-time battery-exemption dialog (OEM alarm killer) was
-      already offered at the first reminder save; never auto-shown again. */
-  batteryAsked?: boolean;
   blockedNumbers: string[];
   speedDial?: Record<string, string>; // keypad digit → recordID
   /* auto email sync — build backup (data + contacts vCard) on schedule and
@@ -287,9 +284,9 @@ export interface Settings {
   lastAutoSyncAt?: number;
   /** v1.6.0 — first-run onboarding (currency + country code) completed */
   onboarded?: boolean;
-  /** v1.6.3 — local safety snapshot: an automatic copy of ALL app data in
-     the app's own backups/ folder (which itself rides along in Android
-     Auto Backup). "No data should be lost — the safest app in the world." */
+  /** v1.6.6 — local safety snapshot: an automatic copy of ALL app data in
+      the app's own backups/ folder (which itself rides along in Android
+      Auto Backup). "No data should be lost — the safest app in the world." */
   lastSnapshotAt?: number;
 }
 
