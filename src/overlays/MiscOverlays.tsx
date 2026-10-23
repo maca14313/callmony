@@ -17,8 +17,7 @@ import Contacts from "react-native-contacts";
 import { useApp } from "../lib/store";
 import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
-import { dueStatus, ownerFullBalance } from "../lib/calc";
-import { contactOwnerId } from "../lib/types";
+import { dueStatus, listTotals } from "../lib/calc";
 import { displayName, ft, money, prettyPhone, searchContacts, vibrate } from "../lib/utils";
 import { F, useThemeColors } from "../theme";
 import { Avatar, Btn, Card, EmptyState, IconBtn, Money, Pill, confirm, toast } from "../components/kit";
@@ -49,6 +48,26 @@ export const SearchOverlay: React.FC = () => {
     const id = setTimeout(() => setDebouncedQ(q), 140);
     return () => clearTimeout(id);
   }, [q]);
+
+  /* per-contact balances — the SAME map the Recents/Contacts tabs build
+     (entries + open post-to-ledger lists), so the pill on a contact hit
+     always matches the card on the other tabs (v1.5.3) */
+  const balances = useMemo(() => {
+    const map = new Map<string, number>();
+    entries.forEach((e) => {
+      if (e.deletedAt || !e.ownerId.startsWith("c:")) return;
+      const id = e.ownerId.slice(2);
+      const signed = (e.type === "credit" ? 1 : -1) * (e.amount - e.payments.reduce((s, p) => s + p.amount, 0));
+      map.set(id, Math.round(((map.get(id) ?? 0) + signed) * 100) / 100);
+    });
+    lists.forEach((l) => {
+      if (l.deletedAt || !l.ownerId.startsWith("c:") || !l.postToLedger) return;
+      const id = l.ownerId.slice(2);
+      const pending = listTotals(l).pending;
+      map.set(id, Math.round(((map.get(id) ?? 0) + pending) * 100) / 100);
+    });
+    return map;
+  }, [entries, lists]);
 
   const ql = debouncedQ.trim().toLowerCase();
   const hitContacts = useMemo(
@@ -101,7 +120,7 @@ export const SearchOverlay: React.FC = () => {
       {hitContacts.length > 0 && (
         <ResultGroup title={t("nav.contacts")}>
           {hitContacts.map((c) => {
-            const balance = ownerFullBalance(entries, lists, contactOwnerId(c.recordID));
+            const balance = balances.get(c.recordID) ?? 0;
             return (
               <HitRow
                 key={c.recordID}
@@ -109,7 +128,6 @@ export const SearchOverlay: React.FC = () => {
                 title={displayName(c)}
                 sub={c.phones[0] ? prettyPhone(c.phones[0].number) : t("cd.noPhone")}
                 balance={balance}
-                owesLabel={balance > 0 ? t("cd.theyOweYou") : balance < 0 ? t("cd.youOweThem") : undefined}
                 onPress={() => open({ type: "contact", recordID: c.recordID })}
               />
             );
@@ -169,22 +187,23 @@ const HitRow: React.FC<{
   icon: string;
   title: string;
   sub?: string;
-  /** v1.5.2 — credit status (balance + owes label) shown on contact hits,
-      same pill as the Recents/Contacts cards (user request) */
+  /** v1.5.3 — the REAL pill (icon + Money + owes label), exactly the
+      Recents/Contacts card pill; the sub-line (raw number) only renders
+      when there is no credit to report */
   balance?: number;
-  owesLabel?: string;
   onPress: () => void;
-}> = ({ icon, title, sub, balance, owesLabel, onPress }) => {
+}> = ({ icon, title, sub, balance, onPress }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
+  const t = useT();
   const hasBalance = balance !== undefined && balance !== 0;
   return (
     <Pressable android_ripple={{ color: "rgba(128,128,128,0.12)" }} onPress={onPress} style={({ pressed }) => [searchStyles.hit, { backgroundColor: pressed ? C.chip : C.card, borderColor: C.line }]}>
       <Icon name={icon} size={19} color={C.sub} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: F.small, fontWeight: "700", color: C.ink }} numberOfLines={1}>{title}</Text>
-        {!!sub && (
+        {!hasBalance && !!sub && (
           <Text style={{ fontSize: F.tiny, color: C.sub }} numberOfLines={1}>
-            {hasBalance && owesLabel ? `${owesLabel} · ${sub}` : sub}
+            {sub}
           </Text>
         )}
         {hasBalance && (
@@ -200,6 +219,9 @@ const HitRow: React.FC<{
               color={balance > 0 ? C.green : C.red}
             />
             <Money value={balance} colorize signed size={12} />
+            <Text style={{ fontSize: 11, fontWeight: "700", color: balance > 0 ? C.green : C.red }} numberOfLines={1}>
+              · {balance > 0 ? t("cd.theyOweYou") : t("cd.youOweThem")}
+            </Text>
           </View>
         )}
       </View>
@@ -526,6 +548,7 @@ const searchStyles = StyleSheet.create({
   hitPill: {
     flexDirection: "row", alignItems: "center", gap: 2, borderRadius: 999,
     paddingHorizontal: 7, paddingVertical: 2, alignSelf: "flex-start", marginTop: 2,
+    maxWidth: 150,
   },
 });
 

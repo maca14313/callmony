@@ -1032,4 +1032,18 @@ export const EN: Record<string, string> = {
   "misc.off": "Off",
   "act.undo": "Undo",
   "rm.reopen": "Reopen",
+
+  /* ---- v1.5.4 in-app contact editor + contact detail (task 3-a) ---- */
+  "cd.addOrEditNumbers": "Add or edit numbers",
+  "cd.saveFailed": "Couldn't save the contact",
+  "ce.label": "Label",
+
+  /* ---- v1.6.0 global hero + first-run onboarding (task 3-c) ---- */
+  "gv.acrossEveryone": "Across everyone — contacts & General",
+  "ob.title": "Welcome",
+  "ob.welcome": "Welcome to callmony",
+  "ob.hint": "Pick your currency and country code — you can change them anytime in Settings.",
+  "ob.other": "Other",
+  "ob.otherPh": "e.g. JPY",
+  "ob.getStarted": "Get started",
 };

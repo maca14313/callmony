@@ -1,4 +1,5 @@
-/* General tab — aggregated overview: income/expense/net hero, people with
+/* General tab — aggregated overview: GLOBAL income/expense/net hero (every
+   owner — contacts AND general, plus open post-to-ledger lists), people with
    balances, and the full General ledger / lists / notes / reminders / accounts. */
 
 import React, { useMemo, useState } from "react";
@@ -7,7 +8,7 @@ import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
-import { entrySignedRemaining, listTotals, openListsPending, totalsForOwner } from "../lib/calc";
+import { entrySignedRemaining, listTotals, r2 } from "../lib/calc";
 import { displayName, money } from "../lib/utils";
 import { F, useThemeColors } from "../theme";
 import { Avatar, Card, Money, Segmented, SectionHeader } from "../components/kit";
@@ -28,7 +29,35 @@ export const GeneralScreen: React.FC = () => {
   const contacts = useApp((s) => s.deviceContacts);
   const [seg, setSeg] = useState<Seg>("ledger");
 
-  const totals = useMemo(() => totalsForOwner(entries, "general"), [entries]);
+  /* GLOBAL hero totals (user request: the hero must reflect the balance “as
+     a general”, not only what was entered in the General tab) — every
+     non-deleted entry regardless of ownerId, mirroring the people-map sign
+     convention EXACTLY:
+       income  = Σ credit entries' entrySignedRemaining        (credit is +)
+       expense = Σ debit entries' −entrySignedRemaining         (debit is −)
+       listsPending = Σ open postToLedger non-template lists' pending
+       net = income − expense + listsPending
+     so net ≡ (Σ of every person's balance) + (general balance), the same
+     math the people map and ownerFullBalance use. */
+  const global = useMemo(() => {
+    let income = 0;
+    let expense = 0;
+    entries.forEach((e) => {
+      if (e.deletedAt) return;
+      const rem = entrySignedRemaining(e);
+      if (e.type === "credit") income += rem;
+      else expense += -rem;
+    });
+    let listsPending = 0;
+    lists.forEach((l) => {
+      if (l.deletedAt || !l.postToLedger || l.isTemplate) return;
+      listsPending += listTotals(l).pending;
+    });
+    income = r2(income);
+    expense = r2(expense);
+    listsPending = r2(listsPending);
+    return { income, expense, listsPending, net: r2(income - expense + listsPending) };
+  }, [entries, lists]);
   const people = useMemo(() => {
     const map = new Map<string, number>();
     entries.forEach((e) => {
@@ -50,7 +79,6 @@ export const GeneralScreen: React.FC = () => {
   }, [entries, lists, contacts]);
   const owedToYou = people.filter((p) => p.balance > 0).reduce((s, p) => s + p.balance, 0);
   const youOwe = people.filter((p) => p.balance < 0).reduce((s, p) => s - p.balance, 0);
-  const pending = openListsPending(lists, "general");
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
@@ -63,25 +91,26 @@ export const GeneralScreen: React.FC = () => {
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: F.title, fontWeight: "800", color: C.ink }}>{t("hdr.general")}.</Text>
             <Text style={{ fontSize: F.small, color: C.sub }}>{t("gv.intro")}</Text>
+            <Text style={{ fontSize: F.tiny, color: C.faint, marginTop: 2 }}>{t("gv.acrossEveryone")}</Text>
           </View>
         </View>
         <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
           <View style={[genStyles.stat, { borderColor: C.line }]}>
             <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("lg.income")}</Text>
-            <Money value={totals.credit} size={16} weight="800" />
+            <Money value={global.income} size={16} weight="800" fit />
           </View>
           <View style={[genStyles.stat, { borderColor: C.line }]}>
             <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("lg.expense")}</Text>
-            <Money value={-totals.debit} size={16} weight="800" />
+            <Money value={-global.expense} size={16} weight="800" fit />
           </View>
           <View style={[genStyles.stat, { borderColor: C.brand, backgroundColor: C.brandSoft }]}>
             <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("lg.net")}</Text>
-            <Money value={totals.net} colorize size={16} weight="800" />
+            <Money value={global.net} colorize size={16} weight="800" fit />
           </View>
         </View>
-        {pending > 0.005 && (
+        {global.listsPending > 0.005 && (
           <Text style={{ fontSize: F.tiny, color: C.amber, marginTop: 8 }}>
-            {t("lg.openLists")}: {money(pending)}
+            {t("lg.openLists")}: {money(global.listsPending)}
           </Text>
         )}
       </Card>
@@ -151,7 +180,7 @@ export const GeneralScreen: React.FC = () => {
 
 const genStyles = StyleSheet.create({
   heroIcon: { width: 50, height: 50, borderRadius: 16, alignItems: "center", justifyContent: "center" },
-  stat: { flex: 1, borderRadius: 14, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 9, gap: 2 },
+  stat: { flex: 1, minWidth: 0, borderRadius: 14, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 9, gap: 2 },
   chipStat: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
   personRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 8, paddingVertical: 7, borderRadius: 12, minHeight: 50 },
 });

@@ -23,12 +23,13 @@ import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
+import { listTotals } from "../lib/calc";
 import { displayName, normalizePhone, prettyPhone, t9Match, vibrate } from "../lib/utils";
 import type { DeviceContact } from "../lib/types";
 import { placeCall } from "../native/calls";
 import { openNewContactForm } from "../native/deviceContacts";
 import { F, useThemeColors } from "../theme";
-import { Avatar, toast } from "./kit";
+import { Avatar, Money, toast } from "./kit";
 
 const KEYS: { d: string; letters?: string }[] = [
   { d: "1" },
@@ -63,6 +64,9 @@ interface SuggestRow {
   title: string;
   phone: string;
   info?: string;
+  /** v1.5.3 — per-contact credit balance; non-zero rows swap the raw
+      number for the SAME balance pill + owes label as the list cards */
+  balance: number;
 }
 
 /* ---------- memoized match row (module level → real memoization) ---------- */
@@ -73,6 +77,7 @@ const MatchRow: React.FC<{
   onOpenContact: (recordID: string) => void;
 }> = memo(({ row, onCall, onOpenContact }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
+  const t = useT();
   return (
     <Pressable
       onPress={() => onCall(row)}
@@ -86,9 +91,31 @@ const MatchRow: React.FC<{
         <Text style={{ color: C.ink, fontWeight: "700", fontSize: F.small, flexShrink: 1 }} numberOfLines={1}>
           {row.title}
         </Text>
-        <Text style={{ color: C.sub, fontSize: F.tiny }} numberOfLines={1}>
-          {row.info || row.phone}
-        </Text>
+        {/* balance + owes-status — IN THE PLACE of the number line (v1.5.3):
+            the exact Recents/Contacts card pill; the raw number only shows
+            when there is no credit to report */}
+        {row.balance !== 0 ? (
+          <View
+            style={[
+              styles.matchPill,
+              { backgroundColor: row.balance > 0 ? "rgba(22,160,133,0.13)" : "rgba(214,69,69,0.11)" },
+            ]}
+          >
+            <Icon
+              name={row.balance > 0 ? "arrow-bottom-left" : "arrow-top-right"}
+              size={11}
+              color={row.balance > 0 ? C.green : C.red}
+            />
+            <Money value={row.balance} colorize signed size={12} />
+            <Text style={{ fontSize: 11, fontWeight: "700", color: row.balance > 0 ? C.green : C.red }} numberOfLines={1}>
+              · {row.balance > 0 ? t("cd.theyOweYou") : t("cd.youOweThem")}
+            </Text>
+          </View>
+        ) : (
+          <Text style={{ color: C.sub, fontSize: F.tiny }} numberOfLines={1}>
+            {row.info || row.phone}
+          </Text>
+        )}
       </View>
       <Icon name="phone-outline" size={19} color={C.brand} />
     </Pressable>
@@ -108,6 +135,8 @@ export const KeypadSheet: React.FC = () => {
   const contacts = useApp((s) => s.deviceContacts);
   const speedDialSettings = useApp((s) => s.settings.speedDial);
   const contactX = useApp((s) => s.contactX);
+  const entries = useApp((s) => s.entries);
+  const lists = useApp((s) => s.lists);
 
   const [number, setNumber] = useState("");
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -145,6 +174,26 @@ export const KeypadSheet: React.FC = () => {
   const keyW = Math.floor((gridW - 32 /* grid h-padding */ - 28 /* 2 gaps */) / 3);
   const keyH = Math.max(44, Math.min(62, Math.floor(height * 0.082)));
   const callSize = Math.max(54, Math.min(64, Math.floor(height * 0.08)));
+
+  /* per-contact balances — the SAME map the Recents/Contacts tabs build
+     (entries + open post-to-ledger lists), so the pill on a live match
+     always matches the card on the other tabs (v1.5.3) */
+  const balances = useMemo(() => {
+    const map = new Map<string, number>();
+    entries.forEach((e) => {
+      if (e.deletedAt || !e.ownerId.startsWith("c:")) return;
+      const id = e.ownerId.slice(2);
+      const signed = (e.type === "credit" ? 1 : -1) * (e.amount - e.payments.reduce((s, p) => s + p.amount, 0));
+      map.set(id, Math.round(((map.get(id) ?? 0) + signed) * 100) / 100);
+    });
+    lists.forEach((l) => {
+      if (l.deletedAt || !l.ownerId.startsWith("c:") || !l.postToLedger) return;
+      const id = l.ownerId.slice(2);
+      const pending = listTotals(l).pending;
+      map.set(id, Math.round(((map.get(id) ?? 0) + pending) * 100) / 100);
+    });
+    return map;
+  }, [entries, lists]);
 
   /* ---------- contact search index (built once per contacts load) ---------- */
   const index = useMemo<MatchEntry[]>(
@@ -215,8 +264,9 @@ export const KeypadSheet: React.FC = () => {
         title: e.name,
         phone: e.c.phones[0]?.number ?? "",
         info: e.c.phones[0] ? prettyPhone(e.c.phones[0].number, countryCode) : t("cd.noPhone"),
+        balance: balances.get(e.c.recordID) ?? 0,
       })),
-    [matches, countryCode, t]
+    [matches, countryCode, t, balances]
   );
 
   /* ---------- actions ---------- */
@@ -563,6 +613,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     minHeight: 52,
+  },
+  matchPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    alignSelf: "flex-start",
+    maxWidth: 170,
   },
   displayRow: {
     minHeight: 62,

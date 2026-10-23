@@ -33,6 +33,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "auto",
   currency: "ETB",
   countryCode: "ET",
+  onboarded: false,
   autolockMin: 1,
   hideBalances: false,
   notifAsked: false,

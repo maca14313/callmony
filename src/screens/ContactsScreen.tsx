@@ -390,35 +390,32 @@ export const ContactsScreen: React.FC = () => {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* summary strip */}
+      {/* summary strip — v1.5.3 MUCH tighter (user request), same metrics as
+          the Recents tab: bare 10px icons (no dot tiles), 10px labels, 12px
+          money, ~1px gaps — roughly half the old vertical budget; net keeps
+          the brand-soft tint so it still reads as the headline number */}
       {(owedToYou > 0.005 || youOwe > 0.005) && (
         <View style={[styles.statsRow, { borderColor: C.line }]}>
           <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-              <View style={[styles.statDot, { backgroundColor: "rgba(22,160,133,0.18)" }]}>
-                <Icon name="arrow-bottom-left" size={12} color={C.green} />
-              </View>
-              <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("cd.toReceive")}</Text>
+            <View style={styles.statLabel}>
+              <Icon name="arrow-bottom-left" size={10} color={C.green} />
+              <Text style={[styles.statLabelTxt, { color: C.sub }]} numberOfLines={1}>{t("cd.toReceive")}</Text>
             </View>
-            <Money value={Math.abs(owedToYou)} colorize size={17} weight="800" />
+            <Money value={Math.abs(owedToYou)} colorize size={12} weight="800" />
           </View>
           <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-              <View style={[styles.statDot, { backgroundColor: "rgba(214,69,69,0.14)" }]}>
-                <Icon name="arrow-top-right" size={12} color={C.red} />
-              </View>
-              <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("cd.toPay")}</Text>
+            <View style={styles.statLabel}>
+              <Icon name="arrow-top-right" size={10} color={C.red} />
+              <Text style={[styles.statLabelTxt, { color: C.sub }]} numberOfLines={1}>{t("cd.toPay")}</Text>
             </View>
-            <Money value={-Math.abs(youOwe)} colorize size={17} weight="800" />
+            <Money value={-Math.abs(youOwe)} colorize size={12} weight="800" />
           </View>
-          <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-              <View style={[styles.statDot, { backgroundColor: C.brandSoft }]}>
-                <Icon name="scale-balance" size={12} color={C.brand} />
-              </View>
-              <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "600" }}>{t("lg.net")}</Text>
+          <View style={[styles.statCard, { backgroundColor: C.brandSoft, borderColor: C.brandSoft }]}>
+            <View style={styles.statLabel}>
+              <Icon name="scale-balance" size={10} color={C.brand} />
+              <Text style={[styles.statLabelTxt, { color: C.brand, fontWeight: "700" }]} numberOfLines={1}>{t("lg.net")}</Text>
             </View>
-            <Money value={Math.abs(owedToYou) - Math.abs(youOwe)} colorize size={17} weight="800" />
+            <Money value={Math.abs(owedToYou) - Math.abs(youOwe)} colorize size={12} weight="800" />
           </View>
         </View>
       )}
@@ -449,19 +446,18 @@ export const ContactsScreen: React.FC = () => {
         </View>
       )}
 
-      {/* filter chips — single-row horizontal scroll, compact (webapp style) */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, gap: 6, paddingTop: 10, paddingBottom: 8, alignItems: "center" }}
-        style={{ flexGrow: 0 }}
-      >
-        <Chip label={t("act.all")} active={filter === "all"} onPress={() => setFilter("all")} />
-        <Chip label={t("cd.theyOweYou")} active={filter === "theyOwe"} onPress={() => setFilter("theyOwe")} />
-        <Chip label={t("cd.youOweThem")} active={filter === "youOwe"} onPress={() => setFilter("youOwe")} />
-        <Chip label={t("cd.settledUp")} active={filter === "settled"} onPress={() => setFilter("settled")} />
-        <Chip label={t("cd.favorites")} icon="star" active={filter === "favorites"} onPress={() => setFilter("favorites")} />
-      </ScrollView>
+      {/* filter chips — v1.5.3 SPLIT into two compact rows (user request):
+          They owe / You owe get a row of their own; All stays text while
+          Settled and Favorites are icon-only (label = accessibilityLabel) */}
+      <View style={styles.filterRow}>
+        <Chip compact icon="arrow-bottom-left" label={t("cd.theyOweYou")} active={filter === "theyOwe"} onPress={() => setFilter("theyOwe")} />
+        <Chip compact icon="arrow-top-right" label={t("cd.youOweThem")} active={filter === "youOwe"} onPress={() => setFilter("youOwe")} />
+      </View>
+      <View style={[styles.filterRow, { paddingBottom: 6 }]}>
+        <Chip compact label={t("act.all")} active={filter === "all"} onPress={() => setFilter("all")} />
+        <Chip iconOnly icon="check-circle-outline" label={t("cd.settledUp")} active={filter === "settled"} onPress={() => setFilter("settled")} />
+        <Chip iconOnly icon="star" label={t("cd.favorites")} active={filter === "favorites"} onPress={() => setFilter("favorites")} />
+      </View>
 
       {/* count + sort + new contact + silent-sync indicator */}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 }}>
@@ -657,9 +653,11 @@ const menuStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  statsRow: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth },
-  statCard: { flex: 1, borderRadius: 16, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 9, gap: 3, minWidth: 0 },
-  statDot: { width: 20, height: 20, borderRadius: 7, alignItems: "center", justifyContent: "center" },
+  statsRow: { flexDirection: "row", gap: 4, paddingHorizontal: 16, paddingTop: 4, borderTopWidth: StyleSheet.hairlineWidth },
+  statCard: { flex: 1, borderRadius: 10, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3, gap: 1, minWidth: 0 },
+  statLabel: { flexDirection: "row", alignItems: "center", gap: 3 },
+  statLabelTxt: { fontSize: 10, lineHeight: 12, fontWeight: "600" },
+  filterRow: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 2 },
   sortBtn: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 999, borderWidth: 1, paddingHorizontal: 11, paddingVertical: 7, minHeight: 36 },
   newBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, minHeight: 36 },
   letterWrap: { backgroundColor: "transparent", paddingVertical: 2, marginBottom: 4 },

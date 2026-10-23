@@ -1,11 +1,12 @@
 /* ContactDetail — compact navigation-bar header (avatar · name · accurate
-   number · star · ⋯), webapp 6×2 quick-action grid (12 tiles), horizontally
-   scrollable segmented tabs (Ledger · Lists · Notes · Bank · Reminders ·
-   Info), and a single vertical ScrollView so the whole top area scrolls.
-   The Info tab carries phones (per-number options), emails, UNLIMITED
-   socials (add as many as you want), addresses, birthday, work, notes and
-   the per-contact CALL HISTORY. Every button works: Telegram opens a saved
-   handle or offers to add one, More shares/copies/dials/edits. */
+   number · star · pencil · ⋯), webapp 6×2 quick-action grid (12 borderless
+   tiles), horizontally scrollable segmented tabs (Ledger · Lists · Notes ·
+   Bank · Reminders · Info), and a single vertical ScrollView so the whole
+   top area scrolls. The Info tab carries phones (per-number options),
+   emails, UNLIMITED socials (add as many as you want), addresses, birthday,
+   work, notes and the per-contact CALL HISTORY (tap a row to call back).
+   Every button works: Telegram opens a saved handle or offers to add one,
+   More shares/copies/dials, the pencil opens the IN-APP contact editor. */
 
 import React, { useMemo, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -15,10 +16,9 @@ import { useUI, type Overlay } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { ownerFullBalance, openListsPending } from "../lib/calc";
 import type { DeviceContact, SocialLink } from "../lib/types";
-import { displayName, fd, ft, durationStr, money, normalizePhone, prettyPhone, copyText } from "../lib/utils";
+import { displayName, fd, ft, durationStr, money, normalizePhone, prettyPhone, copyText, relTime } from "../lib/utils";
 import { contactOwnerId } from "../lib/types";
 import { placeCall } from "../native/calls";
-import { openExistingContactEditor } from "../native/deviceContacts";
 import { openURL, openWithFeedback, smsLink, tgLink, waLink, reminderTemplates, fillTemplate, socialUrl, socialLinkFromNumber, NUMBER_SOCIAL_APPS, appTakesNumber, mailtoLink, primaryPhone } from "../lib/share";
 import { shareContactVcard } from "../lib/exporters";
 import { F, useThemeColors } from "../theme";
@@ -30,6 +30,7 @@ import { NotesSection } from "../sections/NotesSection";
 import { BankSection } from "../sections/BankSection";
 import { RemindersSection } from "../sections/RemindersSection";
 import { NumberPicker } from "../components/ContactPicker";
+import { ContactEditor } from "./ContactEditor";
 
 type Seg = "ledger" | "lists" | "notes" | "bank" | "reminders" | "info";
 
@@ -61,6 +62,7 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
   const [moreOpen, setMoreOpen] = useState(false);
   const [socialSheet, setSocialSheet] = useState<{ app: SocialLink["app"] } | null>(null);
   const [phoneSheet, setPhoneSheet] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
 
   const ownerId = contact ? contactOwnerId(contact.recordID) : null;
   const xEntry = contactX.find((x) => x.recordID === params.recordID);
@@ -161,14 +163,8 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
     phone &&
     copyText(phone).then((ok) => toast(ok ? t("cd.numberCopied") : t("act.couldntCopy"), ok ? "ok" : "error"));
 
-  const editContact = async () => {
-    const ok = await openExistingContactEditor(contact.recordID);
-    if (!ok) {
-      toast(t("act.edit") + " ✕", "error");
-      return;
-    }
-    useApp.getState().refreshDeviceContacts(); // pick up OS edits at once
-  };
+  /* v1.5.4 — the IN-APP editor replaces the OS external contact editor */
+  const editContact = () => setEditorOpen(true);
 
   return (
     <Sheet
@@ -176,8 +172,17 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
       subtitle={phone ? prettyPhone(phone, countryCode) : contact.company || t("cd.noPhone")}
       onBack={pop}
       headerLeft={<Avatar contact={contact} size={34} />}
+      onSubtitleLongPress={copyNumber}
       headerRight={
         <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Pressable
+            onPress={editContact}
+            hitSlop={6}
+            accessibilityLabel={t("cd.editContact")}
+            style={{ width: 30, height: 38, alignItems: "center", justifyContent: "center" }}
+          >
+            <Icon name="pencil-outline" size={20} color={C.sub} />
+          </Pressable>
           <Pressable
             onPress={toggleFav}
             hitSlop={6}
@@ -223,7 +228,7 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
               size={13}
               color={balance > 0.005 ? C.green : balance < -0.005 ? C.red : C.sub}
             />
-            <Money value={balance} signed colorize size={15} weight="800" />
+            <Money value={balance} signed colorize size={15} weight="800" fit />
           </View>
           <Text style={{ fontSize: F.small, color: C.sub, fontWeight: "600" }}>
             {balance > 0.005 ? t("cd.theyOweYou") : balance < -0.005 ? t("cd.youOweThem") : t("cd.settledUp")}
@@ -235,23 +240,20 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
           )}
         </View>
 
-        {/* quick actions — 6 per row × 2 rows, compact (webapp grid) */}
-        <View style={{ gap: 6, marginBottom: 14 }}>
+        {/* quick actions — 6 per row × 2 rows, borderless (webapp grid) */}
+        <View style={{ gap: 3, marginBottom: 8 }}>
           {[0, 1].map((row) => (
-            <View key={row} style={{ flexDirection: "row", gap: 6 }}>
+            <View key={row} style={{ flexDirection: "row", gap: 3 }}>
               {quickActions.slice(row * 6, row * 6 + 6).map((a) => (
                 <Pressable
                   key={a.label}
                   disabled={a.disabled}
                   onPress={a.run}
-                  android_ripple={{ color: "rgba(128,128,128,0.16)", borderless: true, radius: 40 }}
-                  style={({ pressed }) => [
-                    cdStyles.tile,
-                    { backgroundColor: pressed ? C.brandSoft : C.card, borderColor: C.line, opacity: a.disabled ? 0.4 : 1 },
-                  ]}
+                  android_ripple={{ color: "rgba(128,128,128,0.16)", borderless: true, radius: 36 }}
+                  style={({ pressed }) => [cdStyles.tile, { opacity: a.disabled ? 0.4 : pressed ? 0.65 : 1 }]}
                   accessibilityLabel={a.label}
                 >
-                  <Icon name={a.icon} size={19} color={a.disabled ? C.faint : C.brand} />
+                  <Icon name={a.icon} size={22} color={a.disabled ? C.faint : C.brand} />
                   <Text
                     style={{ fontSize: F.tiny, color: C.sub, fontWeight: "700", textAlign: "center" }}
                     numberOfLines={1}
@@ -294,17 +296,22 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
               onPhoneOptions={(number) => setPhoneSheet(number)}
               onAddSocial={(app) => setSocialSheet({ app })}
               onRemoveSocial={(id) => useApp.getState().removeSocial(contact.recordID, id)}
+              onEdit={() => setEditorOpen(true)}
             />
           )}
         </View>
       </ScrollView>
 
-      {/* number picker (deduped) */}
+      {/* number picker (deduped) — trailing row adds/edits numbers in-app */}
       {numPicker && (
         <NumberPicker
           recordID={contact.recordID}
           onPick={(number) => fireAction(numPicker.action, number)}
           onClose={() => setNumPicker(null)}
+          onAddEditNumbers={() => {
+            setNumPicker(null);
+            setEditorOpen(true);
+          }}
         />
       )}
 
@@ -349,6 +356,9 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
           }}
         />
       )}
+
+      {/* in-app contact editor (nav pencil · More → Edit · Info → Edit) */}
+      {editorOpen && <ContactEditor recordID={contact.recordID} onClose={() => setEditorOpen(false)} />}
     </Sheet>
   );
 };
@@ -573,7 +583,8 @@ const ContactInfo: React.FC<{
   onPhoneOptions: (number: string) => void;
   onAddSocial: (app: SocialLink["app"]) => void;
   onRemoveSocial: (id: string) => void;
-}> = ({ contact, socials, onPhoneOptions, onAddSocial, onRemoveSocial }) => {
+  onEdit: () => void;
+}> = ({ contact, socials, onPhoneOptions, onAddSocial, onRemoveSocial, onEdit }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
   const t = useT();
   const countryCode = useApp((s) => s.settings.countryCode);
@@ -583,7 +594,8 @@ const ContactInfo: React.FC<{
   const primary = primaryPhone(contact);
 
   /* per-contact call history — Android: real system log matched on any of
-     the contact's numbers; iOS: the app's own call log for this owner. */
+     the contact's numbers; iOS: the app's own call log for this owner.
+     Compact: the 10 most recent, tap a row to call back. */
   const history = useMemo(() => {
     if (Platform.OS === "android") {
       const numbers = new Set(
@@ -594,9 +606,9 @@ const ContactInfo: React.FC<{
           const d = normalizePhone(c.phoneNumber ?? "", countryCode).replace(/\D/g, "");
           return d.length >= 5 && numbers.has(d);
         })
-        .slice(0, 30);
+        .slice(0, 10);
     }
-    return appRecents.filter((r) => r.ownerId === ownerId).slice(0, 30);
+    return appRecents.filter((r) => r.ownerId === ownerId).slice(0, 10);
   }, [contact.phones, countryCode, systemCalls, appRecents, ownerId]);
 
   return (
@@ -609,6 +621,7 @@ const ContactInfo: React.FC<{
           <View style={{ gap: 2 }}>
             {history.map((h) => {
               const at = "timestamp" in h ? h.timestamp : h.at;
+              const number = "phoneNumber" in h ? h.phoneNumber : h.phone;
               const dir =
                 h.direction === "missed"
                   ? { icon: "phone-missed", color: C.red, label: t("cd.missed") }
@@ -616,13 +629,19 @@ const ContactInfo: React.FC<{
                     ? { icon: "phone-incoming", color: C.green, label: t("cd.incoming") }
                     : { icon: "phone-outgoing", color: C.brand, label: t("cd.outgoing") };
               return (
-                <View key={h.id} style={cdStyles.historyRow}>
+                <Pressable
+                  key={h.id}
+                  onPress={() => number && placeCall(number)}
+                  android_ripple={{ color: "rgba(128,128,128,0.1)" }}
+                  style={({ pressed }) => [cdStyles.historyRow, { opacity: pressed ? 0.65 : 1 }]}
+                  accessibilityLabel={`${dir.label} ${ft(at)}`}
+                >
                   <Icon name={dir.icon} size={15} color={dir.color} />
-                  <Text style={{ flex: 1, fontSize: F.tiny, color: C.sub }}>
-                    {dir.label} · {fd(at)} · {ft(at)}
+                  <Text style={{ flex: 1, fontSize: F.tiny, color: C.sub }} numberOfLines={1}>
+                    {dir.label} · {relTime(at)} · {ft(at)}
                     {h.duration > 0 ? ` · ${durationStr(h.duration)}` : ""}
                   </Text>
-                </View>
+                </Pressable>
               );
             })}
           </View>
@@ -641,7 +660,14 @@ const ContactInfo: React.FC<{
           const isPrimary = primary?.replace(/\D/g, "") === p.number.replace(/\D/g, "");
           return (
             <View key={p.id || p.number} style={cdStyles.infoRow}>
-              <Pressable style={{ flex: 1, minWidth: 0 }} onPress={() => onPhoneOptions(p.number)}>
+              <Pressable
+                style={{ flex: 1, minWidth: 0 }}
+                onPress={() => onPhoneOptions(p.number)}
+                onLongPress={() =>
+                  copyText(p.number).then((ok) => toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error"))
+                }
+                delayLongPress={400}
+              >
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                   <View style={[cdStyles.labelChip, { backgroundColor: C.chip }]}>
                     <Text style={{ fontSize: F.tiny, color: C.sub, fontWeight: "700" }}>{p.label}</Text>
@@ -686,6 +712,10 @@ const ContactInfo: React.FC<{
               onPress={() =>
                 copyText(e.address).then((ok) => toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error"))
               }
+              onLongPress={() =>
+                copyText(e.address).then((ok) => toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error"))
+              }
+              delayLongPress={400}
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <View style={[cdStyles.labelChip, { backgroundColor: C.chip }]}>
@@ -853,14 +883,7 @@ const ContactInfo: React.FC<{
         label={t("act.edit")}
         icon="pencil-outline"
         variant="soft"
-        onPress={async () => {
-          const ok = await openExistingContactEditor(contact.recordID);
-          if (!ok) {
-            toast(t("act.edit") + " ✕", "error");
-            return;
-          }
-          useApp.getState().refreshDeviceContacts(); // pick up OS edits at once
-        }}
+        onPress={onEdit}
         style={{ alignSelf: "flex-start", marginTop: 4 }}
       />
     </View>
@@ -883,17 +906,27 @@ const InfoBlock: React.FC<{ title: string; children: React.ReactNode }> = ({ tit
 };
 
 const cdStyles = StyleSheet.create({
-  balanceLine: { flexDirection: "row", alignItems: "center", justifyContent: "center", flexWrap: "wrap", gap: 7, paddingBottom: 12, paddingTop: 2 },
-  balancePill: { borderRadius: 999, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 4, flexDirection: "row", alignItems: "center", gap: 5 },
+  balanceLine: { flexDirection: "row", alignItems: "center", justifyContent: "center", flexWrap: "wrap", gap: 7, paddingBottom: 12, paddingTop: 2, minWidth: 0 },
+  balancePill: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    minWidth: 0,
+    maxWidth: "100%",
+    flexShrink: 1,
+  },
   tile: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     gap: 3,
     borderRadius: 14,
-    borderWidth: 1,
-    paddingVertical: 8,
-    minHeight: 58,
+    paddingVertical: 6,
+    minHeight: 52,
     minWidth: 0,
   },
   menuItem: { flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 10, paddingVertical: 13, borderRadius: 12, minHeight: 52 },

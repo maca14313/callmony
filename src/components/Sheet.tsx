@@ -35,7 +35,10 @@ export const Sheet: React.FC<{
   footer?: React.ReactNode;
   children: React.ReactNode;
   scroll?: boolean;
-}> = ({ title, subtitle, onBack, headerLeft, headerRight, footer, children, scroll = true }) => {
+  /** v1.5.4 — optional long-press on the subtitle (e.g. copy the number in
+      the contact nav bar). Absent → plain Text, fully backward-compatible. */
+  onSubtitleLongPress?: () => void;
+}> = ({ title, subtitle, onBack, headerLeft, headerRight, footer, children, scroll = true, onSubtitleLongPress }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
   const t = useT();
   const insets = useSafeAreaInsets();
@@ -59,11 +62,18 @@ export const Sheet: React.FC<{
               <Text style={{ fontSize: F.h2, fontWeight: "800", color: C.ink }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                 {title}
               </Text>
-              {!!subtitle && (
-                <Text style={{ fontSize: F.tiny, color: C.sub }} numberOfLines={1}>
-                  {subtitle}
-                </Text>
-              )}
+              {!!subtitle &&
+                (onSubtitleLongPress ? (
+                  <Pressable onLongPress={onSubtitleLongPress} delayLongPress={400} hitSlop={{ top: 4, bottom: 4, left: 8, right: 8 }}>
+                    <Text style={{ fontSize: F.tiny, color: C.sub }} numberOfLines={1}>
+                      {subtitle}
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <Text style={{ fontSize: F.tiny, color: C.sub }} numberOfLines={1}>
+                    {subtitle}
+                  </Text>
+                ))}
             </View>
             <View style={{ alignItems: "flex-end" }}>{headerRight}</View>
           </View>

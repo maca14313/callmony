@@ -206,6 +206,57 @@ export const openExistingContactEditor = async (recordID: string): Promise<boole
   }
 };
 
+/* ---------------- in-app raw editing (WRITE_CONTACTS) ---------------- */
+
+/** Fetch the RAW react-native-contacts object for one record — the complete
+    OS row with every field and internal ID, so an edit mutates ONLY what the
+    user changed and updateContact can apply the whole row without dropping
+    anything (emails/addresses/birthday/note stay intact). */
+export const getRawContactById = async (recordID: string): Promise<Contacts.Contact | null> => {
+  try {
+    const raw = await Contacts.getContactById(recordID);
+    return raw ?? null;
+  } catch {
+    return null;
+  }
+};
+
+/** Ensure WRITE_CONTACTS is granted (Android runtime request; iOS reuses the
+    single contacts permission the app already asked for when reading). */
+const ensureWritePermission = async (): Promise<boolean> => {
+  try {
+    if (Platform.OS === "android") {
+      const res = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.WRITE_CONTACTS,
+        {
+          title: "callmony",
+          message: "Allow callmony to save changes to this contact?",
+          buttonPositive: "Allow",
+          buttonNegative: "Not now",
+        }
+      );
+      return res === PermissionsAndroid.RESULTS.GRANTED;
+    }
+    const res = await Contacts.checkPermission();
+    return res === "authorized";
+  } catch {
+    return false;
+  }
+};
+
+/** Persist a mutated raw contact (must come from getContactById — or be built
+    keeping every original field). Requests WRITE_CONTACTS when needed. */
+export const updateRawContact = async (raw: Contacts.Contact): Promise<boolean> => {
+  try {
+    const allowed = await ensureWritePermission();
+    if (!allowed) return false;
+    await Contacts.updateContact(raw);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /** View a contact in the native contacts app (Android friendly). */
 export const viewContactInApp = async (recordID: string): Promise<boolean> => {
   try {

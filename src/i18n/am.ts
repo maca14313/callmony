@@ -972,4 +972,18 @@ export const AM: Record<string, string> = {
   "misc.off": "ጠፍቷል",
   "act.undo": "መልስ",
   "rm.reopen": "እንደገና ክፈት",
+
+  /* ---- v1.5.4 in-app contact editor + contact detail (task 3-a) ---- */
+  "cd.addOrEditNumbers": "ቁጥሮችን ያክሉ ወይም ያስተካክሉ",
+  "cd.saveFailed": "እውቂያውን ማስቀመጥ አልተቻለም",
+  "ce.label": "ምልክት",
+
+  /* ---- v1.6.0 global hero + first-run onboarding (task 3-c) ---- */
+  "gv.acrossEveryone": "በሁሉም ላይ — እውቂያዎች እና ጠቅላላ",
+  "ob.title": "እንኳን ደህና መጡ",
+  "ob.welcome": "እንኳን ወደ callmony በደህና መጡ",
+  "ob.hint": "ምንዛሬዎን እና የሀገር ኮድዎን ይምረጡ — በኋላ በቅንብሮች ውስጥ ማስተካከል ይችላሉ።",
+  "ob.other": "ሌላ",
+  "ob.otherPh": "ለምሳሌ JPY",
+  "ob.getStarted": "ጀምር",
 };

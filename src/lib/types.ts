@@ -282,6 +282,8 @@ export interface Settings {
   autoBackupEmail?: string;
   autoBackupEvery?: number; // 0 = off · 1 = daily · 7 = weekly
   lastAutoSyncAt?: number;
+  /** v1.6.0 — first-run onboarding (currency + country code) completed */
+  onboarded?: boolean;
 }
 
 export interface BackupFile {

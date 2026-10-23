@@ -39,7 +39,9 @@ import { ListDetailOverlay, ListEditOverlay } from "./src/overlays/ListOverlays"
 import { NoteEditOverlay, ReminderEditOverlay, BankEditOverlay } from "./src/overlays/Editors";
 import { SettingsOverlay, LockScreen } from "./src/overlays/SettingsOverlay";
 import { SearchOverlay, SpeedDialOverlay, MergeOverlay, AboutOverlay, AlarmDialog } from "./src/overlays/MiscOverlays";
+import { OnboardingSheet } from "./src/overlays/OnboardingSheet";
 import { loadCachedContacts } from "./src/native/deviceContacts";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { setupCallKeep } from "./src/native/callkeep";
 import { maybeAutoSync } from "./src/lib/backup";
 import { bootMark } from "./src/native/diag";
@@ -49,7 +51,9 @@ const App: React.FC = () => {
   const hydrated = useApp((s) => s.hydrated);
 
   /* BOOT: hydrate the persisted store. A 5s bail-out guarantees the app can
-     never get stuck on the splash screen, even if storage misbehaves. */
+     never get stuck on the splash screen, even if storage misbehaves.
+     The LAST TAB is restored in the same breath (before first paint) so the
+     app re-opens exactly where the user left it — no newcomer flash. */
   useEffect(() => {
     bootMark("app-mounted");
     let done = false;
@@ -60,9 +64,17 @@ const App: React.FC = () => {
       }
     };
     const bail = setTimeout(finish, 5000);
-    useApp
-      .getState()
-      .hydrate()
+    Promise.all([
+      useApp.getState().hydrate(),
+      AsyncStorage.getItem("cm.lastTab")
+        .then((v) => {
+          const tabs = ["contacts", "recents", "general", "reminders", "trash"] as const;
+          if (v && (tabs as readonly string[]).includes(v)) {
+            useUI.getState().setTab(v as (typeof tabs)[number]);
+          }
+        })
+        .catch(() => undefined),
+    ])
       .then(() => bootMark("hydrated"))
       .catch(() => undefined)
       .finally(finish);
@@ -130,12 +142,14 @@ const BootError: React.FC<{ message: string; onContinue: () => void }> = ({ mess
 
 const Splash: React.FC = () => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
-  const scale = useRef(new Animated.Value(0.6)).current;
+  const scale = useRef(new Animated.Value(0.86)).current;
   useEffect(() => {
+    /* INSTANT-OPEN FEEL (user request): a 140ms settle, not a 420ms
+       spring — the splash must read as a flash, never as "loading" */
     Animated.timing(scale, {
       toValue: 1,
-      duration: 420,
-      easing: Easing.out(Easing.back(1.6)),
+      duration: 140,
+      easing: Easing.out(Easing.quad),
       useNativeDriver: true,
     }).start();
   }, [scale]);
@@ -166,6 +180,7 @@ const Shell: React.FC = () => {
   const open = useUI((s) => s.open);
   const reminders = useApp((s) => s.reminders);
   const settings = useApp((s) => s.settings);
+  const onboarded = useApp((s) => s.settings.onboarded);
   const [langSheet, setLangSheet] = useState(false);
 
   /* ZERO-LAG BOOT: the shell paints instantly; nothing here can block it.
@@ -258,6 +273,11 @@ const Shell: React.FC = () => {
   useEffect(() => {
     setupCallKeep();
   }, []);
+
+  /* persist the active tab — cold start resumes on it (see App boot) */
+  useEffect(() => {
+    AsyncStorage.setItem("cm.lastTab", tab).catch(() => undefined);
+  }, [tab]);
 
   /* lock on first load when a PIN is set */
   useEffect(() => {
@@ -367,7 +387,8 @@ const Shell: React.FC = () => {
               </View>
               <IconBtn icon="calculator" size={40} onPress={() => open({ type: "calculator" })} />
               <IconBtn icon="magnify" size={40} onPress={() => open({ type: "search" })} />
-              <IconBtn icon="cog-outline" size={40} onPress={() => open({ type: "settings" })} />
+              {/* settings cog REMOVED from the header (user request) —
+                  Settings lives in the More sheet at the bottom nav */}
             </>
           )}
         </View>
@@ -389,6 +410,9 @@ const Shell: React.FC = () => {
       {overlayStack.map((o, i) => (
         <OverlayHost key={`${o.type}-${i}`} overlay={o} />
       ))}
+
+      {/* first-run onboarding — currency + country code (settings.onboarded) */}
+      {!onboarded && <OnboardingSheet />}
 
       {/* keypad half-modal */}
       {keypadOpen && <KeypadSheet />}

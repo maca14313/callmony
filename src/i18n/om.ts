@@ -1032,4 +1032,18 @@ export const OM: Record<string, string> = {
   "misc.off": "Cufame",
   "act.undo": "Deebisi",
   "rm.reopen": "Haaromsi",
+
+  /* ---- v1.5.4 in-app contact editor + contact detail (task 3-a) ---- */
+  "cd.addOrEditNumbers": "Lakkoofsota dabalii ykn sirreessi",
+  "cd.saveFailed": "Namtolchee olkaa'uu hin dandeenye",
+  "ce.label": "Gosa",
+
+  /* ---- v1.6.0 global hero + first-run onboarding (task 3-c) ---- */
+  "gv.acrossEveryone": "Hunda waliin — namtolcheewwan fi Waliigalaa",
+  "ob.title": "Baga nagaan dhuftan",
+  "ob.welcome": "Baga nagaan dhuftan callmony",
+  "ob.hint": "Gosa maallaqaa fi koodii biyyaa kee filadhu — yeroo barbaachisu Qindaa'ina keessaa jijjiira dandeessa.",
+  "ob.other": "Kan biraa",
+  "ob.otherPh": "fkn JPY",
+  "ob.getStarted": "Jalqabi",
 };

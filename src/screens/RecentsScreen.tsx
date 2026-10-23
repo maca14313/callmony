@@ -2,7 +2,8 @@
    call log grouped by day with direction filters. iOS: calls started from
    callmony. FULL Contacts-tab parity (user request): the credit summary
    strip (to receive / to pay / net), balance + owes-status on every card,
-   favorites strip, plus credit filters alongside the direction chips.
+   favorites strip, They-owe/You-owe chips on their own row above the list
+   and the direction filters living INSIDE the sticky day headers (v1.5.3).
    Every card resolves the contact via the phone index (any local /
    international number format) and carries the SAME swipe + long-press
    actions as the Contacts tab:
@@ -38,7 +39,7 @@ const openSettings = async () => {
   }
 };
 
-type Filter = "all" | "missed" | "incoming" | "outgoing" | "theyOwe" | "youOwe";
+type Filter = "all" | "missed" | "incoming" | "outgoing" | "favorites" | "theyOwe" | "youOwe";
 
 interface CallRow {
   key: string;
@@ -181,6 +182,41 @@ const CallCard: React.FC<RowProps> = memo(
   }
 );
 
+/* ---------------- day-header filter chips (v1.5.3) ---------------- */
+
+/* Direction filters moved INTO the sticky day headers (user request):
+   "All" stays a text chip, missed/incoming/outgoing/favorites are
+   icon-only (the chip label doubles as the accessibilityLabel), all
+   compact (~27px tall). The missed chip keeps its count as a tiny badge
+   and turns red while unfiltered missed calls exist. Rendered inside
+   EVERY day header — sticky headers keep the chips on screen while the
+   list scrolls — and once more as a slim standalone row when a filter
+   empties the list (no headers left to host the chips). */
+const DayFilters: React.FC<{
+  filter: Filter;
+  onSet: (f: Filter) => void;
+  missedCount: number;
+}> = ({ filter, onSet, missedCount }) => {
+  const t = useT();
+  return (
+    <View style={styles.dayFilters}>
+      <Chip compact label={t("act.all")} active={filter === "all"} onPress={() => onSet("all")} />
+      <Chip
+        iconOnly
+        icon="phone-missed"
+        label={t("cd.missed")}
+        count={missedCount}
+        danger={filter !== "missed" && missedCount > 0}
+        active={filter === "missed"}
+        onPress={() => onSet("missed")}
+      />
+      <Chip iconOnly icon="phone-incoming" label={t("cd.incoming")} active={filter === "incoming"} onPress={() => onSet("incoming")} />
+      <Chip iconOnly icon="phone-outgoing" label={t("cd.outgoing")} active={filter === "outgoing"} onPress={() => onSet("outgoing")} />
+      <Chip iconOnly icon="star" label={t("cd.favorites")} active={filter === "favorites"} onPress={() => onSet("favorites")} />
+    </View>
+  );
+};
+
 /* ---------------- screen ---------------- */
 
 export const RecentsScreen: React.FC = () => {
@@ -198,6 +234,7 @@ export const RecentsScreen: React.FC = () => {
     () => contactX.filter((x) => x.favorite).map((x) => x.recordID),
     [contactX]
   );
+  const favSet = useMemo(() => new Set(favorites), [favorites]);
 
   const callLogPerm = useApp((s) => s.callLogPerm);
   const systemCalls = useApp((s) => s.systemCalls);
@@ -297,17 +334,18 @@ export const RecentsScreen: React.FC = () => {
     });
   }, [systemCalls, appRecents, contacts]);
 
-  /* direction + credit filters (Contacts-tab parity) */
+  /* direction + credit + favorites filters (Contacts-tab parity) */
   const filtered = useMemo(() => {
-    if (filter === "all" || filter === "missed" || filter === "incoming" || filter === "outgoing") {
-      return filter === "all" ? rows : rows.filter((r) => r.direction === filter);
+    if (filter === "theyOwe" || filter === "youOwe") {
+      return rows.filter((r) => {
+        if (!r.contact) return false;
+        const b = balances.get(r.contact.recordID) ?? 0;
+        return filter === "theyOwe" ? b > 0.005 : b < -0.005;
+      });
     }
-    return rows.filter((r) => {
-      if (!r.contact) return false;
-      const b = balances.get(r.contact.recordID) ?? 0;
-      return filter === "theyOwe" ? b > 0.005 : b < -0.005;
-    });
-  }, [rows, filter, balances]);
+    if (filter === "favorites") return rows.filter((r) => !!r.contact && favSet.has(r.contact.recordID));
+    return filter === "all" ? rows : rows.filter((r) => r.direction === filter);
+  }, [rows, filter, balances, favSet]);
   const missedCount = useMemo(() => rows.filter((r) => r.direction === "missed").length, [rows]);
 
   /* flattened virtualized items + sticky day headers (+ balance per row) */
@@ -371,11 +409,17 @@ export const RecentsScreen: React.FC = () => {
   const renderItem = useCallback(
     ({ item }: { item: { kind: "day"; key: string; label: string } | { kind: "call"; key: string; row: CallRow; balance: number } }) => {
       if (item.kind === "day") {
+        /* v1.5.3 — the day header IS the filter row (user request): the day
+           chip on the left, flexible spacer, then the direction filters
+           ("All" as text + icon-only chips). stickyHeaderIndices is
+           unchanged — the chips ride along and stay pinned on screen. */
         return (
           <View style={[styles.dayWrap, { backgroundColor: C.canvas }]}>
             <View style={[styles.dayChip, { backgroundColor: C.brandSoft }]}>
               <Text style={[styles.dayHeader, { color: C.brand }]}>{item.label}</Text>
             </View>
+            <View style={{ flex: 1 }} />
+            <DayFilters filter={filter} onSet={setFilter} missedCount={missedCount} />
           </View>
         );
       }
@@ -393,7 +437,7 @@ export const RecentsScreen: React.FC = () => {
         />
       );
     },
-    [C.brand, C.brandSoft, C.canvas, countryCode, onTap, onLongPress, onCall, onToggleFav, onWhatsApp, onSMS]
+    [C.brand, C.brandSoft, C.canvas, filter, missedCount, countryCode, onTap, onLongPress, onCall, onToggleFav, onWhatsApp, onSMS]
   );
 
   /* permission denied → the request card (never a blocking spinner) */
@@ -416,36 +460,32 @@ export const RecentsScreen: React.FC = () => {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* credit summary strip — COMPACT (user request): three tight cards
-          that stay informative without eating the first screen */}
+      {/* credit summary strip — v1.5.3 MUCH tighter (user request): three
+          slim cards — bare 10px icons (no dot tiles), 10px labels, 12px
+          money, ~1px gaps — roughly half the old vertical budget. Net keeps
+          the brand-soft tint so it still reads as the headline number. */}
       {(owedToYou > 0.005 || youOwe > 0.005) && (
         <View style={[styles.statsRow, { borderColor: C.line }]}>
           <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-              <View style={[styles.statDot, { backgroundColor: "rgba(22,160,133,0.18)" }]}>
-                <Icon name="arrow-bottom-left" size={11} color={C.green} />
-              </View>
-              <Text style={{ fontSize: 11, color: C.sub, fontWeight: "600" }} numberOfLines={1}>{t("cd.toReceive")}</Text>
+            <View style={styles.statLabel}>
+              <Icon name="arrow-bottom-left" size={10} color={C.green} />
+              <Text style={[styles.statLabelTxt, { color: C.sub }]} numberOfLines={1}>{t("cd.toReceive")}</Text>
             </View>
-            <Money value={Math.abs(owedToYou)} colorize size={14} weight="800" />
+            <Money value={Math.abs(owedToYou)} colorize size={12} weight="800" />
           </View>
           <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-              <View style={[styles.statDot, { backgroundColor: "rgba(214,69,69,0.14)" }]}>
-                <Icon name="arrow-top-right" size={11} color={C.red} />
-              </View>
-              <Text style={{ fontSize: 11, color: C.sub, fontWeight: "600" }} numberOfLines={1}>{t("cd.toPay")}</Text>
+            <View style={styles.statLabel}>
+              <Icon name="arrow-top-right" size={10} color={C.red} />
+              <Text style={[styles.statLabelTxt, { color: C.sub }]} numberOfLines={1}>{t("cd.toPay")}</Text>
             </View>
-            <Money value={-Math.abs(youOwe)} colorize size={14} weight="800" />
+            <Money value={-Math.abs(youOwe)} colorize size={12} weight="800" />
           </View>
-          <View style={[styles.statCard, { backgroundColor: C.card, borderColor: C.line }]}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-              <View style={[styles.statDot, { backgroundColor: C.brandSoft }]}>
-                <Icon name="scale-balance" size={11} color={C.brand} />
-              </View>
-              <Text style={{ fontSize: 11, color: C.sub, fontWeight: "600" }} numberOfLines={1}>{t("lg.net")}</Text>
+          <View style={[styles.statCard, { backgroundColor: C.brandSoft, borderColor: C.brandSoft }]}>
+            <View style={styles.statLabel}>
+              <Icon name="scale-balance" size={10} color={C.brand} />
+              <Text style={[styles.statLabelTxt, { color: C.brand, fontWeight: "700" }]} numberOfLines={1}>{t("lg.net")}</Text>
             </View>
-            <Money value={Math.abs(owedToYou) - Math.abs(youOwe)} colorize size={14} weight="800" />
+            <Money value={Math.abs(owedToYou) - Math.abs(youOwe)} colorize size={12} weight="800" />
           </View>
         </View>
       )}
@@ -476,34 +516,21 @@ export const RecentsScreen: React.FC = () => {
         </View>
       )}
 
-      {/* filters — TWO COMPACT ROWS (user request): direction chips on their
-          row, credit chips (They owe / You owe) on a row of their own */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, gap: 5, paddingTop: 8, paddingBottom: 3, alignItems: "center" }}
-        style={{ flexGrow: 0 }}
-      >
-        <Chip compact label={t("act.all")} active={filter === "all"} onPress={() => setFilter("all")} />
-        <Chip
-          compact
-          label={missedCount > 0 ? `${t("cd.missed")} · ${missedCount}` : t("cd.missed")}
-          danger={!filter.startsWith("missed") && missedCount > 0}
-          active={filter === "missed"}
-          onPress={() => setFilter("missed")}
-        />
-        <Chip compact label={t("cd.incoming")} active={filter === "incoming"} onPress={() => setFilter("incoming")} />
-        <Chip compact label={t("cd.outgoing")} active={filter === "outgoing"} onPress={() => setFilter("outgoing")} />
-      </ScrollView>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, gap: 5, paddingTop: 1, paddingBottom: 6, alignItems: "center" }}
-        style={{ flexGrow: 0 }}
-      >
+      {/* credit filters — the ONLY chip row left above the list (v1.5.3):
+          They owe / You owe on a row of their own; the direction chips now
+          live inside the sticky day headers further down */}
+      <View style={styles.oweRow}>
         <Chip compact icon="arrow-bottom-left" label={t("cd.theyOweYou")} active={filter === "theyOwe"} onPress={() => setFilter("theyOwe")} />
         <Chip compact icon="arrow-top-right" label={t("cd.youOweThem")} active={filter === "youOwe"} onPress={() => setFilter("youOwe")} />
-      </ScrollView>
+      </View>
+
+      {/* a filter that empties the list leaves NO day headers to host the
+          direction chips — this slim standalone row keeps them reachable */}
+      {items.length === 0 && (
+        <View style={styles.fallbackRow}>
+          <DayFilters filter={filter} onSet={setFilter} missedCount={missedCount} />
+        </View>
+      )}
 
       {/* virtualized call list with infinite scroll.
           removeClippedSubviews MUST stay false — Android defaults it to true,
@@ -699,11 +726,15 @@ const rowStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  statsRow: { flexDirection: "row", gap: 6, paddingHorizontal: 16, paddingTop: 6, borderTopWidth: StyleSheet.hairlineWidth },
-  statCard: { flex: 1, borderRadius: 12, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 5, gap: 2, minWidth: 0 },
-  statDot: { width: 16, height: 16, borderRadius: 6, alignItems: "center", justifyContent: "center" },
-  dayWrap: { backgroundColor: "transparent", paddingBottom: 2 },
-  dayChip: { alignSelf: "flex-start", borderRadius: 8, paddingHorizontal: 9, paddingVertical: 2, marginTop: 8 },
+  statsRow: { flexDirection: "row", gap: 4, paddingHorizontal: 16, paddingTop: 4, borderTopWidth: StyleSheet.hairlineWidth },
+  statCard: { flex: 1, borderRadius: 10, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3, gap: 1, minWidth: 0 },
+  statLabel: { flexDirection: "row", alignItems: "center", gap: 3 },
+  statLabelTxt: { fontSize: 10, lineHeight: 12, fontWeight: "600" },
+  oweRow: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 3 },
+  fallbackRow: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 16, paddingBottom: 4 },
+  dayWrap: { flexDirection: "row", alignItems: "center", gap: 6, paddingTop: 6, paddingBottom: 3, backgroundColor: "transparent" },
+  dayChip: { borderRadius: 8, paddingHorizontal: 9, paddingVertical: 2 },
+  dayFilters: { flexDirection: "row", alignItems: "center", gap: 4 },
   dayHeader: { fontSize: F.small, fontWeight: "800" },
   callRow: {
     flexDirection: "row",

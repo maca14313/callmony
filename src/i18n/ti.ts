@@ -942,4 +942,18 @@ export const TI: Record<string, string> = {
   "misc.off": "ተቐሚጡ",
   "act.undo": "ተመለስ",
   "rm.reopen": "እንደገኣ ክፈት",
+
+  /* ---- v1.5.4 in-app contact editor + contact detail (task 3-a) ---- */
+  "cd.addOrEditNumbers": "ቁጽሪታት ወስኹ ወይ ምሕያሽ",
+  "cd.saveFailed": "ተላውቕታ ምቕመጥ ኣይከኣለን",
+  "ce.label": "ምልክት",
+
+  /* ---- v1.6.0 global hero + first-run onboarding (task 3-c) ---- */
+  "gv.acrossEveryone": "ንኩሉ — ተላውቕታትን ጠቅላላን",
+  "ob.title": "እንቋዕርም",
+  "ob.welcome": "እንቋዕርም ናብ callmony",
+  "ob.hint": "ምንዛሪኻን ኮድ ሃገርኻን ምረጽ — ኣብ ቅጥዕታት ደጊምካ ክትለውጥዎ ትኽእል ኢኻ።",
+  "ob.other": "ካልእ",
+  "ob.otherPh": "ከም JPY",
+  "ob.getStarted": "ጀምር",
 };

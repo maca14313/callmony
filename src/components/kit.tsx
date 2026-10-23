@@ -169,7 +169,10 @@ export const Money: React.FC<{
   colorize?: boolean;
   size?: number;
   weight?: "400" | "500" | "600" | "700" | "800" | "900";
-}> = ({ value, currency, signed, colorize, size = 15, weight = "600" }) => {
+  /** v1.5.4 — large-number-safe: shrink further (0.42) so the FULL grouped
+      number always renders instead of being truncated. */
+  fit?: boolean;
+}> = ({ value, currency, signed, colorize, size = 15, weight = "600", fit }) => {
   const appCurrency = useApp((s) => s.settings.currency);
   const hide = useApp((s) => s.settings.hideBalances);
   const C = useThemeColors(useApp((s) => s.settings.theme));
@@ -180,8 +183,8 @@ export const Money: React.FC<{
     <Text
       numberOfLines={1}
       adjustsFontSizeToFit
-      minimumFontScale={0.6}
-      style={{ fontSize: size, fontWeight: weight, color: color ?? C.ink, flexShrink: 1 }}
+      minimumFontScale={fit ? 0.42 : 0.6}
+      style={{ fontSize: size, fontWeight: weight, color: color ?? C.ink, flexShrink: 1, maxWidth: fit ? "100%" : undefined }}
     >
       {text}
     </Text>
@@ -315,40 +318,53 @@ export const Chip: React.FC<{
   count?: number;
   /** v1.5.2 — space-saving chip (Recents filters): tighter padding + font */
   compact?: boolean;
-}> = ({ label, active, onPress, icon, danger, count, compact }) => {
+  /** v1.5.3 — icon-only chip (day-header filter rows): the label is still
+      required — it becomes the accessibilityLabel; a count still renders
+      its tiny badge (e.g. missed calls on the phone-missed chip) */
+  iconOnly?: boolean;
+}> = ({ label, active, onPress, icon, danger, count, compact, iconOnly }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
   const body = (
     <View
       style={[
         styles.chip,
         compact ? styles.chipCompact : null,
+        iconOnly ? styles.chipIconOnly : null,
         {
           backgroundColor: active ? C.brand : C.chip,
           borderColor: active ? C.brand : C.line,
         },
       ]}
     >
-      {!!icon && <Icon name={icon} size={compact ? 13 : 15} color={active ? C.onBrand : danger ? C.red : C.sub} />}
-      <Text
-        numberOfLines={1}
-        style={{
-          fontSize: compact ? 12 : 14,
-          fontWeight: active ? "700" : "500",
-          color: active ? C.onBrand : danger ? C.red : C.ink,
-        }}
-      >
-        {label}
-      </Text>
+      {!!icon && (
+        <Icon
+          name={icon}
+          size={iconOnly ? 15 : compact ? 13 : 15}
+          color={active ? C.onBrand : danger ? C.red : C.sub}
+        />
+      )}
+      {!iconOnly && (
+        <Text
+          numberOfLines={1}
+          style={{
+            fontSize: compact ? 12 : 14,
+            fontWeight: active ? "700" : "500",
+            color: active ? C.onBrand : danger ? C.red : C.ink,
+          }}
+        >
+          {label}
+        </Text>
+      )}
       {!!count && count > 0 && (
-        <View style={[styles.chipCount, compact ? styles.chipCountCompact : null, { backgroundColor: active ? C.onBrand : danger ? C.red : C.brand }]}>
-          <Text style={{ fontSize: compact ? 11 : 13, fontWeight: "700", color: active ? C.brand : "#fff" }}>{count > 9 ? "9+" : count}</Text>
+        <View style={[styles.chipCount, compact || iconOnly ? styles.chipCountCompact : null, { backgroundColor: active ? C.onBrand : danger ? C.red : C.brand }]}>
+          <Text style={{ fontSize: compact || iconOnly ? 11 : 13, fontWeight: "700", color: active ? C.brand : "#fff" }}>{count > 9 ? "9+" : count}</Text>
         </View>
       )}
     </View>
   );
   if (!onPress) return body;
   return (
-    <Pressable onPress={onPress} hitSlop={4}>
+    <Pressable onPress={onPress} hitSlop={4} accessibilityLabel={label} accessibilityRole="button">
       {body}
     </Pressable>
   );
@@ -571,6 +587,15 @@ const styles = StyleSheet.create({
   },
   chipCompact: { paddingHorizontal: 9, paddingVertical: 4, minHeight: 28, gap: 4 },
   chipCountCompact: { minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 4 },
+  chipIconOnly: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    minHeight: 27,
+    minWidth: 31,
+    gap: 3,
+    borderWidth: 0,
+    justifyContent: "center",
+  },
   card: { borderRadius: 18, borderWidth: 1, padding: 16 },
   sectionHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10, marginTop: 4 },
   empty: { alignItems: "center", paddingVertical: 36, paddingHorizontal: 28 },

@@ -2,6 +2,7 @@
 
 import React, { useMemo } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp, contactByRecord } from "../lib/store";
 import { useT, t as tr } from "../i18n";
 import { displayName, normalizePhone, prettyPhone, searchContacts } from "../lib/utils";
@@ -95,7 +96,10 @@ export const NumberPicker: React.FC<{
   recordID: string;
   onPick: (number: string) => void;
   onClose: () => void;
-}> = ({ recordID, onPick, onClose }) => {
+  /** v1.5.4 — trailing “＋ Add or edit numbers” row → opens the in-app
+      contact editor right from the chooser. */
+  onAddEditNumbers?: () => void;
+}> = ({ recordID, onPick, onClose, onAddEditNumbers }) => {
   const C = useThemeColors(useApp((s) => s.settings.theme));
   const t = useT();
   const contact = useApp((s) => s.deviceContacts.find((c) => c.recordID === recordID));
@@ -139,6 +143,17 @@ export const NumberPicker: React.FC<{
             {t("cd.noPhone")}
           </Text>
         )}
+        {!!onAddEditNumbers && (
+          <Pressable
+            android_ripple={{ color: "rgba(128,128,128,0.14)" }}
+            onPress={onAddEditNumbers}
+            style={[styles.addRow, { borderColor: C.line }]}
+            accessibilityLabel={t("cd.addOrEditNumbers")}
+          >
+            <Icon name="plus" size={16} color={C.brand} />
+            <Text style={{ fontSize: F.small, color: C.brand, fontWeight: "700" }}>{t("cd.addOrEditNumbers")}</Text>
+          </Pressable>
+        )}
       </View>
     </BottomSheet>
   );
@@ -172,4 +187,16 @@ const styles = StyleSheet.create({
     minHeight: 60,
   },
   genIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  addRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    paddingVertical: 10,
+    marginTop: 4,
+    minHeight: 44,
+  },
 });

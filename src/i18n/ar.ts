@@ -1032,4 +1032,18 @@ export const AR: Record<string, string> = {
   "misc.off": "معطل",
   "act.undo": "تراجع",
   "rm.reopen": "إعادة فتح",
+
+  /* ---- v1.5.4 in-app contact editor + contact detail (task 3-a) ---- */
+  "cd.addOrEditNumbers": "إضافة أو تعديل الأرقام",
+  "cd.saveFailed": "تعذّر حفظ جهة الاتصال",
+  "ce.label": "النوع",
+
+  /* ---- v1.6.0 global hero + first-run onboarding (task 3-c) ---- */
+  "gv.acrossEveryone": "عبر الجميع — جهات الاتصال والعام",
+  "ob.title": "مرحبًا",
+  "ob.welcome": "مرحبًا بك في callmony",
+  "ob.hint": "اختر عملتك ورمز دولتك — يمكنك تغييرهما في أي وقت من الإعدادات.",
+  "ob.other": "أخرى",
+  "ob.otherPh": "مثل JPY",
+  "ob.getStarted": "ابدأ",
 };
