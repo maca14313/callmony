@@ -1,6 +1,6 @@
 /* Editors — NoteEdit · ReminderEdit · BankEdit overlays. */
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
@@ -8,6 +8,7 @@ import { useUI, type Overlay } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { dateStr, fd, ft, parseDueLocal } from "../lib/utils";
 import type { ReminderKind, Repeat } from "../lib/types";
+import { notificationsEnabled, requestNotificationPermission } from "../native/notify";
 import { F, useThemeColors } from "../theme";
 import { Btn, Chip, Field, SectionHeader, confirm, toast } from "../components/kit";
 import { Sheet } from "../components/Sheet";
@@ -125,6 +126,19 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
   const [lead, setLead] = useState<number[]>(existing?.leadMinutes ?? []);
   const [pickOwner, setPickOwner] = useState(false);
   const [ownerId, setOwnerId] = useState<string>(existing?.ownerId ?? params.ownerId);
+  /* v1.6.2 — live notification status: tells the user whether this
+     reminder will also RING while the app is closed (not just in-app). */
+  const [notifOn, setNotifOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    notificationsEnabled().then(setNotifOn).catch(() => setNotifOn(null));
+  }, []);
+
+  const askNotifications = async () => {
+    const ok = await requestNotificationPermission();
+    setNotifOn(ok);
+    useApp.getState().updateSettings({ notifAsked: true });
+    if (ok) toast(t("rm.notifGranted"), "ok");
+  };
 
   const duePreview = useMemo(() => {
     /* v1.6.1 — forgiving parser: accepts 9:00 AM / 14:30 / 9.30 / 2 pm and
@@ -143,6 +157,18 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
     if (due.getTime() < Date.now() && repeat === "none" && !existing) {
       const ok = await confirm(t("rm.pastTitle"), t("rm.pastMsg"), t("rm.saveAnyway"));
       if (!ok) return;
+    }
+    /* v1.6.2 — ask for notification permission AT SAVE TIME: this is the
+       moment the user actually needs reminders to ring in the background,
+       so the dialog can never be missed (it used to live only on the
+       Reminders tab). No-op when already granted/denied. */
+    if (notifOn !== true) {
+      requestNotificationPermission()
+        .then((ok) => {
+          setNotifOn(ok);
+          useApp.getState().updateSettings({ notifAsked: true });
+        })
+        .catch(() => undefined);
     }
     saveReminder({
       id: existing?.id,
@@ -235,6 +261,22 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
           {t("rm.due")}: {fd(duePreview)} · {ft(duePreview.getTime())}
         </Text>
       )}
+
+      {/* v1.6.2 — notification status: green when the reminder will ring in
+          the background, amber one-tap fixer when it will not. */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <Icon
+          name={notifOn === true ? "bell-check-outline" : "bell-off-outline"}
+          size={17}
+          color={notifOn === true ? C.green : C.amber}
+        />
+        <Text style={{ flex: 1, fontSize: F.tiny, color: C.sub }}>
+          {notifOn === true ? t("rm.notifOnHint") : notifOn === false ? t("rm.notifOffHint") : ""}
+        </Text>
+        {notifOn === false && (
+          <Btn small label={t("rm.turnOn")} variant="soft" onPress={askNotifications} />
+        )}
+      </View>
 
       <SectionHeader title={t("rm.repeats")} />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>

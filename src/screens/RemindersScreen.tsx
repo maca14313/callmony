@@ -1,16 +1,20 @@
-/* Reminders tab — status + kind filters, notification opt-in card. */
+/* Reminders tab — status + kind filters, notification status card.
+   v1.6.2 — "reminders don't remind" made visible & fixable: the tab shows a
+   live NOTIFICATIONS ON/OFF card (queries the real OS state, not a flag),
+   with a one-tap enable and an Open-settings fallback when the OS dialog
+   was permanently denied. */
 
 import React, { useMemo, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Linking, ScrollView, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { dueStatus } from "../lib/calc";
 import type { ReminderKind } from "../lib/types";
-import { requestNotificationPermission } from "../native/notify";
+import { notificationsEnabled, requestNotificationPermission } from "../native/notify";
 import { F, useThemeColors } from "../theme";
-import { Btn, Card, Chip, Segmented } from "../components/kit";
+import { Btn, Card, Chip, Pill, Segmented, toast } from "../components/kit";
 import { RemindersSection } from "../sections/RemindersSection";
 
 type Status = "overdue" | "today" | "upcoming" | "done" | "all";
@@ -20,10 +24,15 @@ export const RemindersScreen: React.FC = () => {
   const t = useT();
   const open = useUI((s) => s.open);
   const reminders = useApp((s) => s.reminders);
-  const notifAsked = useApp((s) => s.settings.notifAsked);
   const updateSettings = useApp((s) => s.updateSettings);
   const [status, setStatus] = useState<Status>("overdue");
   const [kind, setKind] = useState<ReminderKind | "all">("all");
+  /* live OS notification state — null while checking */
+  const [notifOn, setNotifOn] = useState<boolean | null>(null);
+
+  React.useEffect(() => {
+    notificationsEnabled().then(setNotifOn).catch(() => setNotifOn(null));
+  }, []);
 
   const counts = useMemo(() => {
     const live = reminders.filter((r) => !r.deletedAt);
@@ -36,9 +45,18 @@ export const RemindersScreen: React.FC = () => {
   }, [reminders]);
 
   const askNotifications = async () => {
-    await requestNotificationPermission();
+    const ok = await requestNotificationPermission();
+    setNotifOn(ok);
     updateSettings({ notifAsked: true });
-    // simple inline feedback via the chip row
+    toast(ok ? t("rm.notifGranted") : t("rm.notifDeclined"), ok ? "ok" : "info");
+  };
+
+  const openSettings = async () => {
+    try {
+      await Linking.openSettings();
+    } catch {
+      /* noop */
+    }
   };
 
   return (
@@ -53,21 +71,38 @@ export const RemindersScreen: React.FC = () => {
         <Btn small label={t("rm.newReminder")} icon="plus" onPress={() => open({ type: "reminderEdit", ownerId: "general" })} />
       </View>
 
-      {!notifAsked && (
-        <Card style={{ marginBottom: 12 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <Icon name="bell-ring-outline" size={22} color={C.brand} />
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: F.small, fontWeight: "700", color: C.ink }}>{t("rm.turnOnNotifications")}</Text>
-              <Text style={{ fontSize: F.tiny, color: C.sub, marginTop: 2 }}>{t("rm.notifCardHint")}</Text>
+      {/* v1.6.2 — always-visible notification status: green = reminders ring
+          while the app is closed; amber = fix in one tap */}
+      <Card style={{ marginBottom: 12 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <Icon
+            name={notifOn === true ? "bell-check-outline" : notifOn === false ? "bell-off-outline" : "bell-outline"}
+            size={22}
+            color={notifOn === true ? C.green : C.amber}
+          />
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={{ fontSize: F.small, fontWeight: "700", color: C.ink }}>
+                {notifOn === true ? t("rm.notifOnTitle") : t("rm.turnOnNotifications")}
+              </Text>
+              <Pill
+                label={notifOn === true ? "ON" : "OFF"}
+                tone={notifOn === true ? "green" : "amber"}
+                icon={notifOn === true ? "check-circle-outline" : "alert-outline"}
+              />
             </View>
+            <Text style={{ fontSize: F.tiny, color: C.sub, marginTop: 2 }}>
+              {notifOn === true ? t("rm.notifOnHint") : t("rm.notifCardHint")}
+            </Text>
           </View>
+        </View>
+        {notifOn !== true && (
           <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
             <Btn small label={t("rm.turnOn")} onPress={askNotifications} />
-            <Btn small label={t("rm.notNow")} variant="secondary" onPress={() => updateSettings({ notifAsked: true })} />
+            <Btn small label={t("perm.openSettings")} variant="secondary" onPress={openSettings} />
           </View>
-        </Card>
-      )}
+        )}
+      </Card>
 
       <View style={{ marginBottom: 10 }}>
         <Segmented
@@ -94,4 +129,3 @@ export const RemindersScreen: React.FC = () => {
     </ScrollView>
   );
 };
-

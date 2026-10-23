@@ -8,7 +8,7 @@
    SettingsOverlay (region section) — this sheet is first-run only. */
 
 import React, { useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useT } from "../i18n";
@@ -65,8 +65,12 @@ export const OnboardingSheet: React.FC = () => {
   }, [countryQuery]);
 
   /* saving is ALWAYS allowed — every control has a default, and an invalid
-     free-text code falls back to the currency default (ETB). */
+     free-text code falls back to the currency default (ETB).
+     v1.6.2: the keyboard is dismissed FIRST — after picking a country the
+     search keyboard used to cover the footer's Get-started button (the
+     "big btn cropped from bottom" report). */
   const save = () => {
+    Keyboard.dismiss();
     const code = other ? otherCode(otherText) || "ETB" : currency;
     updateSettings({ currency: code, countryCode, onboarded: true });
   };
@@ -144,7 +148,12 @@ export const OnboardingSheet: React.FC = () => {
 
       {/* country code — compact "Ethiopia +251" rows with search */}
       <Text style={[obStyles.label, { color: C.sub, marginTop: 10 }]}>{t("st.countryCode")}</Text>
-      <Field value={countryQuery} onChangeText={setCountryQuery} placeholder={t("act.search")} />
+      <Field
+        value={countryQuery}
+        onChangeText={setCountryQuery}
+        placeholder={t("act.search")}
+        onSubmitEditing={() => Keyboard.dismiss()}
+      />
       <Text style={{ fontSize: F.tiny, color: C.faint, marginBottom: 8 }}>{t("st.countryCodeHint")}</Text>
       <View>
         {countries.map((c) => {
@@ -152,7 +161,12 @@ export const OnboardingSheet: React.FC = () => {
           return (
             <Pressable
               key={c.code}
-              onPress={() => setCountryCode(c.code)}
+              onPress={() => {
+                /* v1.6.2 — picking a country closes the keyboard: the search
+                   keyboard no longer sits over the Save button afterwards */
+                Keyboard.dismiss();
+                setCountryCode(c.code);
+              }}
               android_ripple={{ color: "rgba(128,128,128,0.12)" }}
               accessibilityRole="button"
               accessibilityLabel={`${c.name} +${c.dial}`}
@@ -175,6 +189,16 @@ export const OnboardingSheet: React.FC = () => {
           </Text>
         )}
       </View>
+
+      {/* v1.6.2 — an in-content Get-started button at the very END of the
+          scroll: on any screen/keyboard state the user can always scroll to
+          a fully visible save button, even if the fixed footer is covered. */}
+      <Btn
+        label={t("ob.getStarted")}
+        icon="arrow-right"
+        onPress={save}
+        style={{ marginTop: 18, marginBottom: 8, minHeight: 54 }}
+      />
     </Sheet>
   );
 };

@@ -241,6 +241,8 @@ const DIAL_CODES: Record<string, string> = {
   IT: "39", ES: "34", NL: "31", IN: "91", NG: "234", ZA: "27", TZ: "255", UG: "256",
 };
 
+export const dialCodeOf = (countryCode: string): string => DIAL_CODES[countryCode] || "251";
+
 export const normalizePhone = (raw: string, countryCode = "ET"): string => {
   let n = (raw || "").replace(/[^\d+*#]/g, "");
   if (!n) return "";
@@ -260,6 +262,20 @@ export const normalizePhone = (raw: string, countryCode = "ET"): string => {
   const cc = DIAL_CODES[countryCode] || "251";
   if (n.startsWith("0")) n = n.slice(1);
   return `${cc}${n}`;
+};
+
+/**
+ * NATIONAL significant digits — the number with the country code AND the
+ * trunk zero removed: "0912…", "+251912…" and "251912…" all → "912…".
+ * v1.6.2 (user request): search must match numbers whether they carry a
+ * country code or not, so every comparison happens on this common tail.
+ */
+export const nationalDigits = (rawOrDigits: string, countryCode = "ET"): string => {
+  const norm = normalizePhone(rawOrDigits, countryCode).replace(/\D/g, "");
+  if (!norm) return "";
+  const cc = DIAL_CODES[countryCode] || "251";
+  if (norm.startsWith(cc) && norm.length > cc.length) return norm.slice(cc.length).replace(/^0+/, "");
+  return norm;
 };
 
 export const prettyPhone = (raw: string, countryCode = "ET"): string => {
@@ -301,17 +317,27 @@ export const t9Match = (number: string, name: string): boolean => {
 };
 
 /* ---------------- scored contact search (global search overlay) ----------------
-   Matches ANY of: name (word-prefix > substring) · company · job title ·
-   email · note · phone (prefix > dialer-style suffix > substring, in BOTH
-   the raw “09…” and normalized “+251…” formats). Ranked by score so the
-   best hit is always first. */
+   v1.6.2 — COUNTRY-CODE-AGNOSTIC + INDEXED + T9 (user request: "the search
+   should match the numbers if it has country code or not and the search
+   should be very very very fast and advanced"):
+   · every phone is pre-indexed in THREE forms — raw digits, normalized
+     (with country code) and NATIONAL significant digits (cc + trunk zero
+     stripped) — and the query is normalized the same way, so "0912…",
+     "+251912…" and "912…" all find each other;
+   · the whole index is built ONCE per address-book load and cached (the
+     contacts array is a stable store reference) — a keystroke only runs
+     cheap string comparisons over the cached entries, no re-normalization;
+   · pure-digit queries also T9-match names (dialer-style: 564 → "joh…");
+   · ranking: exact number 7 · name word-prefix 6 · number prefix 6 ·
+     T9 name 5.5 · number suffix (last digits) 5 · name substring 4 ·
+     company/email 3 · number substring 3.5 · note 2. */
 
 export interface ScoredContact<T> {
   contact: T;
   score: number;
 }
 
-export const scoreContact = <T extends {
+interface SearchableContact {
   givenName?: string;
   familyName?: string;
   displayName?: string;
@@ -320,52 +346,114 @@ export const scoreContact = <T extends {
   note?: string;
   phones: { number: string }[];
   emails: { address: string }[];
-}>(
+}
+
+export interface SearchIndexEntry<T> {
+  contact: T;
+  name: string;
+  nameLower: string;
+  words: string[];
+  companyLower: string;
+  emailLower: string;
+  noteLower: string;
+  /** a-z only — T9 dialer matching */
+  letters: string;
+  phones: { raw: string; norm: string; nat: string }[];
+}
+
+const buildEntry = <T extends SearchableContact>(c: T, nameOf: (c: T) => string, countryCode: string): SearchIndexEntry<T> => ({
+  contact: c,
+  name: nameOf(c),
+  nameLower: nameOf(c).toLowerCase(),
+  words: nameOf(c).toLowerCase().split(/\s+/).filter(Boolean),
+  companyLower: `${c.company || ""} ${c.jobTitle || ""}`.toLowerCase().trim(),
+  emailLower: (c.emails || []).map((e) => (e.address || "").toLowerCase()).join(" "),
+  noteLower: (c.note || "").toLowerCase(),
+  letters: nameOf(c).toLowerCase().replace(/[^a-z]/g, ""),
+  phones: (c.phones || []).map((p) => {
+    const norm = normalizePhone(p.number, countryCode).replace(/\D/g, "");
+    const cc = DIAL_CODES[countryCode] || "251";
+    const nat =
+      norm.startsWith(cc) && norm.length > cc.length ? norm.slice(cc.length).replace(/^0+/, "") : norm;
+    return { raw: (p.number || "").replace(/\D/g, ""), norm, nat };
+  }),
+});
+
+/* index cache — keyed by the (stable) contacts array reference */
+interface IndexCacheRow {
+  cc: string;
+  nameOf: (c: never) => string;
+  entries: SearchIndexEntry<never>[];
+}
+const INDEX_CACHE = new WeakMap<object, IndexCacheRow>();
+
+/** Build (or fetch the cached) search index for a contacts list. */
+export const getContactSearchIndex = <T extends SearchableContact>(
+  contacts: T[],
+  countryCode: string,
+  nameOf: (c: T) => string
+): SearchIndexEntry<T>[] => {
+  const cached = INDEX_CACHE.get(contacts as unknown as object);
+  if (cached && cached.cc === countryCode && cached.nameOf === (nameOf as unknown as (c: never) => string)) {
+    return cached.entries as unknown as SearchIndexEntry<T>[];
+  }
+  const entries = contacts.map((c) => buildEntry(c, nameOf, countryCode));
+  INDEX_CACHE.set(contacts as unknown as object, {
+    cc: countryCode,
+    nameOf: nameOf as unknown as (c: never) => string,
+    entries: entries as unknown as SearchIndexEntry<never>[],
+  });
+  return entries;
+};
+
+/** Best phone score for one entry — qd = raw query digits, qnat = national form. */
+const phoneScore = (phones: { raw: string; norm: string; nat: string }[], qd: string, qnat: string): number => {
+  if (qd.length < 2) return 0;
+  let best = 0;
+  for (const p of phones) {
+    let s = 0;
+    if (p.raw === qd || p.norm === qd || (qnat && p.nat === qnat)) s = 7;
+    else if (p.raw.startsWith(qd) || p.norm.startsWith(qd) || (qnat && p.nat.startsWith(qnat))) s = 6;
+    else if (p.raw.endsWith(qd) || p.norm.endsWith(qd) || (qnat && p.nat.endsWith(qnat))) s = 5;
+    else if (p.raw.includes(qd) || p.norm.includes(qd) || (qnat && p.nat.includes(qnat))) s = 3.5;
+    if (s > best) best = s;
+    if (best >= 7) break;
+  }
+  return best;
+};
+
+const scoreEntry = (e: SearchIndexEntry<unknown>, q: string, qd: string, qnat: string, digitsOnly: boolean): number => {
+  let score = 0;
+  /* name — word-prefix ranks highest (dialer behavior) */
+  if (e.words.some((w) => w.startsWith(q))) score = Math.max(score, 6);
+  else if (e.nameLower.includes(q)) score = Math.max(score, 4);
+  /* T9 name matching for pure-digit queries (3+ digits) — dialer-style */
+  if (digitsOnly && qd.length >= 3 && e.letters && t9Match(qd, e.name)) score = Math.max(score, 5.5);
+  if (!digitsOnly) {
+    /* company / job title · email · note (skipped for digit queries = speed) */
+    if (e.companyLower && e.companyLower.includes(q)) score = Math.max(score, 3);
+    if (e.emailLower && e.emailLower.includes(q)) score = Math.max(score, 3);
+    if (e.noteLower && e.noteLower.includes(q)) score = Math.max(score, 2);
+  }
+  /* phone — raw / normalized / national, prefix > suffix > substring */
+  if (qd.length >= 2) score = Math.max(score, phoneScore(e.phones, qd, qnat));
+  return score;
+};
+
+export const scoreContact = <T extends SearchableContact>(
   c: T,
   q: string,
   nameOf: (c: T) => string,
   countryCode: string
 ): number => {
   if (!q) return 0;
-  const name = nameOf(c).toLowerCase();
-  const words = name.split(/\s+/).filter(Boolean);
-  let score = 0;
-
-  /* name — word-prefix ranks highest (dialer behavior) */
-  if (words.some((w) => w.startsWith(q))) score = Math.max(score, 6);
-  else if (name.includes(q)) score = Math.max(score, 4);
-  /* company / job title */
-  const company = `${c.company || ""} ${c.jobTitle || ""}`.toLowerCase().trim();
-  if (company && company.includes(q)) score = Math.max(score, 3);
-  /* email */
-  if (c.emails.some((e) => (e.address || "").toLowerCase().includes(q))) score = Math.max(score, 3);
-  /* note */
-  if ((c.note || "").toLowerCase().includes(q)) score = Math.max(score, 2);
-
-  /* phone — digits only, both formats, prefix > suffix > substring */
-  const digits = q.replace(/\D/g, "");
-  if (digits.length >= 2) {
-    for (const p of c.phones) {
-      const raw = p.number.replace(/\D/g, "");
-      const norm = normalizePhone(p.number, countryCode).replace(/\D/g, "");
-      if (raw.startsWith(digits) || norm.startsWith(digits)) {
-        score = Math.max(score, 5);
-        break;
-      }
-      if (raw.endsWith(digits) || norm.endsWith(digits)) {
-        score = Math.max(score, 4.5);
-        continue;
-      }
-      if (raw.includes(digits) || norm.includes(digits)) {
-        score = Math.max(score, 3.5);
-      }
-    }
-  }
-  return score;
+  const query = q.trim().toLowerCase();
+  const qd = query.replace(/\D/g, "");
+  return scoreEntry(buildEntry(c, nameOf, countryCode) as unknown as SearchIndexEntry<unknown>, query, qd, nationalDigits(qd, countryCode), query === qd);
 };
 
 /** Ranked contact search — use wherever a list of contacts is filtered. */
-export const searchContacts = <T extends Parameters<typeof scoreContact>[0]>(
+export const searchContacts = <T extends SearchableContact>(
   contacts: T[],
   query: string,
   nameOf: (c: T) => string,
@@ -374,10 +462,14 @@ export const searchContacts = <T extends Parameters<typeof scoreContact>[0]>(
 ): ScoredContact<T>[] => {
   const q = query.trim().toLowerCase();
   if (q.length < 1) return [];
+  const qd = q.replace(/\D/g, "");
+  const qnat = nationalDigits(qd, countryCode);
+  const digitsOnly = q === qd;
+  const entries = getContactSearchIndex(contacts, countryCode, nameOf);
   const out: ScoredContact<T>[] = [];
-  for (const c of contacts) {
-    const s = scoreContact(c, q, nameOf, countryCode);
-    if (s > 0) out.push({ contact: c, score: s });
+  for (const e of entries) {
+    const s = scoreEntry(e as unknown as SearchIndexEntry<unknown>, q, qd, qnat, digitsOnly);
+    if (s > 0) out.push({ contact: e.contact, score: s });
   }
   out.sort((a, b) => b.score - a.score || nameOf(a.contact).localeCompare(nameOf(b.contact)));
   return out.slice(0, limit);

@@ -1,6 +1,14 @@
 /* SwipeRow — swipe left/right to reveal actions, tap to open, long-press for
    menu. Pure RN Animated + PanResponder (no extra native deps).
 
+   v1.6.2 — TAP vs LONG-PRESS misfire fixed (user report: "when I click the
+   call card sometimes it acts as long press"): the old custom 480ms timer
+   had no touch-slop cancellation, so a slightly slow tap opened the action
+   sheet instead of the contact. Long-press now uses RN Pressable's native
+   detection (cancels on any finger movement or scroll take-over) with a
+   650ms threshold — a click always stays a click, a real hold always opens
+   the sheet.
+
    Gesture detection is HORIZONTAL-DOMINANT: a drag is only claimed when the
    horizontal movement clearly outweighs the vertical movement, so swiping a
    row sideways never scrolls the list downward (and the list scrolling
@@ -32,8 +40,6 @@ export const SwipeRow: React.FC<{
   const x = useRef(new Animated.Value(0)).current;
   const openRef = useRef(0); // current snapped offset (0 = closed)
   const moved = useRef(false);
-  const longFired = useRef(false);
-  const longTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const leftW = leftActions.length * 62;
   const rightW = rightActions.length * 62;
@@ -56,7 +62,6 @@ export const SwipeRow: React.FC<{
       onMoveShouldSetPanResponderCapture: isHorizontalDrag,
       onPanResponderGrant: () => {
         moved.current = true;
-        if (longTimer.current) clearTimeout(longTimer.current);
       },
       onPanResponderMove: (_e, g) => {
         // drag relative to the current open position → re-swiping an open row works
@@ -72,27 +77,16 @@ export const SwipeRow: React.FC<{
     })
   ).current;
 
-  const handlePressIn = () => {
-    moved.current = false;
-    longFired.current = false;
-    if (onLongPress) {
-      longTimer.current = setTimeout(() => {
-        if (!moved.current) {
-          longFired.current = true;
-          vibrate(30);
-          snap(0);
-          onLongPress();
-        }
-      }, 480);
-    }
-  };
-
-  const handlePressOut = () => {
-    if (longTimer.current) clearTimeout(longTimer.current);
+  /* native Pressable long-press: cancels on touch-slop movement / scroll
+     take-over, and RN never fires onPress afterwards — no custom timer */
+  const handleLongPress = () => {
+    vibrate(30);
+    snap(0);
+    onLongPress?.();
   };
 
   const handleTap = () => {
-    if (longFired.current || moved.current) return;
+    if (moved.current) return;
     if (openRef.current !== 0) {
       snap(0);
       return;
@@ -138,9 +132,12 @@ export const SwipeRow: React.FC<{
       >
         <Pressable
           pressRetentionOffset={{ left: 8, right: 8, top: 4, bottom: 4 }}
-          onPressIn={handlePressIn}
-          onPressOut={handlePressOut}
+          onPressIn={() => {
+            moved.current = false;
+          }}
           onPress={handleTap}
+          onLongPress={onLongPress ? handleLongPress : undefined}
+          delayLongPress={650}
         >
           {children}
         </Pressable>

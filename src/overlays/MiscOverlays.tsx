@@ -453,7 +453,7 @@ export const AboutOverlay: React.FC = () => {
         <Text style={{ fontSize: F.hero, fontWeight: "800", color: C.ink, marginTop: 8 }}>callmony</Text>
         <Text style={{ fontSize: F.small, color: C.sub }}>{t("hdr.tagline")}</Text>
         <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
-          <Pill label={`${t("st.version")} 1.0.0`} tone="brand" />
+          <Pill label={`${t("st.version")} 1.6.2`} tone="brand" />
           <Pill label={t("about.offline")} tone="green" icon="cloud-off-outline" />
         </View>
       </View>
@@ -487,6 +487,7 @@ export const AlarmDialog: React.FC = () => {
   const t = useT();
   const alarm = useUI((s) => s.alarmQueue[0]);
   const shiftAlarm = useUI((s) => s.shiftAlarm);
+  const open = useUI((s) => s.open);
   const completeReminder = useApp((s) => s.completeReminder);
   const snoozeReminder = useApp((s) => s.snoozeReminder);
   const fireReminder = useApp((s) => s.fireReminder);
@@ -540,10 +541,28 @@ export const AlarmDialog: React.FC = () => {
           </Text>
           <View style={{ gap: 8, marginTop: 16, width: "100%" }}>
             <Btn label={t("act.done")} icon="check" onPress={dismiss} />
+            {/* v1.6.2 — full snooze range: 10m · 1h · 3h · tomorrow 9AM */}
             <View style={{ flexDirection: "row", gap: 8 }}>
               <Btn small label={t("rm.snooze10")} icon="alarm-clock-plus" variant="secondary" onPress={() => { snoozeReminder(r.id, Date.now() + 600000); shiftAlarm(); }} style={{ flex: 1 }} />
               <Btn small label={t("rm.snooze1h")} icon="clock-fast" variant="secondary" onPress={() => { snoozeReminder(r.id, Date.now() + 3600000); shiftAlarm(); }} style={{ flex: 1 }} />
             </View>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Btn small label={t("rm.snooze3h")} icon="clock-outline" variant="secondary" onPress={() => { snoozeReminder(r.id, Date.now() + 3 * 3600000); shiftAlarm(); }} style={{ flex: 1 }} />
+              <Btn
+                small
+                label={t("rm.snoozeTomorrow")}
+                icon="weather-sunset-up"
+                variant="secondary"
+                onPress={() => {
+                  const t9 = new Date(Date.now() + 86400000);
+                  t9.setHours(9, 0, 0, 0);
+                  snoozeReminder(r.id, t9.getTime());
+                  shiftAlarm();
+                }}
+                style={{ flex: 1 }}
+              />
+            </View>
+            <Btn small label={t("act.edit")} icon="pencil-outline" variant="ghost" onPress={() => { open({ type: "reminderEdit", reminderId: r.id, ownerId: r.ownerId }); shiftAlarm(); }} />
             <Pressable onPress={dismiss} hitSlop={8} style={{ alignItems: "center", paddingVertical: 6 }}>
               <Text style={{ fontSize: F.small, color: C.sub }}>{t("act.close")}</Text>
             </Pressable>

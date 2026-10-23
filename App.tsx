@@ -41,19 +41,20 @@ import { SettingsOverlay, LockScreen } from "./src/overlays/SettingsOverlay";
 import { SearchOverlay, SpeedDialOverlay, MergeOverlay, AboutOverlay, AlarmDialog } from "./src/overlays/MiscOverlays";
 import { OnboardingSheet } from "./src/overlays/OnboardingSheet";
 import { loadCachedContacts } from "./src/native/deviceContacts";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { setupCallKeep } from "./src/native/callkeep";
 import { maybeAutoSync } from "./src/lib/backup";
 import { bootMark, setNavBarColor } from "./src/native/diag";
 import { isSafeMode } from "./src/boot/crash-firewall";
+import { handleNotifeeEvent } from "./src/native/notify";
+import notifee from "@notifee/react-native";
 
 const App: React.FC = () => {
   const hydrated = useApp((s) => s.hydrated);
 
   /* BOOT: hydrate the persisted store. A 5s bail-out guarantees the app can
      never get stuck on the splash screen, even if storage misbehaves.
-     The LAST TAB is restored in the same breath (before first paint) so the
-     app re-opens exactly where the user left it — no newcomer flash. */
+     v1.6.2 (user request): the app ALWAYS opens on RECENTS — the dialer-style
+     home — regardless of which tab was active when it closed. */
   useEffect(() => {
     bootMark("app-mounted");
     let done = false;
@@ -61,20 +62,13 @@ const App: React.FC = () => {
       if (!done) {
         done = true;
         useApp.setState({ hydrated: true });
+        useUI.setState({ tab: "recents" });
       }
     };
     const bail = setTimeout(finish, 5000);
-    Promise.all([
-      useApp.getState().hydrate(),
-      AsyncStorage.getItem("cm.lastTab")
-        .then((v) => {
-          const tabs = ["contacts", "recents", "general", "reminders", "trash"] as const;
-          if (v && (tabs as readonly string[]).includes(v)) {
-            useUI.getState().setTab(v as (typeof tabs)[number]);
-          }
-        })
-        .catch(() => undefined),
-    ])
+    useApp
+      .getState()
+      .hydrate()
       .then(() => bootMark("hydrated"))
       .catch(() => undefined)
       .finally(finish);
@@ -274,10 +268,14 @@ const Shell: React.FC = () => {
     setupCallKeep();
   }, []);
 
-  /* persist the active tab — cold start resumes on it (see App boot) */
+  /* v1.6.2 — reminder NOTIFICATION events while the app is open (foreground):
+     tapping "Done" / "Snooze 10m" on the notification itself updates the
+     reminder right away — same code path the background handler runs. */
   useEffect(() => {
-    AsyncStorage.setItem("cm.lastTab", tab).catch(() => undefined);
-  }, [tab]);
+    return notifee.onForegroundEvent((event) => {
+      handleNotifeeEvent(event).catch(() => undefined);
+    });
+  }, []);
 
   /* v1.6.1 — system navigation bar follows the RESOLVED theme: dark mode no
      longer leaves a mismatched (light/black) bar under the gesture area.

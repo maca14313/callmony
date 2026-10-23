@@ -53,6 +53,14 @@
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <!-- Reminder notifications (notifee). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- v1.6.2 — EXACT alarms for reminder notifications on Android 12+:
+         notifee's alarmManager trigger needs these or the schedule silently
+         fails (the "reminders don't remind" root cause). USE_EXACT_ALARM is
+         auto-granted on 13+; SCHEDULE_EXACT_ALARM covers 12–12L. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- Reminders re-scheduled after device reboot. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Haptic feedback. -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />

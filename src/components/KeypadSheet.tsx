@@ -24,7 +24,7 @@ import { useApp } from "../lib/store";
 import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { listTotals } from "../lib/calc";
-import { displayName, normalizePhone, prettyPhone, t9Match, vibrate } from "../lib/utils";
+import { displayName, getContactSearchIndex, nationalDigits, normalizePhone, prettyPhone, t9Match, vibrate } from "../lib/utils";
 import type { DeviceContact } from "../lib/types";
 import { placeCall } from "../native/calls";
 import { openNewContactForm } from "../native/deviceContacts";
@@ -46,15 +46,15 @@ const KEYS: { d: string; letters?: string }[] = [
   { d: "#" },
 ];
 
-/* precomputed search entry — built once per contacts change, so each
-   keystroke only runs cheap comparisons. Every phone is indexed in BOTH
-   raw form (“0911…”, “+251911…” as typed) and normalized E.164-ish digits,
-   so a query starting with “+251” OR “09” (or plain “9…”) all match. */
+/* precomputed search entry — the SHARED cached index (utils), built once
+   per address-book load. Every phone is indexed raw + normalized +
+   NATIONAL (country code & trunk zero stripped), so “+251911…”, “0911…”
+   and plain “911…” all match the same contact (v1.6.2). */
 interface MatchEntry {
   c: DeviceContact;
   name: string;
   letters: string;
-  phones: { raw: string; norm: string; number: string }[];
+  phones: { raw: string; norm: string; nat: string; number: string }[];
 }
 
 /* one row of the list above the display */
@@ -195,43 +195,38 @@ export const KeypadSheet: React.FC = () => {
     return map;
   }, [entries, lists]);
 
-  /* ---------- contact search index (built once per contacts load) ---------- */
+  /* ---------- contact search index (SHARED cache — built once per book) ---------- */
   const index = useMemo<MatchEntry[]>(
     () =>
-      contacts.map((c) => {
-        const name = displayName(c);
-        return {
-          c,
-          name,
-          letters: name.toLowerCase().replace(/[^a-z]/g, ""),
-          phones: c.phones.map((p) => ({
-            number: p.number,
-            raw: p.number.replace(/\D/g, ""),
-            norm: normalizePhone(p.number, countryCode).replace(/\D/g, ""),
-          })),
-        };
-      }),
+      getContactSearchIndex(contacts, countryCode, displayName).map((e) => ({
+        c: e.contact,
+        name: e.name,
+        letters: e.letters,
+        phones: e.phones.map((p, i) => ({ ...p, number: e.contact.phones[i]?.number ?? "" })),
+      })),
     [contacts, countryCode]
   );
 
   /* ---------- live matches while typing ----------
-     Prefix search: the typed digits must appear in the RAW number (covers
-     “09…” local format) or in the NORMALIZED number (covers “+251…”), so
-     both common Ethiopian formats find the same contact. */
+     v1.6.2 — country-code-agnostic: the typed digits are normalized to
+     NATIONAL form and compared against the national digits of every phone,
+     so a contact stored as “+251 91…”, “09 1…” or “25191…” is found by any
+     of those spellings; suffix (last-digits) matching covers “ends with…”. */
   const digits = number.replace(/\D/g, "");
   const matches = useMemo<MatchEntry[]>(() => {
     if (digits.length < 2) return [];
+    const qnat = nationalDigits(digits, countryCode);
     const out: { e: MatchEntry; score: number }[] = [];
     for (const e of index) {
       let score = -1;
       if (e.letters && t9Match(digits, e.name)) score = 3;
       for (const p of e.phones) {
         if (!digits) break;
-        if (p.raw.startsWith(digits) || p.norm.startsWith(digits)) {
+        if (p.raw.startsWith(digits) || p.norm.startsWith(digits) || (qnat && p.nat.startsWith(qnat))) {
           score = 4;
           break;
         }
-        if (p.raw.includes(digits) || p.norm.includes(digits)) {
+        if (p.raw.includes(digits) || p.norm.includes(digits) || (qnat && (p.nat.includes(qnat) || p.nat.endsWith(qnat)))) {
           score = Math.max(score, 3.5);
           break;
         }
@@ -243,7 +238,7 @@ export const KeypadSheet: React.FC = () => {
     }
     out.sort((a, b) => b.score - a.score || a.e.name.localeCompare(b.e.name));
     return out.map((x) => x.e);
-  }, [digits, index]);
+  }, [digits, index, countryCode]);
 
   const exactMatch = useMemo(() => {
     if (digits.length < 6) return null;

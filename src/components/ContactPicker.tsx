@@ -17,6 +17,11 @@ export interface OwnerOption {
   recordID?: string;
 }
 
+/* v1.6.2 — how many rows render inside the (non-virtualized) sheet list:
+   300+ rows made the chooser janky to open; 120 renders instantly and the
+   “+N more” hint tells the user to keep typing. */
+const RENDER_CAP = 120;
+
 /** Pick an owner: General + all device contacts (searchable). */
 export const ContactPicker: React.FC<{
   onPick: (ownerId: string, label: string) => void;
@@ -30,11 +35,16 @@ export const ContactPicker: React.FC<{
   const countryCode = useApp((s) => s.settings.countryCode);
   const [q, setQ] = React.useState("");
 
-  /* scored search — name word-prefix, company, email and BOTH phone
-     formats (+251… and 09…), ranked best-first */
+  /* scored search — name word-prefix, company, email and phone matching in
+     EVERY format (+251…, 09…, plain 9…), ranked best-first (utils v1.6.2) */
   const filtered = q.trim()
     ? searchContacts(contacts, q, displayName, countryCode).map((x) => x.contact)
     : contacts;
+
+  const copyNumber = (number?: string) => {
+    if (!number) return;
+    copyText(number).then((ok) => toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error"));
+  };
 
   return (
     <BottomSheet title={title || t("spd.chooseContact")} onClose={onClose}>
@@ -60,11 +70,15 @@ export const ContactPicker: React.FC<{
         </Pressable>
       )}
       <View style={{ gap: 4, paddingBottom: 10 }}>
-        {filtered.slice(0, 300).map((c) => (
+        {filtered.slice(0, RENDER_CAP).map((c) => (
           <Pressable
             key={c.recordID}
             android_ripple={{ color: "rgba(128,128,128,0.12)" }}
             onPress={() => onPick(contactOwnerId(c.recordID), displayName(c))}
+            /* v1.6.2 — long-press copies the first number (user request:
+               copy must work wherever a number is shown) */
+            onLongPress={() => copyNumber(c.phones[0]?.number)}
+            delayLongPress={500}
             style={({ pressed }) => [styles.row, { backgroundColor: pressed ? C.chip : "transparent" }]}
           >
             <Avatar contact={c} size={36} />
@@ -78,8 +92,25 @@ export const ContactPicker: React.FC<{
                 </Text>
               )}
             </View>
+            {/* v1.6.2 — the copy icon WORKS now (user request: "the copy icon
+                on the choose contacts and others should work") */}
+            {!!c.phones[0] && (
+              <Pressable
+                onPress={() => copyNumber(c.phones[0].number)}
+                hitSlop={6}
+                style={({ pressed }) => [styles.copyBtn, { backgroundColor: pressed ? C.chip : C.brandSoft }]}
+                accessibilityLabel={`${t("act.copy")} ${c.phones[0].number}`}
+              >
+                <Icon name="content-copy" size={15} color={C.brand} />
+              </Pressable>
+            )}
           </Pressable>
         ))}
+        {filtered.length > RENDER_CAP && (
+          <Text style={{ color: C.faint, textAlign: "center", paddingVertical: 10, fontSize: F.small }}>
+            {t("sr.moreResults", { n: filtered.length - RENDER_CAP })}
+          </Text>
+        )}
         {filtered.length === 0 && (
           <Text style={{ color: C.sub, textAlign: "center", paddingVertical: 16, fontSize: F.small }}>
             {t("sr.noResults")}
@@ -131,7 +162,7 @@ export const NumberPicker: React.FC<{
             onLongPress={() =>
               copyText(p.number).then((ok) => toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error"))
             }
-            delayLongPress={400}
+            delayLongPress={500}
             style={[styles.row, { borderColor: C.line, backgroundColor: C.card }]}
           >
             <View style={{ flex: 1 }}>
@@ -142,7 +173,18 @@ export const NumberPicker: React.FC<{
                 {t(`cd.${p.label === "other" ? "other" : p.label}`) !== `cd.${p.label}` ? t(`cd.${p.label}`) : p.label}
               </Text>
             </View>
-            <Icon name="content-copy" size={15} color={C.faint} />
+            {/* v1.6.2 — the copy icon is a REAL button now (user request:
+               "the copy icon on the choose contacts and others should work") */}
+            <Pressable
+              onPress={() =>
+                copyText(p.number).then((ok) => toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error"))
+              }
+              hitSlop={6}
+              style={({ pressed }) => [styles.copyBtn, { backgroundColor: pressed ? C.chip : C.brandSoft }]}
+              accessibilityLabel={`${t("act.copy")} ${p.number}`}
+            >
+              <Icon name="content-copy" size={15} color={C.brand} />
+            </Pressable>
           </Pressable>
         ))}
         {!unique.length && (
@@ -194,6 +236,14 @@ const styles = StyleSheet.create({
     minHeight: 60,
   },
   genIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  /* v1.6.2 — the working copy button used by ContactPicker + NumberPicker */
+  copyBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   addRow: {
     flexDirection: "row",
     alignItems: "center",

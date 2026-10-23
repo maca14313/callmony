@@ -88,7 +88,7 @@ export const Sheet: React.FC<{
             )}
           </View>
           {!!footer && (
-            <View style={[styles.sheetFooter, { borderTopColor: C.line, paddingBottom: Math.max(insets.bottom, 12) }]}>
+            <View style={[styles.sheetFooter, { borderTopColor: C.line, paddingBottom: Math.max(insets.bottom, 16) }]}>
               {footer}
             </View>
           )}

@@ -91,7 +91,7 @@ export const RemindersSection: React.FC<{
                     color: "#b97d10",
                     onPress: () => {
                       snoozeReminder(r.id, Date.now() + 3600000);
-                      toast(t("rm.snoozed"), "ok");
+                      toast(t("rm.snoozed", { label: "1h" }), "ok");
                     },
                   },
                   {
@@ -142,8 +142,18 @@ export const RemindersSection: React.FC<{
                             text: r.done ? t("rm.reopen") : t("act.done"),
                             onPress: () => (r.done ? reopenReminder(r.id) : completeReminder(r.id)),
                           },
-                          { text: t("rm.snooze10"), onPress: () => { snoozeReminder(r.id, Date.now() + 600000); toast(t("rm.snoozed"), "ok"); } },
-                          { text: t("rm.snooze1h"), onPress: () => { snoozeReminder(r.id, Date.now() + 3600000); toast(t("rm.snoozed"), "ok"); } },
+                          { text: t("rm.snooze10"), onPress: () => { snoozeReminder(r.id, Date.now() + 600000); toast(t("rm.snoozed", { label: "10m" }), "ok"); } },
+                          { text: t("rm.snooze1h"), onPress: () => { snoozeReminder(r.id, Date.now() + 3600000); toast(t("rm.snoozed", { label: "1h" }), "ok"); } },
+                          { text: t("rm.snooze3h"), onPress: () => { snoozeReminder(r.id, Date.now() + 3 * 3600000); toast(t("rm.snoozed", { label: "3h" }), "ok"); } },
+                          {
+                            text: t("rm.snoozeTomorrow"),
+                            onPress: () => {
+                              const t9 = new Date(Date.now() + 86400000);
+                              t9.setHours(9, 0, 0, 0);
+                              snoozeReminder(r.id, t9.getTime());
+                              toast(t("rm.snoozed", { label: t("rm.snoozeTomorrow") }), "ok");
+                            },
+                          },
                           { text: t("act.edit"), onPress: () => open({ type: "reminderEdit", reminderId: r.id, ownerId: r.ownerId }) },
                           { text: t("act.cancel"), style: "cancel" },
                         ])
