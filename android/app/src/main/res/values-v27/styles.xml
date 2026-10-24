@@ -1,0 +1,17 @@
+<resources>
+
+    <!-- v1.6.9 — API 27+ copy of the RN Modal dialog theme override (see
+         values/styles.xml): identical items plus dark nav-bar ICONS on the
+         light canvas, matching what DiagModule.setNavBarColor does for the
+         activity window. Below API 27 the OS can only draw light icons. -->
+    <style name="Theme.FullScreenDialog">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/canvas</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+
+</resources>

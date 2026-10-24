@@ -74,6 +74,8 @@ export const OM: Record<string, string> = {
   "cd.chooseNumber": "Lakkoofsa filadhu",
   "cd.chooseEmail": "Emaili kamoo?",
   "cd.addToContact": "Quunnamtii irratti dabalchi",
+  "cd.createContact": "Quunnamtuu haaraa uumi",
+  "cd.addToExistingContact": "Quunnamtuu jiru irratti dabalchi",
   "cd.chooseAccount": "Herrega filadhu",
   "cd.default": "Durtii",
   "cd.primary": "Ijoo",

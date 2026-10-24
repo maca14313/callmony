@@ -1,0 +1,15 @@
+<resources>
+
+    <!-- v1.6.9 — dark-mode (API 27+) copy of the RN Modal dialog theme
+         override: light nav-bar icons on the dark canvas. -->
+    <style name="Theme.FullScreenDialog">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/canvas</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+
+</resources>

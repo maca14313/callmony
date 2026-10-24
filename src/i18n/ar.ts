@@ -74,6 +74,8 @@ export const AR: Record<string, string> = {
   "cd.chooseNumber": "اختر رقمًا",
   "cd.chooseEmail": "أي بريد إلكتروني؟",
   "cd.addToContact": "إضافة إلى جهة الاتصال",
+  "cd.createContact": "إنشاء جهة اتصال جديدة",
+  "cd.addToExistingContact": "إضافة إلى جهة اتصال موجودة",
   "cd.chooseAccount": "اختر حسابًا",
   "cd.default": "الافتراضي",
   "cd.primary": "الرئيسي",

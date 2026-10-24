@@ -65,6 +65,8 @@ export const TI: Record<string, string> = {
   "cd.chooseNumber": "ቁፅሪ ምረጽ",
   "cd.chooseEmail": "ከመይ ኢመይል?",
   "cd.addToContact": "ናብ እውቂያ ወስኽ",
+  "cd.createContact": "ሓድሽ እውቂያ ፍጠር",
+  "cd.addToExistingContact": "ናብ ዘሎ እውቂያ ወስኽ",
   "cd.chooseAccount": "ሂሳብ ምረጽ",
   "cd.default": "ብነባር",
   "cd.primary": "ቀዳማይ",

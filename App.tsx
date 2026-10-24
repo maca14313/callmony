@@ -41,7 +41,7 @@ import { NoteEditOverlay, ReminderEditOverlay, BankEditOverlay } from "./src/ove
 import { SettingsOverlay, LockScreen } from "./src/overlays/SettingsOverlay";
 import { SearchOverlay, SpeedDialOverlay, MergeOverlay, AboutOverlay, AlarmDialog } from "./src/overlays/MiscOverlays";
 import { OnboardingSheet } from "./src/overlays/OnboardingSheet";
-import { loadCachedContacts } from "./src/native/deviceContacts";
+import { loadCachedContacts, CONTACTS_TTL } from "./src/native/deviceContacts";
 import { setupCallKeep } from "./src/native/callkeep";
 import { maybeAutoSync, autoSnapshot } from "./src/lib/backup";
 import { bootMark, setNavBarColor } from "./src/native/diag";
@@ -245,9 +245,17 @@ const Shell: React.FC = () => {
          address book would never refresh on its own — the search and the
          keypad contact matching must keep working. A DEFERRED (4 s)
          silent re-query keeps names / favorites / balances fresh without
-         touching the boot path — the snapshot renders first, always. */
+         touching the boot path — the snapshot renders first, always.
+         v1.6.9 — TTL-GUARDED (user report: "most laggy version ever"):
+         the refresh only runs when the snapshot is actually STALE, and
+         refreshDeviceContacts itself is single-flight — no more repeated
+         whole-book bridge dumps. */
       setTimeout(() => {
-        if (!cancelled) useApp.getState().refreshDeviceContacts().catch(() => undefined);
+        if (cancelled) return;
+        const s = useApp.getState();
+        if (Date.now() - s.contactsLoadedAt >= CONTACTS_TTL) {
+          s.refreshDeviceContacts().catch(() => undefined);
+        }
       }, 4000);
       /* v1.6.6 — SAFETY SNAPSHOT (deferred 10 s, throttled 6 h): the whole
          data set lands in Documents/backups/ on every session — the local
@@ -290,12 +298,20 @@ const Shell: React.FC = () => {
       runReminderReadiness();
       /* call log refresh (throttled) + contacts refresh silently (v1.6.6:
          the Contacts tab is hidden but search/keypad matching still need a
-         fresh address book) when the snapshot went stale */
+         fresh address book) when the snapshot went stale. v1.6.9 — the
+         foreground path used to re-serialize the ENTIRE address book over
+         the bridge on EVERY app-switch; now it only refreshes when the
+         snapshot is older than the 5-minute TTL. */
       if (Date.now() - lastLogRef.current >= 10000) {
         lastLogRef.current = Date.now();
         useApp.getState().loadSystemCalls();
       }
-      useApp.getState().refreshDeviceContacts().catch(() => undefined);
+      {
+        const s = useApp.getState();
+        if (Date.now() - s.contactsLoadedAt >= CONTACTS_TTL) {
+          s.refreshDeviceContacts().catch(() => undefined);
+        }
+      }
       /* auto email sync — only on FOREGROUND RETURN, deferred 12 s */
       if (syncTimer) clearTimeout(syncTimer);
       syncTimer = setTimeout(() => maybeAutoSync().catch(() => undefined), 12000);

@@ -166,6 +166,21 @@ export const RemindersSection: React.FC<{
           ))}
         </View>
       ))}
+      {/* v1.6.9 — ALWAYS-reachable ＋ row (user report: "I want to add
+          Reminders as many as I want, but I can't see any + icon once a
+          Reminder exists"): with items on screen the empty-state button is
+          gone, so a trailing dashed add row keeps the ＋ one tap away at
+          the end of every reminder list (Reminders tab, General segment,
+          contact detail). */}
+      <Pressable
+        onPress={() => open({ type: "reminderEdit", ownerId: ownerId ?? "general" })}
+        android_ripple={{ color: "rgba(128,128,128,0.14)" }}
+        style={[remStyles.addRow, { borderColor: C.line }]}
+        accessibilityLabel={t("rm.addReminder")}
+      >
+        <Icon name="plus" size={16} color={C.brand} />
+        <Text style={{ fontSize: F.small, color: C.brand, fontWeight: "700" }}>{t("rm.addReminder")}</Text>
+      </Pressable>
       {maxRows && filtered.length >= maxRows && onSeeAll && (
         <Btn small label={t("act.showAll")} variant="soft" onPress={onSeeAll} />
       )}
@@ -176,5 +191,18 @@ export const RemindersSection: React.FC<{
 const remStyles = StyleSheet.create({
   groupLabel: { fontSize: F.small, fontWeight: "800", marginBottom: 6 },
   doneBtn: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, alignItems: "center", justifyContent: "center" },
+  addRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    paddingVertical: 10,
+    marginTop: 2,
+    marginBottom: 4,
+    minHeight: 44,
+  },
 });
 

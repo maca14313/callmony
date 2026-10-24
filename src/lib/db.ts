@@ -162,7 +162,15 @@ export const saveReminders = (reminders: Reminder[]) => write(K.reminders, remin
 export const saveBanks = (banks: BankAccount[]) => write(K.banks, banks);
 export const saveRecents = (recents: CallLog[]) => write(K.recents, recents);
 export const saveMessages = (messages: MessageLog[]) => write(K.messages, messages);
-export const saveSettings = (settings: Settings) => write(K.settings, settings);
+/* v1.6.9 — the PIN hash NEVER persists here anymore: settings ride Android
+   Auto Backup, and a backup-restored pin was resurrecting pins the user had
+   removed before uninstalling. The pin now lives only in the OS no_backup
+   directory (lib/pin-file.ts) — app data restores, the pin never does. */
+export const saveSettings = (settings: Settings) => {
+  const persistable = { ...settings };
+  delete persistable.pinHash;
+  return write(K.settings, persistable);
+};
 
 export const wipeStorage = async (): Promise<void> => {
   try {

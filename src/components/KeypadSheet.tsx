@@ -15,6 +15,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
   useWindowDimensions,
 } from "react-native";
@@ -25,12 +26,11 @@ import { useApp } from "../lib/store";
 import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { listTotals } from "../lib/calc";
-import { copyText, displayName, getContactSearchIndex, nationalDigits, normalizePhone, prettyPhone, t9Match, vibrate } from "../lib/utils";
+import { displayName, getContactSearchIndex, nationalDigits, normalizePhone, prettyPhone, t9Match, vibrate } from "../lib/utils";
 import type { DeviceContact } from "../lib/types";
 import { placeCall } from "../native/calls";
 import { F, useThemeColors } from "../theme";
 import { Avatar, Money, toast } from "./kit";
-import { BottomSheet } from "./Sheet";
 
 const KEYS: { d: string; letters?: string }[] = [
   { d: "1" },
@@ -341,25 +341,46 @@ export const KeypadSheet: React.FC = () => {
     }
   };
 
-  /* v1.6.8 — COPY (the other half of "copy/paste by long-pressing the
-     display, just like a regular input"). Long-press now opens a small
-     Copy / Paste / Clear menu instead of pasting blind: exactly what an
-     EditText-style field shows on a long-press. */
-  const [clipMenu, setClipMenu] = useState(false);
-  const copyDisplay = () => {
-    if (!number) return;
-    copyText(number).then((ok) => toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error"));
-    setClipMenu(false);
+  /* v1.6.8/v1.6.9 — the display is a REAL TextInput now (user request: "I
+     wanted the Keypad copy/paste number display to be just like a normal
+     regular input"). Android renders its own long-press menu — Copy /
+     Paste / Select all, with selection handles — on any editable field, so
+     the display behaves EXACTLY like a regular input. The soft keyboard is
+     suppressed (showSoftInputOnFocus=false): digits still come from the
+     keypad grid below, and a native paste lands in onChangeText, where
+     only dialable characters survive (a number buried in copied prose is
+     still extracted leniently — the v1.6.7 rule). */
+  const sanitizeNumberInput = (text: string): string | null => {
+    const compact = text.replace(/[\s\-().\u2013\u2014]/g, "");
+    if (/^\+?[0-9*#]+$/.test(compact)) return compact.slice(0, 24);
+    const g = text.match(/\+?[0-9][0-9\s\-().\u2013\u2014]{6,}[0-9*#]/);
+    if (g) {
+      const digits = g[0].replace(/[\s\-().\u2013\u2014]/g, "");
+      if (digits.replace(/\D/g, "").length >= 9) return digits.slice(0, 24);
+    }
+    const dialable = text.replace(/[^0-9*+#]/g, "");
+    return dialable ? dialable.slice(0, 24) : null;
   };
-  const pasteFromMenu = () => {
-    setClipMenu(false);
-    void pasteFromClipboard();
+
+  const onChangeNumber = (text: string) => {
+    const clean = sanitizeNumberInput(text);
+    if (clean === null) {
+      /* pasted/typed something with no dialable content at all — a dialer
+         field cannot hold prose; keep the previous number */
+      if (text.trim()) toast(t("kp.noNumberInClipboard"), "info");
+      return;
+    }
+    const cleanedSomething = clean !== text.replace(/[\s\-().\u2013\u2014]/g, "").slice(0, 24);
+    setNumber(clean);
+    if (cleanedSomething) {
+      vibrate(12);
+      toast(t("kp.pasted"), "ok");
+    }
   };
-  const clearDisplay = () => {
-    setNumber("");
-    vibrate(14);
-    setClipMenu(false);
-  };
+
+  /* v1.6.9 — the custom Copy/Paste/Clear bottom menu is GONE: the display
+     is a real TextInput, so Android's own long-press menu (Copy · Paste ·
+     Select all) takes over — indistinguishable from a regular input. */
 
   const longPressKey = (d: string) => {
     if (d === "0") {
@@ -501,58 +522,61 @@ export const KeypadSheet: React.FC = () => {
             </View>
           )}
 
-          {/* number display — DIRECTLY above the keypad grid. Long-press
-              (400 ms) opens the Copy / Paste / Clear menu — the SAME
-              affordance as a regular input field (v1.6.8). */}
+          {/* number display — DIRECTLY above the keypad grid. v1.6.9: a
+              REAL TextInput — long-press shows Android's native
+              Copy / Paste / Select-all menu with selection handles, just
+              like a regular input field (keyboard suppressed; digits come
+              from the key grid). */}
           <View style={[styles.displayRow, { direction: "ltr" }]}>
-            <Pressable
-              onLongPress={() => setClipMenu(true)}
-              delayLongPress={400}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              accessibilityLabel={t("kp.paste")}
-              style={{ flex: 1, alignItems: "center", justifyContent: "center", minWidth: 0 }}
-            >
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                {number ? (
-                  <Text
-                    style={[styles.number, { color: C.ink }]}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.4}
-                    numberOfLines={1}
-                  >
-                    {number.startsWith("*") || number.includes("#") ? number : prettyPhone(number, countryCode)}
-                  </Text>
-                ) : (
-                  <Text style={[styles.placeholder, { color: C.faint }]}>{t("kp.enterNumber")}</Text>
-                )}
-                {/* v1.6.7 — the PASTE button is ALWAYS available while the
-                    clipboard likely holds text (hasString on sheet open),
-                    not only while the display is empty — the user must be
-                    able to paste over a half-typed number too. */}
-                {(clipHas || !number) && (
-                  <Pressable
-                    onPress={pasteFromClipboard}
-                    hitSlop={6}
-                    style={styles.backspace}
-                    accessibilityLabel={t("kp.paste")}
-                  >
-                    <Icon name="clipboard-text-outline" size={20} color={C.sub} />
-                  </Pressable>
-                )}
-                {!!number && (
-                  <Pressable
-                    onPress={backspace}
-                    onPressIn={startBackspaceHold}
-                    onPressOut={stopHold}
-                    hitSlop={6}
-                    style={styles.backspace}
-                    accessibilityLabel={t("kp.deleteDigit")}
-                  >
-                    <Icon name="backspace-outline" size={21} color={C.sub} />
-                  </Pressable>
-                )}
-              </View>
-              {exactMatch ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "stretch" }}>
+              <TextInput
+                value={number}
+                onChangeText={onChangeNumber}
+                editable
+                showSoftInputOnFocus={false}
+                keyboardType="phone-pad"
+                autoCorrect={false}
+                autoCapitalize="none"
+                contextMenuHidden={false}
+                textAlign="center"
+                selectionColor={C.brand}
+                placeholder={t("kp.enterNumber")}
+                placeholderTextColor={C.faint}
+                maxFontSizeMultiplier={1}
+                accessibilityLabel={t("kp.enterNumber")}
+                style={[
+                  styles.numberInput,
+                  { color: C.ink, fontSize: number.length > 16 ? 21 : number.length > 12 ? 24 : 28 },
+                ]}
+              />
+              {/* v1.6.7 — the PASTE button is ALWAYS available while the
+                  clipboard likely holds text (hasString on sheet open),
+                  not only while the display is empty — one-tap paste for
+                  users who never discover the long-press. */}
+              {(clipHas || !number) && (
+                <Pressable
+                  onPress={pasteFromClipboard}
+                  hitSlop={6}
+                  style={styles.backspace}
+                  accessibilityLabel={t("kp.paste")}
+                >
+                  <Icon name="clipboard-text-outline" size={20} color={C.sub} />
+                </Pressable>
+              )}
+              {!!number && (
+                <Pressable
+                  onPress={backspace}
+                  onPressIn={startBackspaceHold}
+                  onPressOut={stopHold}
+                  hitSlop={6}
+                  style={styles.backspace}
+                  accessibilityLabel={t("kp.deleteDigit")}
+                >
+                  <Icon name="backspace-outline" size={21} color={C.sub} />
+                </Pressable>
+              )}
+            </View>
+            {exactMatch ? (
                 <Pressable
                   onPress={() => {
                     close();
@@ -575,7 +599,6 @@ export const KeypadSheet: React.FC = () => {
                   </Text>
                 )
               )}
-            </Pressable>
           </View>
 
           {/* keypad grid — max-w 300, centered, never scrolls */}
@@ -650,74 +673,10 @@ export const KeypadSheet: React.FC = () => {
             </Pressable>
           </View>
         </Animated.View>
-
-        {/* v1.6.8 — long-press the display → Copy / Paste / Clear menu, the
-            same affordance a regular input field gives. Stacks above the
-            keypad panel (native modals layer in mount order). */}
-        {clipMenu && (
-          <BottomSheet title={prettyPhone(number || "—", countryCode)} onClose={() => setClipMenu(false)} noScroll>
-            <View style={{ gap: 4, paddingBottom: 6 }}>
-              {!!number && (
-                <Pressable
-                  onPress={copyDisplay}
-                  android_ripple={{ color: "rgba(128,128,128,0.12)" }}
-                  style={({ pressed }) => [
-                    clipStyles.menuItem,
-                    { backgroundColor: pressed ? C.chip : "transparent" },
-                  ]}
-                  accessibilityLabel={t("kp.copyNumber")}
-                >
-                  <Icon name="content-copy" size={21} color={C.sub} />
-                  <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600" }}>{t("kp.copyNumber")}</Text>
-                </Pressable>
-              )}
-              {(clipHas || !number) && (
-                <Pressable
-                  onPress={pasteFromMenu}
-                  android_ripple={{ color: "rgba(128,128,128,0.12)" }}
-                  style={({ pressed }) => [
-                    clipStyles.menuItem,
-                    { backgroundColor: pressed ? C.chip : "transparent" },
-                  ]}
-                  accessibilityLabel={t("kp.paste")}
-                >
-                  <Icon name="clipboard-text-outline" size={21} color={C.sub} />
-                  <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600" }}>{t("kp.paste")}</Text>
-                </Pressable>
-              )}
-              {!!number && (
-                <Pressable
-                  onPress={clearDisplay}
-                  android_ripple={{ color: "rgba(128,128,128,0.12)" }}
-                  style={({ pressed }) => [
-                    clipStyles.menuItem,
-                    { backgroundColor: pressed ? C.chip : "transparent" },
-                  ]}
-                  accessibilityLabel={t("kp.clear")}
-                >
-                  <Icon name="backspace-outline" size={21} color={C.sub} />
-                  <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600" }}>{t("kp.clear")}</Text>
-                </Pressable>
-              )}
-            </View>
-          </BottomSheet>
-        )}
       </View>
     </Modal>
   );
 };
-
-const clipStyles = StyleSheet.create({
-  menuItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 13,
-    borderRadius: 12,
-    minHeight: 52,
-  },
-});
 
 /* Pressable + Animated opacity — small helper (avoids Animated.Component typing noise) */
 const AnimatedPressable: React.FC<{
@@ -781,8 +740,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 6,
   },
-  number: { fontSize: 28, fontWeight: "500", letterSpacing: 1.2, maxWidth: 250 },
-  placeholder: { fontSize: F.small, fontWeight: "600", letterSpacing: 2.5, textTransform: "uppercase" },
+  /* v1.6.9 — the display is a REAL TextInput: Android's own long-press
+     Copy/Paste/Select-all menu works on it, exactly like a regular input */
+  numberInput: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 44,
+    fontWeight: "500",
+    letterSpacing: 1.2,
+    paddingVertical: 0,
+    paddingHorizontal: 2,
+    textAlign: "center",
+  },
   exactPill: {
     flexDirection: "row",
     alignItems: "center",

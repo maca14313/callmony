@@ -68,16 +68,23 @@ export const RemindersScreen: React.FC = () => {
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 }}>
+    <View style={{ flex: 1 }}>
+      {/* v1.6.9 — PINNED header (user report: "I want to add Reminders as
+          many as I want, but I can't see any + icon once a Reminder exists"):
+          the New-reminder button used to live INSIDE the ScrollView, so it
+          scrolled away as soon as the list had content. It now stays on
+          screen no matter how far the list is scrolled. */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 }}>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: F.h2, fontWeight: "800", color: C.ink }}>{t("tab.reminders")}</Text>
-          <Text style={{ fontSize: F.small, color: C.sub }}>
+          <Text style={{ fontSize: F.small, color: C.sub }} numberOfLines={1}>
             {t("rm.statsLine", { overdue: counts.overdue, today: counts.today, upcoming: counts.upcoming })}
           </Text>
         </View>
         <Btn small label={t("rm.newReminder")} icon="plus" onPress={() => open({ type: "reminderEdit", ownerId: "general" })} />
       </View>
+
+      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 8, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
 
       {/* v1.6.2 — always-visible notification status: green = reminders ring
           while the app is closed; amber = fix in one tap */}
@@ -135,5 +142,6 @@ export const RemindersScreen: React.FC = () => {
 
       <RemindersSection status={status} kindFilter={kind} />
     </ScrollView>
+    </View>
   );
 };

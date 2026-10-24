@@ -69,6 +69,8 @@ export const AM: Record<string, string> = {
   "cd.chooseNumber": "ቁጥር ምረጥ",
   "cd.chooseEmail": "የትኛው ኢሜይል?",
   "cd.addToContact": "ወደ እውቂያ ጨምር",
+  "cd.createContact": "አዲስ እውቂያ ፍጠር",
+  "cd.addToExistingContact": "ወደ ነባር እውቂያ ጨምር",
   "cd.chooseAccount": "ሂሳብ ምረጥ",
   "cd.default": "ነባር",
   "cd.primary": "ዋና",

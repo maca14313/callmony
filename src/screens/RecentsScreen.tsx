@@ -441,12 +441,26 @@ export const RecentsScreen: React.FC = () => {
         /* v1.5.3 — the day header IS the filter row (user request): the day
            chip on the left, flexible spacer, then the direction filters
            ("All" as text + icon-only chips). stickyHeaderIndices is
-           unchanged — the chips ride along and stay pinned on screen. */
+           unchanged — the chips ride along and stay pinned on screen.
+           v1.6.9 — the ＋ NEW-CONTACT icon lives HERE, right beside the tiny
+           date label in EVERY day header (user request: "I wanted the ＋
+           icon for creating contact in every day header, not on the other
+           place top strip") — the big ＋ tile was removed from the
+           favorites strip above. */
         return (
           <View style={[styles.dayWrap, { backgroundColor: C.canvas }]}>
             {/* v1.6.8 — plain tiny "Oct 24" text, no pill/badge around it
                 (user request: very small, space-saving) */}
             <Text style={[styles.dayHeader, { color: C.sub }]}>{item.label}</Text>
+            <Pressable
+              onPress={() => open({ type: "contactNew" })}
+              hitSlop={7}
+              accessibilityRole="button"
+              accessibilityLabel={t("cd.newContact")}
+              style={({ pressed }) => [styles.dayPlus, { backgroundColor: pressed ? C.brandSoft : "transparent" }]}
+            >
+              <Icon name="plus" size={15} color={C.brand} />
+            </Pressable>
             <View style={{ flex: 1 }} />
             <DayFilters filter={filter} onSet={setFilter} missedCount={missedCount} />
           </View>
@@ -466,7 +480,7 @@ export const RecentsScreen: React.FC = () => {
         />
       );
     },
-    [C.canvas, C.sub, filter, missedCount, countryCode, onTap, onLongPress, onCall, onToggleFav, onWhatsApp, onSMS]
+    [C.canvas, C.sub, C.brandSoft, C.brand, filter, missedCount, countryCode, t, onTap, onLongPress, onCall, onToggleFav, onWhatsApp, onSMS, open]
   );
 
   /* permission denied → the request card (never a blocking spinner) */
@@ -543,9 +557,9 @@ export const RecentsScreen: React.FC = () => {
       )}
 
       {/* favorites strip — v1.6.6: ALWAYS visible (works with zero
-          favorites too) and ends with the ＋ NEW-CONTACT tile (user
-          request: "add the + icon for adding new contact beside the
-          favourite icons in the recent"). */}
+          favorites too). v1.6.9 — the trailing ＋ NEW-CONTACT tile is GONE
+          (user request: the ＋ belongs in EVERY day header now, not on
+          this top strip). */}
       <View style={{ paddingTop: 10, paddingBottom: 2 }}>
         <ScrollView
           horizontal
@@ -566,22 +580,6 @@ export const RecentsScreen: React.FC = () => {
               </Text>
             </Pressable>
           ))}
-          {/* v1.6.8 — the ＋ tile opens OUR OWN in-app creator (user
-              request: never hand the job to another app). Simple form,
-              instant local insert, background reconciliation. */}
-          <Pressable
-            onPress={() => open({ type: "contactNew" })}
-            accessibilityRole="button"
-            accessibilityLabel={t("cd.newContact")}
-            style={{ alignItems: "center", width: 62 }}
-          >
-            <View style={[styles.favRing, { borderColor: C.brandSoft, backgroundColor: C.brandSoft }]}>
-              <Icon name="plus" size={30} color={C.brand} />
-            </View>
-            <Text style={{ fontSize: F.tiny, color: C.brand, marginTop: 4, fontWeight: "700" }} numberOfLines={1}>
-              {t("cd.newContact")}
-            </Text>
-          </Pressable>
         </ScrollView>
       </View>
 
@@ -594,10 +592,21 @@ export const RecentsScreen: React.FC = () => {
       </View>
 
       {/* a filter that empties the list leaves NO day headers to host the
-          direction chips — this slim standalone row keeps them reachable */}
+          direction chips — this slim standalone row keeps them reachable,
+          and keeps the ＋ new-contact icon reachable too (v1.6.9) */}
       {items.length === 0 && (
         <View style={styles.fallbackRow}>
           <DayFilters filter={filter} onSet={setFilter} missedCount={missedCount} />
+          <View style={{ flex: 1 }} />
+          <Pressable
+            onPress={() => open({ type: "contactNew" })}
+            hitSlop={7}
+            accessibilityRole="button"
+            accessibilityLabel={t("cd.newContact")}
+            style={({ pressed }) => [styles.dayPlus, { backgroundColor: pressed ? C.brandSoft : "transparent" }]}
+          >
+            <Icon name="plus" size={15} color={C.brand} />
+          </Pressable>
         </View>
       )}
 
@@ -688,7 +697,7 @@ const CallRowSheet: React.FC<{
   const callNumber = row.contact?.phones[0]?.number ?? row.phone;
   const isFav = !!row.contact && contactX.some((x) => x.recordID === row.contact!.recordID && x.favorite);
 
-  const items: { icon: string; label: string; color?: string; run: () => void; disabled?: boolean }[] = [
+  const items: { icon: string; label: string; color?: string; run: () => void; disabled?: boolean; stay?: boolean }[] = [
     { icon: "phone", label: t("act.call"), run: () => hasRealNumber && placeCall(callNumber), disabled: !hasRealNumber },
     {
       icon: "whatsapp",
@@ -727,12 +736,17 @@ const CallRowSheet: React.FC<{
           } as const,
         ]
       : [
-          /* v1.6.8 — BOTH add-to-contact paths are in-app (user request:
-             "dont use other apps to do that... option on the options list
-             to add it to contact very very easily"). */
+          /* v1.6.9 — TWO clearly-named paths (user report: "why do we have
+             Add contact AND Add to contact — and Add to contact doesn't
+             work"). The old labels were near-identical AND the picker path
+             was DEAD: the generic onPress closed this sheet first
+             (unmounting it) so its local setAddToExisting(true) never ran.
+             Now: "Create new contact" (our in-app form, prefilled) and
+             "Add to existing contact" (picker → surgical native append)
+             — the latter runs WITHOUT closing (stay: true). */
           {
             icon: "account-plus-outline",
-            label: t("act.newContact"),
+            label: t("cd.createContact"),
             run: () => {
               onClose();
               useUI.getState().open({ type: "contactNew", phone: row.phone });
@@ -740,7 +754,8 @@ const CallRowSheet: React.FC<{
           } as const,
           {
             icon: "account-multiple-plus-outline",
-            label: t("cd.addToContact"),
+            label: t("cd.addToExistingContact"),
+            stay: true,
             run: () => {
               setAddToExisting(true);
             },
@@ -800,7 +815,7 @@ const CallRowSheet: React.FC<{
     return (
       <ContactPicker
         includeGeneral={false}
-        title={t("cd.addToContact")}
+        title={t("cd.addToExistingContact")}
         onPick={(ownerId) => {
           void runAdd(ownerId.replace(/^c:/, ""));
         }}
@@ -810,7 +825,7 @@ const CallRowSheet: React.FC<{
   }
   if (addingTo) {
     return (
-      <BottomSheet title={t("cd.addToContact")} onClose={() => setAddingTo(null)}>
+      <BottomSheet title={t("cd.addToExistingContact")} onClose={() => setAddingTo(null)}>
         <View style={{ alignItems: "center", paddingVertical: 26, gap: 12 }}>
           <ActivityIndicator size="large" color={C.brand} />
           <Text style={{ fontSize: F.small, color: C.sub, fontWeight: "600" }}>{t("cd.savingContact")}</Text>
@@ -832,6 +847,13 @@ const CallRowSheet: React.FC<{
             disabled={it.disabled}
             android_ripple={{ color: "rgba(128,128,128,0.12)" }}
             onPress={() => {
+              /* v1.6.9 — "stay" items (Add to existing contact) swap this
+                 sheet for the picker IN PLACE: closing first unmounted the
+                 sheet, which is exactly why the option used to do nothing */
+              if (it.stay) {
+                it.run();
+                return;
+              }
               onClose();
               setTimeout(it.run, 180);
             }}
@@ -885,6 +907,8 @@ const styles = StyleSheet.create({
   dayWrap: { flexDirection: "row", alignItems: "center", gap: 6, paddingTop: 5, paddingBottom: 2, backgroundColor: "transparent" },
   dayFilters: { flexDirection: "row", alignItems: "center", gap: 4 },
   dayHeader: { fontSize: 11, fontWeight: "700", letterSpacing: 0.3 },
+  /* v1.6.9 — compact ＋ new-contact icon beside the date in every day header */
+  dayPlus: { width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   callRow: {
     flexDirection: "row",
     alignItems: "center",

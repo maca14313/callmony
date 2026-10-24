@@ -11,4 +11,25 @@
         <item name="android:navigationBarColor">@color/canvas</item>
     </style>
 
+    <!-- v1.6.9 — RN Modal dialogs (EVERY sheet: the contact editor, bottom
+         sheets, keypad, onboarding, lock screen) render in their own native
+         window, and React Native's dialog theme (Theme.FullScreenDialog in
+         the react-android AAR) never sets a navigation bar color — so the
+         system nav bar under an open sheet fell back to the window default
+         while the app canvas is light (user report: "in the edit contact
+         page the native bottom navigation of the phone doesn't match the
+         color of the app"). App-module resources OVERRIDE same-named
+         library styles, so re-declaring the RN modal dialog theme here
+         with our canvas navigation bar color fixes EVERY modal at once.
+         @color/canvas itself flips with the OS dark mode (values-night),
+         so no night copy of this style is needed. -->
+    <style name="Theme.FullScreenDialog">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/canvas</item>
+    </style>
+
 </resources>

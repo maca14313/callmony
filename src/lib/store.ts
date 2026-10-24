@@ -1,7 +1,7 @@
 /* callmony — app data store (zustand + AsyncStorage persistence) */
 
 import { create } from "zustand";
-import { Platform } from "react-native";
+import { InteractionManager, Platform } from "react-native";
 import {
   DEFAULT_SETTINGS,
   loadAll,
@@ -42,8 +42,14 @@ import type {
 } from "./types";
 import { scheduleReminderNotification, cancelReminderNotification } from "../native/notify";
 import { fetchSystemCalls, isPermissionDeniedError, loadCachedCalls, saveCachedCalls, type DeviceCall } from "../native/callLog";
+import { readPinFile, writePinFile, removePinFile } from "./pin-file";
 
 export type EntityKind = "entry" | "list" | "note" | "reminder" | "bank" | "group";
+
+/* v1.6.9 — single-flight guard: at most ONE whole-book contacts fetch runs
+   at a time (boot, foreground, post-save and editor-close callers all
+   share the same in-flight promise — see refreshDeviceContacts). */
+let contactsRefreshInFlight: Promise<void> | null = null;
 
 interface AppState {
   hydrated: boolean;
@@ -221,6 +227,18 @@ export const useApp = create<AppState>((set, get) => ({
       ...data,
       hydrated: true,
     });
+    /* v1.6.9 — the PIN is read from the no_backup FILE (never restored by
+       Android Auto Backup), and any pinHash that a restored/legacy
+       settings blob carries is DISCARDED + scrubbed — that restored hash
+       was exactly how a removed pin came back after reinstall. From this
+       version on: removing the pin removes it FOREVER, even across
+       uninstall + reinstall. */
+    if (data.settings.pinHash) {
+      delete data.settings.pinHash;
+      saveSettings(data.settings).catch(() => undefined);
+    }
+    const storedPin = await readPinFile();
+    if (storedPin) set({ settings: { ...get().settings, pinHash: storedPin } });
     /* cached call-log snapshot → Recents renders instantly on cold start;
        the real refresh happens in the background right after */
     try {
@@ -268,33 +286,49 @@ export const useApp = create<AppState>((set, get) => ({
      every contact over the bridge and re-renders everything subscribed to
      deviceContacts - while a contact editor/creator sheet is open that was
      the "lag/freeze when typing or saving" the user kept hitting. The
-     refresh now WAITS (re-checking every 1.5 s) until the editor closes. */
+     refresh now WAITS (re-checking every 1.5 s) until the editor closes.
+     v1.6.9 - THE LAG FIX (user report: "the most laggy version ever"):
+     boot(+4s) + every foreground return + post-save(+800ms) + every editor
+     close each started their OWN whole-book fetch — several of them stacked
+     and fired TOGETHER the moment a sheet closed (multiple full bridge
+     dumps + full-book JSON cache writes back to back = seconds of jank).
+     Now the refresh is SINGLE-FLIGHT: concurrent callers share the one
+     in-flight promise, so at most ONE whole-book fetch ever runs. */
   refreshDeviceContacts: async () => {
-    const editing = () =>
-      useUI.getState().overlayStack.some((o) => o.type === "contactEdit" || o.type === "contactNew");
-    let waits = 0;
-    while (editing() && waits < 40) {
-      await new Promise((r) => setTimeout(r, 1500));
-      waits++;
-    }
-    try {
-      let status = await checkContactsPermission();
-      if (status === "undetermined") {
-        status = await requestContactsPermission();
+    if (contactsRefreshInFlight) return contactsRefreshInFlight;
+    contactsRefreshInFlight = (async () => {
+      const editing = () =>
+        useUI.getState().overlayStack.some((o) => o.type === "contactEdit" || o.type === "contactNew");
+      let waits = 0;
+      while (editing() && waits < 40) {
+        await new Promise((r) => setTimeout(r, 1500));
+        waits++;
       }
-      if (status !== "authorized") {
-        set({ contactsPerm: "denied" });
-        return;
+      try {
+        let status = await checkContactsPermission();
+        if (status === "undetermined") {
+          status = await requestContactsPermission();
+        }
+        if (status !== "authorized") {
+          set({ contactsPerm: "denied" });
+          return;
+        }
+        set({ contactsPerm: "granted" });
+        /* off the interaction path: never serialize the book while the UI
+           is mid-gesture/animation (InteractionManager waits for calm) */
+        await new Promise<void>((r) => InteractionManager.runAfterInteractions(() => r()));
+        const list = await fetchAllContacts();
+        if (list.length) {
+          set({ deviceContacts: list, contactsLoadedAt: Date.now() });
+          saveCachedContacts(list);
+        }
+      } catch {
+        /* leave the current list in place */
+      } finally {
+        contactsRefreshInFlight = null;
       }
-      set({ contactsPerm: "granted" });
-      const list = await fetchAllContacts();
-      if (list.length) {
-        set({ deviceContacts: list, contactsLoadedAt: Date.now() });
-        saveCachedContacts(list);
-      }
-    } catch {
-      /* leave the current list in place */
-    }
+    })();
+    return contactsRefreshInFlight;
   },
 
   /* v1.6.8 - zero-lag save: apply one contact's edit to the cached list
@@ -1068,6 +1102,12 @@ export const useApp = create<AppState>((set, get) => ({
     const next = { ...get().settings, ...patch };
     set({ settings: next });
     saveSettings(next);
+    /* v1.6.9 — pin changes write the no_backup FILE (set/change persist,
+    remove deletes) — the ONLY place the pin is stored from now on */
+    if ("pinHash" in patch) {
+      if (patch.pinHash) void writePinFile(patch.pinHash);
+      else void removePinFile();
+    }
   },
 
   addCustomCategory: (name) => {
@@ -1137,7 +1177,13 @@ export const useApp = create<AppState>((set, get) => ({
         banks: data.banks ?? [],
         recents: data.recents ?? [],
         messages: data.messages ?? [],
-        settings: { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) },
+        /* v1.6.9 — a backup file never restores a PIN (device-local by
+           design; restoring one would re-arm a lock on a new device) */
+        settings: (() => {
+          const merged = { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) };
+          delete merged.pinHash;
+          return merged;
+        })(),
       };
       set(state);
       saveContactX(state.contactX!);
@@ -1194,6 +1240,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   wipeAll: async () => {
     await wipeStorage();
+    await removePinFile();
     set({
       contactX: [],
       entries: [],

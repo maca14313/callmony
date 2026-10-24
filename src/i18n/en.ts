@@ -74,6 +74,8 @@ export const EN: Record<string, string> = {
   "cd.chooseNumber": "Choose a number",
   "cd.chooseEmail": "Which email?",
   "cd.addToContact": "Add to contact",
+  "cd.createContact": "Create new contact",
+  "cd.addToExistingContact": "Add to existing contact",
   "cd.chooseAccount": "Choose an account",
   "cd.default": "Default",
   "cd.primary": "Primary",
