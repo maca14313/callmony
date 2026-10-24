@@ -9,6 +9,7 @@ import { NativeModules, PermissionsAndroid, Platform } from "react-native";
 import Contacts from "react-native-contacts";
 import RNFS from "react-native-fs";
 import type { DeviceContact } from "../lib/types";
+import { normalizePhone } from "../lib/utils";
 
 export type PermState = "authorized" | "denied" | "undetermined";
 
@@ -239,6 +240,8 @@ export interface ContactEditData {
 interface ContactEditNative {
   loadContact(contactId: string): Promise<ContactEditData | null>;
   saveContact(fields: ContactEditData): Promise<boolean>;
+  /** v1.6.8 — in-app creation; resolves the NEW contact's recordID. */
+  createContact(fields: ContactEditData): Promise<string>;
 }
 
 const ContactEdit = NativeModules.CallMonyContactEdit as ContactEditNative | undefined;
@@ -323,6 +326,82 @@ export const saveContactEdit = async (data: ContactEditData): Promise<boolean> =
     return true;
   } catch {
     return false;
+  }
+};
+
+/* ---------------- in-app contact creation (v1.6.8) ---------------- */
+
+/** Create a contact ENTIRELY in-app (no OS editor app). Resolves the new
+    recordID, or null on failure/denied. */
+export const createDeviceContact = async (data: {
+  givenName?: string;
+  middleName?: string;
+  familyName?: string;
+  company?: string;
+  jobTitle?: string;
+  phoneNumbers: EditablePhone[];
+  emailAddresses?: EditableEmail[];
+}): Promise<string | null> => {
+  const allowed = await ensureWritePermission();
+  if (!allowed) return null;
+  const fields: ContactEditData = {
+    recordID: "",
+    givenName: data.givenName ?? "",
+    middleName: data.middleName ?? "",
+    familyName: data.familyName ?? "",
+    company: data.company ?? "",
+    jobTitle: data.jobTitle ?? "",
+    phoneNumbers: data.phoneNumbers,
+    emailAddresses: data.emailAddresses ?? [],
+  };
+  if (Platform.OS === "android" && ContactEdit) {
+    try {
+      return (await ContactEdit.createContact(fields)) || null;
+    } catch {
+      return null;
+    }
+  }
+  /* iOS — react-native-contacts' addContact is a pure insert (safe) */
+  try {
+    const raw: Contacts.Contact = {
+      recordID: "",
+      givenName: data.givenName ?? "",
+      middleName: data.middleName ?? "",
+      familyName: data.familyName ?? "",
+      company: data.company ?? "",
+      jobTitle: data.jobTitle ?? "",
+      phoneNumbers: data.phoneNumbers.map((p) => ({ label: p.label, number: p.number })),
+      emailAddresses: (data.emailAddresses ?? []).map((e) => ({ label: e.label, email: e.email })),
+    } as Contacts.Contact;
+    const saved = await Contacts.addContact(raw);
+    return saved?.recordID || null;
+  } catch {
+    return null;
+  }
+};
+
+/** Append one phone number to an EXISTING contact, in-app, loss-free:
+    loads the live OS row, unions in the new number (skips when the contact
+    already has it), saves back through the same surgical editor. Returns
+    "added" | "duplicate" | "failed". */
+export const addPhoneToContact = async (
+  recordID: string,
+  number: string,
+  label = "mobile"
+): Promise<"added" | "duplicate" | "failed"> => {
+  try {
+    const data = await loadContactForEdit(recordID);
+    if (!data) return "failed";
+    const have = new Set(
+      data.phoneNumbers.map((p) => normalizePhone(p.number).replace(/\D/g, ""))
+    );
+    const key = normalizePhone(number).replace(/\D/g, "");
+    if (key && have.has(key)) return "duplicate";
+    data.phoneNumbers = [...data.phoneNumbers, { label, number }];
+    const ok = await saveContactEdit(data);
+    return ok ? "added" : "failed";
+  } catch {
+    return "failed";
   }
 };
 

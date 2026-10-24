@@ -30,7 +30,6 @@ import { NotesSection } from "../sections/NotesSection";
 import { BankSection } from "../sections/BankSection";
 import { RemindersSection } from "../sections/RemindersSection";
 import { NumberPicker } from "../components/ContactPicker";
-import { ContactEditor } from "./ContactEditor";
 
 type Seg = "ledger" | "lists" | "notes" | "bank" | "reminders" | "info";
 
@@ -62,7 +61,6 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
   const [moreOpen, setMoreOpen] = useState(false);
   const [socialSheet, setSocialSheet] = useState<{ app: SocialLink["app"] } | null>(null);
   const [phoneSheet, setPhoneSheet] = useState<string | null>(null);
-  const [editorOpen, setEditorOpen] = useState(false);
   /* v1.6.1 — unified choosers: every contact action tile opens a picker with
      add/edit rows (user request): telegram → handle/number chooser, email →
      address chooser, and a dedicated “＋ add to this contact” tile. */
@@ -161,7 +159,7 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
     copyText(phone).then((ok) => toast(ok ? t("cd.numberCopied") : t("act.couldntCopy"), ok ? "ok" : "error"));
 
   /* v1.5.4 — the IN-APP editor replaces the OS external contact editor */
-  const editContact = () => setEditorOpen(true);
+  const editContact = () => useUI.getState().open({ type: "contactEdit", recordID: params.recordID });
 
   return (
     <Sheet
@@ -293,7 +291,7 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
               onPhoneOptions={(number) => setPhoneSheet(number)}
               onAddSocial={(app) => setSocialSheet({ app })}
               onRemoveSocial={(id) => useApp.getState().removeSocial(contact.recordID, id)}
-              onEdit={() => setEditorOpen(true)}
+              onEdit={() => useUI.getState().open({ type: "contactEdit", recordID: params.recordID })}
             />
           )}
         </View>
@@ -307,7 +305,7 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
           onClose={() => setNumPicker(null)}
           onAddEditNumbers={() => {
             setNumPicker(null);
-            setEditorOpen(true);
+            useUI.getState().open({ type: "contactEdit", recordID: params.recordID });
           }}
         />
       )}
@@ -325,7 +323,7 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
           }}
           onAddEditNumbers={() => {
             setTgPicker(false);
-            setEditorOpen(true);
+            useUI.getState().open({ type: "contactEdit", recordID: params.recordID });
           }}
         />
       )}
@@ -337,7 +335,7 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
           onClose={() => setEmailPicker(false)}
           onAddEditEmails={() => {
             setEmailPicker(false);
-            setEditorOpen(true);
+            useUI.getState().open({ type: "contactEdit", recordID: params.recordID });
           }}
         />
       )}
@@ -348,11 +346,11 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
           onClose={() => setAddSheet(false)}
           onAddPhone={() => {
             setAddSheet(false);
-            setEditorOpen(true);
+            useUI.getState().open({ type: "contactEdit", recordID: params.recordID });
           }}
           onAddEmail={() => {
             setAddSheet(false);
-            setEditorOpen(true);
+            useUI.getState().open({ type: "contactEdit", recordID: params.recordID });
           }}
           onAddSocial={() => {
             setAddSheet(false);
@@ -360,7 +358,7 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
           }}
           onEdit={() => {
             setAddSheet(false);
-            setEditorOpen(true);
+            useUI.getState().open({ type: "contactEdit", recordID: params.recordID });
           }}
         />
       )}
@@ -407,8 +405,6 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
         />
       )}
 
-      {/* in-app contact editor (nav pencil · More → Edit · Info → Edit) */}
-      {editorOpen && <ContactEditor recordID={contact.recordID} onClose={() => setEditorOpen(false)} />}
     </Sheet>
   );
 };

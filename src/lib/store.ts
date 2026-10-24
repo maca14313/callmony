@@ -20,6 +20,7 @@ import {
 import { entryRemaining, itemPaid, lineTotal, nextOccurrence, listTotals } from "./calc";
 import { normalizePhone, todayStr, uid } from "./utils";
 import { saveCachedContacts, fetchAllContacts, checkContactsPermission, requestContactsPermission } from "../native/deviceContacts";
+import { useUI } from "./ui-store";
 import { isSafeMode } from "../boot/crash-firewall";
 import type {
   BankAccount,
@@ -78,6 +79,13 @@ interface AppState {
   contactsLoadedAt: number;
   /** re-query the OS address book right now (after an in-app contact edit). */
   refreshDeviceContacts: () => Promise<void>;
+  /** v1.6.8 — LOCAL patch of one contact after an in-app edit: applies the
+      new name/phones/emails to the cached list IMMEDIATELY (no bridge
+      round-trip, no whole-book re-serialization) so Save closes the editor
+      with zero lag; the silent background refresh follows behind. */
+  patchDeviceContact: (recordID: string, patch: Partial<DeviceContact>) => void;
+  /** v1.6.8 — insert a freshly created contact into the cached list at once. */
+  addDeviceContactToList: (contact: DeviceContact) => void;
   toggleFavorite: (recordID: string) => void;
   setContactSpeedDial: (recordID: string, key: string | null) => void;
   addSocial: (recordID: string, app: SocialLink["app"], handle: string) => void;
@@ -255,8 +263,20 @@ export const useApp = create<AppState>((set, get) => ({
      READ_CONTACTS was ever requested; hiding it left a fresh install (or a
      permission reset) with an EMPTY address book forever — no search hits,
      no keypad matches, every Recents card "unsaved". The permission dialog
-     now fires here (undetermined path) AND at boot (requestMultiple). */
+     now fires here (undetermined path) AND at boot (requestMultiple).
+     v1.6.8 - THE EDITOR FREEZE FIX: fetching the whole book serializes
+     every contact over the bridge and re-renders everything subscribed to
+     deviceContacts - while a contact editor/creator sheet is open that was
+     the "lag/freeze when typing or saving" the user kept hitting. The
+     refresh now WAITS (re-checking every 1.5 s) until the editor closes. */
   refreshDeviceContacts: async () => {
+    const editing = () =>
+      useUI.getState().overlayStack.some((o) => o.type === "contactEdit" || o.type === "contactNew");
+    let waits = 0;
+    while (editing() && waits < 40) {
+      await new Promise((r) => setTimeout(r, 1500));
+      waits++;
+    }
     try {
       let status = await checkContactsPermission();
       if (status === "undetermined") {
@@ -275,6 +295,26 @@ export const useApp = create<AppState>((set, get) => ({
     } catch {
       /* leave the current list in place */
     }
+  },
+
+  /* v1.6.8 - zero-lag save: apply one contact's edit to the cached list
+     locally (name/phones/emails), keep the A-Z order, and let the silent
+     background refresh reconcile the rest (labels, photos, other rows). */
+  patchDeviceContact: (recordID, patch) => {
+    const list = get().deviceContacts;
+    const next = list.map((c) => (c.recordID === recordID ? { ...c, ...patch } : c));
+    next.sort((a, b) => (a.displayName || "~").localeCompare(b.displayName || "~"));
+    set({ deviceContacts: next });
+    saveCachedContacts(next);
+  },
+
+  /* v1.6.8 - a contact created in-app appears in the list INSTANTLY (the
+     native insert returns its recordID); the background refresh follows. */
+  addDeviceContactToList: (contact) => {
+    const list = [...get().deviceContacts, contact];
+    list.sort((a, b) => (a.displayName || "~").localeCompare(b.displayName || "~"));
+    set({ deviceContacts: list });
+    saveCachedContacts(list);
   },
 
   toggleFavorite: (recordID) => {

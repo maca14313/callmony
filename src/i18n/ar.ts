@@ -170,6 +170,7 @@ export const AR: Record<string, string> = {
   "ce.setPrimary": "تعيين كرئيسي",
   "ce.setPrimaryEmail": "تعيين كبريد رئيسي",
   "ce.setPrimaryNumber": "تعيين كرقم رئيسي",
+  "ce.defaultNumber": "الرقم الافتراضي",
   "ce.whatYouCallThem": "الاسم الذي تناديهم به",
   "ce.atLeastOne": "أضف اسمًا أو رقم هاتف واحدًا على الأقل",
   "ce.atLeastOnePhone": "احتفظ برقم هاتف واحد على الأقل — احذفها واحدًا واحدًا إن كنت تقصد ذلك",
@@ -203,6 +204,8 @@ export const AR: Record<string, string> = {
   "kp.enterNumber": "أدخل رقمًا",  "kp.paste": "لصق من الحافظة",
   "kp.noNumberInClipboard": "لا يوجد رقم هاتف في الحافظة",
   "kp.pasted": "تم اللصق من الحافظة",
+  "kp.copyNumber": "نسخ الرقم",
+  "kp.clear": "مسح",
   "cd.newContact": "جديد",
   "cd.contactsLocked": "الوصول إلى جهات الاتصال متوقف",
   "cd.contactsLockedHint": "اسمح بالوصول حتى تعمل الأسماء والبحث والمفضلة",
@@ -1056,6 +1059,9 @@ export const AR: Record<string, string> = {
 
   /* ---- v1.5.4 in-app contact editor + contact detail (task 3-a) ---- */
   "cd.addOrEditNumbers": "إضافة أو تعديل الأرقام",
+  "cd.numberAddedTo": "تمت إضافة الرقم إلى {name}",
+  "cd.alreadyHasNumber": "{name} لديه هذا الرقم بالفعل",
+  "cd.savingContact": "جارٍ الحفظ…",
   "cd.saveFailed": "تعذّر حفظ جهة الاتصال",
   "ce.label": "النوع",
 

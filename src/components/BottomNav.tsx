@@ -1,8 +1,10 @@
-/* Bottom navigation — 5 icon-only tabs (Recents · Contacts · Keypad ·
-   General · More). The calculator moved to the top navbar. Tapping the
-   keypad tab opens the dialer sheet OVER the Recents tab (dialer-style).
-   A flex sibling of the content column with safe-area padding: it can
-   never cover or overlap any component. 64px touch targets. */
+/* Bottom navigation — 5 icon-only tabs (Recents · Keypad · Calculator ·
+   General · More). v1.6.8 — the CALCULATOR moved here from the top navbar
+   (user request): tapping it opens the calculator sheet over the current
+   tab; tapping again closes it. Tapping the keypad tab opens the dialer
+   sheet OVER the Recents tab (dialer-style). A flex sibling of the content
+   column with safe-area padding: it can never cover or overlap any
+   component. 64px touch targets. */
 
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -17,6 +19,7 @@ import { useThemeColors } from "../theme";
 const TABS: { key: string; icon: string; labelKey: string }[] = [
   { key: "recents", icon: "history", labelKey: "nav.recents" },
   { key: "keypad", icon: "dialpad", labelKey: "nav.keypad" },
+  { key: "calculator", icon: "calculator-variant", labelKey: "nav.calculator" },
   { key: "general", icon: "wallet-outline", labelKey: "nav.general" },
   { key: "more", icon: "dots-horizontal-circle-outline", labelKey: "nav.more" },
 ];
@@ -28,6 +31,9 @@ export const BottomNav: React.FC = () => {
   const tab = useUI((s) => s.tab);
   const keypadOpen = useUI((s) => s.keypadOpen);
   const moreOpen = useUI((s) => s.moreOpen);
+  const calcOpen = useUI((s) => s.overlayStack.some((o) => o.type === "calculator"));
+  const open = useUI((s) => s.open);
+  const closeType = useUI((s) => s.closeType);
   const setTab = useUI((s) => s.setTab);
   const setKeypadOpen = useUI((s) => s.setKeypadOpen);
   const setMoreOpen = useUI((s) => s.setMoreOpen);
@@ -50,6 +56,16 @@ export const BottomNav: React.FC = () => {
       return;
     }
     closeAll();
+    if (key === "calculator") {
+      /* v1.6.8 — the calculator is an overlay sheet: tap opens it over the
+         current tab, tap again (active tile) closes it */
+      if (calcOpen) {
+        closeType("calculator");
+        return;
+      }
+      open({ type: "calculator" });
+      return;
+    }
     if (key === "more") {
       setMoreOpen(true);
     } else {
@@ -59,6 +75,7 @@ export const BottomNav: React.FC = () => {
 
   const isActive = (key: string): boolean => {
     if (key === "keypad") return keypadOpen;
+    if (key === "calculator") return calcOpen;
     if (key === "more") return moreOpen;
     return tab === key;
   };

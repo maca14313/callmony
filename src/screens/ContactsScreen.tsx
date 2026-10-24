@@ -22,7 +22,6 @@ import {
   CONTACTS_TTL,
   checkContactsPermission,
   openExistingContactEditor,
-  openNewContactForm,
   requestContactsPermission,
 } from "../native/deviceContacts";
 import { placeCall } from "../native/calls";
@@ -345,13 +344,10 @@ export const ContactsScreen: React.FC = () => {
     [C.brand, C.brandSoft, C.canvas, countryCode, onTap, onLongPress, onCall, onToggleFav, onWhatsApp, onSMS]
   );
 
-  const newContact = useCallback(async () => {
-    const saved = await openNewContactForm({});
-    if (saved) {
-      toast(t("ce.contactSaved"), "ok");
-      useApp.getState().refreshDeviceContacts(); // show it immediately
-    }
-  }, [t]);
+  /* v1.6.8 — OUR OWN in-app creator (never the OS contact app) */
+  const newContact = useCallback(() => {
+    open({ type: "contactNew" });
+  }, [open]);
 
   /* permission denied → the request card (never a blocking spinner) */
   if (perm === "denied") {

@@ -170,6 +170,7 @@ export const EN: Record<string, string> = {
   "ce.setPrimary": "Set as primary",
   "ce.setPrimaryEmail": "Set as primary email",
   "ce.setPrimaryNumber": "Set as primary number",
+  "ce.defaultNumber": "Default number",
   "ce.whatYouCallThem": "What you call them",
   "ce.atLeastOne": "Add at least a name or a phone number",
   "ce.atLeastOnePhone": "Keep at least one phone number — remove them one by one if you really mean it",
@@ -203,6 +204,8 @@ export const EN: Record<string, string> = {
   "kp.enterNumber": "Enter a number",  "kp.paste": "Paste from clipboard",
   "kp.noNumberInClipboard": "No phone number found in the clipboard",
   "kp.pasted": "Pasted from clipboard",
+  "kp.copyNumber": "Copy number",
+  "kp.clear": "Clear",
   "cd.newContact": "New",
   "cd.contactsLocked": "Contacts access is off",
   "cd.contactsLockedHint": "Allow access so names, search and favorites work",
@@ -1056,6 +1059,9 @@ export const EN: Record<string, string> = {
 
   /* ---- v1.5.4 in-app contact editor + contact detail (task 3-a) ---- */
   "cd.addOrEditNumbers": "Add or edit numbers",
+  "cd.numberAddedTo": "Number added to {name}",
+  "cd.alreadyHasNumber": "{name} already has this number",
+  "cd.savingContact": "Saving…",
   "cd.saveFailed": "Couldn't save the contact",
   "ce.label": "Label",
 

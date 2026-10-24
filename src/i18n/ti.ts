@@ -157,6 +157,7 @@ export const TI: Record<string, string> = {
   "ce.setPrimary": "ቀዳማይ ግበርዎ",
   "ce.setPrimaryEmail": "ቀዳማይ ኢመይል ግበርዎ",
   "ce.setPrimaryNumber": "ቀዳማይ ቁፅሪ ግበርዎ",
+  "ce.defaultNumber": "ቀዳማይ ቁፅሪ",
   "ce.whatYouCallThem": "ዝትጸውዖም",
   "ce.atLeastOne": "ብውሑዱ ስም ወይ ቁፅሪ ስልኪ ወስኺ",
   "ce.atLeastOnePhone": "ብውሑዱ ሓደ ቁፅሪ ትሕቲ ወጢኹ ኣቐቕቕ — ብጭብጭ እንተደሊኻ ሓደ ሓደ ኣውጽኦ",
@@ -188,6 +189,8 @@ export const TI: Record<string, string> = {
   "kp.enterNumber": "ቁፅሪ ኣእቱ",  "kp.paste": "ካብ ኪልብቦርድ ምልጣይ",
   "kp.noNumberInClipboard": "ቁፅሪ ስልኊ ኣብ ኪልብቦርድ ዘይተረኽበ",
   "kp.pasted": "ካብ ኪልብቦርድ ተለጢፉ ኣሎ",
+  "kp.copyNumber": "ቁፅሪ ቐዳሕ",
+  "kp.clear": "ምሳዕ",
   "cd.newContact": "ስጉምኒ",
   "cd.contactsLocked": "መስገጥታ ኣፍቃላት ተዓጢቑ እዩ",
   "cd.contactsLockedHint": "ኽእለት ስምዓት፣ ምድላይን ተወዳጅታትን ንኽሰርሑ ፍቐዱ",
@@ -966,6 +969,9 @@ export const TI: Record<string, string> = {
 
   /* ---- v1.5.4 in-app contact editor + contact detail (task 3-a) ---- */
   "cd.addOrEditNumbers": "ቁጽሪታት ወስኹ ወይ ምሕያሽ",
+  "cd.numberAddedTo": "ቁፅሪ ናብ {name} ተደርቢቡ ኣሎ",
+  "cd.alreadyHasNumber": "{name} ቀደም ኣብ ቀዳማይ እዚ ቁፅሪ ኣለዎ",
+  "cd.savingContact": "ኣብ ምቕመጥ ዘሎ…",
   "cd.saveFailed": "ተላውቕታ ምቕመጥ ኣይከኣለን",
   "ce.label": "ምልክት",
 

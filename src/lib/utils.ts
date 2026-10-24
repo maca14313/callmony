@@ -209,13 +209,11 @@ export const relTime = (epoch: number): string => {
   return fdShort(epoch);
 };
 
+/* v1.6.8 — the Recents day headers show ONLY "Mon D" (e.g. "Oct 24"):
+   no Today/Yesterday/weekday names, no badge — the user asked for the
+   smallest possible label to save vertical space in the list. */
 export const dayGroup = (epoch: number): string => {
   const d = new Date(epoch);
-  const t = new Date();
-  const y = new Date(Date.now() - 86400000);
-  if (d.toDateString() === t.toDateString()) return DATE_NAMES.today;
-  if (d.toDateString() === y.toDateString()) return DATE_NAMES.yesterday;
-  if (Date.now() - epoch < 7 * 86400000) return DATE_NAMES.weekdays[d.getDay()];
   return `${DATE_NAMES.months[d.getMonth()]} ${d.getDate()}`;
 };
 

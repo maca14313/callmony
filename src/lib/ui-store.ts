@@ -7,6 +7,13 @@ export type Tab = "contacts" | "recents" | "general" | "reminders" | "trash";
 
 export type Overlay =
   | { type: "contact"; recordID: string; initialSeg?: "ledger" | "lists" | "notes" | "bank" | "reminders" | "info" }
+  /* v1.6.8 — contact editing/creating moved onto the overlay stack (it used
+     to be local state inside ContactDetail): the store can now SEE that an
+     editor is open and defer the full address-book refresh (the bridge
+     serialization of a whole book was the "freeze" while typing/saving),
+     and the creator is reachable from anywhere in one open() call. */
+  | { type: "contactEdit"; recordID: string }
+  | { type: "contactNew"; phone?: string; name?: string }
   | { type: "list"; listId: string }
   | { type: "listEdit"; listId?: string; ownerId: string; kind?: "calculating" | "simple" | "checklist" | "todo" }
   | { type: "entryEdit"; entryId?: string; ownerId: string; entryType?: "credit" | "debit"; kind?: EntryKind; groupId?: string }

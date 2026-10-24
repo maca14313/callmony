@@ -23,7 +23,8 @@ import { useT } from "../i18n";
 import { copyText, dayGroup, durationStr, fd, ft, prettyPhone, relTime } from "../lib/utils";
 import type { DeviceContact } from "../lib/types";
 import { placeCall } from "../native/calls";
-import { openNewContactForm, requestContactsPermission } from "../native/deviceContacts";
+import { requestContactsPermission, addPhoneToContact } from "../native/deviceContacts";
+import { ContactPicker } from "../components/ContactPicker";
 import { requestCallLogPermission } from "../native/callLog";
 import { openURL, smsLink, waLink } from "../lib/share";
 import { F, useThemeColors } from "../theme";
@@ -124,9 +125,11 @@ const CallCard: React.FC<RowProps> = memo(
                 </Text>
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-                <Icon name={meta.icon} size={13} color={meta.color} />
+                {/* v1.6.8 — direction is ICON-ONLY (user request: "don't need
+                    text for outgoing/incoming/missed, the icons are enough") */}
+                <Icon name={meta.icon} size={14} color={meta.color} />
                 <Text style={{ fontSize: F.tiny, color: C.sub }} numberOfLines={1}>
-                  {meta.label} · {ft(row.at)}
+                  {ft(row.at)}
                   {row.duration > 0 ? ` · ${durationStr(row.duration)}` : ""}
                 </Text>
               </View>
@@ -198,18 +201,10 @@ const DayFilters: React.FC<{
   missedCount: number;
 }> = ({ filter, onSet, missedCount }) => {
   const t = useT();
-  /* v1.6.7 — ＋ NEW-CONTACT chip BESIDE the favorites (star) chip (user
-     request: "add the + icon for adding new contact beside the favourite
-     icons in recents"). Self-contained: opens the OS create-contact form
-     and refreshes the address book on save. The favorites STRIP below also
-     ends with a ＋ tile — both "beside the favorites" spots are covered. */
-  const openNewContact = async () => {
-    const saved = await openNewContactForm({});
-    if (saved) {
-      toast(t("ce.contactSaved"), "ok");
-      useApp.getState().refreshDeviceContacts().catch(() => undefined);
-    }
-  };
+  /* v1.6.8 — the ＋ chip is GONE from the day headers (user request: keep
+     the OTHER add-new-contact icon, the one on the TOP strip — the chip
+     repeated in every header wasted list space). The favorites strip above
+     the list keeps the single ＋ tile, which now opens the IN-APP creator. */
   return (
     <View style={styles.dayFilters}>
       <Chip compact label={t("act.all")} active={filter === "all"} onPress={() => onSet("all")} />
@@ -225,7 +220,6 @@ const DayFilters: React.FC<{
       <Chip iconOnly icon="phone-incoming" label={t("cd.incoming")} active={filter === "incoming"} onPress={() => onSet("incoming")} />
       <Chip iconOnly icon="phone-outgoing" label={t("cd.outgoing")} active={filter === "outgoing"} onPress={() => onSet("outgoing")} />
       <Chip iconOnly icon="star" label={t("cd.favorites")} active={filter === "favorites"} onPress={() => onSet("favorites")} />
-      <Chip iconOnly icon="account-plus" label={t("act.newContact")} onPress={openNewContact} />
     </View>
   );
 };
@@ -450,9 +444,9 @@ export const RecentsScreen: React.FC = () => {
            unchanged — the chips ride along and stay pinned on screen. */
         return (
           <View style={[styles.dayWrap, { backgroundColor: C.canvas }]}>
-            <View style={[styles.dayChip, { backgroundColor: C.brandSoft }]}>
-              <Text style={[styles.dayHeader, { color: C.brand }]}>{item.label}</Text>
-            </View>
+            {/* v1.6.8 — plain tiny "Oct 24" text, no pill/badge around it
+                (user request: very small, space-saving) */}
+            <Text style={[styles.dayHeader, { color: C.sub }]}>{item.label}</Text>
             <View style={{ flex: 1 }} />
             <DayFilters filter={filter} onSet={setFilter} missedCount={missedCount} />
           </View>
@@ -472,7 +466,7 @@ export const RecentsScreen: React.FC = () => {
         />
       );
     },
-    [C.brand, C.brandSoft, C.canvas, filter, missedCount, countryCode, onTap, onLongPress, onCall, onToggleFav, onWhatsApp, onSMS]
+    [C.canvas, C.sub, filter, missedCount, countryCode, onTap, onLongPress, onCall, onToggleFav, onWhatsApp, onSMS]
   );
 
   /* permission denied → the request card (never a blocking spinner) */
@@ -572,15 +566,11 @@ export const RecentsScreen: React.FC = () => {
               </Text>
             </Pressable>
           ))}
-          {/* the ＋ tile — opens the OS create-contact form */}
+          {/* v1.6.8 — the ＋ tile opens OUR OWN in-app creator (user
+              request: never hand the job to another app). Simple form,
+              instant local insert, background reconciliation. */}
           <Pressable
-            onPress={async () => {
-              const saved = await openNewContactForm({});
-              if (saved) {
-                toast(t("ce.contactSaved"), "ok");
-                useApp.getState().refreshDeviceContacts().catch(() => undefined);
-              }
-            }}
+            onPress={() => open({ type: "contactNew" })}
             accessibilityRole="button"
             accessibilityLabel={t("cd.newContact")}
             style={{ alignItems: "center", width: 62 }}
@@ -688,6 +678,11 @@ const CallRowSheet: React.FC<{
   const t = useT();
   const contactX = useApp((s) => s.contactX);
   const toggleFavorite = useApp((s) => s.toggleFavorite);
+  /* v1.6.8 — "add this unsaved number to a contact": the picker for an
+     EXISTING contact lives right here in the sheet (one tap fewer), and
+     creating a brand-new contact opens our own in-app form. */
+  const [addToExisting, setAddToExisting] = useState(false);
+  const [addingTo, setAddingTo] = useState<string | null>(null);
   const digits = row.phone.replace(/\D/g, "");
   const hasRealNumber = digits.replace(/^0+/, "").length >= 3;
   const callNumber = row.contact?.phones[0]?.number ?? row.phone;
@@ -732,17 +727,22 @@ const CallRowSheet: React.FC<{
           } as const,
         ]
       : [
+          /* v1.6.8 — BOTH add-to-contact paths are in-app (user request:
+             "dont use other apps to do that... option on the options list
+             to add it to contact very very easily"). */
           {
             icon: "account-plus-outline",
             label: t("act.newContact"),
-            run: async () => {
-              const p = row.phone;
+            run: () => {
               onClose();
-              const saved = await openNewContactForm({ phone: p });
-              if (saved) {
-                toast(t("ce.contactSaved"), "ok");
-                useApp.getState().refreshDeviceContacts(); // show it at once
-              }
+              useUI.getState().open({ type: "contactNew", phone: row.phone });
+            },
+          } as const,
+          {
+            icon: "account-multiple-plus-outline",
+            label: t("cd.addToContact"),
+            run: () => {
+              setAddToExisting(true);
             },
           } as const,
         ]),
@@ -767,6 +767,57 @@ const CallRowSheet: React.FC<{
     : hasRealNumber
       ? prettyPhone(row.phone, countryCode)
       : t("cl.unknownNumber");
+
+  /* pick an EXISTING contact to attach the number to — the flow:
+     picker → surgical native append (loss-free: loads the live OS row
+     first, unions the number in, saves) → instant local patch. */
+  const runAdd = async (recordID: string) => {
+    setAddToExisting(false);
+    setAddingTo(recordID);
+    const cached = useApp.getState().deviceContacts.find((c) => c.recordID === recordID);
+    const name = cached?.displayName || cached?.givenName || "";
+    const res = await addPhoneToContact(recordID, row.phone);
+    setAddingTo(null);
+    if (res === "added") {
+      if (cached) {
+        useApp.getState().patchDeviceContact(recordID, {
+          phones: [...cached.phones, { id: row.phone, label: "mobile", number: row.phone }],
+        });
+      }
+      toast(t("cd.numberAddedTo", { name }), "ok");
+      onClose();
+      setTimeout(() => {
+        useApp.getState().refreshDeviceContacts().catch(() => undefined);
+      }, 800);
+    } else if (res === "duplicate") {
+      toast(t("cd.alreadyHasNumber", { name }), "info");
+    } else {
+      toast(t("cd.saveFailed"), "error");
+    }
+  };
+
+  if (addToExisting) {
+    return (
+      <ContactPicker
+        includeGeneral={false}
+        title={t("cd.addToContact")}
+        onPick={(ownerId) => {
+          void runAdd(ownerId.replace(/^c:/, ""));
+        }}
+        onClose={onClose}
+      />
+    );
+  }
+  if (addingTo) {
+    return (
+      <BottomSheet title={t("cd.addToContact")} onClose={() => setAddingTo(null)}>
+        <View style={{ alignItems: "center", paddingVertical: 26, gap: 12 }}>
+          <ActivityIndicator size="large" color={C.brand} />
+          <Text style={{ fontSize: F.small, color: C.sub, fontWeight: "600" }}>{t("cd.savingContact")}</Text>
+        </View>
+      </BottomSheet>
+    );
+  }
 
   return (
     <BottomSheet title={title} onClose={onClose}>
@@ -831,10 +882,9 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(185,125,16,0.08)",
   },
   fallbackRow: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 16, paddingBottom: 4 },
-  dayWrap: { flexDirection: "row", alignItems: "center", gap: 6, paddingTop: 6, paddingBottom: 3, backgroundColor: "transparent" },
-  dayChip: { borderRadius: 8, paddingHorizontal: 9, paddingVertical: 2 },
+  dayWrap: { flexDirection: "row", alignItems: "center", gap: 6, paddingTop: 5, paddingBottom: 2, backgroundColor: "transparent" },
   dayFilters: { flexDirection: "row", alignItems: "center", gap: 4 },
-  dayHeader: { fontSize: F.small, fontWeight: "800" },
+  dayHeader: { fontSize: 11, fontWeight: "700", letterSpacing: 0.3 },
   callRow: {
     flexDirection: "row",
     alignItems: "center",

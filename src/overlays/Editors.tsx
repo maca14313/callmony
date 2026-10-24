@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Platform, Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useUI, type Overlay } from "../lib/ui-store";
@@ -123,6 +124,9 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
   const [kind, setKind] = useState<ReminderKind>(existing?.kind ?? prefill?.kind ?? "custom");
   const [date, setDate] = useState(dateStr(existing?.dueAt ?? prefill?.dueAt ?? Date.now() + 86400000));
   const [time, setTime] = useState(ft(existing?.dueAt ?? prefill?.dueAt ?? Date.now() + 86400000));
+  /* v1.6.8 — native pickers (Android dialogs) */
+  const [datePicker, setDatePicker] = useState(false);
+  const [timePicker, setTimePicker] = useState(false);
   const [repeat, setRepeat] = useState<Repeat>(existing?.repeat ?? "none");
   const [lead, setLead] = useState<number[]>(existing?.leadMinutes ?? []);
   const [pickOwner, setPickOwner] = useState(false);
@@ -148,6 +152,16 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
        user kept hitting "Pick a valid date and time". */
     return parseDueLocal(date, time);
   }, [date, time]);
+
+  /* the pickers write straight into the same date/time state the chips use */
+  const onPickDate = (_e: unknown, picked?: Date) => {
+    setDatePicker(false);
+    if (picked) setDate(dateStr(picked));
+  };
+  const onPickTime = (_e: unknown, picked?: Date) => {
+    setTimePicker(false);
+    if (picked) setTime(ft(picked.getTime()));
+  };
 
   const save = async () => {
     let due = duePreview;
@@ -240,13 +254,29 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
       </View>
 
       <SectionHeader title={t("rm.pickDateTime")} />
+      {/* v1.6.8 — NATIVE date + time pickers (user request: the old free-text
+          inputs "may accept something else accidentally"). Tap the row → the
+          OS calendar/clock dialog; impossible to type anything invalid. The
+          quick chips below still work for one-tap common cases. */}
       <View style={{ flexDirection: "row", gap: 8 }}>
-        <View style={{ flex: 1.3 }}>
-          <Field label={t("rm.dueDate")} value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Field label={t("rm.dueTime")} value={time} onChangeText={setTime} placeholder="9:00 AM" />
-        </View>
+        <Pressable
+          onPress={() => setDatePicker(true)}
+          style={({ pressed }) => [rmStyles.pickerRow, { borderColor: C.line, backgroundColor: pressed ? C.chip : C.inputBg }]}
+          accessibilityLabel={`${t("rm.dueDate")}: ${date}`}
+        >
+          <Icon name="calendar" size={20} color={C.brand} />
+          <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600" }}>{date}</Text>
+          <Icon name="chevron-down" size={17} color={C.faint} />
+        </Pressable>
+        <Pressable
+          onPress={() => setTimePicker(true)}
+          style={({ pressed }) => [rmStyles.pickerRow, { flex: 1, borderColor: C.line, backgroundColor: pressed ? C.chip : C.inputBg }]}
+          accessibilityLabel={`${t("rm.dueTime")}: ${time}`}
+        >
+          <Icon name="clock-outline" size={20} color={C.brand} />
+          <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600" }}>{time}</Text>
+          <Icon name="chevron-down" size={17} color={C.faint} />
+        </Pressable>
       </View>
       {/* quick date chips — one tap instead of typing */}
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
@@ -267,9 +297,6 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
           <Chip key={tt} compact label={tt} icon="clock-outline" onPress={() => setTime(tt)} />
         ))}
       </View>
-      <Text style={{ fontSize: F.tiny, color: C.faint, marginBottom: 10 }}>
-        {t("rm.dateFormatsHint")}
-      </Text>
       {duePreview && (
         <Text style={{ fontSize: F.tiny, color: C.faint, marginBottom: 10 }}>
           {t("rm.due")}: {fd(duePreview)} · {ft(duePreview.getTime())}
@@ -345,6 +372,26 @@ export const ReminderEditOverlay: React.FC<{ params: Extract<Overlay, { type: "r
             setOwnerId(id);
             setPickOwner(false);
           }}
+        />
+      )}
+
+      {/* v1.6.8 — the native dialogs themselves (Android: material calendar
+          and clock). Nothing invalid can ever be entered. */}
+      {datePicker && (
+        <DateTimePicker
+          value={duePreview ?? new Date()}
+          mode="date"
+          display="default"
+          onChange={onPickDate}
+        />
+      )}
+      {timePicker && (
+        <DateTimePicker
+          value={duePreview ?? new Date()}
+          mode="time"
+          display="default"
+          is24Hour={false}
+          onChange={onPickTime}
         />
       )}
     </Sheet>
@@ -431,6 +478,21 @@ export const BankEditOverlay: React.FC<{ params: Extract<Overlay, { type: "bankE
     </Sheet>
   );
 };
+
+/* v1.6.8 — tappable native date/time picker rows (ReminderEdit) */
+const rmStyles = StyleSheet.create({
+  pickerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    minHeight: 50,
+    flex: 1.3,
+    justifyContent: "space-between",
+  },
+});
 
 const edStyles = StyleSheet.create({
   colorDot: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },

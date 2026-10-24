@@ -163,6 +163,7 @@ export const AM: Record<string, string> = {
   "ce.setPrimary": "እንደ ዋና አድርግ",
   "ce.setPrimaryEmail": "እንደ ዋና ኢሜይል አድርግ",
   "ce.setPrimaryNumber": "እንደ ዋና ቁጥር አድርግ",
+  "ce.defaultNumber": "ዋና ቁጥር",
   "ce.whatYouCallThem": "የምትጠራቸው ስም",
   "ce.atLeastOne": "ቢያንስ ስም ወይም ስልክ ቁጥር ጨምር",
   "ce.atLeastOnePhone": "ቢያንስ አንድ የስልክ ቁጥር ጠብቅ — በእውነት ከፈለግህ አንድ በአንድ አስወግዳቸው",
@@ -195,6 +196,8 @@ export const AM: Record<string, string> = {
   "kp.enterNumber": "ቁጥር አስገባ",  "kp.paste": "ከቅዱስ ሰሌዳ ለጥፍ",
   "kp.noNumberInClipboard": "በቅዱስ ሰሌዳው ላይ የስልክ ቁጥር አልተገኘም",
   "kp.pasted": "ከቅዱስ ሰሌዳ ተለጥፏል",
+  "kp.copyNumber": "ቁጥር ቅዳ",
+  "kp.clear": "አጽዳ",
   "cd.newContact": "አዲስ",
   "cd.contactsLocked": "የእውቂያ መዳረሻ የጠፋ ነው",
   "cd.contactsLockedHint": "ስሞች፣ ፍለጋ እና ተወዳጆች እንዲሠሩ መዳረሻ ይፍቀዱ",
@@ -996,6 +999,9 @@ export const AM: Record<string, string> = {
 
   /* ---- v1.5.4 in-app contact editor + contact detail (task 3-a) ---- */
   "cd.addOrEditNumbers": "ቁጥሮችን ያክሉ ወይም ያስተካክሉ",
+  "cd.numberAddedTo": "ቁጥሩ ወደ {name} ታክሏል",
+  "cd.alreadyHasNumber": "{name} ቀድሞውኑ ይህን ቁጥር አለው",
+  "cd.savingContact": "በማስቀመጥ ላይ…",
   "cd.saveFailed": "እውቂያውን ማስቀመጥ አልተቻለም",
   "ce.label": "ምልክት",
 

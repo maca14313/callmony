@@ -348,6 +348,118 @@ class ContactEditModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    /* ---------------- create ---------------- */
+
+    /**
+     * v1.6.8 — in-app contact CREATION (replaces Contacts.openContactForm,
+     * the OS external app). Builds a brand-new raw contact (null account =
+     * device-only) in ONE applyBatch: StructuredName + phones + emails via
+     * back-references to the raw-insert op. Resolves with the new contact_id
+     * (JS immediately inserts it into the cached list — no full re-fetch),
+     * always settles, always on a worker thread.
+     */
+    @ReactMethod
+    fun createContact(fields: ReadableMap, promise: Promise) {
+        Thread {
+            try {
+                val cr = reactApplicationContext.contentResolver
+                val given = fields.getString("givenName") ?: ""
+                val middle = fields.getString("middleName") ?: ""
+                val family = fields.getString("familyName") ?: ""
+                val company = fields.getString("company") ?: ""
+                val jobTitle = fields.getString("jobTitle") ?: ""
+                val phones = fields.getArray("phoneNumbers")
+                val emails = fields.getArray("emailAddresses")
+
+                val dataUri = ContactsContract.Data.CONTENT_URI
+                val structured = ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE
+                val organization = ContactsContract.CommonDataKinds.Organization.CONTENT_ITEM_TYPE
+                val phoneItem = ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE
+                val emailItem = ContactsContract.CommonDataKinds.Email.CONTENT_ITEM_TYPE
+
+                val ops = arrayListOf<ContentProviderOperation>()
+
+                /* op 0 — the new raw contact (device/local account) */
+                ops.add(
+                    ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI)
+                        .withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, null)
+                        .withValue(ContactsContract.RawContacts.ACCOUNT_NAME, null)
+                        .build()
+                )
+
+                /* name — only when the user typed something */
+                if (given.isNotEmpty() || middle.isNotEmpty() || family.isNotEmpty()) {
+                    ops.add(
+                        ContentProviderOperation.newInsert(dataUri)
+                            .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                            .withValue(ContactsContract.Data.MIMETYPE, structured)
+                            .withValue(ContactsContract.CommonDataKinds.StructuredName.GIVEN_NAME, given)
+                            .withValue(ContactsContract.CommonDataKinds.StructuredName.MIDDLE_NAME, middle)
+                            .withValue(ContactsContract.CommonDataKinds.StructuredName.FAMILY_NAME, family)
+                            .build()
+                    )
+                }
+
+                if (company.isNotEmpty() || jobTitle.isNotEmpty()) {
+                    ops.add(
+                        ContentProviderOperation.newInsert(dataUri)
+                            .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                            .withValue(ContactsContract.Data.MIMETYPE, organization)
+                            .withValue(ContactsContract.CommonDataKinds.Organization.COMPANY, company)
+                            .withValue(ContactsContract.CommonDataKinds.Organization.TITLE, jobTitle)
+                            .build()
+                    )
+                }
+
+                forEachEntry(phones) { label, values ->
+                    ops.add(
+                        ContentProviderOperation.newInsert(dataUri)
+                            .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                            .withValue(ContactsContract.Data.MIMETYPE, phoneItem)
+                            .withValue(ContactsContract.CommonDataKinds.Phone.NUMBER, values[0])
+                            .withValue(ContactsContract.CommonDataKinds.Phone.TYPE, phoneTypeFromLabel(label))
+                            .build()
+                    )
+                }
+
+                forEachEntry(emails) { label, values ->
+                    ops.add(
+                        ContentProviderOperation.newInsert(dataUri)
+                            .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                            .withValue(ContactsContract.Data.MIMETYPE, emailItem)
+                            .withValue(ContactsContract.CommonDataKinds.Email.ADDRESS, values[0])
+                            .withValue(ContactsContract.CommonDataKinds.Email.TYPE, emailTypeFromLabel(label))
+                            .build()
+                    )
+                }
+
+                val results = cr.applyBatch(ContactsContract.AUTHORITY, ops)
+                val rawUri = results[0].uri
+                    ?: throw IllegalStateException("raw insert returned no uri")
+                val rawId = rawUri.lastPathSegment
+                    ?: throw IllegalStateException("raw insert returned no id")
+
+                /* raw id → contact id (always available right after the
+                   batch — the aggregation is synchronous for a fresh,
+                   single-row contact) */
+                var contactId: String? = null
+                cr.query(
+                    ContactsContract.RawContacts.CONTENT_URI,
+                    arrayOf(ContactsContract.RawContacts.CONTACT_ID),
+                    ContactsContract.RawContacts._ID + " = ?",
+                    arrayOf(rawId),
+                    null
+                )?.use { c ->
+                    if (c.moveToFirst()) contactId = c.getString(0)
+                }
+                if (contactId == null) throw IllegalStateException("contact id not found after insert")
+                promise.resolve(contactId)
+            } catch (e: Exception) {
+                promise.reject("createContact", e.message ?: "create failed", e)
+            }
+        }.start()
+    }
+
     /** iterate [{label, number|email}, …] skipping empty values */
     private inline fun forEachEntry(
         arr: ReadableArray?,

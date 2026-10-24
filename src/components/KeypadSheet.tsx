@@ -25,12 +25,12 @@ import { useApp } from "../lib/store";
 import { useUI } from "../lib/ui-store";
 import { useT } from "../i18n";
 import { listTotals } from "../lib/calc";
-import { displayName, getContactSearchIndex, nationalDigits, normalizePhone, prettyPhone, t9Match, vibrate } from "../lib/utils";
+import { copyText, displayName, getContactSearchIndex, nationalDigits, normalizePhone, prettyPhone, t9Match, vibrate } from "../lib/utils";
 import type { DeviceContact } from "../lib/types";
 import { placeCall } from "../native/calls";
-import { openNewContactForm } from "../native/deviceContacts";
 import { F, useThemeColors } from "../theme";
 import { Avatar, Money, toast } from "./kit";
+import { BottomSheet } from "./Sheet";
 
 const KEYS: { d: string; letters?: string }[] = [
   { d: "1" },
@@ -341,6 +341,26 @@ export const KeypadSheet: React.FC = () => {
     }
   };
 
+  /* v1.6.8 — COPY (the other half of "copy/paste by long-pressing the
+     display, just like a regular input"). Long-press now opens a small
+     Copy / Paste / Clear menu instead of pasting blind: exactly what an
+     EditText-style field shows on a long-press. */
+  const [clipMenu, setClipMenu] = useState(false);
+  const copyDisplay = () => {
+    if (!number) return;
+    copyText(number).then((ok) => toast(ok ? t("act.copied") : t("act.couldntCopy"), ok ? "ok" : "error"));
+    setClipMenu(false);
+  };
+  const pasteFromMenu = () => {
+    setClipMenu(false);
+    void pasteFromClipboard();
+  };
+  const clearDisplay = () => {
+    setNumber("");
+    vibrate(14);
+    setClipMenu(false);
+  };
+
   const longPressKey = (d: string) => {
     if (d === "0") {
       setNumber((n) => (n.length >= 24 ? n : n + "+"));
@@ -391,13 +411,13 @@ export const KeypadSheet: React.FC = () => {
     [open, close]
   );
 
-  const addContact = async () => {
+  /* v1.6.8 — the ＋ button saves the typed number through OUR OWN in-app
+     creator (user request: "dont use other apps to do that"). */
+  const addContact = () => {
     if (!number) return;
-    const saved = await openNewContactForm({ phone: number });
-    if (saved) {
-      toast(t("ce.contactSaved"), "ok");
-      useApp.getState().refreshDeviceContacts(); // show it at once
-    }
+    const phone = number;
+    close();
+    setTimeout(() => open({ type: "contactNew", phone }), 200);
   };
 
   const renderRow = useCallback(
@@ -482,11 +502,12 @@ export const KeypadSheet: React.FC = () => {
           )}
 
           {/* number display — DIRECTLY above the keypad grid. Long-press
-              the display (300 ms) = paste from clipboard (v1.6.6/v1.6.7). */}
+              (400 ms) opens the Copy / Paste / Clear menu — the SAME
+              affordance as a regular input field (v1.6.8). */}
           <View style={[styles.displayRow, { direction: "ltr" }]}>
             <Pressable
-              onLongPress={pasteFromClipboard}
-              delayLongPress={300}
+              onLongPress={() => setClipMenu(true)}
+              delayLongPress={400}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               accessibilityLabel={t("kp.paste")}
               style={{ flex: 1, alignItems: "center", justifyContent: "center", minWidth: 0 }}
@@ -629,10 +650,74 @@ export const KeypadSheet: React.FC = () => {
             </Pressable>
           </View>
         </Animated.View>
+
+        {/* v1.6.8 — long-press the display → Copy / Paste / Clear menu, the
+            same affordance a regular input field gives. Stacks above the
+            keypad panel (native modals layer in mount order). */}
+        {clipMenu && (
+          <BottomSheet title={prettyPhone(number || "—", countryCode)} onClose={() => setClipMenu(false)} noScroll>
+            <View style={{ gap: 4, paddingBottom: 6 }}>
+              {!!number && (
+                <Pressable
+                  onPress={copyDisplay}
+                  android_ripple={{ color: "rgba(128,128,128,0.12)" }}
+                  style={({ pressed }) => [
+                    clipStyles.menuItem,
+                    { backgroundColor: pressed ? C.chip : "transparent" },
+                  ]}
+                  accessibilityLabel={t("kp.copyNumber")}
+                >
+                  <Icon name="content-copy" size={21} color={C.sub} />
+                  <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600" }}>{t("kp.copyNumber")}</Text>
+                </Pressable>
+              )}
+              {(clipHas || !number) && (
+                <Pressable
+                  onPress={pasteFromMenu}
+                  android_ripple={{ color: "rgba(128,128,128,0.12)" }}
+                  style={({ pressed }) => [
+                    clipStyles.menuItem,
+                    { backgroundColor: pressed ? C.chip : "transparent" },
+                  ]}
+                  accessibilityLabel={t("kp.paste")}
+                >
+                  <Icon name="clipboard-text-outline" size={21} color={C.sub} />
+                  <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600" }}>{t("kp.paste")}</Text>
+                </Pressable>
+              )}
+              {!!number && (
+                <Pressable
+                  onPress={clearDisplay}
+                  android_ripple={{ color: "rgba(128,128,128,0.12)" }}
+                  style={({ pressed }) => [
+                    clipStyles.menuItem,
+                    { backgroundColor: pressed ? C.chip : "transparent" },
+                  ]}
+                  accessibilityLabel={t("kp.clear")}
+                >
+                  <Icon name="backspace-outline" size={21} color={C.sub} />
+                  <Text style={{ fontSize: F.body, color: C.ink, fontWeight: "600" }}>{t("kp.clear")}</Text>
+                </Pressable>
+              )}
+            </View>
+          </BottomSheet>
+        )}
       </View>
     </Modal>
   );
 };
+
+const clipStyles = StyleSheet.create({
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 13,
+    borderRadius: 12,
+    minHeight: 52,
+  },
+});
 
 /* Pressable + Animated opacity — small helper (avoids Animated.Component typing noise) */
 const AnimatedPressable: React.FC<{

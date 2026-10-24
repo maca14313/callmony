@@ -34,6 +34,7 @@ import { GeneralScreen } from "./src/screens/GeneralScreen";
 import { RemindersScreen } from "./src/screens/RemindersScreen";
 import { TrashScreen } from "./src/screens/TrashScreen";
 import { ContactDetailOverlay } from "./src/overlays/ContactDetail";
+import { ContactEditor, ContactCreator } from "./src/overlays/ContactEditor";
 import { EntryEditOverlay } from "./src/overlays/EntryEdit";
 import { ListDetailOverlay, ListEditOverlay } from "./src/overlays/ListOverlays";
 import { NoteEditOverlay, ReminderEditOverlay, BankEditOverlay } from "./src/overlays/Editors";
@@ -438,7 +439,8 @@ const Shell: React.FC = () => {
                 </Text>
                 <Text style={{ fontSize: F.tiny, color: C.sub }}>{t("hdr.tagline")}</Text>
               </View>
-              <IconBtn icon="calculator" size={40} onPress={() => open({ type: "calculator" })} />
+              {/* v1.6.8 — calculator moved to the BOTTOM NAV (user request);
+                  the navbar keeps search only */}
               <IconBtn icon="magnify" size={40} onPress={() => open({ type: "search" })} />
               {/* settings cog REMOVED from the header (user request) —
                   Settings lives in the More sheet at the bottom nav */}
@@ -495,6 +497,19 @@ const OverlayHost: React.FC<{ overlay: ReturnType<typeof useUI.getState>["overla
   switch (overlay.type) {
     case "contact":
       return <ContactDetailOverlay params={overlay} />;
+    /* v1.6.8 — editor + creator live on the overlay stack: reachable from
+       anywhere (Recents ＋ tile, call options, keypad), and the store can
+       defer the whole-book refresh while they are open (the freeze fix) */
+    case "contactEdit":
+      return <ContactEditor recordID={overlay.recordID} onClose={() => useUI.getState().pop()} />;
+    case "contactNew":
+      return (
+        <ContactCreator
+          prefillPhone={overlay.phone}
+          prefillName={overlay.name}
+          onClose={() => useUI.getState().pop()}
+        />
+      );
     case "entryEdit":
       return <EntryEditOverlay params={overlay} />;
     case "list":

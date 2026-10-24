@@ -170,6 +170,7 @@ export const OM: Record<string, string> = {
   "ce.setPrimary": "Ijoo taasi",
   "ce.setPrimaryEmail": "Imeelii ijoo taasi",
   "ce.setPrimaryNumber": "Lakkoofsa ijoo taasi",
+  "ce.defaultNumber": "Lakkoofsa ijoo",
   "ce.whatYouCallThem": "Maqaa ati isaan waamtu",
   "ce.atLeastOne": "Yoo xiqqaate maqaa ykn lakkoofsa bilbilaa galchi",
   "ce.atLeastOnePhone": "Lakkoofsa bilbila xiqqaate tokko eegi — dhuguma barbaadda taate tokko tokkos haadhu",
@@ -203,6 +204,8 @@ export const OM: Record<string, string> = {
   "kp.enterNumber": "Lakkoofsa galchi",  "kp.paste": "Warraabbii irraa maxxansi",
   "kp.noNumberInClipboard": "Lakkoofsa bilbila warraabbii keessatti hin argamne",
   "kp.pasted": "Warraabbii irraa maxxanfame",
+  "kp.copyNumber": "Lakkoofsa baafadhu",
+  "kp.clear": "Haqi",
   "cd.newContact": "Haaraa",
   "cd.contactsLocked": "Seensa qunnamtii cufameera",
   "cd.contactsLockedHint": "Maqaa, barbaaddii fi jaallatamtota hojjatanii deebisuuf seensa hayyami",
@@ -1056,6 +1059,9 @@ export const OM: Record<string, string> = {
 
   /* ---- v1.5.4 in-app contact editor + contact detail (task 3-a) ---- */
   "cd.addOrEditNumbers": "Lakkoofsota dabalii ykn sirreessi",
+  "cd.numberAddedTo": "Lakkoofsi {name} irratti dabalameera",
+  "cd.alreadyHasNumber": "{name} durseen lakkoofsa kana qaba",
+  "cd.savingContact": "Ol kaa'aa jira…",
   "cd.saveFailed": "Namtolchee olkaa'uu hin dandeenye",
   "ce.label": "Gosa",
 
