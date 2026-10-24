@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.callmony.i18n.t
 import com.callmony.lib.UiStore
+import com.callmony.lib.fmtSig
 import com.callmony.platform.Platform
 import com.callmony.theme.F
 import com.callmony.theme.ThemeColors
@@ -91,16 +92,16 @@ fun evalExpression(src: String): Double? {
         }
     }
     if (stack.size != 1) return null
-    val res = Math.round((stack[0] + 1e-10) * 1e10) / 1e10
+    val res = kotlin.math.round((stack[0] + 1e-10) * 1e10) / 1e10
     return if (res.isNaN() || res.isInfinite()) null else res
 }
 
 fun fmtResult(n: Double): String {
-    if (Math.abs(n) >= 1e12) return String.format("%.6e", n)
-    val rounded = Math.round((n + 1e-10) * 1e10) / 1e10
-    val s = if (rounded == Math.floor(rounded) && !rounded.isInfinite() && Math.abs(rounded) < 1e15)
+    if (kotlin.math.abs(n) >= 1e12) return n.toString()
+    val rounded = kotlin.math.round((n + 1e-10) * 1e10) / 1e10
+    val s = if (rounded == kotlin.math.floor(rounded) && !rounded.isInfinite() && kotlin.math.abs(rounded) < 1e15)
         rounded.toLong().toString() else rounded.toString()
-    return if (s.length > 16) String.format("%.12g", n) else s
+    return if (s.length > 16) fmtSig(n, 12) else s
 }
 
 private data class HistItem(val expr: String, val result: String)
@@ -220,7 +221,7 @@ fun CalculatorSheet() {
 
     fun memoryAdd(sign: Int) {
         val v = currentValue() ?: return
-        memory = Math.round(((memory ?: 0.0) + sign * v) * 1e10) / 1e10
+        memory = kotlin.math.round(((memory ?: 0.0) + sign * v) * 1e10) / 1e10
         vibrate(longArrayOf(10))
     }
 

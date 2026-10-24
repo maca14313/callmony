@@ -111,7 +111,7 @@ fun statementText(ownerName: String, entries: List<LedgerEntry>): String {
     var running = 0.0
     val lines = sorted.map { e ->
         val signed = entrySignedRemaining(e)
-        running = Math.round((running + signed) * 100) / 100.0
+        running = kotlin.math.round((running + signed) * 100) / 100.0
         val itemBits = e.items.map { "  ${it.name} ${it.qty}${it.unit?.let { u -> " $u" } ?: ""} × ${it.price} = ${it.qty * it.price}" }
         "${fd(e.date)}  ${e.kind ?: e.type}  ${money(e.amount, currency)}" +
             (if (itemBits.isNotEmpty()) "\n${itemBits.joinToString("\n")}" else "") +

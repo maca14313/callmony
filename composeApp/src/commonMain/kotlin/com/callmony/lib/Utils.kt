@@ -5,6 +5,7 @@ import com.callmony.model.CURRENCIES
 import com.callmony.model.DeviceContact
 import kotlin.math.abs
 import kotlin.math.floor
+import kotlin.math.pow
 
 /* callmony — utilities (dates, money, phones, misc). Exact port of the
    React Native edition's src/lib/utils.ts. */
@@ -68,7 +69,7 @@ private fun numberStr(n: Double): String {
     val fixed = if (absV == floor(absV) && !absV.isInfinite() && absV < 1e15) {
         val l = absV.toLong()
         l.toString()
-    } else String.format("%.2f", absV)
+    } else fmtFixed(absV, 2)
     val parts = fixed.split(".")
     val g = groupDigits(parts[0])
     return if (parts.size > 1) "$g.${parts[1]}" else g
@@ -87,7 +88,7 @@ fun money(n: Double, currency: String = "ETB", signed: Boolean = false): String 
 fun compactMoney(n: Double, currency: String = "ETB", signed: Boolean = false): String {
     val absV = abs(n)
     if (absV >= 100000) {
-        val v = if (absV >= 1000000) String.format("%.1fM", absV / 1000000) else String.format("%.0fK", absV / 1000)
+        val v = if (absV >= 1000000) fmtFixed(absV / 1000000, 1) + "M" else fmtFixed(absV / 1000, 0) + "K"
         val sign = if (signed && n != 0.0) { if (n > 0) "+" else "−" } else if (n < 0) "−" else ""
         return "$sign$v ${currencySymbol(currency)}"
     }
@@ -110,18 +111,84 @@ fun setDateNames(months: List<String>, weekdays: List<String>, today: String, ye
     if (yesterday.isNotEmpty()) DateNames.yesterday = yesterday
 }
 
-expect class KmpDate(y: Int, m0: Int, d: Int, h: Int = 0, mi: Int = 0, s: Int = 0) {
-    val year: Int
-    val month0: Int
-    val day: Int
-    val hour: Int
-    val minute: Int
-    val second: Int
-    fun time(): Long
-    fun addDays(n: Int): KmpDate
+/* ---------------- dates — pure-Kotlin civil calendar (proleptic Gregorian,
+   Howard Hinnant's algorithms), local timezone via tzOffsetMinutes.
+   Lenient like java.util.Calendar: out-of-range month/day normalize. ---------------- */
+
+internal expect fun tzOffsetMinutes(epochMillis: Long): Int
+
+private fun daysFromCivil(y0: Long, m: Long, d: Long): Long {
+    val y = y0 - (if (m <= 2) 1 else 0)
+    val era = (if (y >= 0) y else y - 399) / 400
+    val yoe = y - era * 400
+    val doy = (153 * (m + (if (m > 2) -3 else 9)) + 2) / 5 + d - 1
+    val doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+    return era * 146097 + doe - 719468
 }
 
-expect fun dateOf(epoch: Long): KmpDate
+private fun civilFromDays(z0: Long): Triple<Long, Long, Long> {
+    val z = z0 + 719468
+    val era = (if (z >= 0) z else z - 146096) / 146097
+    val doe = z - era * 146097
+    val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+    val y = yoe + era * 400
+    val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+    val mp = (5 * doy + 2) / 153
+    val d = doy - (153 * mp + 2) / 5 + 1
+    val m = mp + (if (mp < 10) 3 else -9)
+    return Triple(y + (if (m <= 2) 1 else 0), m, d)
+}
+
+class KmpDate(y: Int, m0: Int, d: Int, h: Int = 0, mi: Int = 0, s: Int = 0) {
+    private val millis: Long
+    private val yearF: Int
+    private val month0F: Int
+    private val dayF: Int
+    private val hourF: Int
+    private val minuteF: Int
+    private val secondF: Int
+
+    init {
+        // lenient: month 12 = next January, day 0 = last day of previous month…
+        val months = y.toLong() * 12 + m0.toLong()
+        val yy = months.floorDiv(12)
+        val mm = months.mod(12L) + 1
+        val days = daysFromCivil(yy, mm, 1) + (d.toLong() - 1)
+        val utcGuess = days * 86_400_000L + h * 3_600_000L + mi * 60_000L + s * 1_000L
+        millis = utcGuess - tzOffsetMinutes(utcGuess) * 60_000L
+        val (fy, fm, fd) = fieldsOf(millis)
+        yearF = fy; month0F = fm; dayF = fd
+        val local = millis + tzOffsetMinutes(millis) * 60_000L
+        hourF = (local.mod(86_400_000L) / 3_600_000L).toInt()
+        minuteF = (local.mod(3_600_000L) / 60_000L).toInt()
+        secondF = (local.mod(60_000L) / 1_000L).toInt()
+    }
+
+    val year: Int get() = yearF
+    val month0: Int get() = month0F
+    val day: Int get() = dayF
+    val hour: Int get() = hourF
+    val minute: Int get() = minuteF
+    val second: Int get() = secondF
+
+    fun time(): Long = millis
+
+    fun addDays(n: Int): KmpDate = KmpDate(yearF, month0F, dayF + n, hourF, minuteF, secondF)
+}
+
+private fun fieldsOf(epoch: Long): Triple<Int, Int, Int> {
+    val local = epoch + tzOffsetMinutes(epoch) * 60_000L
+    val days = local.floorDiv(86_400_000L)
+    val (y, m, d) = civilFromDays(days)
+    return Triple(y.toInt(), (m - 1).toInt(), d.toInt())
+}
+
+fun dateOf(epoch: Long): KmpDate {
+    val (y, m0, d) = fieldsOf(epoch)
+    val local = epoch + tzOffsetMinutes(epoch) * 60_000L
+    return KmpDate(y, m0, d, (local.mod(86_400_000L) / 3_600_000L).toInt(),
+        (local.mod(3_600_000L) / 60_000L).toInt(), (local.mod(60_000L) / 1_000L).toInt())
+}
 
 fun todayStr(): String = dateStr(dateOf(platformClockMillis()))
 
@@ -383,7 +450,7 @@ fun searchContacts(
         val s = scoreEntry(e, q, qd, qnat, digitsOnly, countryCode)
         if (s > 0) out.add(ScoredContact(c, s, e.nameLower))
     }
-    out.sortWith(compareByDescending<ScoredContact> { it.score }.thenComparing { it.nameLower })
+    out.sortWith(compareByDescending<ScoredContact> { it.score }.thenBy { it.nameLower })
     return out.take(limit)
 }
 
@@ -399,8 +466,32 @@ fun maskAccount(acc: String?): String {
 fun bytesStr(n: Long): String {
     if (n < 1024) return "$n B"
     if (n < 1048576) return "${n / 1024} KB"
-    if (n < 1073741824L) return String.format("%.1f MB", n / 1048576.0)
-    return String.format("%.2f GB", n / 1073741824.0)
+    if (n < 1073741824L) return fmtFixed(n / 1048576.0, 1) + " MB"
+    return fmtFixed(n / 1073741824.0, 2) + " GB"
+}
+
+/** Multiplatform fixed-decimal formatter (java's String.format is JVM-only). */
+internal fun fmtFixed(v: Double, decimals: Int): String {
+    val factor = when (decimals) {
+        0 -> 1.0; 1 -> 10.0; 2 -> 100.0; 3 -> 1000.0
+        else -> 10.0.pow(decimals.toDouble())
+    }
+    val scaled = kotlin.math.round(kotlin.math.abs(v) * factor) / factor
+    val whole = scaled.toLong().toString()
+    var frac = kotlin.math.round((scaled - scaled.toLong()) * factor).toString()
+    if (frac.length > decimals) frac = frac.substring(0, decimals) // guard fp noise
+    if (frac.length < decimals) frac = frac.padStart(decimals, '0')
+    val sign = if (v < 0 && (whole != "0" || frac.any { it != '0' })) "-" else ""
+    return if (decimals == 0) "$sign$whole" else "$sign$whole.$frac"
+}
+
+/** Multiplatform `%.<sig>g`-style formatter (significant digits, trailing zeros trimmed). */
+fun fmtSig(n: Double, sig: Int): String {
+    if (n == 0.0 || n.isNaN() || n.isInfinite()) return n.toString()
+    val exp = kotlin.math.floor(kotlin.math.log10(kotlin.math.abs(n))).toInt()
+    val decimals = (sig - 1 - exp).coerceIn(0, 15)
+    val fixed = fmtFixed(n, decimals)
+    return fixed.trimEnd('0').trimEnd('.')
 }
 
 fun clamp(n: Double, min: Double, max: Double): Double = min.coerceAtMost(max.coerceAtLeast(n))

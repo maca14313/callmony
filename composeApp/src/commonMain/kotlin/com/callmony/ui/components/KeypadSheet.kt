@@ -120,7 +120,7 @@ fun KeypadSheet() {
                     if (out.size >= 60) break@outer
                 }
             }
-            out.sortedWith(compareByDescending<Triple<DeviceContact, Double, String>> { it.second }.thenComparing { it.third })
+            out.sortedWith(compareByDescending<Triple<DeviceContact, Double, String>> { it.second }.thenBy { it.third })
                 .map { it.first }
         }
     }

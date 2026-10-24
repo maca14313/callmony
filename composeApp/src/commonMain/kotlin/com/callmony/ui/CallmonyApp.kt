@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -81,6 +82,8 @@ import com.callmony.ui.screens.GeneralScreen
 import com.callmony.ui.screens.RecentsScreen
 import com.callmony.ui.screens.RemindersScreen
 import com.callmony.ui.screens.TrashScreen
+import androidx.compose.ui.layout.ContentScale
+import com.callmony.ui.kit.rememberLogoBitmap
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -91,6 +94,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun CallmonyApp() {
     val C = C()
+
+    /* ---- the new logo (bundled compose resource; decoded once) ---- */
+    val logoBmp by rememberLogoBitmap()
 
     /* ---- boot: hydrate with a 5 s bail-out ---- */
     LaunchedEffect(Unit) {
@@ -152,13 +158,25 @@ fun CallmonyApp() {
         // splash
         Box(Modifier.fillMaxSize().background(C.canvas), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(
-                    Modifier
-                        .size(88.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(C.brand),
-                    contentAlignment = Alignment.Center,
-                ) { MdiIcon("phone-in-talk", 44, C.onBrand) }
+                val bmp = logoBmp
+                if (bmp != null) {
+                    Image(
+                        bitmap = bmp,
+                        contentDescription = "callmony",
+                        modifier = Modifier
+                            .size(88.dp)
+                            .clip(RoundedCornerShape(24.dp)),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Box(
+                        Modifier
+                            .size(88.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(C.brand),
+                        contentAlignment = Alignment.Center,
+                    ) { MdiIcon("phone-in-talk", 44, C.onBrand) }
+                }
                 Text(
                     buildString { append("call"); append("mony") },
                     fontSize = F.title.sp,

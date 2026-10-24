@@ -1,6 +1,7 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
 package com.callmony
 
-import com.callmony.lib.KmpDate
 import com.callmony.model.DeviceContact
 import com.callmony.platform.CallsService
 import com.callmony.platform.CallLogService
@@ -13,119 +14,23 @@ import com.callmony.platform.ReminderForAlarm
 import com.callmony.platform.ShareService
 import com.callmony.platform.UiPlatform
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.flow.MutableStateFlow
-import platform.CoreCrypto.CC_SHA256
-import platform.Foundation.NSCalendar
-import platform.Foundation.NSCalendarUnitDay
-import platform.Foundation.NSCalendarUnitHour
-import platform.Foundation.NSCalendarUnitMinute
-import platform.Foundation.NSCalendarUnitMonth
-import platform.Foundation.NSCalendarUnitSecond
-import platform.Foundation.NSCalendarUnitYear
-import platform.Foundation.NSDate
-import platform.Foundation.NSDateComponents
 import platform.Foundation.NSDocumentDirectory
 import platform.Foundation.NSFileManager
-import platform.Foundation.NSLocale
 import platform.Foundation.NSString
-import platform.Foundation.NSTimeIntervalSince1970
 import platform.Foundation.NSURL
 import platform.Foundation.NSUserDomainMask
 import platform.Foundation.NSUserDefaults
 import platform.Foundation.NSUTF8StringEncoding
-import platform.Foundation.dateByAddingUnit
-import platform.Foundation.dateFromComponents
-import platform.Foundation.dateWithTimeIntervalSince1970
 import platform.Foundation.stringWithContentsOfFile
-import platform.Foundation.timeIntervalSince1970
 import platform.Foundation.writeToFile
 import platform.UIKit.UIApplication
 import platform.UIKit.UIPasteboard
 import platform.UIKit.UIScreen
 import platform.UIKit.UIUserInterfaceStyle
 
-/* iOS actuals + platform wiring. The app data store, i18n, theme and the
-   whole Compose UI are shared; only these thin services are platform code. */
-
-/* ---------------- common expect actuals ---------------- */
-
-actual fun platformClockMillis(): Long =
-    (NSDate().timeIntervalSince1970 * 1000).toLong()
-
-private val calendar: NSCalendar = NSCalendar.currentCalendar
-
-actual class KmpDate actual constructor(
-    y: Int, m0: Int, d: Int, h: Int, mi: Int, s: Int,
-) {
-    private val comps = NSDateComponents()
-
-    init {
-        comps.year = y.toLong()
-        comps.month = (m0 + 1).toLong()
-        comps.day = d.toLong()
-        comps.hour = h.toLong()
-        comps.minute = mi.toLong()
-        comps.second = s.toLong()
-    }
-
-    actual val year: Int get() = comps.year.toInt()
-    actual val month0: Int get() = (comps.month.toInt() - 1)
-    actual val day: Int get() = comps.day.toInt()
-    actual val hour: Int get() = comps.hour.toInt()
-    actual val minute: Int get() = comps.minute.toInt()
-    actual val second: Int get() = comps.second.toInt()
-
-    actual fun time(): Long {
-        val date = calendar.dateFromComponents(comps)
-        return ((date?.timeIntervalSince1970 ?: 0.0) * 1000).toLong()
-    }
-
-    actual fun addDays(n: Int): KmpDate {
-        val date = calendar.dateFromComponents(comps) ?: NSDate()
-        val added = calendar.dateByAddingUnit(NSCalendarUnitDay, n.toLong(), date, 0u)
-        val c = added?.let {
-            calendar.components(
-                NSCalendarUnitYear or NSCalendarUnitMonth or NSCalendarUnitDay or
-                    NSCalendarUnitHour or NSCalendarUnitMinute or NSCalendarUnitSecond, it,
-            )
-        }
-        return if (c != null) {
-            KmpDate(c.year.toInt(), (c.month.toInt() - 1), c.day.toInt(), c.hour.toInt(), c.minute.toInt(), c.second.toInt())
-        } else {
-            KmpDate(year, month0, day + n, hour, minute, second)
-        }
-    }
-}
-
-actual fun dateOf(epoch: Long): KmpDate {
-    val date = NSDate.dateWithTimeIntervalSince1970(epoch / 1000.0)
-    val c = calendar.components(
-        NSCalendarUnitYear or NSCalendarUnitMonth or NSCalendarUnitDay or
-            NSCalendarUnitHour or NSCalendarUnitMinute or NSCalendarUnitSecond, date,
-    )
-    return KmpDate(
-        c.year.toInt(), (c.month.toInt() - 1), c.day.toInt(),
-        c.hour.toInt(), c.minute.toInt(), c.second.toInt(),
-    )
-}
-
-@OptIn(ExperimentalForeignApi::class)
-actual fun sha256Hex(input: String): String {
-    val data = input.encodeToByteArray()
-    val digest = UByteArray(32)
-    data.usePinned { pinned ->
-        digest.usePinned { digestPinned ->
-            CC_SHA256(pinned.addressOf(0), data.size.toUInt(), digestPinned.addressOf(0))
-        }
-    }
-    return digest.joinToString("") { it.toString(16).padStart(2, '0') }
-}
-
-internal actual fun System.currentTimeMillisCompat(): Long = platformClockMillis()
-
-/* ---------------- iOS platform services ---------------- */
+/* iOS platform wiring — the KMP mirror of the RN native modules.
+   The date/hash/clock actuals live in lib/IosLibActuals.kt. */
 
 object IosPlatform {
     fun init() {
@@ -202,7 +107,6 @@ class IosShare : ShareService {
 class IosKv : KvStore {
     private val defaults = NSUserDefaults.standardUserDefaults
     private val fm = NSFileManager.defaultManager
-
     private fun docDir(): String =
         (fm.URLsForDirectory(NSDocumentDirectory, inDomains = NSUserDomainMask)
             .firstOrNull() as? NSURL)?.path ?: "."
@@ -211,12 +115,14 @@ class IosKv : KvStore {
     override fun write(key: String, value: String) = defaults.setObject(value, forKey = key)
     override fun remove(key: String) = defaults.removeObjectForKey(key)
 
+    @OptIn(ExperimentalForeignApi::class)
     override fun readFile(name: String): String? =
         try {
             val path = docDir() + "/" + name
             if (fm.fileExistsAtPath(path)) NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null) else null
         } catch (_: Exception) { null }
 
+    @OptIn(ExperimentalForeignApi::class)
     override fun writeFile(name: String, content: String) {
         try {
             val path = docDir() + "/" + name

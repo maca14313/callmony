@@ -212,7 +212,7 @@ fun ListDetailOverlay(listId: String) {
             }
             // items
             val displayItems = if (groupSame) {
-                list.items.groupBy { "${it.name}|${it.unit ?: ""}" }.toSortedMap(compareBy { it })
+                list.items.groupBy { "${it.name}|${it.unit ?: ""}" }.entries.sortedBy { it.key }
                     .map { (k, group) -> k to group }
             } else emptyList()
 

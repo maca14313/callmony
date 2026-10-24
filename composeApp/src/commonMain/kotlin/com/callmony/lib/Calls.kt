@@ -79,7 +79,7 @@ object Messengers {
                 ch.isLetterOrDigit() || ch in "-_.~" -> append(ch)
                 ch == ' ' -> append("%20")
                 else -> {
-                    for (b in ch.toString().toByteArray(Charsets.UTF_8)) {
+                    for (b in ch.toString().encodeToByteArray()) {
                         append('%')
                         append(((b.toInt() shr 4) and 0xf).toString(16).uppercase())
                         append((b.toInt() and 0xf).toString(16).uppercase())

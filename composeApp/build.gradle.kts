@@ -32,13 +32,21 @@ kotlin {
             implementation(compose.components.resources)
             implementation(compose.components.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodel.compose)
-            implementation(libs.kotlinx.coroutines.swing)
             implementation(libs.kotlinx.serialization.json)
         }
 
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
             implementation(libs.androidx.core.ktx)
+        }
+
+        val androidUnitTest by getting {
+            dependencies {
+                implementation("junit:junit:4.13.2")
+                implementation("org.robolectric:robolectric:4.14.1")
+                implementation("androidx.test:core-ktx:1.6.1")
+                implementation("androidx.test.ext:junit-ktx:1.2.1")
+            }
         }
     }
 }
@@ -51,8 +59,8 @@ android {
         applicationId = "com.callmony"
         minSdk = 23
         targetSdk = 34
-        versionCode = 21
-        versionName = "1.6.11"
+        versionCode = 22
+        versionName = "1.6.12"
     }
 
     signingConfigs {
@@ -90,5 +98,20 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            all { test ->
+                // Robolectric fetches android-all jars from repo1.maven.org at test
+                // runtime, which rate-limits this sandbox (HTTP 429). Use Google's
+                // Maven Central mirror instead.
+                test.systemProperty(
+                    "robolectric.dependency.repo.url",
+                    "https://maven-central.storage-download.googleapis.com/maven2",
+                )
+            }
+        }
     }
 }
