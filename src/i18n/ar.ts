@@ -64,8 +64,8 @@ export const AR: Record<string, string> = {
   "hdr.recents": "محادثاتك في لمحة واحدة.",
 
   /* contact detail */
-  "cd.theyOweYou": "مستحق لك",
-  "cd.youOweThem": "مستحق عليك",
+  "cd.theyOweYou": "يحق لي",
+  "cd.youOweThem": "يحق له/لها",
   "cd.settledUp": "تمت التسوية",
   "cd.favorites": "المفضلة",
   "cd.addToFavorites": "أُضيف إلى المفضلة",
@@ -259,8 +259,8 @@ export const AR: Record<string, string> = {
   "lg.kindExpense": "مصروف",
   "lg.kindCredit": "يحق لي",
   "lg.kindDebit": "يحق له/لها",
-  "lg.kindCreditHint": "هم مدينون لنا (+)",
-  "lg.kindDebitHint": "نحن مدينون لهم (−)",
+  "lg.kindCreditHint": "يحق لي (+)",
+  "lg.kindDebitHint": "يحق له/لها (−)",
   "lg.kindIncomeHint": "أموال داخلة (+)",
   "lg.kindExpenseHint": "أموال خارجة (−)",
   "lg.filterAll": "الكل",
@@ -341,8 +341,8 @@ export const AR: Record<string, string> = {
   "gv.peopleHint": "دفتر كل شخص في لمحة — انقر لفتحه.",
   "gv.noPeople": "لا أرصدة مع أحد بعد",
   "gv.noPeopleHint": "أضف قيودًا من جهة اتصال لتظهر هنا.",
-  "gv.owedToYou": "مستحق لك",
-  "gv.youOwe": "مستحق عليك",
+  "gv.owedToYou": "يحق لي",
+  "gv.youOwe": "يحق له/لها",
   "gv.overview": "نظرة عامة",
 
   /* entry edit */

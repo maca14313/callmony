@@ -24,7 +24,10 @@ interface RawSysCall {
 }
 
 const SysCallLog = NativeModules.SysCallLog as
-  | { load(limit: number): Promise<RawSysCall[]> }
+  | {
+      load(limit: number): Promise<RawSysCall[]>;
+      loadSince(since: number, limit: number): Promise<RawSysCall[]>;
+    }
   | undefined;
 
 /** android.provider.CallLog.Calls type codes → direction */
@@ -60,11 +63,9 @@ export const requestCallLogPermission = async (): Promise<PermState> => {
   }
 };
 
-/** Load the most recent `limit` system calls (newest first). */
-export const fetchSystemCalls = async (limit = 400): Promise<DeviceCall[]> => {
-  if (Platform.OS !== "android" || !SysCallLog) return [];
-  const raw = await SysCallLog.load(limit);
-  return (raw || [])
+/** shared bridge-rows → DeviceCall mapping (newest first). */
+const mapRawCalls = (raw: RawSysCall[] | null | undefined): DeviceCall[] =>
+  (raw || [])
     .map((c, i) => ({
       id: c.id || `sys-${c.timestamp}-${i}`,
       phoneNumber: String(c.phoneNumber ?? ""),
@@ -75,6 +76,22 @@ export const fetchSystemCalls = async (limit = 400): Promise<DeviceCall[]> => {
     }))
     .filter((c) => c.timestamp > 0)
     .sort((a, b) => b.timestamp - a.timestamp);
+
+/** Load the most recent `limit` system calls (newest first). */
+export const fetchSystemCalls = async (limit = 400): Promise<DeviceCall[]> => {
+  if (Platform.OS !== "android" || !SysCallLog) return [];
+  return mapRawCalls(await SysCallLog.load(limit));
+};
+
+/** v1.6.11 — INCREMENTAL sync: only rows logged AFTER `since` (epoch ms).
+    The stock-dialer behavior users expect: opening the app re-reads just the
+    handful of NEW calls (usually zero) instead of re-serializing the whole
+    400-row log over the bridge on every open. Falls back to a full read when
+    the native side predates loadSince (older APK). */
+export const fetchCallsSince = async (since: number, limit = 200): Promise<DeviceCall[]> => {
+  if (Platform.OS !== "android" || !SysCallLog) return [];
+  if (typeof SysCallLog.loadSince !== "function") return fetchSystemCalls(400);
+  return mapRawCalls(await SysCallLog.loadSince(Math.max(0, Math.floor(since)), limit));
 };
 
 /** Rejected with a "denied" message when READ_CALL_LOG is missing. */
@@ -85,14 +102,25 @@ export const isPermissionDeniedError = (err: unknown): boolean =>
 
 const CALLS_CACHE = `${RNFS.DocumentDirectoryPath}/calllog-cache.json`;
 
-/** Read the cached call-log snapshot — resolves [] when there is none. */
-export const loadCachedCalls = async (): Promise<DeviceCall[]> => {
+export interface CallsCache {
+  savedAt: number;
+  list: DeviceCall[];
+}
+
+/** Read the cached call-log snapshot — resolves an EMPTY cache when there is
+    none. v1.6.11 also returns savedAt so the sync layer can tell a FRESH
+    snapshot (incremental refresh is enough) from a STALE one (a full
+    re-read is due — that is also how deletions get reconciled). */
+export const loadCachedCalls = async (): Promise<CallsCache> => {
   try {
     const txt = await RNFS.readFile(CALLS_CACHE, "utf8");
-    const parsed = JSON.parse(txt) as { savedAt: number; list: DeviceCall[] };
-    return Array.isArray(parsed?.list) ? parsed.list : [];
+    const parsed = JSON.parse(txt) as { savedAt?: number; list?: DeviceCall[] };
+    return {
+      savedAt: Number(parsed?.savedAt) || 0,
+      list: Array.isArray(parsed?.list) ? parsed.list : [],
+    };
   } catch {
-    return [];
+    return { savedAt: 0, list: [] };
   }
 };
 

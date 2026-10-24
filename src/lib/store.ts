@@ -41,7 +41,7 @@ import type {
   SocialLink,
 } from "./types";
 import { scheduleReminderNotification, cancelReminderNotification } from "../native/notify";
-import { fetchSystemCalls, isPermissionDeniedError, loadCachedCalls, saveCachedCalls, type DeviceCall } from "../native/callLog";
+import { fetchCallsSince, fetchSystemCalls, isPermissionDeniedError, loadCachedCalls, saveCachedCalls, type DeviceCall } from "../native/callLog";
 import { readPinFile, writePinFile, removePinFile } from "./pin-file";
 
 export type EntityKind = "entry" | "list" | "note" | "reminder" | "bank" | "group";
@@ -51,13 +51,26 @@ export type EntityKind = "entry" | "list" | "note" | "reminder" | "bank" | "grou
    share the same in-flight promise — see refreshDeviceContacts). */
 let contactsRefreshInFlight: Promise<void> | null = null;
 
+/* v1.6.11 — full call-log re-read TTL: within this window the refresh is
+   incremental only (new rows merged, nothing re-rendered when unchanged);
+   past it, one full reconcile catches deletions/edits made in other apps. */
+const CALLS_FULL_TTL = 10 * 60 * 1000;
+
 interface AppState {
   hydrated: boolean;
   deviceContacts: DeviceContact[];
   /* live device data — the real system call log (Android) */
   systemCalls: DeviceCall[];
   callLogPerm: "unknown" | "granted" | "denied";
-  loadSystemCalls: () => Promise<void>;
+  /** v1.6.11 — when systemCalls last matched the OS (cache savedAt or a
+      live fetch). Drives the incremental-vs-full refresh policy so opening
+      the app NEVER re-reads the whole 400-row log just because it can. */
+  callLogSyncedAt: number;
+  /** v1.6.11 — default refresh is INCREMENTAL (only rows newer than the
+      newest known call; a no-op when nothing changed — no setState, no
+      re-render, the list does not even flicker). `full: true` forces the
+      whole-log re-read (pull-to-refresh + the 10-minute reconcile TTL). */
+  loadSystemCalls: (opts?: { full?: boolean }) => Promise<void>;
   /* v1.6.7 — contacts access state: "denied" lets Recents / Search offer
      the one-tap fix (the address book silently empty was the root cause of
      "search not working" + "every card shows as unsaved" when the Contacts
@@ -187,20 +200,58 @@ export const useApp = create<AppState>((set, get) => ({
   contactsPerm: "unknown",
   systemCalls: [],
   callLogPerm: "unknown",
+  callLogSyncedAt: 0,
 
-  /* Load the device's real call log into the store (Android). Reads the
-     same provider the built-in dialer uses; safe to call repeatedly.
-     Every successful read also refreshes the disk snapshot so the next
-     cold start renders Recents INSTANTLY (no spinner, no permission wait). */
-  loadSystemCalls: async () => {
+  /* Sync the system call log. v1.6.11 — stock-dialer behavior:
+     · INCREMENTAL by default: query only calls NEWER than the newest known
+       row (1-minute overlap window, dedup by id). Opening the app moves
+       ~0 rows over the bridge — not the 400-row dump that made every open
+       feel like "loading the calls".
+     · FULL re-read only when the list is empty, the snapshot is older than
+       CALLS_FULL_TTL (also reconciles deletions/edits made elsewhere), or
+       the user explicitly pulls to refresh.
+     · A refresh that changes NOTHING never touches systemCalls → zero
+       re-render, zero flicker (the shallow-equal guard).
+     Every successful sync rewrites the disk snapshot so the next cold
+     start paints Recents from cache in the first frame. */
+  loadSystemCalls: async (opts) => {
     if (Platform.OS !== "android") {
       set({ callLogPerm: "granted" });
       return;
     }
     try {
-      const calls = await fetchSystemCalls(400);
-      set({ systemCalls: calls, callLogPerm: "granted" });
-      saveCachedCalls(calls);
+      const cur = get().systemCalls;
+      let full = opts?.full === true;
+      if (!full && (cur.length === 0 || Date.now() - get().callLogSyncedAt >= CALLS_FULL_TTL)) {
+        full = true;
+      }
+      let merged: DeviceCall[];
+      if (full) {
+        merged = await fetchSystemCalls(400);
+      } else {
+        const newest = cur[0]?.timestamp ?? 0;
+        const fresh = await fetchCallsSince(newest - 60_000, 200);
+        if (!fresh.length) {
+          /* nothing new — the list on screen is already the truth; touching
+             systemCalls here would re-render every row for no reason */
+          set({ callLogPerm: "granted", callLogSyncedAt: Date.now() });
+          saveCachedCalls(cur);
+          return;
+        }
+        const seen = new Set(cur.map((c) => c.id));
+        merged = [...fresh.filter((c) => !seen.has(c.id)), ...cur]
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, 400);
+      }
+      const same =
+        merged.length === cur.length &&
+        merged.every((c, i) => c.id === cur[i].id && c.timestamp === cur[i].timestamp);
+      set({
+        ...(same ? {} : { systemCalls: merged }),
+        callLogPerm: "granted",
+        callLogSyncedAt: Date.now(),
+      });
+      if (!same || full) saveCachedCalls(merged);
     } catch (err) {
       set({
         systemCalls: [],
@@ -222,11 +273,19 @@ export const useApp = create<AppState>((set, get) => ({
   lastUndo: null,
 
   hydrate: async () => {
-    const data = await loadAll();
-    set({
-      ...data,
-      hydrated: true,
-    });
+    /* v1.6.11 — EVERYTHING the first frame needs is read in PARALLEL and
+       applied in ONE set(): the persisted store, the PIN file and — the fix
+       for "every time I open the app it loads the calls" — the call-log
+       disk cache. The old order applied hydrated:true BEFORE the cache read,
+       so Recents mounted with an empty list and flashed "Loading calls…"
+       on every single open. Now the Shell's first paint already carries the
+       full cached call log (exactly what the stock dialer does), and the OS
+       re-read that follows is incremental and silent. */
+    const [data, callsCache, storedPin] = await Promise.all([
+      loadAll(),
+      loadCachedCalls().catch((): { savedAt: number; list: DeviceCall[] } => ({ savedAt: 0, list: [] })),
+      readPinFile().catch(() => null),
+    ]);
     /* v1.6.9 — the PIN is read from the no_backup FILE (never restored by
        Android Auto Backup), and any pinHash that a restored/legacy
        settings blob carries is DISCARDED + scrubbed — that restored hash
@@ -237,18 +296,18 @@ export const useApp = create<AppState>((set, get) => ({
       delete data.settings.pinHash;
       saveSettings(data.settings).catch(() => undefined);
     }
-    const storedPin = await readPinFile();
-    if (storedPin) set({ settings: { ...get().settings, pinHash: storedPin } });
-    /* cached call-log snapshot → Recents renders instantly on cold start;
-       the real refresh happens in the background right after */
-    try {
-      const cachedCalls = await loadCachedCalls();
-      if (cachedCalls.length) {
-        set({ systemCalls: cachedCalls, callLogPerm: "granted" });
-      }
-    } catch {
-      /* snapshot is optional */
-    }
+    set({
+      ...data,
+      hydrated: true,
+      /* cached call-log snapshot → Recents renders instantly on cold start;
+         the (incremental) OS refresh follows silently in the background.
+         callLogSyncedAt = the snapshot's savedAt so the refresh policy knows
+         whether an incremental pass is enough or a full reconcile is due. */
+      ...(callsCache.list.length
+        ? { systemCalls: callsCache.list, callLogPerm: "granted" as const, callLogSyncedAt: callsCache.savedAt }
+        : {}),
+      ...(storedPin ? { settings: { ...data.settings, pinHash: storedPin } } : {}),
+    });
     // (re)schedule reminder notifications after boot — native calls stay
     // PAUSED in safe mode so a crashing boot can always be recovered
     if (!isSafeMode()) {

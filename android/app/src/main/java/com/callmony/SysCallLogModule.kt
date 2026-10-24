@@ -33,6 +33,36 @@ class SysCallLogModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun load(limit: Int, promise: Promise) {
+        val capped = if (limit in 1..2000) limit else 400
+        queryCalls(null, null, capped, promise)
+    }
+
+    /**
+     * v1.6.11 — INCREMENTAL sync: only rows logged AFTER `since` (epoch ms).
+     * The everyday open refresh moves a handful of rows (usually zero) over
+     * the bridge instead of re-serializing the whole 400-row log — that dump
+     * was the "takes this long to load the calls" report. Selection on the
+     * indexed DATE column, newest first; JS dedupes the overlap window.
+     */
+    @ReactMethod
+    fun loadSince(since: Double, limit: Int, promise: Promise) {
+        val capped = if (limit in 1..2000) limit else 200
+        val sinceMs = if (since.isFinite() && since > 0) since.toLong() else 0L
+        queryCalls(
+            CallLog.Calls.DATE + " > ?",
+            arrayOf(sinceMs.toString()),
+            capped,
+            promise,
+        )
+    }
+
+    /** Shared cursor walk — permission check, projection, sort, bridge array. */
+    private fun queryCalls(
+        selection: String?,
+        selectionArgs: Array<String>?,
+        capped: Int,
+        promise: Promise,
+    ) {
         val ctx = reactApplicationContext
         if (ctx.checkSelfPermission(Manifest.permission.READ_CALL_LOG) !=
             PackageManager.PERMISSION_GRANTED
@@ -41,7 +71,6 @@ class SysCallLogModule(reactContext: ReactApplicationContext) :
             return
         }
         try {
-            val capped = if (limit in 1..2000) limit else 400
             val cursor = ctx.contentResolver.query(
                 CallLog.Calls.CONTENT_URI,
                 arrayOf(
@@ -52,8 +81,8 @@ class SysCallLogModule(reactContext: ReactApplicationContext) :
                     CallLog.Calls.DATE,
                     CallLog.Calls.DURATION,
                 ),
-                null,
-                null,
+                selection,
+                selectionArgs,
                 CallLog.Calls.DATE + " DESC",
             )
             val out = Arguments.createArray()

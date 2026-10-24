@@ -241,8 +241,12 @@ const Shell: React.FC = () => {
       }
       if (cancelled) return;
 
-      /* 3 — call log: disk snapshot already applied via hydrate(); refresh
-         from the OS in the background (10 s throttle on foreground) */
+      /* 3 — call log: the disk cache was applied BEFORE the first paint (one
+         parallel read inside hydrate — Recents never flashes "Loading calls"),
+         so this background refresh is INCREMENTAL (v1.6.11): only rows newer
+         than the newest cached call cross the bridge, and a refresh that
+         changes nothing does not even re-render the list. A full re-read
+         happens just once per 10 minutes to reconcile deletions. */
       lastLogRef.current = 0;
       useApp.getState().loadSystemCalls();
       /* v1.6.6 — the Contacts TAB is hidden (user request), so the OS

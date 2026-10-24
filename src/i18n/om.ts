@@ -64,8 +64,8 @@ export const OM: Record<string, string> = {
   "hdr.recents": "Qunnamsiinsi kee ilaalcha tokko keessatti.",
 
   /* contact detail */
-  "cd.theyOweYou": "Sii qaba",
-  "cd.youOweThem": "Isaa qabda",
+  "cd.theyOweYou": "Anaaf mala",
+  "cd.youOweThem": "Isaaf/Ishiif",
   "cd.settledUp": "Wal qixa",
   "cd.favorites": "Jaallatamoota",
   "cd.addToFavorites": "Jaallatamootaatti dabalameera",
@@ -259,8 +259,8 @@ export const OM: Record<string, string> = {
   "lg.kindExpense": "Baasii",
   "lg.kindCredit": "Anaaf mala",
   "lg.kindDebit": "Isaaf/Ishiif mala",
-  "lg.kindCreditHint": "Isaan sii qabu (+)",
-  "lg.kindDebitHint": "Ati isaan qabda (−)",
+  "lg.kindCreditHint": "Anaaf mala (+)",
+  "lg.kindDebitHint": "Isaaf/Ishiif (−)",
   "lg.kindIncomeHint": "Maallaqa galu (+)",
   "lg.kindExpenseHint": "Maallaqa ba'u (−)",
   "lg.filterAll": "Hunduu",
@@ -341,8 +341,8 @@ export const OM: Record<string, string> = {
   "gv.peopleHint": "Galmee herregaa nama tokko tokkoo — banuuf tuqi.",
   "gv.noPeople": "Hirree nama waliin hin jiru",
   "gv.noPeopleHint": "Asitti ilaaluuf galmee herregaa quunnamtuu irraa dabalisi.",
-  "gv.owedToYou": "Sii qabaman",
-  "gv.youOwe": "Ati qabda",
+  "gv.owedToYou": "Anaaf mala",
+  "gv.youOwe": "Isaaf/Ishiif",
   "gv.overview": "Ilaalcha waliigalaa",
 
   /* entry edit */

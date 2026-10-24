@@ -273,7 +273,9 @@ export const RecentsScreen: React.FC = () => {
   }, [contactsAskedOnce, t]);
 
   /* silent background refresh — NEVER a blocking full-screen spinner:
-     the disk snapshot (applied during hydrate) is already on screen */
+     the disk snapshot (applied during hydrate) is already on screen.
+     v1.6.11 — pull-to-refresh forces the FULL re-read (reconciles calls
+     deleted/edited elsewhere too); the automatic paths stay incremental. */
   const load = useCallback(
     async (force = false) => {
       if (Platform.OS !== "android") return;
@@ -285,7 +287,7 @@ export const RecentsScreen: React.FC = () => {
           return;
         }
       }
-      await useApp.getState().loadSystemCalls();
+      await useApp.getState().loadSystemCalls({ full: force });
       setRefreshing(false);
     },
     [callLogPerm]
