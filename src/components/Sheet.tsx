@@ -44,8 +44,13 @@ export const Sheet: React.FC<{
   const t = useT();
   const insets = useSafeAreaInsets();
 
+  /* v1.6.10 — FADE instead of SLIDE: Android animates a transparent Modal's
+     slide by pushing the WHOLE (heavy) content through a transform layer —
+     with a large sheet tree that start frame was the "slow to open the
+     contact detail page" jank. The fade is a cheap window alpha and reads
+     just as polished. */
   return (
-    <Modal transparent animationType="slide" visible onRequestClose={onBack}>
+    <Modal transparent animationType="fade" visible onRequestClose={onBack}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View style={[styles.sheetRoot, { backgroundColor: C.canvas, paddingTop: insets.top }]}>
           <View style={[styles.sheetHeader, { borderBottomColor: C.line }]}>

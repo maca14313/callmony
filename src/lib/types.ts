@@ -34,8 +34,12 @@ export interface DeviceAddress {
 /** A contact from the phone's address book (normalized). */
 export interface DeviceContact {
   recordID: string;
-  displayName: string; // given + family (or company fallback)
+  displayName: string; // given + middle + family (or company fallback)
   givenName: string;
+  /** v1.6.10 — the middle name is a REAL part of the name: it is stored,
+   *  rendered and searched (user report: "store landlord Work" was shown as
+   *  "store Work" — the middle token silently dropped). */
+  middleName?: string;
   familyName: string;
   nickname?: string;
   company?: string;

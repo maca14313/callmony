@@ -16,12 +16,21 @@ export type PermState = "authorized" | "denied" | "undetermined";
 /** contacts older than this are re-fetched from the OS (ms). */
 export const CONTACTS_TTL = 5 * 60 * 1000;
 
-const CACHE_FILE = `${RNFS.DocumentDirectoryPath}/contacts-cache.json`;
+const CACHE_FILE = `${RNFS.DocumentDirectoryPath}/contacts-cache-v2.json`;
+/* v1.6.10 — the v1 cache was written WITHOUT middleName, and its stored
+   displayName already lost the middle token. It is still rendered on open
+   (instant paint), but marked stale so the boot TTL guard re-fetches the
+   book and rewrites the cache with full names; the legacy file is removed
+   after the first v2 save. */
+const LEGACY_CACHE_FILE = `${RNFS.DocumentDirectoryPath}/contacts-cache.json`;
 
 export interface ContactsCache {
   savedAt: number;
   count: number;
   list: DeviceContact[];
+  /** true when the data came from the v1 file (middle names missing) —
+      callers should treat the snapshot as STALE and refresh. */
+  legacy?: boolean;
 }
 
 const normalizeLabel = (label: string): string => {
@@ -56,12 +65,18 @@ const normalizeBirthday = (b?: Contacts.Contact["birthday"]): string | undefined
 
 const toDeviceContact = (c: Contacts.Contact): DeviceContact => {
   const given = c.givenName || "";
+  /* v1.6.10 — the MIDDLE name is part of the composed display name.
+     Dropping it was the "store landlord Work" → "store Work" bug: the
+     composed name went into displayName and every list in the app showed
+     the shortened form. given+middle+family, whitespace-safe. */
+  const middle = c.middleName || "";
   const family = c.familyName || "";
-  const composed = `${given} ${family}`.trim();
+  const composed = `${given} ${middle} ${family}`.replace(/\s+/g, " ").trim();
   return {
     recordID: c.recordID,
     displayName: composed || c.displayName || c.company || "",
     givenName: given,
+    middleName: middle || undefined,
     familyName: family,
     company: c.company || undefined,
     jobTitle: c.jobTitle || undefined,
@@ -130,13 +145,22 @@ export const fetchAllContacts = async (): Promise<DeviceContact[]> => {
 
 /* ---------------- disk snapshot ---------------- */
 
-/** Read the cached snapshot — resolves null when there is none. */
+/** Read the cached snapshot — resolves null when there is none. Falls back
+    to the v1 file (marked legacy → stale) until the v2 file exists. */
 export const loadCachedContacts = async (): Promise<ContactsCache | null> => {
   try {
     const txt = await RNFS.readFile(CACHE_FILE, "utf8");
     const parsed = JSON.parse(txt) as ContactsCache;
     if (!parsed || !Array.isArray(parsed.list) || parsed.list.length === 0) return null;
     return parsed;
+  } catch {
+    /* fall through to the legacy file */
+  }
+  try {
+    const txt = await RNFS.readFile(LEGACY_CACHE_FILE, "utf8");
+    const parsed = JSON.parse(txt) as ContactsCache;
+    if (!parsed || !Array.isArray(parsed.list) || parsed.list.length === 0) return null;
+    return { ...parsed, legacy: true };
   } catch {
     return null;
   }
@@ -151,14 +175,24 @@ export const saveCachedContacts = (list: DeviceContact[]): void => {
   saveTimer = setTimeout(() => {
     saveTimer = null;
     const payload: ContactsCache = { savedAt: Date.now(), count: list.length, list };
-    RNFS.writeFile(CACHE_FILE, JSON.stringify(payload), "utf8").catch(() => undefined);
+    RNFS.writeFile(CACHE_FILE, JSON.stringify(payload), "utf8")
+      .then(() => {
+        /* v1.6.10 — the v2 snapshot now exists: drop the legacy file for good */
+        RNFS.unlink(LEGACY_CACHE_FILE).catch(() => undefined);
+      })
+      .catch(() => undefined);
   }, 1500);
 };
 
-/** Drop the snapshot (e.g. permission revoked / wipe). */
+/** Drop the snapshot (e.g. permission revoked / wipe) — both generations. */
 export const clearContactsCache = async (): Promise<void> => {
   try {
     await RNFS.unlink(CACHE_FILE);
+  } catch {
+    /* file may not exist */
+  }
+  try {
+    await RNFS.unlink(LEGACY_CACHE_FILE);
   } catch {
     /* file may not exist */
   }

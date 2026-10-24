@@ -13,7 +13,9 @@ const esc = (s: string): string => (s || "").replace(/([,;\\])/g, "\\$1").replac
 
 export const contactToVcard = (c: DeviceContact): string => {
   const lines: string[] = ["BEGIN:VCARD", "VERSION:3.0"];
-  lines.push(`N:${esc(c.familyName)};${esc(c.givenName)};;;`);
+  /* v1.6.10 — N carries the MIDDLE name too (full-name fidelity on
+     import into other apps; the FN is the composed displayName). */
+  lines.push(`N:${esc(c.familyName)};${esc(c.givenName)};${esc(c.middleName || "")};;`);
   lines.push(`FN:${esc(c.displayName)}`);
   if (c.company) lines.push(`ORG:${esc(c.company)}`);
   if (c.jobTitle) lines.push(`TITLE:${esc(c.jobTitle)}`);
@@ -46,13 +48,13 @@ const csvRow = (cells: unknown[]): string => cells.map(csvCell).join(",");
 
 export const contactsToCsv = (contacts: DeviceContact[]): string => {
   const head = csvRow([
-    "Name", "Given Name", "Family Name", "Phone 1 - Type", "Phone 1 - Value",
+    "Name", "Given Name", "Middle Name", "Family Name", "Phone 1 - Type", "Phone 1 - Value",
     "Phone 2 - Type", "Phone 2 - Value", "Email 1 - Type", "Email 1 - Value",
     "Organization Name", "Organization Title", "Birthday", "Notes",
   ]);
   const rows = contacts.map((c) =>
     csvRow([
-      c.displayName, c.givenName, c.familyName,
+      c.displayName, c.givenName, c.middleName ?? "", c.familyName,
       c.phones[0]?.label ?? "", c.phones[0]?.number ?? "",
       c.phones[1]?.label ?? "", c.phones[1]?.number ?? "",
       c.emails[0]?.label ?? "", c.emails[0]?.address ?? "",

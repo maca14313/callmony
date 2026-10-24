@@ -59,10 +59,12 @@ export const SearchOverlay: React.FC = () => {
       useApp.getState().refreshDeviceContacts().catch(() => undefined);
     }
   };
-  /* debounce the query — typing on a 5000-contact book stays at 60fps */
+  /* debounce the query — typing on a 5000-contact book stays at 60fps.
+     v1.6.10 — 140 ms felt sluggish (user report: "it is now very slow");
+     the cached index scans a whole book in a few ms, so 70 ms is plenty. */
   const [debouncedQ, setDebouncedQ] = useState("");
   useEffect(() => {
-    const id = setTimeout(() => setDebouncedQ(q), 140);
+    const id = setTimeout(() => setDebouncedQ(q), 70);
     return () => clearTimeout(id);
   }, [q]);
 
@@ -87,10 +89,15 @@ export const SearchOverlay: React.FC = () => {
   }, [entries, lists]);
 
   const ql = debouncedQ.trim().toLowerCase();
+  /* v1.6.10 — the old cap of 12 was the "typing abd shows only a few"
+     bug: every Abd-prefixed contact beyond the first 12 was silently
+     hidden. 50 ranked hits render instantly; that is the whole first
+     screens of a phone book and every match the eye is looking for. */
+  const CONTACT_HIT_CAP = 50;
   const hitContacts = useMemo(
     () =>
       ql.length >= 1
-        ? searchContacts(contacts, ql, displayName, countryCode, 12).map((x) => x.contact)
+        ? searchContacts(contacts, ql, displayName, countryCode, CONTACT_HIT_CAP).map((x) => x.contact)
         : [],
     [ql, contacts, countryCode]
   );

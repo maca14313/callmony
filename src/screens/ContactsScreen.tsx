@@ -481,7 +481,9 @@ export const ContactsScreen: React.FC = () => {
           style={[styles.newBtn, { backgroundColor: C.brandSoft }]}
           accessibilityLabel={t("act.newContact")}
         >
-          <Icon name="plus" size={15} color={C.brand} />
+          {/* v1.6.10 — the create-CONTACT glyph everywhere the action lives
+              (same account-plus icon as the Recents day headers) */}
+          <Icon name="account-plus" size={15} color={C.brand} />
           <Text style={{ fontSize: F.tiny, color: C.brand, fontWeight: "800" }}>{t("act.newContact")}</Text>
         </Pressable>
       </View>

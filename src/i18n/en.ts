@@ -147,6 +147,7 @@ export const EN: Record<string, string> = {
   "ce.newContact": "New contact",
   "ce.editContact": "Edit contact",
   "ce.firstName": "First name",
+  "ce.middleName": "Middle name",
   "ce.lastName": "Last name",
   "ce.nickname": "Nickname",
   "ce.company": "Company",

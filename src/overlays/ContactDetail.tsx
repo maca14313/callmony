@@ -8,8 +8,8 @@
    Every button works: Telegram opens a saved handle or offers to add one,
    More shares/copies/dials, the pencil opens the IN-APP contact editor. */
 
-import React, { useMemo, useState } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, InteractionManager, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { useApp } from "../lib/store";
 import { useUI, type Overlay } from "../lib/ui-store";
@@ -67,6 +67,16 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
   const [tgPicker, setTgPicker] = useState(false);
   const [emailPicker, setEmailPicker] = useState(false);
   const [addSheet, setAddSheet] = useState(false);
+  /* v1.6.10 — INSTANT OPEN (user report: "too slow to open the contact
+     detail page"): the header · balance · 12 quick-action tiles paint in
+     the FIRST frame; the segmented section body (ledger/lists/… — the
+     heaviest part of the tree) mounts one interaction later, so the sheet
+     is on screen immediately instead of waiting for the full mount. */
+  const [bodyReady, setBodyReady] = useState(false);
+  useEffect(() => {
+    const id = InteractionManager.runAfterInteractions(() => setBodyReady(true));
+    return () => id.cancel();
+  }, []);
 
   const ownerId = contact ? contactOwnerId(contact.recordID) : null;
   const xEntry = contactX.find((x) => x.recordID === params.recordID);
@@ -279,20 +289,30 @@ export const ContactDetailOverlay: React.FC<{ params: Extract<Overlay, { type: "
         />
 
         <View style={{ marginTop: 12 }}>
-          {seg === "ledger" && ownerId && <LedgerSection ownerId={ownerId} />}
-          {seg === "lists" && ownerId && <ListsSection ownerId={ownerId} />}
-          {seg === "notes" && ownerId && <NotesSection ownerId={ownerId} />}
-          {seg === "bank" && ownerId && <BankSection ownerId={ownerId} />}
-          {seg === "reminders" && ownerId && <RemindersSection ownerId={ownerId} />}
-          {seg === "info" && (
-            <ContactInfo
-              contact={contact}
-              socials={socials}
-              onPhoneOptions={(number) => setPhoneSheet(number)}
-              onAddSocial={(app) => setSocialSheet({ app })}
-              onRemoveSocial={(id) => useApp.getState().removeSocial(contact.recordID, id)}
-              onEdit={() => useUI.getState().open({ type: "contactEdit", recordID: params.recordID })}
-            />
+          {!bodyReady ? (
+            /* first frame(s) of an instant open — a light placeholder where
+               the section body is about to land */
+            <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 34 }}>
+              <ActivityIndicator size="small" color={C.brand} />
+            </View>
+          ) : (
+            <>
+              {seg === "ledger" && ownerId && <LedgerSection ownerId={ownerId} />}
+              {seg === "lists" && ownerId && <ListsSection ownerId={ownerId} />}
+              {seg === "notes" && ownerId && <NotesSection ownerId={ownerId} />}
+              {seg === "bank" && ownerId && <BankSection ownerId={ownerId} />}
+              {seg === "reminders" && ownerId && <RemindersSection ownerId={ownerId} />}
+              {seg === "info" && (
+                <ContactInfo
+                  contact={contact}
+                  socials={socials}
+                  onPhoneOptions={(number) => setPhoneSheet(number)}
+                  onAddSocial={(app) => setSocialSheet({ app })}
+                  onRemoveSocial={(id) => useApp.getState().removeSocial(contact.recordID, id)}
+                  onEdit={() => useUI.getState().open({ type: "contactEdit", recordID: params.recordID })}
+                />
+              )}
+            </>
           )}
         </View>
       </ScrollView>

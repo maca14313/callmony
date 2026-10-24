@@ -205,11 +205,15 @@ const Shell: React.FC = () => {
 
     const boot = async () => {
       bootMark("shell-boot");
-      /* 1 — cached contacts snapshot: instant, off the UI thread's way */
+      /* 1 — cached contacts snapshot: instant, off the UI thread's way.
+         v1.6.10 — a LEGACY (v1) snapshot is applied for the instant paint
+         but marked stale: its stored names predate the middle-name fix, so
+         contactsLoadedAt=0 makes the deferred TTL refresh re-fetch the book
+         (single-flight, background) and rewrite the cache with full names. */
       try {
         const cache = await loadCachedContacts();
         if (!cancelled && cache) {
-          useApp.setState({ deviceContacts: cache.list, contactsLoadedAt: cache.savedAt });
+          useApp.setState({ deviceContacts: cache.list, contactsLoadedAt: cache.legacy ? 0 : cache.savedAt });
         }
       } catch {
         /* cache is optional */

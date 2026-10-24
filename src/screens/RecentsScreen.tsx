@@ -446,7 +446,10 @@ export const RecentsScreen: React.FC = () => {
            date label in EVERY day header (user request: "I wanted the ＋
            icon for creating contact in every day header, not on the other
            place top strip") — the big ＋ tile was removed from the
-           favorites strip above. */
+           favorites strip above.
+           v1.6.10 — the icon is the CREATE-CONTACT glyph (account-plus —
+           person with a plus), not a bare ＋: it reads as "new contact"
+           at a glance (user request). */
         return (
           <View style={[styles.dayWrap, { backgroundColor: C.canvas }]}>
             {/* v1.6.8 — plain tiny "Oct 24" text, no pill/badge around it
@@ -459,7 +462,7 @@ export const RecentsScreen: React.FC = () => {
               accessibilityLabel={t("cd.newContact")}
               style={({ pressed }) => [styles.dayPlus, { backgroundColor: pressed ? C.brandSoft : "transparent" }]}
             >
-              <Icon name="plus" size={15} color={C.brand} />
+              <Icon name="account-plus" size={16} color={C.brand} />
             </Pressable>
             <View style={{ flex: 1 }} />
             <DayFilters filter={filter} onSet={setFilter} missedCount={missedCount} />
@@ -605,7 +608,7 @@ export const RecentsScreen: React.FC = () => {
             accessibilityLabel={t("cd.newContact")}
             style={({ pressed }) => [styles.dayPlus, { backgroundColor: pressed ? C.brandSoft : "transparent" }]}
           >
-            <Icon name="plus" size={15} color={C.brand} />
+            <Icon name="account-plus" size={16} color={C.brand} />
           </Pressable>
         </View>
       )}

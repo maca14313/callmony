@@ -12,7 +12,9 @@ export const uid = (): string =>
 
 export const displayName = (c?: DeviceContact | null): string => {
   if (!c) return "Unknown";
-  const n = `${c.givenName || ""} ${c.familyName || ""}`.trim();
+  /* v1.6.10 — given + MIDDLE + family: the middle name is a real part of
+     the name (dropping it showed "store landlord Work" as "store Work"). */
+  const n = `${c.givenName || ""} ${c.middleName || ""} ${c.familyName || ""}`.replace(/\s+/g, " ").trim();
   return n || c.nickname || c.company || c.displayName || "No name";
 };
 
@@ -328,11 +330,27 @@ export const t9Match = (number: string, name: string): boolean => {
    · pure-digit queries also T9-match names (dialer-style: 564 → "joh…");
    · ranking: exact number 7 · name word-prefix 6 · number prefix 6 ·
      T9 name 5.5 · number suffix (last digits) 5 · name substring 4 ·
-     company/email 3 · number substring 3.5 · note 2. */
+     company/email 3 · number substring 3.5 · note 2.
+   v1.6.10 — THE ADVANCED-SEARCH UPGRADE (user report: typing "abd" showed
+   only a few hits and typing felt slow):
+   · MULTI-TOKEN queries: "abdu mo" requires EVERY token to match somewhere
+     (a name word, initials, company, email or a phone) — a contact matching
+     all tokens ranks above anything matching just one;
+   · INITIALS matching: "ab" hits "Abdu Bekele" (the first letters of the
+     name's words);
+   · WORD-SUBSTRING matching: "abd" now also hits "Habdullah" / "Kabde"
+     (any single name WORD containing the query) — previously only the
+     whole-name substring path could catch those;
+   · the tie-break sort dropped localeCompare (slow, called O(n log n)
+     during ranking) for a plain code-point comparison on a pre-lowered
+     name stored in the index. */
 
 export interface ScoredContact<T> {
   contact: T;
   score: number;
+  /** pre-lowered display name — the ranking tie-break (fast code-point
+      order instead of O(n log n) localeCompare calls). */
+  nameLower: string;
 }
 
 interface SearchableContact {
@@ -351,6 +369,8 @@ export interface SearchIndexEntry<T> {
   name: string;
   nameLower: string;
   words: string[];
+  /** first letter of every name word — "ab" matches "Abdu Bekele". */
+  initials: string;
   companyLower: string;
   emailLower: string;
   noteLower: string;
@@ -359,23 +379,29 @@ export interface SearchIndexEntry<T> {
   phones: { raw: string; norm: string; nat: string }[];
 }
 
-const buildEntry = <T extends SearchableContact>(c: T, nameOf: (c: T) => string, countryCode: string): SearchIndexEntry<T> => ({
-  contact: c,
-  name: nameOf(c),
-  nameLower: nameOf(c).toLowerCase(),
-  words: nameOf(c).toLowerCase().split(/\s+/).filter(Boolean),
-  companyLower: `${c.company || ""} ${c.jobTitle || ""}`.toLowerCase().trim(),
-  emailLower: (c.emails || []).map((e) => (e.address || "").toLowerCase()).join(" "),
-  noteLower: (c.note || "").toLowerCase(),
-  letters: nameOf(c).toLowerCase().replace(/[^a-z]/g, ""),
-  phones: (c.phones || []).map((p) => {
-    const norm = normalizePhone(p.number, countryCode).replace(/\D/g, "");
-    const cc = DIAL_CODES[countryCode] || "251";
-    const nat =
-      norm.startsWith(cc) && norm.length > cc.length ? norm.slice(cc.length).replace(/^0+/, "") : norm;
-    return { raw: (p.number || "").replace(/\D/g, ""), norm, nat };
-  }),
-});
+const buildEntry = <T extends SearchableContact>(c: T, nameOf: (c: T) => string, countryCode: string): SearchIndexEntry<T> => {
+  const name = nameOf(c);
+  const nameLower = name.toLowerCase();
+  const words = nameLower.split(/\s+/).filter(Boolean);
+  return {
+    contact: c,
+    name,
+    nameLower,
+    words,
+    initials: words.map((w) => w[0]).join(""),
+    companyLower: `${c.company || ""} ${c.jobTitle || ""}`.toLowerCase().trim(),
+    emailLower: (c.emails || []).map((e) => (e.address || "").toLowerCase()).join(" "),
+    noteLower: (c.note || "").toLowerCase(),
+    letters: nameLower.replace(/[^a-z]/g, ""),
+    phones: (c.phones || []).map((p) => {
+      const norm = normalizePhone(p.number, countryCode).replace(/\D/g, "");
+      const cc = DIAL_CODES[countryCode] || "251";
+      const nat =
+        norm.startsWith(cc) && norm.length > cc.length ? norm.slice(cc.length).replace(/^0+/, "") : norm;
+      return { raw: (p.number || "").replace(/\D/g, ""), norm, nat };
+    }),
+  };
+};
 
 /* index cache — keyed by the (stable) contacts array reference */
 interface IndexCacheRow {
@@ -420,10 +446,40 @@ const phoneScore = (phones: { raw: string; norm: string; nat: string }[], qd: st
   return best;
 };
 
-const scoreEntry = (e: SearchIndexEntry<unknown>, q: string, qd: string, qnat: string, digitsOnly: boolean): number => {
+const scoreEntry = (e: SearchIndexEntry<unknown>, q: string, qd: string, qnat: string, digitsOnly: boolean, cc: string): number => {
+  /* v1.6.10 — MULTI-TOKEN: every whitespace-separated token must match
+     somewhere; the contact's score is the WEAKEST token (so "abdu mo"
+     ranks full-prefix matches above partial ones). Single-token queries
+     take the fast path below. */
+  const tokens = q.split(/\s+/).filter(Boolean);
+  if (tokens.length > 1) {
+    let weakest = Infinity;
+    for (const tok of tokens) {
+      const td = tok.replace(/\D/g, "");
+      let s = 0;
+      if (e.words.some((w) => w.startsWith(tok))) s = 6;
+      else if (tok.length >= 2 && e.initials.startsWith(tok)) s = 5.2;
+      else if (e.words.some((w) => w.includes(tok))) s = 4.5;
+      else if (e.nameLower.includes(tok)) s = 4;
+      if (!/^\d+$/.test(tok)) {
+        if (e.companyLower && e.companyLower.includes(tok)) s = Math.max(s, 3);
+        if (e.emailLower && e.emailLower.includes(tok)) s = Math.max(s, 3);
+      }
+      if (td.length >= 2) s = Math.max(s, phoneScore(e.phones, td, nationalDigits(td, cc)));
+      if (s <= 0) return 0; /* one token matched nowhere → no match */
+      if (s < weakest) weakest = s;
+    }
+    return (weakest === Infinity ? 0 : weakest) + 0.4; /* multi-token bonus */
+  }
+
   let score = 0;
   /* name — word-prefix ranks highest (dialer behavior) */
   if (e.words.some((w) => w.startsWith(q))) score = Math.max(score, 6);
+  /* v1.6.10 — initials: "ab" hits "Abdu Bekele" */
+  if (q.length >= 2 && e.initials.startsWith(q)) score = Math.max(score, 5.2);
+  /* v1.6.10 — word-substring: "abd" also hits "Habdullah" (any word
+     CONTAINING the query — not just the whole name) */
+  else if (e.words.some((w) => w.includes(q))) score = Math.max(score, 4.5);
   else if (e.nameLower.includes(q)) score = Math.max(score, 4);
   /* T9 name matching for pure-digit queries (3+ digits) — dialer-style */
   if (digitsOnly && qd.length >= 3 && e.letters && t9Match(qd, e.name)) score = Math.max(score, 5.5);
@@ -447,7 +503,8 @@ export const scoreContact = <T extends SearchableContact>(
   if (!q) return 0;
   const query = q.trim().toLowerCase();
   const qd = query.replace(/\D/g, "");
-  return scoreEntry(buildEntry(c, nameOf, countryCode) as unknown as SearchIndexEntry<unknown>, query, qd, nationalDigits(qd, countryCode), query === qd);
+  const entry = buildEntry(c, nameOf, countryCode) as unknown as SearchIndexEntry<unknown>;
+  return scoreEntry(entry, query, qd, nationalDigits(qd, countryCode), query === qd, countryCode);
 };
 
 /** Ranked contact search — use wherever a list of contacts is filtered. */
@@ -466,10 +523,13 @@ export const searchContacts = <T extends SearchableContact>(
   const entries = getContactSearchIndex(contacts, countryCode, nameOf);
   const out: ScoredContact<T>[] = [];
   for (const e of entries) {
-    const s = scoreEntry(e as unknown as SearchIndexEntry<unknown>, q, qd, qnat, digitsOnly);
-    if (s > 0) out.push({ contact: e.contact, score: s });
+    const s = scoreEntry(e as unknown as SearchIndexEntry<unknown>, q, qd, qnat, digitsOnly, countryCode);
+    if (s > 0) out.push({ contact: e.contact, score: s, nameLower: e.nameLower });
   }
-  out.sort((a, b) => b.score - a.score || nameOf(a.contact).localeCompare(nameOf(b.contact)));
+  /* v1.6.10 — the tie-break is a plain code-point comparison on the
+     pre-lowered name (localeCompare is an order of magnitude slower and
+     was called O(n log n) times while ranking a large book). */
+  out.sort((a, b) => b.score - a.score || (a.nameLower < b.nameLower ? -1 : a.nameLower > b.nameLower ? 1 : 0));
   return out.slice(0, limit);
 };
 

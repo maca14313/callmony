@@ -134,6 +134,10 @@ export const ContactEditor: React.FC<{ recordID: string; onClose: () => void }> 
   const [loadState, setLoadState] = useState<"loading" | "ready" | "failed">("loading");
   const [saving, setSaving] = useState(false);
   const [given, setGiven] = useState("");
+  /* v1.6.10 — the middle name is a first-class editable field: it was
+     loaded + saved invisibly before, so a "store landlord Work" contact
+     showed an editor with no hint the middle token existed. */
+  const [middle, setMiddle] = useState("");
   const [family, setFamily] = useState("");
   const [company, setCompany] = useState("");
   const [phones, setPhones] = useState<PhoneRow[]>([]);
@@ -146,6 +150,7 @@ export const ContactEditor: React.FC<{ recordID: string; onClose: () => void }> 
   const applyData = (data: ContactEditData) => {
     dataRef.current = data;
     setGiven(data.givenName || "");
+    setMiddle(data.middleName || "");
     setFamily(data.familyName || "");
     setCompany(data.company || "");
     setPhones((data.phoneNumbers || []).map((p) => ({ label: p.label, number: p.number })));
@@ -248,7 +253,7 @@ export const ContactEditor: React.FC<{ recordID: string; onClose: () => void }> 
     const ok = await saveContactEdit({
       recordID: data.recordID,
       givenName: given.trim(),
-      middleName: data.middleName ?? "",
+      middleName: middle.trim(),
       familyName: family.trim(),
       company: company.trim(),
       jobTitle: data.jobTitle ?? "",
@@ -264,10 +269,14 @@ export const ContactEditor: React.FC<{ recordID: string; onClose: () => void }> 
        whole-book refresh runs in the background afterwards (and the store
        defers it while any editor is open). The old code awaited the full
        re-fetch here — that bridge dump was the reported Save freeze. */
-    const composed = `${given.trim()} ${family.trim()}`.trim();
+    /* v1.6.10 — the locally patched display name composes given + MIDDLE +
+       family — the old patch dropped the middle token, so a saved contact
+       kept showing the shortened name until the background refresh. */
+    const composed = `${given.trim()} ${middle.trim()} ${family.trim()}`.replace(/\s+/g, " ").trim();
     useApp.getState().patchDeviceContact(data.recordID, {
       displayName: composed || company.trim() || data.recordID,
       givenName: given.trim(),
+      middleName: middle.trim() || undefined,
       familyName: family.trim(),
       company: company.trim() || undefined,
       phones: cleanPhones.map((p) => ({ id: p.number, label: p.label, number: p.number })),
@@ -335,6 +344,7 @@ export const ContactEditor: React.FC<{ recordID: string; onClose: () => void }> 
         keyboardShouldPersistTaps="handled"
       >
         <Field label={t("ce.firstName")} value={given} onChangeText={setGiven} placeholder={t("ce.firstName")} autoFocus />
+        <Field label={t("ce.middleName")} value={middle} onChangeText={setMiddle} placeholder={t("ce.middleName")} />
         <Field label={t("ce.lastName")} value={family} onChangeText={setFamily} placeholder={t("ce.lastName")} />
         <Field label={t("ce.company")} value={company} onChangeText={setCompany} placeholder={t("ce.company")} />
 
@@ -412,6 +422,9 @@ export const ContactCreator: React.FC<{
   const countryCode = useApp((s) => s.settings.countryCode);
   const [saving, setSaving] = useState(false);
   const [given, setGiven] = useState(prefillName ?? "");
+  /* v1.6.10 — middle name in the creator too: full-name fidelity from the
+     very first save (matches the editor's fields). */
+  const [middle, setMiddle] = useState("");
   const [family, setFamily] = useState("");
   const [phones, setPhones] = useState<PhoneRow[]>(
     prefillPhone ? [{ label: "mobile", number: prefillPhone }] : [{ label: "mobile", number: "" }]
@@ -447,6 +460,7 @@ export const ContactCreator: React.FC<{
     setSaving(true);
     const recordID = await createDeviceContact({
       givenName: given.trim(),
+      middleName: middle.trim(),
       familyName: family.trim(),
       phoneNumbers: cleanPhones,
       emailAddresses: cleanEmails,
@@ -457,12 +471,14 @@ export const ContactCreator: React.FC<{
       return;
     }
     /* instant local insert — the contact exists in the app RIGHT NOW; the
-       silent background refresh reconciles photo/thumbnail etc. after */
-    const composed = `${given.trim()} ${family.trim()}`.trim();
+       silent background refresh reconciles photo/thumbnail etc. after.
+       v1.6.10 — composed WITH the middle name (full-name fidelity). */
+    const composed = `${given.trim()} ${middle.trim()} ${family.trim()}`.replace(/\s+/g, " ").trim();
     useApp.getState().addDeviceContactToList({
       recordID,
       displayName: composed || prettyPhone(cleanPhones[0]?.number ?? "", countryCode),
       givenName: given.trim(),
+      middleName: middle.trim() || undefined,
       familyName: family.trim(),
       phones: cleanPhones.map((p) => ({ id: p.number, label: p.label, number: p.number })),
       emails: cleanEmails.map((e) => ({ id: e.email, label: e.label, address: e.email })),
@@ -503,6 +519,7 @@ export const ContactCreator: React.FC<{
         keyboardShouldPersistTaps="handled"
       >
         <Field label={t("ce.firstName")} value={given} onChangeText={setGiven} placeholder={t("ce.firstName")} autoFocus />
+        <Field label={t("ce.middleName")} value={middle} onChangeText={setMiddle} placeholder={t("ce.middleName")} />
         <Field label={t("ce.lastName")} value={family} onChangeText={setFamily} placeholder={t("ce.lastName")} />
 
         <Text style={[ceStyles.sectionTitle, { color: C.brand }]}>
