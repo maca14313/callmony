@@ -91,3 +91,13 @@ bun.lock
 
 # internal agent coordination log (local only)
 worklog.md
+
+# ================= KMP edition (repo root) =================
+.gradle/
+.kotlin/
+build/
+composeApp/build/
+composeApp/.kotlin/
+local.properties
+!composeApp/callmony-release.keystore
+*.hprof
