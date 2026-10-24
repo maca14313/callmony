@@ -6,6 +6,22 @@ lives on the device. Contacts and the call log come from the phone itself.
 > **Repo layout:** this root is the React Native app. The original web app
 > (Next.js PWA) lives in [`web/`](web/) — same features, browser edition.
 
+## 📚 Documentation (everything, 100%)
+
+The complete documentation suite lives in [`docs/`](docs/):
+
+| Document | What's inside |
+|---|---|
+| **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)** | The complete user manual — every screen, every button, every gesture, every feature explained step by step (20 chapters: getting started → troubleshooting) |
+| **[docs/FEATURES.md](docs/FEATURES.md)** | The exhaustive feature inventory — every feature in the app, grouped by domain (calls, keypad, contacts, search, ledger, lists, notes, reminders, banks, calculator, data safety, security, stability, i18n, delivery) |
+| **[docs/UI_REFERENCE.md](docs/UI_REFERENCE.md)** | Every screen, overlay, sheet, component, color token, type style and gesture — the full visual/interaction reference |
+| **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | How it works under the hood — boot pipeline, data model, store, persistence & caching, native modules, notifications/alarms, search engine, money math, i18n, permissions, stability & performance engineering, CI/CD, web edition |
+| **[docs/CHANGELOG.md](docs/CHANGELOG.md)** | Full version history (v1.0.0 → v1.6.11) |
+| [docs/README-ci.md](docs/README-ci.md) | One-time GitHub Actions setup (browser paste) |
+| [docs/build-android.workflow.yml](docs/build-android.workflow.yml) | The CI workflow file (APK → Releases) |
+
+Current release: **v1.6.11** (versionCode 21).
+
 ## Highlights
 
 - **Real immediate calls** — tapping a contact (or the keypad's call button)

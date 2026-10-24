@@ -88,3 +88,6 @@ verify-shots/
 *.log
 bun.lock
 .github/workflows/
+
+# internal agent coordination log (local only)
+worklog.md
