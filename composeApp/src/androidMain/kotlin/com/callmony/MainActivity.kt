@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.callmony.lib.AppStore
 import com.callmony.ui.CallmonyApp
 
 class MainActivity : ComponentActivity() {
@@ -14,6 +15,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             CallmonyApp()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Returning from the default dialer / messaging app: refresh the
+        // system call log incrementally so calls made through the handoff
+        // appear in Recents right away (cheap — usually zero rows).
+        if (AppStore.state.hydrated) AppStore.loadSystemCalls()
     }
 
     override fun onRequestPermissionsResult(

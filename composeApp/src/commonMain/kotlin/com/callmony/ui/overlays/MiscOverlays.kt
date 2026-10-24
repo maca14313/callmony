@@ -80,6 +80,7 @@ import com.callmony.ui.kit.Money
 import com.callmony.ui.kit.Pill
 import com.callmony.ui.kit.Toasts
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /* MiscOverlays — global Search, SpeedDial grid, Merge duplicates, About,
    AlarmDialog. Port of src/overlays/MiscOverlays.tsx. */
@@ -364,13 +365,17 @@ fun MergeOverlay() {
                             Btn(
                                 small = true, label = t("spd.mergeBtn"), variant = "primary",
                                 onPress = {
-                                    val ok = Platform.contacts.addPhoneToContact(a.recordID, "other", b.phones.firstOrNull()?.number ?: "")
-                                    if (ok) {
-                                        Platform.contacts.deleteContact(b.recordID)
-                                        AppStore.state.deviceContacts.find { it.recordID == b.recordID }?.let { }
-                                        pairs = pairs.filter { it.first != a && it.second != a && it.first != b && it.second != b }
-                                        Toasts.toast(t("spd.contactsMerged"))
-                                    } else Toasts.toast(t("act.couldntCopy"), "error")
+                                    AppStore.scope.launch {
+                                        // v1.6.13: WRITE_CONTACTS gate for merges.
+                                        val ok = com.callmony.lib.requestContactsWrite() &&
+                                            Platform.contacts.addPhoneToContact(a.recordID, "other", b.phones.firstOrNull()?.number ?: "")
+                                        if (ok) {
+                                            Platform.contacts.deleteContact(b.recordID)
+                                            AppStore.state.deviceContacts.find { it.recordID == b.recordID }?.let { }
+                                            pairs = pairs.filter { it.first != a && it.second != a && it.first != b && it.second != b }
+                                            Toasts.toast(t("spd.contactsMerged"))
+                                        } else Toasts.toast(t("act.couldntCopy"), "error")
+                                    }
                                 },
                                 modifier = Modifier.weight(1f),
                             )
@@ -435,13 +440,8 @@ fun AboutOverlay() {
     val pop = { UiStore.pop() }
     Sheet(title = t("st.aboutApp"), onBack = pop) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(
-                Modifier
-                    .size(74.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(C.brand),
-                contentAlignment = Alignment.Center,
-            ) { MdiIcon("phone-in-talk", 38, C.onBrand) }
+            // v1.6.13 — the real logo here too (was the old icon tile)
+            com.callmony.ui.LogoTile(74, corner = 20)
             Text(
                 "callmony",
                 fontSize = F.title.sp,
@@ -451,7 +451,7 @@ fun AboutOverlay() {
             )
             Text(t("hdr.tagline"), fontSize = F.small.sp, color = C.sub)
             Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Pill("v1.6.11", "brand")
+                Pill("v1.6.13", "brand")
                 Pill(t("about.offline"), "green", icon = "cloud-off-outline")
             }
             Spacer(Modifier.height(10.dp))

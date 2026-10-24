@@ -72,8 +72,27 @@ object AppStore {
 
     /* ---------------- sync call log (v1.6.11 stock-dialer policy) ---------------- */
 
-    fun loadSystemCalls(full: Boolean = false) {
+    private var callLogAskInFlight = false
+
+    fun loadSystemCalls(full: Boolean = false, forceAsk: Boolean = false) {
         scope.launch {
+            // v1.6.13 FIX: READ_CALL_LOG was NEVER requested — fetchAll()
+            // silently returned [] and the perm was even marked GRANTED, so
+            // the Recents tab stayed empty and the "allow" card never showed.
+            // Ask once, dialer-style; on grant load the log, on deny surface
+            // the denied card (state.callLogPerm = DENIED). forceAsk lets the
+            // denied card's Allow button re-request.
+            if (!Platform.callLog.hasPermission()) {
+                if ((forceAsk || state.callLogPerm != PermState.DENIED) && !callLogAskInFlight) {
+                    callLogAskInFlight = true
+                    Platform.callLog.requestPermission { granted ->
+                        callLogAskInFlight = false
+                        state.callLogPerm = if (granted) PermState.GRANTED else PermState.DENIED
+                        if (granted) loadSystemCalls(full = true)
+                    }
+                }
+                return@launch
+            }
             val cur = state.systemCalls
             var isFull = full
             if (!isFull && (cur.isEmpty() || now() - state.callLogSyncedAt >= CALLS_FULL_TTL)) {

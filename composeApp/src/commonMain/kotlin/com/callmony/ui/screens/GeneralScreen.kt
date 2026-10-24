@@ -105,7 +105,7 @@ fun GeneralScreen() {
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
-            .padding(bottom = 8.dp),
+            .padding(bottom = 28.dp),
     ) {
         // hero
         Card(Modifier.padding(bottom = 12.dp)) {

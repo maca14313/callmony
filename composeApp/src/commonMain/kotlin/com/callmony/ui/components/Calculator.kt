@@ -56,11 +56,16 @@ import kotlinx.coroutines.launch
 
 private val OP_CHARS = setOf('+', '−', '×', '÷')
 
+/* v1.6.13 FIX: the shunting-yard normalizes '−'→'-', '×'→'*', '÷'→'/' BEFORE
+   tokenizing, so the evaluator feeds ASCII operators here — but this when()
+   only matched the UNICODE glyphs, so every −, ×, ÷ expression fell into
+   `else -> b` and just returned the LAST OPERAND ("2 × 2 = 2.0000000001" —
+   the user's exact report). Match BOTH spellings. */
 private fun applyOp(op: Char, a: Double, b: Double): Double = when (op) {
     '+' -> a + b
-    '−' -> a - b
-    '×' -> a * b
-    '÷' -> if (b == 0.0) Double.NaN else a / b
+    '-', '−' -> a - b
+    '*', '×' -> a * b
+    '/', '÷' -> if (b == 0.0) Double.NaN else a / b
     else -> b
 }
 
@@ -92,16 +97,22 @@ fun evalExpression(src: String): Double? {
         }
     }
     if (stack.size != 1) return null
-    val res = kotlin.math.round((stack[0] + 1e-10) * 1e10) / 1e10
+    val res = kotlin.math.round(stack[0] * 1e10) / 1e10
     return if (res.isNaN() || res.isInfinite()) null else res
 }
 
 fun fmtResult(n: Double): String {
+    if (n.isNaN() || n.isInfinite()) return n.toString()
+    // ≥1e12 → exponential (spec, same as the RN edition)
     if (kotlin.math.abs(n) >= 1e12) return n.toString()
-    val rounded = kotlin.math.round((n + 1e-10) * 1e10) / 1e10
-    val s = if (rounded == kotlin.math.floor(rounded) && !rounded.isInfinite() && kotlin.math.abs(rounded) < 1e15)
-        rounded.toLong().toString() else rounded.toString()
-    return if (s.length > 16) fmtSig(n, 12) else s
+    // integers render exactly (2 × 2 → "4", never "4.000000001")
+    val rounded = kotlin.math.round(n * 1e10) / 1e10
+    if (rounded == kotlin.math.floor(rounded) && !rounded.isInfinite() && kotlin.math.abs(rounded) < 1e15)
+        return rounded.toLong().toString()
+    // decimals: 12 significant digits with trailing zeros trimmed — kills all
+    // double noise (0.1+0.2 → "0.3", not "0.30000000000000004") and never
+    // switches to scientific notation below 1e12 (Double.toString does at 1e7)
+    return fmtSig(n, 12)
 }
 
 private data class HistItem(val expr: String, val result: String)

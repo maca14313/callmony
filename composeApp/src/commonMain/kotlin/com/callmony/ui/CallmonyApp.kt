@@ -261,14 +261,9 @@ private fun Header() {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (primary) {
-                // logo tile + wordmark + tagline + search
-                Box(
-                    Modifier
-                        .size(38.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(C.brand),
-                    contentAlignment = Alignment.Center,
-                ) { MdiIcon("phone-in-talk", 20, C.onBrand) }
+                // logo tile + wordmark + tagline + search (v1.6.13: the REAL
+                // logo everywhere the old icon tile used to be)
+                LogoTile(38, corner = 12)
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("call", fontSize = F.body.sp, fontWeight = FontWeight.ExtraBold, color = C.ink)
@@ -378,6 +373,34 @@ private fun BottomNav() {
                 }
             }
         }
+    }
+}
+
+/* ---------------- Logo tile (the new logo, everywhere) ---------------- */
+
+/** The new logo as a rounded tile; falls back to the brand tile while the
+ *  bitmap decodes. Used by the header/navbar, splash and About. */
+@Composable
+fun LogoTile(sizeDp: Int, corner: Int = sizeDp / 3) {
+    val C = C()
+    val bmp by rememberLogoBitmap()
+    if (bmp != null) {
+        Image(
+            bitmap = bmp!!,
+            contentDescription = "callmony logo",
+            modifier = Modifier
+                .size(sizeDp.dp)
+                .clip(RoundedCornerShape(corner.dp)),
+            contentScale = ContentScale.Crop,
+        )
+    } else {
+        Box(
+            Modifier
+                .size(sizeDp.dp)
+                .clip(RoundedCornerShape(corner.dp))
+                .background(C.brand),
+            contentAlignment = Alignment.Center,
+        ) { MdiIcon("phone-in-talk", sizeDp / 2, C.onBrand) }
     }
 }
 

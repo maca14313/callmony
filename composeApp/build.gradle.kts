@@ -46,6 +46,8 @@ kotlin {
                 implementation("org.robolectric:robolectric:4.14.1")
                 implementation("androidx.test:core-ktx:1.6.1")
                 implementation("androidx.test.ext:junit-ktx:1.2.1")
+                implementation("androidx.compose.ui:ui-test-junit4:1.7.3")
+                implementation("androidx.compose.ui:ui-test-manifest:1.7.3")
             }
         }
     }
@@ -59,8 +61,8 @@ android {
         applicationId = "com.callmony"
         minSdk = 23
         targetSdk = 34
-        versionCode = 22
-        versionName = "1.6.12"
+        versionCode = 23
+        versionName = "1.6.13"
     }
 
     signingConfigs {
@@ -111,6 +113,9 @@ android {
                     "robolectric.dependency.repo.url",
                     "https://maven-central.storage-download.googleapis.com/maven2",
                 )
+                // 4 GB machine: the forked test JVM gets a fixed heap so it can
+                // never eat the whole box (Robolectric NATIVE graphics is hungry).
+                test.maxHeapSize = "1280m"
             }
         }
     }

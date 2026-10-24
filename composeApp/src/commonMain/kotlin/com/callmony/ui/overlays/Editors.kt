@@ -46,6 +46,7 @@ import com.callmony.model.BankAccount
 import com.callmony.model.Note
 import com.callmony.model.contactOwnerId
 import com.callmony.model.Reminder
+import com.callmony.platform.NativeDateTime
 import com.callmony.platform.Platform
 import com.callmony.theme.F
 import com.callmony.ui.components.Sheet
@@ -286,10 +287,66 @@ fun ReminderEditOverlay(reminderId: String?, ownerId: String) {
                     }
                 }
             }
-            // date + time
+            // date + time — v1.6.13: the ADVANCED setters (native Material
+            // calendar + clock dialogs, exactly the RN edition's
+            // @react-native-community/datetimepicker). Tappable rows replace
+            // the old plain text inputs; nothing invalid can be entered.
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(Modifier.weight(1f)) { Field(label = t("rm.dueDate"), value = dueDate, onChangeText = { dueDate = it }, placeholder = "YYYY-MM-DD") }
-                Box(Modifier.weight(1f)) { Field(label = t("rm.dueTime"), value = dueTime, onChangeText = { dueTime = it }, placeholder = "HH:MM") }
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(1.dp, C.line, RoundedCornerShape(14.dp))
+                        .background(C.inputBg, RoundedCornerShape(14.dp))
+                        .clickable {
+                            val initial = parseDue() ?: now()
+                            NativeDateTime.pickDate(
+                                epochMillis = initial,
+                                onPick = { epoch ->
+                                    val d = dateOf(epoch)
+                                    dueDate = "${d.year}-${(d.month0 + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
+                                },
+                            )
+                        }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                ) {
+                    Column {
+                        Text(t("rm.dueDate"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            MdiIcon("calendar-blank-outline", 16, C.brand)
+                            Text(fd(dueDate), fontSize = F.body.sp, color = C.ink, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(1.dp, C.line, RoundedCornerShape(14.dp))
+                        .background(C.inputBg, RoundedCornerShape(14.dp))
+                        .clickable {
+                            val parts = dueTime.split(":")
+                            val h = parts.getOrNull(0)?.toIntOrNull() ?: 9
+                            val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                            NativeDateTime.pickTime(
+                                hourOfDay = h,
+                                minute = m,
+                                is24Hour = false,
+                                onPick = { hh, mm ->
+                                    dueTime = "${hh.toString().padStart(2, '0')}:${mm.toString().padStart(2, '0')}"
+                                },
+                            )
+                        }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                ) {
+                    Column {
+                        Text(t("rm.dueTime"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            MdiIcon("clock-outline", 16, C.brand)
+                            Text(dueTime, fontSize = F.body.sp, color = C.ink, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
             }
             // quick chips
             Row(Modifier.padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

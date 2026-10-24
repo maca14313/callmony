@@ -57,6 +57,9 @@ object AndroidPlatform {
 
     fun hasPerm(perm: String): Boolean =
         ContextCompat.checkSelfPermission(appContext, perm) == PackageManager.PERMISSION_GRANTED
+
+    /** Whether init(context) has run (BootReceiver may fire first on some OEMs). */
+    fun isReady(): Boolean = this::appContext.isInitialized
 }
 
 /* ---------------- ImmediateCallModule ---------------- */
@@ -83,11 +86,33 @@ class AndroidCalls : CallsService {
     }
 
     override fun canCall(): Boolean = AndroidPlatform.hasPerm(Manifest.permission.CALL_PHONE)
+
+    override fun requestPermission(onResult: (Boolean) -> Unit): Boolean {
+        // Already granted → fire immediately (no dialog).
+        if (AndroidPlatform.hasPerm(Manifest.permission.CALL_PHONE)) {
+            onResult(true)
+            return true
+        }
+        return try {
+            PermissionBus.request(Manifest.permission.CALL_PHONE, onResult)
+            true
+        } catch (_: Exception) {
+            onResult(false)
+            false
+        }
+    }
 }
 
 /* ---------------- SysCallLogModule ---------------- */
 
 class AndroidCallLog : CallLogService {
+    override fun hasPermission(): Boolean =
+        AndroidPlatform.hasPerm(Manifest.permission.READ_CALL_LOG)
+
+    override fun requestPermission(onResult: (Boolean) -> Unit) {
+        PermissionBus.request(Manifest.permission.READ_CALL_LOG, onResult)
+    }
+
     override fun fetchAll(): List<DeviceCall> {
         val ctx = AndroidPlatform.appContext
         if (!AndroidPlatform.hasPerm(Manifest.permission.READ_CALL_LOG)) return emptyList()
@@ -352,6 +377,13 @@ class AndroidContacts : ContactsService {
 
     override fun requestPermission(onResult: (Boolean) -> Unit) {
         PermissionBus.request(Manifest.permission.READ_CONTACTS, onResult)
+    }
+
+    override fun hasWritePermission(): Boolean =
+        AndroidPlatform.hasPerm(Manifest.permission.WRITE_CONTACTS)
+
+    override fun requestWritePermission(onResult: (Boolean) -> Unit) {
+        PermissionBus.request(Manifest.permission.WRITE_CONTACTS, onResult)
     }
 
     override fun createContact(
@@ -793,15 +825,28 @@ class AlarmReceiver : android.content.BroadcastReceiver() {
 class BootReceiver : android.content.BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
-            // Schedule a re-arm: the app store re-reads pending reminders on open;
-            // this receiver nudges the alarm manager directly from the persisted snapshot.
-            val rearm = Intent(context, AlarmReceiver::class.java).apply { putExtra("id", "boot") }
-            val pi = PendingIntent.getBroadcast(
-                context, "boot".hashCode(), rearm,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-            val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            am.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 8000, pi)
+            // Read the persisted store and re-schedule every pending reminder
+            // directly through the alarm manager — notifications survive
+            // reboots even when the app is not opened first.
+            val pending = goAsync()
+            Thread {
+                try {
+                    if (!AndroidPlatform.isReady()) AndroidPlatform.init(context)
+                    val data = com.callmony.lib.Db.loadAll()
+                    val notify = Platform.notify as? AndroidNotify ?: return@Thread
+                    for (r in data.reminders.filter { it.deletedAt == null && !it.done }) {
+                        val next = if (r.repeat != "none")
+                            com.callmony.lib.nextOccurrence(r.dueAt, r.repeat)
+                        else r.dueAt
+                        if (next > System.currentTimeMillis()) {
+                            notify.schedule(r.id, r.title, r.notes ?: "", next, r.kind)
+                        }
+                    }
+                } catch (_: Exception) {
+                } finally {
+                    pending.finish()
+                }
+            }.start()
         }
     }
 }
@@ -816,6 +861,26 @@ class AndroidShare : ShareService {
                 Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
         } catch (_: Exception) {}
+    }
+
+    override fun openSms(number: String, text: String?) {
+        // ACTION_SENDTO + smsto: resolves to the DEFAULT messaging app and
+        // pre-fills the conversation — the seamless handoff (plain sms:
+        // through ACTION_VIEW only reaches apps that declare it).
+        val ctx = AndroidPlatform.appContext
+        try {
+            val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(number)}"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (!text.isNullOrEmpty()) intent.putExtra("sms_body", text)
+            ctx.startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                val fallback = Intent(Intent.ACTION_VIEW, Uri.parse("sms:${Uri.encode(number)}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (!text.isNullOrEmpty()) fallback.putExtra("sms_body", text)
+                ctx.startActivity(fallback)
+            } catch (_: Exception) {}
+        }
     }
 
     override fun canOpenUrl(url: String): Boolean {

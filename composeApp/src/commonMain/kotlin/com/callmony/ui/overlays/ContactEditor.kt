@@ -146,27 +146,37 @@ fun ContactEditorOverlay(recordID: String) {
                             return@Btn
                         }
                         saving = true
-                        val ok = Platform.contacts.updateContact(
-                            recordID,
-                            given.trim(), middle.trim().ifEmpty { null }, family.trim(), company.trim().ifEmpty { null },
-                            valid.map { it.label to it.number },
-                            emails.filter { it.address.isNotBlank() }.map { it.label to it.address },
-                        )
-                        saving = false
-                        if (ok) {
-                            AppStore.patchDeviceContact(recordID) { old ->
-                                old.copy(
-                                    givenName = given.trim(),
-                                    middleName = middle.trim().ifEmpty { null },
-                                    familyName = family.trim(),
-                                    company = company.trim().ifEmpty { null },
-                                    phones = valid.map { DevicePhone(it.number, it.label, it.number) },
-                                    emails = emails.filter { it.address.isNotBlank() }.map { DeviceEmail(it.address, it.label, it.address) },
-                                )
+                        // v1.6.13 FIX: WRITE_CONTACTS was never requested —
+                        // createContact returned null → "Couldn't save contact".
+                        // Ask first (fires immediately when already granted).
+                        Platform.contacts.requestWritePermission { granted ->
+                            if (!granted) {
+                                saving = false
+                                Toasts.toast(t("cd.saveFailed"), "error")
+                                return@requestWritePermission
                             }
-                            Toasts.toast(t("ce.contactUpdated"))
-                            pop()
-                        } else Toasts.toast(t("cd.saveFailed"), "error")
+                            val ok = Platform.contacts.updateContact(
+                                recordID,
+                                given.trim(), middle.trim().ifEmpty { null }, family.trim(), company.trim().ifEmpty { null },
+                                valid.map { it.label to it.number },
+                                emails.filter { it.address.isNotBlank() }.map { it.label to it.address },
+                            )
+                            saving = false
+                            if (ok) {
+                                AppStore.patchDeviceContact(recordID) { old ->
+                                    old.copy(
+                                        givenName = given.trim(),
+                                        middleName = middle.trim().ifEmpty { null },
+                                        familyName = family.trim(),
+                                        company = company.trim().ifEmpty { null },
+                                        phones = valid.map { DevicePhone(it.number, it.label, it.number) },
+                                        emails = emails.filter { it.address.isNotBlank() }.map { DeviceEmail(it.address, it.label, it.address) },
+                                    )
+                                }
+                                Toasts.toast(t("ce.contactUpdated"))
+                                pop()
+                            } else Toasts.toast(t("cd.saveFailed"), "error")
+                        }
                     },
                     disabled = !canSave || saving,
                     loading = saving,
@@ -273,28 +283,37 @@ fun ContactCreatorOverlay(prefillPhone: String?, prefillName: String?) {
                         return@Btn
                     }
                     saving = true
-                    val id = Platform.contacts.createContact(
-                        given.trim(), middle.trim().ifEmpty { null }, family.trim(), company.trim().ifEmpty { null },
-                        valid.map { it.label to it.number },
-                        emails.filter { it.address.isNotBlank() }.map { it.label to it.address },
-                    )
-                    saving = false
-                    if (id != null) {
-                        AppStore.addDeviceContactToList(
-                            DeviceContact(
-                                recordID = id,
-                                displayName = listOf(given.trim(), middle.trim(), family.trim()).filter { it.isNotEmpty() }.joinToString(" ").ifEmpty { company.trim() },
-                                givenName = given.trim(),
-                                middleName = middle.trim().ifEmpty { null },
-                                familyName = family.trim(),
-                                company = company.trim().ifEmpty { null },
-                                phones = valid.map { DevicePhone(it.number, it.label, it.number) },
-                                emails = emails.filter { it.address.isNotBlank() }.map { DeviceEmail(it.address, it.label, it.address) },
-                            )
+                    // v1.6.13 FIX: ask for WRITE_CONTACTS first — without it
+                    // every save failed with "Couldn't save contact".
+                    Platform.contacts.requestWritePermission { granted ->
+                        if (!granted) {
+                            saving = false
+                            Toasts.toast(t("cd.saveFailed"), "error")
+                            return@requestWritePermission
+                        }
+                        val id = Platform.contacts.createContact(
+                            given.trim(), middle.trim().ifEmpty { null }, family.trim(), company.trim().ifEmpty { null },
+                            valid.map { it.label to it.number },
+                            emails.filter { it.address.isNotBlank() }.map { it.label to it.address },
                         )
-                        Toasts.toast(t("ce.contactSaved"))
-                        pop()
-                    } else Toasts.toast(t("cd.saveFailed"), "error")
+                        saving = false
+                        if (id != null) {
+                            AppStore.addDeviceContactToList(
+                                DeviceContact(
+                                    recordID = id,
+                                    displayName = listOf(given.trim(), middle.trim(), family.trim()).filter { it.isNotEmpty() }.joinToString(" ").ifEmpty { company.trim() },
+                                    givenName = given.trim(),
+                                    middleName = middle.trim().ifEmpty { null },
+                                    familyName = family.trim(),
+                                    company = company.trim().ifEmpty { null },
+                                    phones = valid.map { DevicePhone(it.number, it.label, it.number) },
+                                    emails = emails.filter { it.address.isNotBlank() }.map { DeviceEmail(it.address, it.label, it.address) },
+                                )
+                            )
+                            Toasts.toast(t("ce.contactSaved"))
+                            pop()
+                        } else Toasts.toast(t("cd.saveFailed"), "error")
+                    }
                 },
                 disabled = !canSave || saving,
                 loading = saving,

@@ -1,6 +1,7 @@
 package com.callmony.ui.overlays
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,11 +33,13 @@ import com.callmony.i18n.t
 import com.callmony.lib.AppStore
 import com.callmony.lib.Overlay
 import com.callmony.lib.UiStore
+import com.callmony.lib.dateOf
 import com.callmony.lib.money
 import com.callmony.lib.now
 import com.callmony.lib.ownerNameOf
 import com.callmony.lib.todayStr
 import com.callmony.lib.uid
+import com.callmony.platform.NativeDateTime
 import com.callmony.model.ENTRY_CATEGORIES as CATS
 import com.callmony.model.EntryItem
 import com.callmony.model.LedgerEntry
@@ -174,7 +177,10 @@ fun EntryEditOverlay(
                     }
                 }
             }
-            // hero amount
+            // hero amount — a REAL decimal-pad input (v1.6.13 fix: was a
+            // display-only Text, so no amount could ever be typed and Save
+            // stayed disabled — "the ledger doesn't work"). Comma tolerated,
+            // exactly like the RN edition's hero field.
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -186,11 +192,41 @@ fun EntryEditOverlay(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(t("lg.amount"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        amount.ifEmpty { "0" },
-                        fontSize = 30.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = C.ink,
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = amount,
+                        onValueChange = { raw ->
+                            // digits, one dot/comma, keep it clean
+                            val cleaned = raw
+                                .replace(',', '.')
+                                .filter { it.isDigit() || it == '.' }
+                                .let { s ->
+                                    val firstDot = s.indexOf('.')
+                                    if (firstDot >= 0) s.substring(0, firstDot + 1) + s.substring(firstDot + 1).replace(".", "") else s
+                                }
+                                .take(14)
+                            amount = cleaned
+                        },
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontSize = 30.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = C.ink,
+                        ),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
+                        ),
+                        singleLine = true,
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(C.brand),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        decorationBox = { inner ->
+                            if (amount.isEmpty()) {
+                                androidx.compose.foundation.layout.Row {
+                                    Text("0", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = C.faint)
+                                }
+                                androidx.compose.foundation.layout.Box {}
+                            } else inner()
+                        },
                     )
                     if (items.isNotEmpty()) {
                         Text(t("lg.autoFromItems"), fontSize = F.tiny.sp, color = C.brand)
@@ -239,9 +275,41 @@ fun EntryEditOverlay(
             } else {
                 Spacer(Modifier.height(10.dp))
             }
-            // date + method
+            // date + method — date via the native Material calendar (v1.6.13)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(Modifier.weight(1f)) { Field(label = t("lg.date"), value = date, onChangeText = { date = it }, placeholder = "YYYY-MM-DD") }
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(1.dp, C.line, RoundedCornerShape(14.dp))
+                        .background(C.inputBg, RoundedCornerShape(14.dp))
+                        .clickable {
+                            val initial = try {
+                                com.callmony.lib.KmpDate(
+                                    date.split("-").getOrNull(0)?.toInt() ?: dateOf(now()).year,
+                                    (date.split("-").getOrNull(1)?.toIntOrNull() ?: (dateOf(now()).month0 + 1)) - 1,
+                                    date.split("-").getOrNull(2)?.toIntOrNull() ?: dateOf(now()).day,
+                                    12, 0, 0,
+                                ).time()
+                            } catch (_: Exception) { now() }
+                            NativeDateTime.pickDate(
+                                epochMillis = initial,
+                                onPick = { epoch ->
+                                    val d = dateOf(epoch)
+                                    date = "${d.year}-${(d.month0 + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
+                                },
+                            )
+                        }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                ) {
+                    Column {
+                        Text(t("lg.date"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            MdiIcon("calendar-blank-outline", 16, C.brand)
+                            Text(com.callmony.lib.fd(date), fontSize = F.body.sp, color = C.ink, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
                 Box(Modifier.weight(1f)) { Field(label = t("lg.method"), value = method, onChangeText = { method = it }) }
             }
             // categories
@@ -272,8 +340,37 @@ fun EntryEditOverlay(
                     if (dueOn && dueDate.isEmpty()) dueDate = todayStr()
                 })
                 if (dueOn) {
-                    Box(Modifier.weight(1f)) {
-                        Field(value = dueDate, onChangeText = { dueDate = it }, placeholder = "YYYY-MM-DD")
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .border(1.dp, C.line, RoundedCornerShape(14.dp))
+                            .background(C.inputBg, RoundedCornerShape(14.dp))
+                            .clickable {
+                                val initial = try {
+                                    val p = dueDate.split("-")
+                                    com.callmony.lib.KmpDate(
+                                        p.getOrNull(0)?.toInt() ?: dateOf(now()).year,
+                                        (p.getOrNull(1)?.toIntOrNull() ?: (dateOf(now()).month0 + 1)) - 1,
+                                        p.getOrNull(2)?.toIntOrNull() ?: dateOf(now()).day,
+                                        12, 0, 0,
+                                    ).time()
+                                } catch (_: Exception) { now() }
+                                NativeDateTime.pickDate(
+                                    epochMillis = initial,
+                                    onPick = { epoch ->
+                                        val d = dateOf(epoch)
+                                        dueDate = "${d.year}-${(d.month0 + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
+                                    },
+                                )
+                            }
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            MdiIcon("calendar-blank-outline", 16, C.brand)
+                            Text(com.callmony.lib.fd(dueDate), fontSize = F.body.sp, color = C.ink, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
             }

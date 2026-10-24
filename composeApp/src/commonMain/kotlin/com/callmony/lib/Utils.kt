@@ -3,6 +3,7 @@ package com.callmony.lib
 import com.callmony.model.AVATAR_PALETTE
 import com.callmony.model.CURRENCIES
 import com.callmony.model.DeviceContact
+import com.callmony.platform.Platform
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.pow
@@ -472,17 +473,29 @@ fun bytesStr(n: Long): String {
 
 /** Multiplatform fixed-decimal formatter (java's String.format is JVM-only). */
 internal fun fmtFixed(v: Double, decimals: Int): String {
+    if (v.isNaN() || v.isInfinite()) return v.toString()
+    if (decimals == 0) {
+        val w = kotlin.math.round(kotlin.math.abs(v)).toLong()
+        val sign = if (v < 0 && w != 0L) "-" else ""
+        return sign + w.toString()
+    }
     val factor = when (decimals) {
-        0 -> 1.0; 1 -> 10.0; 2 -> 100.0; 3 -> 1000.0
+        1 -> 10.0; 2 -> 100.0; 3 -> 1000.0
         else -> 10.0.pow(decimals.toDouble())
     }
-    val scaled = kotlin.math.round(kotlin.math.abs(v) * factor) / factor
-    val whole = scaled.toLong().toString()
-    var frac = kotlin.math.round((scaled - scaled.toLong()) * factor).toString()
-    if (frac.length > decimals) frac = frac.substring(0, decimals) // guard fp noise
+    // v1.6.13 FIX: the fraction used to be derived via Double.toString(), which
+    // switches to scientific notation at 1e7 ("3.0E11") — every fmtFixed call
+    // with ≥8 decimals produced garbage like "0.000003.0E11". Integer math
+    // below can never do that.
+    val r = kotlin.math.round(kotlin.math.abs(v) * factor)
+    if (r >= 9.0e18) return v.toString() // overflow guard (absurd magnitudes)
+    val whole = (r / factor).toLong()
+    val fracDigits = r.toLong() - whole * factor.toLong()
+    var frac = fracDigits.toString()
     if (frac.length < decimals) frac = frac.padStart(decimals, '0')
-    val sign = if (v < 0 && (whole != "0" || frac.any { it != '0' })) "-" else ""
-    return if (decimals == 0) "$sign$whole" else "$sign$whole.$frac"
+    if (frac.length > decimals) frac = frac.substring(0, decimals) // defensive
+    val sign = if (v < 0 && r != 0.0) "-" else ""
+    return "$sign$whole.$frac"
 }
 
 /** Multiplatform `%.<sig>g`-style formatter (significant digits, trailing zeros trimmed). */
@@ -495,6 +508,20 @@ fun fmtSig(n: Double, sig: Int): String {
 }
 
 fun clamp(n: Double, min: Double, max: Double): Double = min.coerceAtMost(max.coerceAtLeast(n))
+
+/** Suspend WRITE_CONTACTS gate: true immediately when granted, otherwise
+ *  shows the runtime dialog (main thread) and waits for the answer.
+ *  v1.6.13 — contact mutations used to fail silently without this. */
+suspend fun requestContactsWrite(): Boolean {
+    if (Platform.contacts.hasWritePermission()) return true
+    return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+        kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+            Platform.contacts.requestWritePermission { granted ->
+                if (cont.isActive) cont.resumeWith(Result.success(granted))
+            }
+        }
+    }
+}
 
 /* Hash PIN — salted iterated SHA-256 (screen lock only; data is NOT encrypted). */
 expect fun sha256Hex(input: String): String

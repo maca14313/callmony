@@ -104,4 +104,20 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-Same as the RN edition: **1.6.11 (versionCode 21)**.
+**1.6.13 (versionCode 23)** — see `react-native/docs/CHANGELOG.md` for the
+feature history.
+
+- **1.6.13** — keypad crash fix (`parseHexColor` NumberFormatException on
+  every avatar), calculator precision (ASCII-operator `applyOp` bug — "2 × 2"
+  returned the last operand — plus decimal-exact formatting), real amount
+  input in the ledger entry editor, native Material date/time pickers for
+  reminders & due dates, `ACTION_CALL`-first dialing with the `CALL_PHONE`
+  runtime dialog (100% the RN ImmediateCall chain), `smsto:` messaging
+  handoff, system call-log permission flow, `WRITE_CONTACTS` gate on contact
+  saves/merges, registered `AlarmReceiver` + direct boot re-arm for
+  reminders, re-cropped launcher icons (glyph safe in every mask), real logo
+  in the header/splash/About, toasts pinned above the bottom nav (never under
+  the camera cutout), bottom padding everywhere.
+- **1.6.12** — instant-close crash fix (recursive `heightIn` extension), the
+  new logo on every surface, first true iOS compile.
+- **1.6.11** — the KMP edition: 100% replica of the RN app.

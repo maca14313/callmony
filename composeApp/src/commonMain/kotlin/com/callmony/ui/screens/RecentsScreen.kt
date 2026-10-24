@@ -235,7 +235,7 @@ fun RecentsScreen() {
                 title = t("perm.callLogTitle"),
                 hint = t("perm.callLogMsg"),
                 actionLabel = t("st.allow"),
-                onAction = { AppStore.loadSystemCalls(true) },
+                onAction = { AppStore.loadSystemCalls(true, forceAsk = true) },
             )
             Btn(
                 label = t("perm.openSettings"),
@@ -627,7 +627,9 @@ fun CallRowSheet(row: CallRow, onClose: () -> Unit, onDelete: (() -> Unit)?) {
                 addToExisting = false
                 addingTo = c.recordID
                 AppStore.scope.launch {
-                    val ok = Platform.contacts.addPhoneToContact(c.recordID, "other", row.phone)
+                    // v1.6.13: WRITE_CONTACTS gate (was failing silently).
+                    val ok = com.callmony.lib.requestContactsWrite() &&
+                        Platform.contacts.addPhoneToContact(c.recordID, "other", row.phone)
                     addingTo = null
                     if (ok) {
                         AppStore.patchDeviceContact(c.recordID) { old ->

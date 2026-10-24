@@ -33,6 +33,12 @@ interface CallsService {
     fun dial(number: String)
     /** whether CALL_PHONE is granted right now */
     fun canCall(): Boolean
+    /** Ask for CALL_PHONE (runtime dialog); returns false when asking is
+     *  impossible (no activity / platform without runtime ask). */
+    fun requestPermission(onResult: (Boolean) -> Unit): Boolean {
+        onResult(false)
+        return false
+    }
 }
 
 /** The device's real system call log (CallLog.Calls provider on Android). */
@@ -41,6 +47,10 @@ interface CallLogService {
     fun fetchAll(): List<DeviceCall>
     /** Incremental read — only rows newer than `since` (1-minute overlap, dedup by id). */
     fun loadSince(since: Long): List<DeviceCall>
+    /** READ_CALL_LOG granted right now? */
+    fun hasPermission(): Boolean = false
+    /** Ask once for READ_CALL_LOG (runtime dialog on Android). */
+    fun requestPermission(onResult: (Boolean) -> Unit) { onResult(false) }
 }
 
 /** The device's address book. */
@@ -49,6 +59,10 @@ interface ContactsService {
     fun fetchAll(): List<DeviceContact>
     fun hasPermission(): Boolean
     fun requestPermission(onResult: (Boolean) -> Unit)
+    /** WRITE_CONTACTS granted right now? (in-app create/edit needs it) */
+    fun hasWritePermission(): Boolean = false
+    /** Ask for WRITE_CONTACTS — fires immediately when already granted. */
+    fun requestWritePermission(onResult: (Boolean) -> Unit) { onResult(false) }
     /** Safe in-app create — single applyBatch; returns the created recordID. */
     fun createContact(given: String, middle: String?, family: String?, company: String?, phones: List<Pair<String, String>>, emails: List<Pair<String, String>>): String?
     /** Safe in-app edit — loss-free union merge of phones/emails. */
@@ -87,6 +101,10 @@ data class ReminderForAlarm(
 interface ShareService {
     fun openUrl(url: String)
     fun canOpenUrl(url: String): Boolean
+    /** Open the DEFAULT messaging app with the number (and optional text) pre-filled. */
+    fun openSms(number: String, text: String? = null) {
+        openUrl(if (text != null) "sms:$number?body=$text" else "sms:$number")
+    }
     /** Plain text share sheet. */
     fun shareText(text: String, title: String)
     /** Copy to the system clipboard. */

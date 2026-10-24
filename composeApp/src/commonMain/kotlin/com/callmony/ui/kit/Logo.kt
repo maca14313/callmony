@@ -12,15 +12,26 @@ import org.jetbrains.compose.resources.decodeToImageBitmap
    Reading is expect/actual so it never depends on the compose-resources
    Android context initialization:
      - Android: reads the asset straight from the app context (always works)
-     - iOS:     reads it from the framework bundle via Res.readBytes */
+     - iOS:     reads it from the framework bundle via Res.readBytes
+   v1.6.13: the decoded bitmap is cached process-wide — the logo now shows in
+   the header/navbar on every tab, the splash, and the About sheet, so it is
+   decoded exactly once. */
 
 /** Read the raw logo PNG bytes, or null when unavailable. */
 internal expect suspend fun readLogoPngBytes(): ByteArray?
 
-/** Decode the new logo once; null until ready (callers keep a fallback tile). */
+private var cachedLogo: ImageBitmap? = null
+
+/** The decoded logo (null until first decode completes). */
+fun logoBitmapOrNull(): ImageBitmap? = cachedLogo
+
+/** Decode the new logo once (cached); callers keep a fallback tile. */
 @OptIn(ExperimentalResourceApi::class)
 @Composable
-fun rememberLogoBitmap(): State<ImageBitmap?> = produceState<ImageBitmap?>(null) {
-    val bytes = readLogoPngBytes() ?: return@produceState
-    value = runCatching { bytes.decodeToImageBitmap() }.getOrNull()
+fun rememberLogoBitmap(): State<ImageBitmap?> = produceState<ImageBitmap?>(cachedLogo) {
+    if (cachedLogo == null) {
+        val bytes = readLogoPngBytes() ?: return@produceState
+        cachedLogo = runCatching { bytes.decodeToImageBitmap() }.getOrNull()
+    }
+    value = cachedLogo
 }

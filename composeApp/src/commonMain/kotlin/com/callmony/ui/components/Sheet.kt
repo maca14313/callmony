@@ -36,7 +36,6 @@ import com.callmony.platform.Platform
 import com.callmony.theme.F
 import com.callmony.ui.kit.C
 import com.callmony.ui.kit.IconBtn
-import com.callmony.ui.kit.Toaster
 import com.callmony.ui.kit.Toasts
 import com.callmony.ui.kit.vibrate
 
@@ -223,7 +222,9 @@ fun BottomSheet(
                 ) { content() }
             }
         }
-        Toaster()
+        // NOTE: no Toaster here — the single shell-level Toaster in
+        // CallmonyApp renders after this sheet in z-order, so toasts show on
+        // top of every sheet. A second instance here duplicated every toast.
     }
 }
 

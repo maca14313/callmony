@@ -28,6 +28,14 @@
             <data android:scheme="sms" />
         </intent>
         <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="sms" />
+        </intent>
+        <intent>
             <action android:name="android.intent.action.DIAL" />
             <data android:scheme="tel" />
         </intent>
@@ -92,5 +100,11 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!-- v1.6.13 FIX: this receiver was NEVER registered — reminder alarms
+             fired into the void and notifications never appeared. -->
+        <receiver
+            android:name=".AlarmReceiver"
+            android:exported="false" />
     </application>
 </manifest>

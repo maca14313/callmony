@@ -115,9 +115,14 @@ fun Toaster() {
     }
     if (items.isEmpty()) return
     val first = items.first()
+    // fillMaxSize is essential: without it this Box wraps its content height
+    // and the parent Box places it at the TOP — under the status bar / camera
+    // cutout (the "toast covers the clock" bug). With fillMaxSize the
+    // BottomCenter alignment pins the toast above the bottom nav, like RN's
+    // `position: absolute; bottom: 96`.
     Box(
         Modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .padding(bottom = 96.dp)
             .padding(horizontal = 20.dp),
         contentAlignment = Alignment.BottomCenter,
@@ -276,16 +281,16 @@ fun parseHexColor(hex: String): Color {
     val h = hex.removePrefix("#")
     return when (h.length) {
         6 -> Color(
-            red = (("0x" + h.substring(0, 2)).toInt(16) / 255f),
-            green = (("0x" + h.substring(2, 4)).toInt(16) / 255f),
-            blue = (("0x" + h.substring(4, 6)).toInt(16) / 255f),
+            red = h.substring(0, 2).toInt(16) / 255f,
+            green = h.substring(2, 4).toInt(16) / 255f,
+            blue = h.substring(4, 6).toInt(16) / 255f,
             alpha = 1f,
         )
         8 -> Color(
-            alpha = (("0x" + h.substring(0, 2)).toInt(16) / 255f),
-            red = (("0x" + h.substring(2, 4)).toInt(16) / 255f),
-            green = (("0x" + h.substring(4, 6)).toInt(16) / 255f),
-            blue = (("0x" + h.substring(6, 8)).toInt(16) / 255f),
+            alpha = h.substring(0, 2).toInt(16) / 255f,
+            red = h.substring(2, 4).toInt(16) / 255f,
+            green = h.substring(4, 6).toInt(16) / 255f,
+            blue = h.substring(6, 8).toInt(16) / 255f,
         )
         else -> Color.Gray
     }

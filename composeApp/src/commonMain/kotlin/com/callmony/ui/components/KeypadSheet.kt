@@ -357,6 +357,9 @@ fun KeypadSheet() {
             }
         }
         // number display — real text field (native copy/paste menu)
+        // readOnly: the 12-key grid is the input method; tapping the display
+        // must NOT open the text IME (RN parity: showSoftInputOnFocus=false).
+        // Selection handles + Copy still work; Paste uses the sheet's button.
         Row(
             Modifier
                 .fillMaxWidth()
@@ -367,6 +370,7 @@ fun KeypadSheet() {
             BasicTextField(
                 value = number,
                 onValueChange = { onChangeNumber(it) },
+                readOnly = true,
                 textStyle = TextStyle(
                     fontSize = when {
                         number.length <= 12 -> 28.sp
