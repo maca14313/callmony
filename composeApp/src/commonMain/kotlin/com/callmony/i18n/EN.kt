@@ -979,4 +979,23 @@ internal val EN: Map<String, String> = mapOf(
     "ob.other" to "Other",
     "ob.otherPh" to "e.g. JPY",
     "ob.getStarted" to "Get started",
+
+    /* v1.6.17 — keys that used to render raw (act.saveContact…) + clock
+       format + live countdown strings. */
+    "act.saveContact" to "Save contact",
+    "act.confirm" to "Confirm",
+    "act.saved" to "Saved",
+    "cd.setPrimary" to "Set as primary",
+    "lg.giveItemName" to "Enter an item name",
+    "misc.contacts" to "Contacts",
+    "spd.speedDialSet" to "Speed-dial key set",
+    "spd.speedDialCleared" to "Speed-dial key cleared",
+    "rm.repeatNone" to "Once",
+    "st.clockFormat" to "Clock format",
+    "st.clock12" to "12 h · AM/PM",
+    "st.clock24" to "24 h",
+    "rm.now" to "Now",
+    "rm.savedCountdown" to "Saved · {left}",
+    "rm.timeLeft" to "in {left}",
+    "rm.timeLate" to "{left} late",
 )

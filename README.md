@@ -104,9 +104,35 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.16 (versionCode 26)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.17 (versionCode 27)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.17** — the seven user reports: (1) **reminders actually fire** —
+  editing a reminder no longer false-fails with "enter a valid date and
+  time" (the editor seeded the display date format into the parser), a live
+  NOW clock sits beside the due time for comparison, the clock format is
+  switchable 12 h (AM/PM) ↔ 24 h everywhere (editor + Settings → Region),
+  saving shows exactly how much time is left ("Saved · in 2h 15m") and every
+  reminder card carries a live "in 2h 15m" / "3h late" countdown; repeating
+  reminders now advance AND re-arm from the notification itself while the
+  app is closed (the second occurrence of a daily reminder used to never
+  fire), closing the alarm dialog advances repeats / completes one-shots
+  like the RN edition, and the notification permission is requested at save
+  time; (2) **bottom sheets are bottom-centered** — every modal sheet now
+  carries its own scrim and pins itself bottom-center (the PIN keypad and
+  several long-press menus appeared stuck to the top-left corner); (3) **the
+  PIN works** — a fresh launch with a PIN set opens on the lock screen
+  (nothing ever set `locked` before), autolock tracks real touches (the
+  1/5-minute timers used to lock mid-use) and "immediately" locks when the
+  app actually goes to the background; (4) **tabs no longer overlap and are
+  compact** — every segmented tab strip carries its own vertical padding so
+  it can never sit flush against the container above/below it, and the
+  reminder due-date / due-time fields became aligned PickerFields; (5)
+  **no more raw i18n keys** — `act.saveContact` and every other leaked key
+  now render properly in all five languages; (6) **UI alignment** —
+  side-by-side fields share the same "label above + 48 dp box" metrics
+  (PickerField), and long text/numbers ellipsize instead of wrapping
+  ugly; (7) **compact buttons** — less air, same comfort.
 - **1.6.16** — the six user reports: (1) **calling from Search made easy** —
   every contact hit now carries the primary number + a one-tap call button
   (no detour through the detail sheet); (2) **Get started is pinned** on the

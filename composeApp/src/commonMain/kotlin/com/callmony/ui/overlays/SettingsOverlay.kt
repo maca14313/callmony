@@ -132,7 +132,7 @@ fun SettingsOverlay() {
                         }
                     }
                 }
-                Row {
+                Row(Modifier.padding(bottom = 8.dp)) {
                     ScrollRow {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             COUNTRY_CODES.forEach { cc ->
@@ -142,6 +142,16 @@ fun SettingsOverlay() {
                             }
                         }
                     }
+                }
+                // v1.6.17 — 12 h (AM/PM) vs 24 h clock, app-wide
+                Text(t("st.clockFormat"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Chip(label = t("st.clock12"), compact = true, active = !settings.clock24, onPress = {
+                        AppStore.updateSettings { it.copy(clock24 = false) }
+                    })
+                    Chip(label = t("st.clock24"), compact = true, active = settings.clock24, onPress = {
+                        AppStore.updateSettings { it.copy(clock24 = true) }
+                    })
                 }
             }
             /* ---- Security ---- */
@@ -344,7 +354,10 @@ fun PinFlowSheet(mode: String, onClose: () -> Unit) {
     }
 
     BottomSheet(title = title, onClose = onClose) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // v1.6.17: fillMaxWidth so horizontalAlignment actually centers the
+        // dots + pad (a wrap-width Column inside the sheet used to stick to
+        // the LEFT edge — "the PIN keypad is aligned to left").
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(Modifier.padding(vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 repeat(4) { i ->
                     Box(

@@ -547,7 +547,14 @@ fun AlarmDialog() {
         Platform.notify.vibrate(longArrayOf(0, 400, 200, 400))
     }
 
-    fun close() { UiStore.shiftAlarm() }
+    /* v1.6.17 — RN dismiss() parity: closing the dialog resolves the
+     * reminder — repeating ones advance to their next occurrence (and the
+     * next alarm gets armed), one-shots are marked done. The old plain
+     * shiftAlarm left them overdue in the list forever. */
+    fun close() {
+        if (r.repeat != "none") AppStore.fireReminder(r.id) else AppStore.completeReminder(r.id)
+        UiStore.shiftAlarm()
+    }
 
     // v1.6.15: the native back button dismisses the alarm dialog instead of
     // exiting the app (inner handler wins over the shell's root handler)

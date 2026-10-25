@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -162,7 +163,13 @@ fun LongPressText(
     }
 }
 
-/** Partial bottom sheet — grabber, whole header tappable, four close paths. */
+/** Partial bottom sheet — grabber, whole header tappable, four close paths.
+ *  v1.6.17: the sheet now carries its OWN full-size scrim and pins itself to
+ *  the BOTTOM-CENTER of the host. Previously every BottomSheet rendered as a
+ *  bare Column — inside OverlayHost's plain Box that meant TOP-START, so the
+ *  PIN keypad, restore sheet and all long-press menus appeared stuck to the
+ *  top-left corner. Wrapping every call site was error-prone; the container
+ *  now guarantees correct placement for all ~25 usages. */
 @Composable
 fun BottomSheet(
     title: String? = null,
@@ -175,68 +182,84 @@ fun BottomSheet(
     val C = C()
     // v1.6.15: the native back button closes the bottom sheet first
     com.callmony.ui.kit.AppBackHandler(enabled = true) { onClose() }
-    Column(
+    Box(
         Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
-            .background(C.card)
-            .navigationBarsPadding(),
+            .fillMaxSize()
+            .background(C.scrim)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClose() },
+        contentAlignment = Alignment.BottomCenter,
     ) {
-        // grabber row — tapping it closes the sheet
-        Box(
+        Column(
             Modifier
                 .fillMaxWidth()
+                // absorb taps so touching the sheet itself never dismisses
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                ) { onClose() }
-                .padding(vertical = 10.dp),
-            contentAlignment = Alignment.Center,
+                ) {}
+                .clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
+                .background(C.card)
+                .navigationBarsPadding(),
         ) {
+            // grabber row — tapping it closes the sheet
             Box(
                 Modifier
-                    .width(44.dp)
-                    .height(5.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(C.line),
-            )
-        }
-        if (title != null) {
-            Row(
-                Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp)
-                    .padding(bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onClose() }
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    title,
-                    fontSize = F.h2.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = C.ink,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                Box(
+                    Modifier
+                        .width(44.dp)
+                        .height(5.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(C.line),
                 )
-                if (headerRight != null) headerRight() else IconBtn("close", onClose, size = 36)
             }
-        }
-        Box(Modifier.weight(1f, fill = false)) {
-            if (noScroll) {
-                Column(Modifier.fillMaxWidth()) { content() }
-            } else {
-                Column(
+            if (title != null) {
+                Row(
                     Modifier
                         .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
                         .padding(horizontal = 18.dp)
-                        .padding(bottom = 18.dp),
-                ) { content() }
+                        .padding(bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        title,
+                        fontSize = F.h2.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = C.ink,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (headerRight != null) headerRight() else IconBtn("close", onClose, size = 36)
+                }
             }
+            Box(Modifier.weight(1f, fill = false).heightIn(max = (maxHeightPct * 760).dp)) {
+                if (noScroll) {
+                    Column(Modifier.fillMaxWidth()) { content() }
+                } else {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 18.dp)
+                            .padding(bottom = 18.dp),
+                    ) { content() }
+                }
+            }
+            // NOTE: no Toaster here — the single shell-level Toaster in
+            // CallmonyApp renders after this sheet in z-order, so toasts show on
+            // top of every sheet. A second instance here duplicated every toast.
         }
-        // NOTE: no Toaster here — the single shell-level Toaster in
-        // CallmonyApp renders after this sheet in z-order, so toasts show on
-        // top of every sheet. A second instance here duplicated every toast.
     }
 }
 

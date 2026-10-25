@@ -275,15 +275,17 @@ fun EntryEditOverlay(
             } else {
                 Spacer(Modifier.height(10.dp))
             }
-            // date + method — date via the native Material calendar (v1.6.13)
+            // date + method — date via the native Material calendar (v1.6.13).
+            // v1.6.17: PickerField on both sides — identical "label above +
+            // 48 dp box" metrics so the pair aligns (the old label-inside
+            // date box sat shorter than the Field beside it).
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .border(1.dp, C.line, RoundedCornerShape(14.dp))
-                        .background(C.inputBg, RoundedCornerShape(14.dp))
-                        .clickable {
+                Box(Modifier.weight(1f)) {
+                    com.callmony.ui.kit.PickerField(
+                        label = t("lg.date"),
+                        value = com.callmony.lib.fd(date),
+                        icon = "calendar-blank-outline",
+                        onPress = {
                             val initial = try {
                                 com.callmony.lib.KmpDate(
                                     date.split("-").getOrNull(0)?.toInt() ?: dateOf(now()).year,
@@ -299,16 +301,8 @@ fun EntryEditOverlay(
                                     date = "${d.year}-${(d.month0 + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
                                 },
                             )
-                        }
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                ) {
-                    Column {
-                        Text(t("lg.date"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            MdiIcon("calendar-blank-outline", 16, C.brand)
-                            Text(com.callmony.lib.fd(date), fontSize = F.body.sp, color = C.ink, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
+                        },
+                    )
                 }
                 Box(Modifier.weight(1f)) { Field(label = t("lg.method"), value = method, onChangeText = { method = it }) }
             }

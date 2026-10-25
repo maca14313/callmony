@@ -154,6 +154,11 @@ object AppStore {
             }
             if (storedPin != null) {
                 state.settings = state.settings.copy(pinHash = PinHash(storedPin.hash, storedPin.salt))
+                // v1.6.17 — the PIN actually locks: a fresh launch (or process
+                // restore) with a PIN set opens on the lock screen. Previously
+                // `locked` started false and nothing set it, so the PIN never
+                // guarded anything until the autolock timer happened to fire.
+                UiStore.locked = true
             }
             // (re)schedule reminder notifications after boot
             for (r in data.reminders.filter { it.deletedAt == null && !it.done }) {
@@ -715,6 +720,22 @@ object AppStore {
         next.find { it.id == id }?.let { scheduleReminderNotification(it.copy(dueAt = until)) }
     }
 
+    /** v1.6.17 — the alarm dialog was SHOWN for this due moment: persist
+     *  lastFiredAt (and the fired lead) so the 15-second watcher never
+     *  re-pops the same alarm, and repeats know they already fired. */
+    fun markReminderFired(id: String, leadMinutes: Int? = null) {
+        val rec = state.reminders.find { it.id == id } ?: return
+        val next = state.reminders.map {
+            if (it.id == id) it.copy(
+                lastFiredAt = now(),
+                firedLeads = if (leadMinutes != null && !it.firedLeads.contains(leadMinutes)) it.firedLeads + leadMinutes else it.firedLeads,
+                updatedAt = now(),
+            ) else it
+        }
+        state.reminders = next
+        Db.saveReminders(next)
+    }
+
     fun fireReminder(id: String) {
         val rec = state.reminders.find { it.id == id } ?: return
         if (rec.repeat == "none") return
@@ -1087,6 +1108,10 @@ object UiStore {
     var calculatorValue by mutableStateOf<Double?>(null)
     var calculatorPickHandler by mutableStateOf<((Double) -> Unit)?>(null)
     var keypadOpen by mutableStateOf(false)
+
+    /** v1.6.17 — true between MainActivity.onResume and onPause; drives the
+     *  "lock immediately" autolock option (previously a hardcoded `true`). */
+    var appInForeground: Boolean = true
 
     fun setTab(t: String) { tabInternal = t; moreOpen = false }
 

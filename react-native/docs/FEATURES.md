@@ -127,8 +127,9 @@ Every feature in callmony v1.6.11, grouped by domain. Each entry notes **where i
 | Feature | Details |
 |---|---|
 | ✅ Kinds | Payment · To-do · Birthday · Follow-up · Custom |
-| ✅ Native date/time pickers | Android material pickers (12-h time) — no invalid input possible; quick chips (Today/Tomorrow/Next week; 9 AM/1 PM/6 PM/8 PM); live preview |
-| ✅ Repeats | Once/Daily/Weekly/Monthly/Yearly + "Every month on the 1st"; Done advances to next occurrence |
+| ✅ Native date/time pickers | Android material pickers (follow the app-wide 12 h AM/PM ↔ 24 h clock choice) — no invalid input possible; quick chips (Today/Tomorrow/Next week; 9 AM/1 PM/6 PM/8 PM); live due preview with remaining time |
+| ✅ Live NOW clock + countdown | The editor shows a ticking now-clock beside the due time (with inline 12/24 h toggle); saving toasts the time left and every card carries a live "in 2h 15m" / "3h late" countdown |
+| ✅ Repeats | Once/Daily/Weekly/Monthly/Yearly + "Every month on the 1st"; Done advances to next occurrence; KMP v1.6.17: repeats advance AND re-arm from the notification while the app is closed |
 | ✅ Lead-time pre-alerts | 1 day / 1 hour before (multi-select), fire once each |
 | ✅ Snooze | 10 min · 1 h · 3 h · Tomorrow 9 AM (rows, ⋮ menu, swipe, notification action, alarm dialog) |
 | ✅ Real notifications | HIGH channel, sound+vibration, quick actions Done/Snooze 10m (works app-open AND closed via headless task) |

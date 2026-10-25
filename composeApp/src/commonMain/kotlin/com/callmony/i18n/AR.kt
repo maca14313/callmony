@@ -979,4 +979,23 @@ internal val AR: Map<String, String> = mapOf(
     "ob.other" to "أخرى",
     "ob.otherPh" to "مثل JPY",
     "ob.getStarted" to "ابدأ",
+
+    /* v1.6.17 — keys that used to render raw (act.saveContact…) + clock
+       format + live countdown strings. */
+    "act.saveContact" to "حفظ جهة الاتصال",
+    "act.confirm" to "تأكيد",
+    "act.saved" to "تم الحفظ",
+    "cd.setPrimary" to "تعيين كأساسي",
+    "lg.giveItemName" to "أدخل اسم العنصر",
+    "misc.contacts" to "جهات الاتصال",
+    "spd.speedDialSet" to "تم تعيين مفتاح الاتصال السريع",
+    "spd.speedDialCleared" to "تم مسح مفتاح الاتصال السريع",
+    "rm.repeatNone" to "مرة واحدة",
+    "st.clockFormat" to "تنسيق الساعة",
+    "st.clock12" to "12 ساعة · ص/م",
+    "st.clock24" to "24 ساعة",
+    "rm.now" to "الآن",
+    "rm.savedCountdown" to "تم الحفظ · {left}",
+    "rm.timeLeft" to "خلال {left}",
+    "rm.timeLate" to "متأخر {left}",
 )

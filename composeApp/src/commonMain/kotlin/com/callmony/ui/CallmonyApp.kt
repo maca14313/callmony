@@ -57,6 +57,8 @@ import androidx.compose.runtime.collectAsState
 import com.callmony.ui.components.BottomSheet
 import com.callmony.ui.components.KeypadSheet
 import com.callmony.ui.components.SheetScrim
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.ui.input.pointer.pointerInput
 import com.callmony.ui.kit.AppBackHandler
 import com.callmony.ui.kit.C
 import com.callmony.ui.kit.ConfirmHost
@@ -157,24 +159,41 @@ fun CallmonyApp() {
         AppStore.rearmReminders()
     }
 
-    /* ---- alarm watcher (15 s interval) ---- */
+    /* ---- alarm watcher (15 s interval) — v1.6.17 ----
+       Only reminders that JUST became due (within the last 45 s) pop the
+       in-app dialog; stale overdue ones no longer ambush the user on every
+       launch, and each due moment fires exactly once (session set +
+       lastFiredAt persisted via markReminderFired). */
     LaunchedEffect(Unit) {
+        val shown = HashSet<String>()
         while (true) {
             val nowMs = now()
             AppStore.state.reminders.forEach { r ->
                 if (r.deletedAt == null && !r.done) {
                     val effective = r.snoozedUntil ?: r.dueAt
                     val lead = r.leadMinutes.minOrNull() ?: 0
-                    val dueSoon = effective <= nowMs && (r.lastFiredAt == null || r.lastFiredAt!! < effective - 60000)
-                    val leadDue = lead > 0 && (effective - lead * 60000L) <= nowMs && !r.firedLeads.contains(lead)
-                    if (dueSoon || leadDue) UiStore.pushAlarm(r)
+                    val key = "${r.id}@$effective"
+                    val justDue = effective <= nowMs && effective > nowMs - 45_000 && !shown.contains(key)
+                    val leadAt = effective - lead * 60000L
+                    val leadDue = lead > 0 && !r.firedLeads.contains(lead) &&
+                        leadAt <= nowMs && leadAt > nowMs - 45_000
+                    if (justDue || leadDue) {
+                        shown.add(key)
+                        AppStore.markReminderFired(r.id, if (leadDue && !justDue) lead else null)
+                        UiStore.pushAlarm(r)
+                    }
                 }
             }
             delay(15000)
         }
     }
 
-    /* ---- autolock ---- */
+    /* ---- autolock — v1.6.17: real idle tracking ----
+       Any touch refreshes `lastActive` (awaitEachGesture observes without
+       consuming), so the 1/5-minute options no longer lock the app while
+       the user is actively using it; "immediately" locks when the app goes
+       to the background (MainActivity keeps UiStore.appInForeground true
+       between onResume and onPause). */
     var lastActive by remember { mutableStateOf(now()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -183,7 +202,7 @@ fun CallmonyApp() {
                 val idle = now() - lastActive
                 val limit = AppStore.state.settings.autolockMin
                 when {
-                    limit == 0 && !isAppForeground() -> UiStore.locked = true
+                    limit == 0 && !UiStore.appInForeground -> UiStore.locked = true
                     limit > 0 && idle > limit * 60000L -> UiStore.locked = true
                 }
             }
@@ -242,7 +261,19 @@ fun CallmonyApp() {
         return
     }
 
-    Box(Modifier.fillMaxSize().background(C.canvas)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(C.canvas)
+            // v1.6.17 — autolock idle timer: every touch refreshes it.
+            // awaitEachGesture only OBSERVES the event stream (no consume),
+            // so children still receive every tap exactly as before.
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    lastActive = now()
+                }
+            },
+    ) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Header()
             Box(Modifier.weight(1f)) {
@@ -266,9 +297,9 @@ fun CallmonyApp() {
             SheetScrim(onDismiss = { UiStore.keypadOpen = false }) { KeypadSheet() }
         }
 
-        // More sheet
+        // More sheet (BottomSheet carries its own scrim since v1.6.17)
         if (UiStore.moreOpen) {
-            SheetScrim(onDismiss = { UiStore.moreOpen = false }) { MoreSheet() }
+            MoreSheet()
         }
 
         // overlay stack
@@ -282,13 +313,11 @@ fun CallmonyApp() {
         ConfirmHost()
     }
 
-    // touch anywhere refreshes the autolock timer
+    // touch anywhere refreshes the autolock timer (see pointerInput above)
     DisposableEffect(Unit) {
         onDispose { }
     }
 }
-
-private fun isAppForeground(): Boolean = true
 
 /* ---------------- Header ---------------- */
 

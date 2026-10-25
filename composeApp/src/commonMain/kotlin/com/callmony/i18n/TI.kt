@@ -979,4 +979,23 @@ internal val TI: Map<String, String> = mapOf(
     "ob.other" to "ካልእ",
     "ob.otherPh" to "ከም JPY",
     "ob.getStarted" to "ጀምር",
+
+    /* v1.6.17 — keys that used to render raw (act.saveContact…) + clock
+       format + live countdown strings. */
+    "act.saveContact" to "እውዕይ ሓብር",
+    "act.confirm" to "ኣረጋግጽ",
+    "act.saved" to "ተሓብረ",
+    "cd.setPrimary" to "ከም ዋና ኣቐምጥ",
+    "lg.giveItemName" to "ስም ኣቢ ኣእትዉ",
+    "misc.contacts" to "እውዕያት",
+    "spd.speedDialSet" to "ቁልፊ ቀልጢፍ መደወይቲ ተቐምጡ",
+    "spd.speedDialCleared" to "ቁልፊ ቀልጢፍ መደወይቲ ተሰሪዙ",
+    "rm.repeatNone" to "ሓንሳብ",
+    "st.clockFormat" to "ኣቀራርባ ሰዓት",
+    "st.clock12" to "12 ሰዓት · AM/PM",
+    "st.clock24" to "24 ሰዓት",
+    "rm.now" to "ሕጂ",
+    "rm.savedCountdown" to "ተሓብረ · {left}",
+    "rm.timeLeft" to "ኣብ {left}",
+    "rm.timeLate" to "{left} ሓሊፉ",
 )

@@ -404,7 +404,12 @@ fun RemindersSection(
                                                 "${fdEpoch(r.snoozedUntil ?: r.dueAt)} · ${ft(r.snoozedUntil ?: r.dueAt)}",
                                                 fontSize = F.tiny.sp,
                                                 color = C.sub,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f, fill = false),
                                             )
+                                            // v1.6.17 — live "in 2h 15m" / "3h late" countdown
+                                            if (!r.done) com.callmony.ui.kit.LiveCountdown(r.snoozedUntil ?: r.dueAt)
                                             if (r.repeat != "none") MdiIcon("repeat", 13, C.sub)
                                         }
                                     }

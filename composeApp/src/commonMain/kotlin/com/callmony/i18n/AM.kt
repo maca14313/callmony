@@ -979,4 +979,23 @@ internal val AM: Map<String, String> = mapOf(
     "ob.other" to "ሌላ",
     "ob.otherPh" to "ለምሳሌ JPY",
     "ob.getStarted" to "ጀምር",
+
+    /* v1.6.17 — keys that used to render raw (act.saveContact…) + clock
+       format + live countdown strings. */
+    "act.saveContact" to "እውቂያ አስቀምጥ",
+    "act.confirm" to "አረጋግጥ",
+    "act.saved" to "ተቀምጧል",
+    "cd.setPrimary" to "እንደ ዋና አስቀምጥ",
+    "lg.giveItemName" to "የዕቃ ስም ያስገቡ",
+    "misc.contacts" to "እውቂያዎች",
+    "spd.speedDialSet" to "የፈጣን መደወያ ቁልፍ ተቀምጧል",
+    "spd.speedDialCleared" to "የፈጣን መደወያ ቁልፍ ተሰርዟል",
+    "rm.repeatNone" to "አንድ ጊዜ",
+    "st.clockFormat" to "የሰዓት አቀራረብ",
+    "st.clock12" to "12 ሰዓት · AM/PM",
+    "st.clock24" to "24 ሰዓት",
+    "rm.now" to "አሁን",
+    "rm.savedCountdown" to "ተቀምጧል · {left}",
+    "rm.timeLeft" to "በ{left} ውስጥ",
+    "rm.timeLate" to "{left} አልፏል",
 )

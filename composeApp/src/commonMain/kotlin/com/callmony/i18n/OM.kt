@@ -979,4 +979,23 @@ internal val OM: Map<String, String> = mapOf(
     "ob.other" to "Kan biraa",
     "ob.otherPh" to "fkn JPY",
     "ob.getStarted" to "Jalqabi",
+
+    /* v1.6.17 — keys that used to render raw (act.saveContact…) + clock
+       format + live countdown strings. */
+    "act.saveContact" to "Waamicha ol kaa'i",
+    "act.confirm" to "Mirkaneessi",
+    "act.saved" to "Ol kaa'ameera",
+    "cd.setPrimary" to "Iddoo ijoo taasi",
+    "lg.giveItemName" to "Maqaa waantaa barreessi",
+    "misc.contacts" to "Waamichoota",
+    "spd.speedDialSet" to "Furtuu dhiifacha waamuu kaa'ameera",
+    "spd.speedDialCleared" to "Furtuu dhiifacha waamuu haqameera",
+    "rm.repeatNone" to "Al tokko",
+    "st.clockFormat" to "Akaakuun sa'aa",
+    "st.clock12" to "12 sa'a · AM/PM",
+    "st.clock24" to "24 sa'a",
+    "rm.now" to "Amma",
+    "rm.savedCountdown" to "Ol kaa'ameera · {left}",
+    "rm.timeLeft" to "{left} keessatti",
+    "rm.timeLate" to "{left} dabree",
 )

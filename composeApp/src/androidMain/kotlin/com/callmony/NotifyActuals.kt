@@ -240,40 +240,73 @@ class AlarmReceiver : android.content.BroadcastReceiver() {
         if (!AndroidPlatform.isReady()) AndroidPlatform.init(context.applicationContext)
         val ctx = AndroidPlatform.appContext
         val nm = NotificationManagerCompat.from(ctx)
-        if (!nm.areNotificationsEnabled()) return
-        AndroidNotify().ensureChannel()
+        if (nm.areNotificationsEnabled()) {
+            AndroidNotify().ensureChannel()
 
-        val bodyText = body.ifBlank { kindLabel.ifBlank { "Reminder" } }
+            val bodyText = body.ifBlank { kindLabel.ifBlank { "Reminder" } }
 
-        val contentPi = PendingIntent.getActivity(
-            ctx, id.hashCode(),
-            Intent(ctx, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val donePi = NotificationActionReceiver.pending(ctx, id, NotificationActionReceiver.ACTION_DONE)
-        val snoozePi = NotificationActionReceiver.pending(ctx, id, NotificationActionReceiver.ACTION_SNOOZE)
+            val contentPi = PendingIntent.getActivity(
+                ctx, id.hashCode(),
+                Intent(ctx, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val donePi = NotificationActionReceiver.pending(ctx, id, NotificationActionReceiver.ACTION_DONE)
+            val snoozePi = NotificationActionReceiver.pending(ctx, id, NotificationActionReceiver.ACTION_SNOOZE)
 
-        val builder = NotificationCompat.Builder(ctx, AndroidNotify.CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_callmony)
-            .setLargeIcon(NotifArt.roundLogo(ctx))
-            .setContentTitle(title)
-            .setContentText(bodyText)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(bodyText))
-            .setColor(NotifArt.BRAND_ARGB)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setContentIntent(contentPi)
-            .setAutoCancel(true)
-            .setShowWhen(true)
-            .setWhen(System.currentTimeMillis())
-            .addAction(R.drawable.ic_stat_done, doneLabel, donePi)
-            .addAction(R.drawable.ic_stat_snooze, snoozeLabel, snoozePi)
-        if (kindLabel.isNotBlank()) builder.setSubText(kindLabel)
-        try {
-            nm.notify(id.hashCode(), builder.build())
-        } catch (_: SecurityException) {}
+            val builder = NotificationCompat.Builder(ctx, AndroidNotify.CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_callmony)
+                .setLargeIcon(NotifArt.roundLogo(ctx))
+                .setContentTitle(title)
+                .setContentText(bodyText)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(bodyText))
+                .setColor(NotifArt.BRAND_ARGB)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setContentIntent(contentPi)
+                .setAutoCancel(true)
+                .setShowWhen(true)
+                .setWhen(System.currentTimeMillis())
+                .addAction(R.drawable.ic_stat_done, doneLabel, donePi)
+                .addAction(R.drawable.ic_stat_snooze, snoozeLabel, snoozePi)
+            if (kindLabel.isNotBlank()) builder.setSubText(kindLabel)
+            try {
+                nm.notify(id.hashCode(), builder.build())
+            } catch (_: SecurityException) {}
+        }
+        /* v1.6.17 — "the reminder is not working" for REPEATS while the app
+         * is closed: the RN edition relies on notifee's repeatFrequency, which
+         * re-arms the OS trigger automatically every day/week. AlarmManager
+         * alarms are one-shot — without this the second occurrence of a
+         * daily reminder never fired until the app was opened again. Advance
+         * the persisted due moment to the next occurrence and arm the next
+         * alarm right here, in the background thread (goAsync keeps the
+         * process alive while the JSON surgery + reschedule run). */
+        val pending = goAsync()
+        Thread {
+            try {
+                if (AppStore.state.hydrated) {
+                    AppStore.fireReminder(id)
+                } else {
+                    val rec = Db.loadAll().reminders.find { it.id == id } ?: return@Thread
+                    if (rec.repeat != "none" && !rec.done && rec.deletedAt == null) {
+                        val nextDue = com.callmony.lib.nextOccurrence(rec.dueAt, rec.repeat)
+                        val nowMs = com.callmony.lib.now()
+                        val next = Db.loadAll().reminders.map {
+                            if (it.id == id) it.copy(dueAt = nextDue, lastFiredAt = nowMs, firedLeads = emptyList(), snoozedUntil = null) else it
+                        }
+                        Db.saveReminders(next)
+                        (Platform.notify as? AndroidNotify)?.schedule(
+                            rec.id, rec.title, rec.notes ?: "", nextDue, rec.kind,
+                        )
+                    }
+                }
+            } catch (_: Exception) {
+            } finally {
+                pending.finish()
+            }
+        }.start()
     }
 }
 

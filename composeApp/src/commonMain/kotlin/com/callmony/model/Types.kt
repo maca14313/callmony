@@ -300,6 +300,7 @@ data class Settings(
     val language: String = "en", // en | am | om | ar | ti
     val currency: String = "ETB",
     val countryCode: String = "ET",
+    val clock24: Boolean = false, // v1.6.17: 12 h (AM/PM) | 24 h clock everywhere
     val pinHash: PinHash? = null,
     val autolockMin: Int = 1, // 0 = lock immediately on blur
     val hideBalances: Boolean = false,

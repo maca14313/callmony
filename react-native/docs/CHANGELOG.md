@@ -4,6 +4,76 @@ All notable changes to callmony. Dates follow the git history; the APK for each 
 
 ---
 
+## v1.6.17 — KMP: working reminders with live countdowns, centered sheets, a real PIN, compact tabs/buttons, i18n key leaks fixed (2026-10-25)
+
+User-reported round seven on the KMP edition:
+
+1. **Reminders fire, validate honestly, show the time left** —
+   - EDITING a reminder seeded `dueDate` with the DISPLAY format
+     (`fdEpoch` → "Oct 25, 2026") instead of the machine format the parser
+     expects, so Save always refused with "enter a valid date and time" —
+     the editor now seeds `dateStr()` (yyyy-MM-dd) and the parse round-trips.
+   - A live NOW clock ticks beside the due-time field (one glance answers
+     "how far away is 14:30?"), with an inline 12 h ↔ 24 h toggle; the
+     setting lives in Settings → Region and drives EVERY rendered time
+     (`ft()`), the due-time field ("9:00 AM" vs "09:00") and the native
+     time picker's mode.
+   - Saving a future reminder toasts the exact time left ("Saved · in 2h
+     15m"); every reminder card carries a live countdown ("in 45m", green /
+     "3h late", red, ticking every 30 s).
+   - Repeating reminders advance AND re-arm while the app is CLOSED —
+     `AlarmReceiver` now runs the next-occurrence surgery on the persisted
+     store in a `goAsync` thread and schedules the next alarm (the RN
+     edition got this from notifee's repeatFrequency; AlarmManager alarms
+     are one-shot, so the second occurrence of a daily reminder never fired
+     before this).
+   - Closing the in-app alarm dialog now resolves the reminder like the RN
+     edition: repeats advance to the next occurrence, one-shots are marked
+     done (they used to linger overdue forever).
+   - The in-app watcher only pops alarms that JUST became due (45 s window)
+     and each due moment fires exactly once (`markReminderFired` persists
+     `lastFiredAt` / fired leads); stale overdue reminders no longer ambush
+     the user on every launch.
+   - The notification permission is requested when a reminder is SAVED
+     (RN v1.6.2 parity), not only from the Reminders tab status card.
+2. **Bottom sheets are bottom-centered** — `BottomSheet` carries its own
+   full-size scrim and pins its content to the BOTTOM-CENTER of the host
+   (it used to render as a bare column at TOP-START, which is why the PIN
+   keypad and several long-press menus hugged the top-left corner). The
+   PIN flow column also fills the width so the dots + pad truly center.
+3. **The PIN works** — a fresh launch (or process restore) with a PIN set
+   now opens on the lock screen: nothing ever set `UiStore.locked` before,
+   so the PIN never guarded anything until the autolock timer happened to
+   fire. Autolock tracks REAL touches (an observe-only `awaitEachGesture`
+   refreshes the idle timer; the 1/5-minute options used to lock mid-use)
+   and "immediately" locks when the app actually leaves the foreground
+   (`onResume`/`onPause` drive `appInForeground`).
+4. **Tabs: no overlap, compact everywhere** — every `Segmented` strip
+   carries its own 5 dp vertical padding so it can never sit flush against
+   the container above or below it (Reminder due-date row, Ledger strips),
+   and the reminder editor's due date/time became `PickerField`s with the
+   exact "label above + 48 dp box" metrics of the Field beside them.
+5. **No more raw i18n keys** — `act.saveContact`, `act.confirm`,
+   `act.saved`, `cd.setPrimary`, `lg.giveItemName`, `misc.contacts`,
+   `spd.speedDialSet/Cleared`, `rm.repeatNone` are now defined in ALL FIVE
+   languages (a precise scanner verified every `t()` key has a definition
+   and every language reaches EN parity at 993/993 keys).
+6. **UI alignment + no ugly wraps** — side-by-side inputs share identical
+   metrics (the ledger date box beside the method field, the reminder
+   date/time pair), and long text/numbers ellipsize on one line (buttons,
+   money, the reminder card meta row) instead of wrapping in tight spaces.
+7. **Compact buttons** — Btn paddings/heights tightened (44/34 dp minimums,
+   15/13 sp labels) with single-line ellipsized labels.
+
+Tests: +9 (`ReminderV1617Test` — the dateStr round-trip that fixes the
+"valid date and time" false positive, spanStr/timeLeftStr formats, 12/24 h
+`ft()`, next-occurrence advance, `{left}` placeholder filling, model
+fields) → pure battery 30/30 green; the full-app Robolectric boot smoke
+(`StartupTest.appBootsWithoutCrashing` + logo decode) verified green
+through the new shell; iOS arm64 + simulator compile clean.
+
+---
+
 ## v1.6.16 — KMP: search call buttons, instant keypad, themed splash, fuzzy search, rich notifications (2026-10-25)
 
 User-reported round six on the KMP edition:

@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.callmony.i18n.t
@@ -35,11 +36,14 @@ import com.callmony.lib.AppStore
 import com.callmony.lib.Overlay
 import com.callmony.lib.UiStore
 import com.callmony.lib.dateOf
+import com.callmony.lib.dateStr
 import com.callmony.lib.fd
 import com.callmony.lib.fdEpoch
+import kotlinx.coroutines.delay
 import com.callmony.lib.ft
 import com.callmony.lib.now
 import com.callmony.lib.ownerNameOf
+import com.callmony.lib.timeLeftStr
 import com.callmony.lib.todayStr
 import com.callmony.lib.uid
 import com.callmony.model.BankAccount
@@ -56,6 +60,7 @@ import com.callmony.ui.kit.Chip
 import com.callmony.ui.kit.Confirm
 import com.callmony.ui.kit.Field
 import com.callmony.ui.kit.MdiIcon
+import com.callmony.ui.kit.PickerField
 import com.callmony.ui.kit.Pill
 import com.callmony.ui.kit.Toasts
 import com.callmony.ui.sections.NOTE_COLORS
@@ -202,10 +207,24 @@ fun ReminderEditOverlay(reminderId: String?, ownerId: String) {
     var kind by remember { mutableStateOf(existing?.kind ?: "payment") }
     var repeat by remember { mutableStateOf(existing?.repeat ?: "none") }
     var leads by remember { mutableStateOf(existing?.leadMinutes ?: listOf<Int>()) }
-    val initialDue = existing?.let { dateOf(it.snoozedUntil ?: it.dueAt) }
-    var dueDate by remember { mutableStateOf(existing?.let { fdEpoch(it.snoozedUntil ?: it.dueAt) } ?: todayStr()) }
-    var dueTime by remember { mutableStateOf(initialDue?.let { "${it.hour.toString().padStart(2, '0')}:${it.minute.toString().padStart(2, '0')}" } ?: "09:00") }
+    // v1.6.17 FIX — "enter a valid date and time" when EDITING a reminder:
+    // dueDate used to be initialised with fdEpoch() (the DISPLAY format
+    // "Oct 25, 2026") instead of yyyy-MM-dd, so parseDue() always failed on
+    // existing reminders and Save refused to work. dateStr(dateOf()) keeps
+    // the machine format the parser expects.
+    var dueDate by remember { mutableStateOf(existing?.let { dateStr(dateOf(it.snoozedUntil ?: it.dueAt)) } ?: todayStr()) }
+    var dueTime by remember { mutableStateOf(existing?.let { dateOf(it.snoozedUntil ?: it.dueAt) }?.let { "${it.hour.toString().padStart(2, '0')}:${it.minute.toString().padStart(2, '0')}" } ?: "09:00") }
     var notifOn by remember { mutableStateOf<Boolean?>(null) }
+
+    // v1.6.17 — live clock: a ticking "now" shown right beside the due
+    // time so the user can compare, plus the countdown preview.
+    var nowTick by remember { mutableStateOf(now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000)
+            nowTick = now()
+        }
+    }
 
     LaunchedEffect(Unit) { notifOn = Platform.notify.hasNotifPermission() }
 
@@ -221,6 +240,23 @@ fun ReminderEditOverlay(reminderId: String?, ownerId: String) {
                 timeParts[0].toInt(), timeParts[1].toInt(), 0,
             ).time()
         } catch (_: Exception) { null }
+    }
+
+    /* v1.6.17 — the due-time field and quick chips render in the app-wide
+     * clock format ("9:00 AM" vs "09:00"); the stored value stays 24-hour
+     * HH:mm so the native picker keeps its simple hour/minute contract. */
+    fun timeLabel(hhmm: String): String {
+        val p = hhmm.split(":")
+        val h = p.getOrNull(0)?.toIntOrNull() ?: return hhmm
+        val m = p.getOrNull(1)?.toIntOrNull() ?: 0
+        return if (com.callmony.lib.clock24()) hhmm
+        else "${if (h % 12 == 0) 12 else h % 12}:${m.toString().padStart(2, '0')} ${if (h < 12) "AM" else "PM"}"
+    }
+    fun timeChipLabel(hhmm: String): String {
+        val p = hhmm.split(":")
+        val h = p.getOrNull(0)?.toIntOrNull() ?: return hhmm
+        return if (com.callmony.lib.clock24()) hhmm
+        else "${if (h % 12 == 0) 12 else h % 12} ${if (h < 12) "AM" else "PM"}"
     }
 
     Sheet(
@@ -262,10 +298,21 @@ fun ReminderEditOverlay(reminderId: String?, ownerId: String) {
                                 updatedAt = now(),
                             )
                         )
-                        if (at <= now() && existing == null) {
+                        if (at > now()) {
+                            // v1.6.17 — after saving, show exactly how much
+                            // time is left until it fires ("Saved · in 2h 15m").
+                            Toasts.toast(t("rm.savedCountdown", mapOf("left" to timeLeftStr(at))))
+                        } else {
                             Toasts.toast(t("rm.pastTitle"), "info")
                         }
-                        Toasts.toast(t("act.saved"))
+                        // v1.6.17 — RN v1.6.2 parity: the notification
+                        // permission is requested when a reminder is SAVED,
+                        // not only from the Reminders tab status card. After
+                        // one denial Android never re-shows the dialog, so
+                        // this is an instant no-op then (the card remains).
+                        if (notifOn == false) {
+                            Platform.notify.requestNotifPermission { ok -> notifOn = ok }
+                        }
                         pop()
                     },
                     modifier = Modifier.weight(1f),
@@ -287,66 +334,81 @@ fun ReminderEditOverlay(reminderId: String?, ownerId: String) {
                     }
                 }
             }
-            // date + time — v1.6.13: the ADVANCED setters (native Material
-            // calendar + clock dialogs, exactly the RN edition's
-            // @react-native-community/datetimepicker). Tappable rows replace
-            // the old plain text inputs; nothing invalid can be entered.
+            // date + time — v1.6.17: PickerFields (label above + 48 dp box),
+            // exactly like the Field beside them, so the pair aligns. The
+            // old label-inside boxes were shorter/taller than neighbours and
+            // sat flush against the chip tabs below (the "overlap" report).
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .border(1.dp, C.line, RoundedCornerShape(14.dp))
-                        .background(C.inputBg, RoundedCornerShape(14.dp))
-                        .clickable {
+                Box(Modifier.weight(1f)) {
+                    PickerField(
+                        label = t("rm.dueDate"),
+                        value = fd(dueDate),
+                        icon = "calendar-blank-outline",
+                        onPress = {
                             val initial = parseDue() ?: now()
                             NativeDateTime.pickDate(
                                 epochMillis = initial,
-                                onPick = { epoch ->
-                                    val d = dateOf(epoch)
-                                    dueDate = "${d.year}-${(d.month0 + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
-                                },
+                                onPick = { epoch -> dueDate = dateStr(dateOf(epoch)) },
                             )
-                        }
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                ) {
-                    Column {
-                        Text(t("rm.dueDate"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            MdiIcon("calendar-blank-outline", 16, C.brand)
-                            Text(fd(dueDate), fontSize = F.body.sp, color = C.ink, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
+                        },
+                    )
                 }
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .border(1.dp, C.line, RoundedCornerShape(14.dp))
-                        .background(C.inputBg, RoundedCornerShape(14.dp))
-                        .clickable {
+                Box(Modifier.weight(1f)) {
+                    PickerField(
+                        label = t("rm.dueTime"),
+                        value = timeLabel(dueTime),
+                        icon = "clock-outline",
+                        onPress = {
                             val parts = dueTime.split(":")
                             val h = parts.getOrNull(0)?.toIntOrNull() ?: 9
                             val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                            // v1.6.17 — the picker follows the app-wide
+                            // 12 h / 24 h clock choice (Settings → Region).
                             NativeDateTime.pickTime(
                                 hourOfDay = h,
                                 minute = m,
-                                is24Hour = false,
+                                is24Hour = AppStore.state.settings.clock24,
                                 onPick = { hh, mm ->
                                     dueTime = "${hh.toString().padStart(2, '0')}:${mm.toString().padStart(2, '0')}"
                                 },
                             )
-                        }
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                ) {
-                    Column {
-                        Text(t("rm.dueTime"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            MdiIcon("clock-outline", 16, C.brand)
-                            Text(dueTime, fontSize = F.body.sp, color = C.ink, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
+                        },
+                    )
                 }
+            }
+            // v1.6.17 — the NOW clock for comparison + 12/24 h toggle +
+            // live countdown, all in one compact strip.
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(C.brand.copy(alpha = 0.07f))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                MdiIcon("clock-outline", 16, C.brand)
+                Text(
+                    "${t("rm.now")}: ${ft(nowTick)}",
+                    fontSize = F.small.sp,
+                    color = C.ink,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    if (AppStore.state.settings.clock24) "12 h" else "24 h",
+                    fontSize = F.tiny.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = C.brand,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(C.brand.copy(alpha = 0.12f))
+                        .clickable { AppStore.updateSettings { it.copy(clock24 = !it.clock24) } }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                )
             }
             // quick chips
             Row(Modifier.padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -354,26 +416,32 @@ fun ReminderEditOverlay(reminderId: String?, ownerId: String) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Chip(label = t("rm.today"), compact = true, onPress = { dueDate = todayStr() })
                         Chip(label = t("rm.tomorrow"), compact = true, onPress = {
-                            val d = dateOf(now() + 86400000)
-                            dueDate = "${d.year}-${(d.month0 + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
+                            dueDate = dateStr(dateOf(now() + 86400000))
                         })
                         Chip(label = t("rm.nextWeek"), compact = true, onPress = {
-                            val d = dateOf(now() + 7 * 86400000)
-                            dueDate = "${d.year}-${(d.month0 + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
+                            dueDate = dateStr(dateOf(now() + 7 * 86400000))
                         })
-                        Chip(label = "9:00", compact = true, onPress = { dueTime = "09:00" })
-                        Chip(label = "13:00", compact = true, onPress = { dueTime = "13:00" })
-                        Chip(label = "18:00", compact = true, onPress = { dueTime = "18:00" })
-                        Chip(label = "20:00", compact = true, onPress = { dueTime = "20:00" })
+                        Chip(label = timeChipLabel("09:00"), compact = true, onPress = { dueTime = "09:00" })
+                        Chip(label = timeChipLabel("13:00"), compact = true, onPress = { dueTime = "13:00" })
+                        Chip(label = timeChipLabel("18:00"), compact = true, onPress = { dueTime = "18:00" })
+                        Chip(label = timeChipLabel("20:00"), compact = true, onPress = { dueTime = "20:00" })
                     }
                 }
             }
-            // live preview
+            // live preview — due moment + how much time is left (v1.6.17)
             val at = parseDue()
+            val left = at?.let { timeLeftStr(it, nowTick) }
             Text(
-                "${t("rm.due")}: ${at?.let { "${fdEpoch(it)} · ${ft(it)}" } ?: t("rm.validDateTime")}",
-                fontSize = F.small.sp, color = C.brand, fontWeight = FontWeight.SemiBold,
+                when {
+                    at == null -> "${t("rm.due")}: ${t("rm.validDateTime")}"
+                    else -> "${t("rm.due")}: ${fdEpoch(at)} · ${ft(at)} · $left"
+                },
+                fontSize = F.small.sp,
+                color = if (at != null && at < nowTick) C.red else C.brand,
+                fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(bottom = 12.dp),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
             // notification status
             if (notifOn == false) {
