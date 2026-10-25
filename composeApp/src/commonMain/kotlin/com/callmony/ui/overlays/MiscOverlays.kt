@@ -433,12 +433,16 @@ fun MergeOverlay() {
                                         // v1.6.13: WRITE_CONTACTS gate for merges.
                                         val ok = com.callmony.lib.requestContactsWrite() &&
                                             Platform.contacts.addPhoneToContact(a.recordID, "other", b.phones.firstOrNull()?.number ?: "")
-                                        if (ok) {
-                                            Platform.contacts.deleteContact(b.recordID)
-                                            AppStore.state.deviceContacts.find { it.recordID == b.recordID }?.let { }
-                                            pairs = pairs.filter { it.first != a && it.second != a && it.first != b && it.second != b }
-                                            Toasts.toast(t("spd.contactsMerged"))
-                                        } else Toasts.toast(t("act.couldntCopy"), "error")
+                                        if (ok) Platform.contacts.deleteContact(b.recordID)
+                                        // v1.6.21 — binder work above ran on the Default
+                                        // worker; state writes + toasts publish on Main
+                                        // (single-writer snapshot rule).
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                            if (ok) {
+                                                pairs = pairs.filter { it.first != a && it.second != a && it.first != b && it.second != b }
+                                                Toasts.toast(t("spd.contactsMerged"))
+                                            } else Toasts.toast(t("act.couldntCopy"), "error")
+                                        }
                                     }
                                 },
                                 modifier = Modifier.weight(1f),

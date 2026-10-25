@@ -31,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -77,22 +78,38 @@ object AppStore {
     val state = AppState()
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /* v1.6.21 — THE SINGLE-WRITER SNAPSHOT RULE (the v1.6.20 freeze report:
+       the main thread blocked ~6 s inside Snapshot.current() on a state
+       write while Dispatchers.Default workers were publishing store state —
+       hydrate's 16 assignments, the 1239-contact list, the 400-call list…).
+       RULE: Compose snapshot state (reads AND writes) is touched ONLY on the
+       main dispatcher. Background coroutines do the heavy work (JSON, binder,
+       cursors) and then publish through ONE batched main hop — a single
+       recomposition, zero cross-thread snapshot lock traffic. */
+    private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    /** Post a state mutation to the main dispatcher from ANY thread or
+     *  non-suspend callback (permission callbacks, receivers). */
+    fun publish(block: () -> Unit) {
+        mainScope.launch { block() }
+    }
+
     /* ---------------- sync call log (v1.6.11 stock-dialer policy) ---------------- */
 
     private var callLogAskInFlight = false
 
     fun loadSystemCalls(full: Boolean = false, forceAsk: Boolean = false) {
         scope.launch {
-            state.callLogBusy = true
+            withContext(Dispatchers.Main) { state.callLogBusy = true }
             try {
                 loadSystemCallsInner(full, forceAsk)
             } finally {
-                state.callLogBusy = false
+                withContext(Dispatchers.Main) { state.callLogBusy = false }
             }
         }
     }
 
-    private fun loadSystemCallsInner(full: Boolean, forceAsk: Boolean) {
+    private suspend fun loadSystemCallsInner(full: Boolean, forceAsk: Boolean) {
         // v1.6.13 FIX: READ_CALL_LOG was NEVER requested — fetchAll()
         // silently returned [] and the perm was even marked GRANTED, so
         // the Recents tab stayed empty and the "allow" card never showed.
@@ -100,43 +117,55 @@ object AppStore {
         // the denied card (state.callLogPerm = DENIED). forceAsk lets the
         // denied card's Allow button re-request.
         if (!Platform.callLog.hasPermission()) {
-            if ((forceAsk || state.callLogPerm != PermState.DENIED) && !callLogAskInFlight) {
+            val alreadyDenied = withContext(Dispatchers.Main) { state.callLogPerm == PermState.DENIED }
+            if ((forceAsk || !alreadyDenied) && !callLogAskInFlight) {
                 callLogAskInFlight = true
                 Platform.callLog.requestPermission { granted ->
-                    callLogAskInFlight = false
-                    state.callLogPerm = if (granted) PermState.GRANTED else PermState.DENIED
-                    if (granted) loadSystemCalls(full = true)
+                    // v1.6.21 — the callback can land on any thread: publish
+                    publish {
+                        callLogAskInFlight = false
+                        state.callLogPerm = if (granted) PermState.GRANTED else PermState.DENIED
+                        if (granted) loadSystemCalls(full = true)
+                    }
                 }
             }
             return
         }
-        val cur = state.systemCalls
-        var isFull = full
-        if (!isFull && (cur.isEmpty() || now() - state.callLogSyncedAt >= CALLS_FULL_TTL)) {
-            isFull = true
+        // v1.6.21 — decide WHAT to fetch on MAIN (snapshot reads), then run
+        // the cursor/binder work on this (Default) worker, then publish.
+        class Plan(val isFull: Boolean, val since: Long, val cur: List<DeviceCall>)
+        val plan = withContext(Dispatchers.Main) {
+            val cur = state.systemCalls
+            val isFull = full || cur.isEmpty() || now() - state.callLogSyncedAt >= CALLS_FULL_TTL
+            Plan(isFull, cur.firstOrNull()?.date ?: 0L, cur)
         }
-        val merged: List<DeviceCall> = if (isFull) {
+        val merged: List<DeviceCall> = if (plan.isFull) {
             Platform.callLog.fetchAll()
         } else {
-            val newest = cur.firstOrNull()?.date ?: 0L
-            val fresh = Platform.callLog.loadSince(newest - 60_000L)
+            val fresh = Platform.callLog.loadSince(plan.since - 60_000L)
             if (fresh.isEmpty()) {
-                state.callLogPerm = PermState.GRANTED
-                state.callLogSyncedAt = now()
-                saveCachedCalls(cur)
+                withContext(Dispatchers.Main) {
+                    state.callLogPerm = PermState.GRANTED
+                    state.callLogSyncedAt = now()
+                }
+                saveCachedCalls(plan.cur)
                 return
             }
-            val seen = cur.map { it.id }.toHashSet()
-            (fresh.filter { it.id !in seen } + cur)
+            val seen = plan.cur.map { it.id }.toHashSet()
+            (fresh.filter { it.id !in seen } + plan.cur)
                 .sortedByDescending { it.date }
                 .take(400)
         }
-        val same = merged.size == cur.size &&
-            merged.zip(cur).all { (a, b) -> a.id == b.id && a.date == b.date }
-        if (!same) state.systemCalls = merged
-        state.callLogPerm = PermState.GRANTED
-        state.callLogSyncedAt = now()
-        if (!same || isFull) saveCachedCalls(merged)
+        val same = withContext(Dispatchers.Main) {
+            val cur = state.systemCalls
+            val sameNow = merged.size == cur.size &&
+                merged.zip(cur).all { (a, b) -> a.id == b.id && a.date == b.date }
+            if (!sameNow) state.systemCalls = merged
+            state.callLogPerm = PermState.GRANTED
+            state.callLogSyncedAt = now()
+            sameNow
+        }
+        if (!same || plan.isFull) saveCachedCalls(merged)
     }
 
     /* ---------------- hydrate ---------------- */
@@ -150,39 +179,45 @@ object AppStore {
             // v1.6.20 — persisted freeze/crash reports feed the in-app
             // diagnostics overlay ("the app froze last time — here's why").
             Diag.loadFromStorage()
-            if (data.settings.pinHash != null) {
-                state.settings = data.settings.copy(pinHash = null)
-                Db.saveSettings(state.settings)
-            } else {
-                state.settings = data.settings
-            }
-            state.contactX = data.contactX
-            state.entries = data.entries
-            state.groups = data.groups
-            state.lists = data.lists
-            state.notes = data.notes
-            state.reminders = data.reminders
-            state.banks = data.banks
-            state.recents = data.recents
-            state.messages = data.messages
-            state.hydrated = true
-            Diag.mark("store.loaded")
-            if (callsCache.second.isNotEmpty()) {
-                state.systemCalls = callsCache.second
-                state.callLogPerm = PermState.GRANTED
-                state.callLogSyncedAt = callsCache.first
-            }
-            if (storedPin != null) {
-                state.settings = state.settings.copy(pinHash = PinHash(storedPin.hash, storedPin.salt))
-                // v1.6.17 — the PIN actually locks: a fresh launch (or process
-                // restore) with a PIN set opens on the lock screen. Previously
-                // `locked` started false and nothing set it, so the PIN never
-                // guarded anything until the autolock timer happened to fire.
-                UiStore.locked = true
-            }
-            // (re)schedule reminder notifications after boot
-            for (r in data.reminders.filter { it.deletedAt == null && !it.done }) {
-                scheduleReminderNotification(r)
+            // v1.6.21 — ALL state writes (and the t() reads inside the
+            // reminder rescheduling below) happen in ONE batched main hop:
+            // a single recomposition, and no Default worker ever touches the
+            // snapshot system (the v1.6.20 freeze class).
+            withContext(Dispatchers.Main) {
+                if (data.settings.pinHash != null) {
+                    state.settings = data.settings.copy(pinHash = null)
+                    Db.saveSettings(state.settings)
+                } else {
+                    state.settings = data.settings
+                }
+                state.contactX = data.contactX
+                state.entries = data.entries
+                state.groups = data.groups
+                state.lists = data.lists
+                state.notes = data.notes
+                state.reminders = data.reminders
+                state.banks = data.banks
+                state.recents = data.recents
+                state.messages = data.messages
+                state.hydrated = true
+                Diag.mark("store.loaded")
+                if (callsCache.second.isNotEmpty()) {
+                    state.systemCalls = callsCache.second
+                    state.callLogPerm = PermState.GRANTED
+                    state.callLogSyncedAt = callsCache.first
+                }
+                if (storedPin != null) {
+                    state.settings = state.settings.copy(pinHash = PinHash(storedPin.hash, storedPin.salt))
+                    // v1.6.17 — the PIN actually locks: a fresh launch (or process
+                    // restore) with a PIN set opens on the lock screen. Previously
+                    // `locked` started false and nothing set it, so the PIN never
+                    // guarded anything until the autolock timer happened to fire.
+                    UiStore.locked = true
+                }
+                // (re)schedule reminder notifications after boot
+                for (r in data.reminders.filter { it.deletedAt == null && !it.done }) {
+                    scheduleReminderNotification(r)
+                }
             }
         }
     }
@@ -216,18 +251,21 @@ object AppStore {
             try {
                 // v1.6.8 — WAIT while a contact editor is open (the freeze fix)
                 var waits = 0
-                while (UiStore.isEditingContact() && waits < 40) {
+                // v1.6.21 — the overlay-stack read is a snapshot read: check on Main
+                while (withContext(Dispatchers.Main) { UiStore.isEditingContact() } && waits < 40) {
                     delay(1500)
                     waits++
                 }
                 if (!Platform.contacts.hasPermission()) {
                     Platform.contacts.requestPermission { granted ->
-                        state.contactsPerm = if (granted) PermState.GRANTED else PermState.DENIED
-                        if (granted) scope.launch { doFetchContacts() }
+                        publish {
+                            state.contactsPerm = if (granted) PermState.GRANTED else PermState.DENIED
+                            if (granted) scope.launch { doFetchContacts() }
+                        }
                     }
                     return@launch
                 }
-                state.contactsPerm = PermState.GRANTED
+                withContext(Dispatchers.Main) { state.contactsPerm = PermState.GRANTED }
                 doFetchContacts()
             } finally {
                 contactsRefreshInFlight = false
@@ -246,12 +284,18 @@ object AppStore {
         refreshDeviceContacts()
     }
 
-    private fun doFetchContacts() {
+    private suspend fun doFetchContacts() {
         try {
+            // v1.6.21 — the address-book read (binder + cursor over every
+            // contact) stays on the Default worker; the publish below is ONE
+            // batched main hop (the old direct write from the worker was the
+            // snapshot-lock contender in the v1.6.20 freeze report).
             val list = Platform.contacts.fetchAll()
             if (list.isNotEmpty()) {
-                state.deviceContacts = list
-                state.contactsLoadedAt = now()
+                withContext(Dispatchers.Main) {
+                    state.deviceContacts = list
+                    state.contactsLoadedAt = now()
+                }
                 saveCachedContacts(list)
             }
         } catch (_: Exception) { }
@@ -973,25 +1017,31 @@ object AppStore {
         try { Platform.notify.cancel(id) } catch (_: Exception) {}
     }
 
+    /** v1.6.21 — MAIN-THREAD capture for the boot re-arm: the reminder list +
+     *  localized labels are snapshot reads, so they are built here (called
+     * from a main context) and handed to the binder-only background hop. */
+    fun remindersForRearm(): List<ReminderForAlarm> = try {
+        fun kindLabelOf(kind: String): String = when (kind) {
+            "payment" -> t("rm.kindPayment")
+            "todo" -> t("rm.kindTodo")
+            "birthday" -> t("rm.kindBirthday")
+            "followup" -> t("rm.kindFollowup")
+            else -> t("rm.kindCustom")
+        }
+        state.reminders
+            .filter { it.deletedAt == null && !it.done && (it.snoozedUntil ?: it.dueAt) > now() }
+            .map {
+                ReminderForAlarm(
+                    it.id, it.title, it.notes ?: "", it.snoozedUntil ?: it.dueAt, it.kind,
+                    kindLabelOf(it.kind), t("act.done"), t("rm.snooze10"),
+                    alarm = it.isAlarm,
+                )
+            }
+    } catch (_: Exception) { emptyList() }
+
     fun rearmReminders() {
         try {
-            fun kindLabelOf(kind: String): String = when (kind) {
-                "payment" -> t("rm.kindPayment")
-                "todo" -> t("rm.kindTodo")
-                "birthday" -> t("rm.kindBirthday")
-                "followup" -> t("rm.kindFollowup")
-                else -> t("rm.kindCustom")
-            }
-            val pending = state.reminders
-                .filter { it.deletedAt == null && !it.done && (it.snoozedUntil ?: it.dueAt) > now() }
-                .map {
-                    ReminderForAlarm(
-                        it.id, it.title, it.notes ?: "", it.snoozedUntil ?: it.dueAt, it.kind,
-                        kindLabelOf(it.kind), t("act.done"), t("rm.snooze10"),
-                        alarm = it.isAlarm,
-                    )
-                }
-            Platform.notify.rearmAll(pending)
+            Platform.notify.rearmAll(remindersForRearm())
         } catch (_: Exception) {}
     }
 

@@ -328,12 +328,20 @@ class AlarmReceiver : android.content.BroadcastReceiver() {
          * v1.6.18: the load-modify-save runs as ONE atomic block on the
          * Persist queue — ordered with every UI write, never racing them. */
         val pending = goAsync()
+        // v1.6.21 — single-writer snapshot rule: read the live flag on the MAIN
+        // thread (onReceive) instead of from the worker, and post the live
+        // store update BACK to main — the worker thread never touches
+        // Compose state (cross-thread snapshot writes were the contention
+        // behind the v1.6.20 freeze report).
+        val live = AppStore.state.hydrated
         Thread {
             try {
-                com.callmony.lib.Persist.postAndWait {
-                    if (AppStore.state.hydrated) {
-                        AppStore.fireReminder(id)
-                    } else {
+                if (live) {
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        try { AppStore.fireReminder(id) } catch (_: Exception) {}
+                    }
+                } else {
+                    com.callmony.lib.Persist.postAndWait {
                         val rec = Db.loadAll().reminders.find { it.id == id } ?: return@postAndWait
                         if (rec.repeat != "none" && !rec.done && rec.deletedAt == null) {
                             val nextDue = com.callmony.lib.nextOccurrence(rec.dueAt, rec.repeat)
@@ -367,29 +375,36 @@ class NotificationActionReceiver : android.content.BroadcastReceiver() {
         val action = intent.action ?: return
         if (!AndroidPlatform.isReady()) AndroidPlatform.init(context.applicationContext)
         val ctx = AndroidPlatform.appContext
+        // v1.6.21 — single-writer snapshot rule: read the live flag on the
+        // MAIN thread (onReceive) and post the live store update BACK to
+        // main; the worker thread only does JSON surgery / notifications.
+        val live = AppStore.state.hydrated
         val pending = goAsync()
         Thread {
             try {
                 val nm = NotificationManagerCompat.from(ctx)
                 nm.cancel(id.hashCode())
                 val now = System.currentTimeMillis()
-                com.callmony.lib.Persist.postAndWait {
-                    when (action) {
-                        ACTION_DONE -> {
-                            if (AppStore.state.hydrated) {
-                                AppStore.completeReminder(id)
-                            } else {
+                if (live) {
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        try {
+                            when (action) {
+                                ACTION_DONE -> AppStore.completeReminder(id)
+                                ACTION_SNOOZE -> AppStore.snoozeReminder(id, now + 10 * 60000L)
+                            }
+                        } catch (_: Exception) {}
+                    }
+                } else {
+                    com.callmony.lib.Persist.postAndWait {
+                        when (action) {
+                            ACTION_DONE -> {
                                 val next = Db.loadAll().reminders.map {
                                     if (it.id == id) it.copy(done = true, doneAt = now, updatedAt = now) else it
                                 }
                                 Db.saveReminders(next)
                             }
-                        }
-                        ACTION_SNOOZE -> {
-                            val until = now + 10 * 60000L
-                            if (AppStore.state.hydrated) {
-                                AppStore.snoozeReminder(id, until)
-                            } else {
+                            ACTION_SNOOZE -> {
+                                val until = now + 10 * 60000L
                                 val next = Db.loadAll().reminders.map {
                                     if (it.id == id) it.copy(snoozedUntil = until, updatedAt = now) else it
                                 }

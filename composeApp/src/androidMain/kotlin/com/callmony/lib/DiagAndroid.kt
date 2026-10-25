@@ -108,19 +108,51 @@ internal fun mainThreadStackText(maxFrames: Int = 60): String = try {
     val t = Looper.getMainLooper().thread
     if (t == null) "<main thread unavailable>"
     else buildString {
-        appendLine("Thread: ${t.name} (main)")
+        appendLine("Thread: ${t.name} (main, ${t.state})")
         t.stackTrace.take(maxFrames).forEach { appendLine("  at $it") }
     }
 } catch (_: Throwable) { "<stack capture failed>" }
 
+/* v1.6.21 — FULL thread dump. The v1.6.20 freeze report only carried the
+   6 deepest-stacked threads × 4 frames, and the snapshot-lock holder was
+   among the missing. Now: EVERY thread, RUNNABLE/BLOCKED/WAITING-first
+   (a lock holder is never idle), 16 frames each, within a total character
+   budget so the report stays storable. */
 internal fun otherThreadsBriefText(): String = try {
-    Thread.getAllStackTraces().entries
-        .filter { it.key !== Looper.getMainLooper().thread }
-        .sortedByDescending { it.value.size }
-        .take(6)
-        .joinToString("\n") { (t, st) ->
-            "Thread: ${t.name} (${t.state})\n" + st.take(4).joinToString("\n") { "  at $it" }
+    val main = Looper.getMainLooper().thread
+    val entries = Thread.getAllStackTraces().entries
+        .filter { it.key !== main }
+        .sortedWith(
+            compareByDescending<Map.Entry<Thread, Array<StackTraceElement>>> { e ->
+                when (e.key.state) {
+                    Thread.State.RUNNABLE, Thread.State.BLOCKED -> 2
+                    Thread.State.WAITING, Thread.State.TIMED_WAITING -> 1
+                    else -> 0
+                }
+            }.thenByDescending { it.value.size }
+        )
+    var budget = 24_000
+    buildString {
+        appendLine("threads(total)=${entries.size + 1} (+main; RUNNABLE/BLOCKED first)")
+        for ((t, st) in entries) {
+            if (budget <= 0) {
+                appendLine("Thread: ${t.name} (${t.state}) <dump budget exhausted>")
+                break
+            }
+            val block = buildString {
+                appendLine("Thread: ${t.name} (${t.state}, prio=${t.priority})")
+                st.take(16).forEach { appendLine("  at $it") }
+                if (st.size > 16) appendLine("  … +${st.size - 16} more")
+            }
+            if (block.length > budget) {
+                appendLine("Thread: ${t.name} (${t.state}) <${st.size} frames, skipped for budget>")
+                budget -= 80
+            } else {
+                append(block)
+                budget -= block.length
+            }
         }
+    }
 } catch (_: Throwable) { "" }
 
 internal fun deviceInfoText(ctx: Context): String = buildString {

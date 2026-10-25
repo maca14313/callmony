@@ -720,15 +720,20 @@ fun CallRowSheet(row: CallRow, onClose: () -> Unit, onDelete: (() -> Unit)?) {
                     // v1.6.13: WRITE_CONTACTS gate (was failing silently).
                     val ok = com.callmony.lib.requestContactsWrite() &&
                         Platform.contacts.addPhoneToContact(c.recordID, "other", row.phone)
-                    addingTo = null
-                    if (ok) {
-                        AppStore.patchDeviceContact(c.recordID) { old ->
-                            if (old.phones.any { it.number == row.phone }) old
-                            else old.copy(phones = old.phones + com.callmony.model.DevicePhone(row.phone, "other", row.phone))
-                        }
-                        Toasts.toast(t("cd.numberAddedTo", mapOf("name" to displayName(c))))
-                        onClose()
-                    } else Toasts.toast(t("act.couldntCopy"), "error")
+                    // v1.6.21 — binder work above ran on the Default worker;
+                    // every state write + toast publishes on Main instead
+                    // (single-writer snapshot rule).
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        addingTo = null
+                        if (ok) {
+                            AppStore.patchDeviceContact(c.recordID) { old ->
+                                if (old.phones.any { it.number == row.phone }) old
+                                else old.copy(phones = old.phones + com.callmony.model.DevicePhone(row.phone, "other", row.phone))
+                            }
+                            Toasts.toast(t("cd.numberAddedTo", mapOf("name" to displayName(c))))
+                            onClose()
+                        } else Toasts.toast(t("act.couldntCopy"), "error")
+                    }
                 }
             },
             onBack = { addToExisting = false },

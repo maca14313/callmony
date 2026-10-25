@@ -148,7 +148,10 @@ fun CallmonyApp() {
         AppStore.hydrate()
         AppStore.scope.launch {
             delay(5000)
-            if (!AppStore.state.hydrated) AppStore.state.hydrated = true
+            // v1.6.21 — the bail-out write is a snapshot write too: hop to Main
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                if (!AppStore.state.hydrated) AppStore.state.hydrated = true
+            }
         }
     }
 
@@ -165,10 +168,14 @@ fun CallmonyApp() {
         // (re)arming are binder calls to system services; on slow/low-end
         // devices a stack of them on the MAIN thread janks boot, so they
         // run on the background pool instead (results are identical).
+        // v1.6.21 — snapshot the reminder list + localized labels on MAIN
+        // first (state reads / t() are snapshot reads too — single-writer
+        // rule); the Default hop below is binder-only.
         delay(4000)
+        val alarms = AppStore.remindersForRearm()
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
             Platform.notify.ensureChannel()
-            AppStore.rearmReminders()
+            Platform.notify.rearmAll(alarms)
         }
         // v1.6.20 — "boot settled": a report captured after this point is a
         // mid-session problem, not a startup one.
@@ -210,13 +217,21 @@ fun CallmonyApp() {
        consuming), so the 1/5-minute options no longer lock the app while
        the user is actively using it; "immediately" locks when the app goes
        to the background (MainActivity keeps UiStore.appInForeground true
-       between onResume and onPause). */
-    var lastActive by remember { mutableStateOf(now()) }
+       between onResume and onPause).
+       v1.6.21 — THE FREEZE FIX (decoded from the v1.6.20 diagnostics
+       report: main blocked ~6 s in Snapshot.current at the touch observer):
+       this used to be `mutableStateOf` — a Compose SNAPSHOT write on EVERY
+       touch, colliding with background workers publishing store state.
+       Autolock never needs recomposition (only the idle poller below reads
+       the timestamp), so it is now a plain field on a remember'd ref — the
+       gesture observer and the poller both run on the main dispatcher
+       (single thread, ZERO snapshot traffic per touch). */
+    val lastActive = remember { TimeRef(now()) }
     LaunchedEffect(Unit) {
         while (true) {
             delay(10000)
             if (AppStore.state.settings.pinHash != null && !UiStore.locked) {
-                val idle = now() - lastActive
+                val idle = now() - lastActive.v
                 val limit = AppStore.state.settings.autolockMin
                 when {
                     limit == 0 && !UiStore.appInForeground -> UiStore.locked = true
@@ -293,7 +308,7 @@ fun CallmonyApp() {
             // so children still receive every tap exactly as before.
             .pointerInput(Unit) {
                 awaitEachGesture {
-                    lastActive = now()
+                    lastActive.v = now()
                 }
             },
     ) {
@@ -722,3 +737,11 @@ private fun ThemeSheet(onClose: () -> Unit) {
         }
     }
 }
+
+/* v1.6.21 — plain mutable timestamp holder for the autolock idle tracker.
+   Deliberately NOT Compose state: it is written on every touch (gesture
+   observer) and read only by the 10 s idle poller — both on the main
+   dispatcher — so it must never enter the snapshot system (the v1.6.20
+   freeze report showed the main thread blocked ~6 s inside Snapshot.current
+   on this exact write). */
+internal class TimeRef(var v: Long)

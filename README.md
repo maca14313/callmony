@@ -104,9 +104,33 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.20 (versionCode 30)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.21 (versionCode 31)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.21** — the first v1.6.20 diagnostics report arrived and named the
+  freeze exactly: **"Main thread blocked — no progress for 5991 ms"** with
+  the main-thread stack parked inside the Compose snapshot system
+  (`SnapshotKt.readable` ← `Snapshot.current` ← a state `setValue`) at the
+  AUTolock touch observer (`awaitEachGesture { lastActive = now() }`). Two
+  fixes landed together:
+  1. **The per-touch snapshot write is gone** — `lastActive` was Compose
+     state, so EVERY touch wrote to the snapshot system and could collide
+     with a background publisher. Autolock never needs recomposition, so
+     the timestamp is now a plain field on a remembered ref (gesture
+     observer and idle poller both run on the main dispatcher): zero
+     snapshot traffic per touch.
+  2. **The single-writer snapshot rule** — no `Dispatchers.Default` worker
+     ever touches Compose state again. `hydrate()` (16 assignments), the
+     1239-contact publish, the 400-call sync, `KeypadIndex`, the boot
+     bail-out and the notification-action receivers all do their heavy work
+     on background threads and then publish through ONE batched
+     main-dispatcher hop (single recomposition, zero cross-thread snapshot
+     lock traffic). Even `t()` reads and the boot alarm re-arm capture run
+     on main now.
+  The diagnostics themselves were upgraded from the same lesson: the freeze
+  report only carried the 6 deepest-stacked threads × 4 frames, and the
+  lock holder was among the missing — freeze reports now dump EVERY thread,
+  RUNNABLE/BLOCKED first, 16 frames each.
 - **1.6.20** — "still the same, the app is freezing and crashing — make it
   show the problem in the app when it is trying to close": built exactly
   that. An ANR watchdog detects both freeze shapes (hard main-thread

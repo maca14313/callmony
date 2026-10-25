@@ -4,6 +4,77 @@ All notable changes to callmony. Dates follow the git history; the APK for each 
 
 ---
 
+# v1.6.21 — KMP: the first diagnostics report named the freeze — fixed at the exact stack (single-writer snapshot rule) (2026-10-26)
+
+## Why
+
+v1.6.20's diagnostics did their job: the user sent the freeze report and it
+named the problem precisely instead of leaving us guessing.
+
+```
+kind: freeze   phase: ui.main
+problem: Main thread blocked — no progress for 5991 ms
+Thread: main
+  at androidx.compose.runtime.snapshots.SnapshotKt.readable(...)
+  at androidx.compose.runtime.snapshots.SnapshotKt.current(...)
+  at androidx.compose.runtime.SnapshotMutableStateImpl.setValue(...)
+  at com.callmony.ui.CallmonyAppKt.CallmonyApp$lambda$10(CallmonyApp.kt:1978)
+  at com.callmony.ui.CallmonyAppKt$CallmonyApp$10$1$1.invokeSuspend(CallmonyApp.kt:296)
+  at androidx.compose.foundation.gestures.ForEachGestureKt$awaitEachGesture$2...
+deviceContacts=1239 systemCalls=400 hydrated=true onboarded=false
+```
+
+Line 296 is the **autolock touch observer** — `awaitEachGesture { lastActive
+= now() }` — and `lastActive` was Compose `mutableStateOf` state, so **every
+touch on the whole app** entered the Compose snapshot system. The stack shows
+that write blocked for ~6 s inside `Snapshot.current()` waiting on the
+snapshot machinery while background `Dispatchers.Default` workers were
+publishing store state across threads (hydrate's 16 assignments, the
+1239-contact list, the 400-call sync — all direct snapshot writes from
+worker threads on a low-end Samsung A12). Main stalled past Android's 5 s
+input-dispatch line → "Callmony isn't responding" → the app closes itself.
+
+## What was fixed
+
+1. **The per-touch snapshot write is gone** (`CallmonyApp.kt`). Autolock
+   never needs recomposition — only the 10 s idle poller reads the
+   timestamp — so `lastActive` is now a plain field on a remembered `TimeRef`
+   (gesture observer and poller both run on the main dispatcher, single
+   thread, zero snapshot traffic per touch). The exact frozen frame is now
+   physically impossible.
+2. **The single-writer snapshot rule** (`Store.kt`, `KeypadIndex.kt`,
+   `MiscOverlays.kt`, `RecentsScreen.kt`, `NotifyActuals.kt`): no background
+   thread reads or writes Compose snapshot state anymore. Heavy work (JSON
+   hydration, address-book cursors, call-log cursors, T9 index build,
+   contacts binder edits) stays on `Dispatchers.Default`; every state
+   mutation publishes through ONE batched `withContext(Dispatchers.Main)`
+   hop — hydrate lands as a single recomposition, the 1239-contact publish
+   can no longer contend with a touch, and the call-log sync decides what to
+   fetch on main, fetches on the worker, publishes back on main.
+   `AppStore.publish { }` covers non-suspend callbacks (permission results);
+   the boot alarm re-arm captures its reminder list + localized labels on
+   main (`remindersForRearm()`) and the worker hop is binder-only; the
+   notification-action receivers read the live flag in `onReceive` (main)
+   and post the live store update back to main.
+3. **Diagnostics upgraded with the same lesson** (`DiagAndroid.kt`): the
+   freeze report only carried the 6 deepest-stacked threads × 4 frames, and
+   the snapshot-lock holder was among the missing — freeze captures now dump
+   **every** thread, RUNNABLE/BLOCKED first (a lock holder is never idle),
+   16 frames each, with the main thread's state printed too.
+
+## Verification
+
+- Pure battery 55/55 (Diag 9, V1618 16, ReminderV1617 9, SearchContacts 12,
+  CalcFormat 5, KmpDate 4).
+- `BootDiagTest` (fresh install) GREEN — boot reaches `ui.idle` in ~23 s
+  through the new main-dispatcher publish path.
+- `UpgradeBootDiagTest` (onboarded + 400 cached calls + 5 reminders) GREEN.
+- Android + both iOS targets (iosArm64, iosSimulatorArm64) compile clean.
+- Release APK verified: `com.callmony 1.6.21 versionCode 31`, minSdk 23,
+  targetSdk 34, signed CN=Callmony ET.
+
+---
+
 # v1.6.20 — KMP: the app now SHOWS the problem when it freezes or crashes (in-app freeze/crash diagnostics) (2026-10-26)
 
 ## Why
