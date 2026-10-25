@@ -22,7 +22,13 @@ class MainActivity : ComponentActivity() {
         // Returning from the default dialer / messaging app: refresh the
         // system call log incrementally so calls made through the handoff
         // appear in Recents right away (cheap — usually zero rows).
-        if (AppStore.state.hydrated) AppStore.loadSystemCalls()
+        if (AppStore.state.hydrated) {
+            AppStore.loadSystemCalls()
+            // v1.6.14: TTL-guarded contact book refresh — contacts created
+            // outside the app while it sat in the background now show up in
+            // search / Recents / keypad matches without a restart.
+            AppStore.maybeRefreshContacts()
+        }
     }
 
     override fun onRequestPermissionsResult(

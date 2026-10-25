@@ -331,15 +331,22 @@ private fun BottomNav() {
                         .background(if (active) C.card else C.brand)
                         .border(1.5.dp, C.brand, RoundedCornerShape(14.dp))
                         .clickable {
+                            // RN parity: tap while open closes; otherwise the
+                            // dialer opens ON TOP of the Recents tab
                             UiStore.closeAll()
-                            UiStore.keypadOpen = !active
+                            if (!active) {
+                                UiStore.setTab("recents")
+                                UiStore.keypadOpen = true
+                            }
                         },
                     contentAlignment = Alignment.Center,
                 ) { MdiIcon("dialpad", 22, if (active) C.brand else Color.White) }
             }
             NavSlot("calculator", "calculator-variant", "Calculator", Modifier.weight(1f)) {
-                UiStore.closeAll()
-                UiStore.open(Overlay.Calculator())
+                // RN parity: tap toggles the calculator sheet over the current tab
+                val calcOpen = UiStore.overlayStack.any { it is Overlay.Calculator }
+                if (calcOpen) UiStore.closeType("Calculator")
+                else UiStore.open(Overlay.Calculator())
             }
             NavSlot("general", "wallet-outline", "General", Modifier.weight(1f))
             // More
@@ -415,7 +422,11 @@ private fun NavSlot(tab: String, icon: String, label: String, modifier: Modifier
                 .clip(RoundedCornerShape(12.dp))
                 .background(if (active) C.brandSoft else Color.Transparent)
                 .clickable {
-                    if (tab == UiStore.tab) UiStore.closeAll()
+                    // v1.6.14 FIX: the nav tiles never switched tabs — tapping
+                    // General (the wallet/ledger page) or Recents did nothing.
+                    // RN parity: closeAll() first, then setTab for real tabs.
+                    UiStore.closeAll()
+                    if (tab != "calculator") UiStore.setTab(tab)
                     onClick()
                 },
             contentAlignment = Alignment.Center,

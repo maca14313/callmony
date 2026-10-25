@@ -209,6 +209,17 @@ object AppStore {
         }
     }
 
+    /** Foreground refresh with a TTL guard (RN parity): returning to the app
+     *  re-reads the contact book when the snapshot is older than a minute, so
+     *  contacts created/edited in the device Contacts app (or another app)
+     *  while Callmony sat in the background appear in search, Recents and the
+     *  keypad without a full app restart. Cheap when the TTL hasn't elapsed. */
+    fun maybeRefreshContacts(ttlMs: Long = 60000) {
+        val last = state.contactsLoadedAt
+        if (last != 0L && now() - last < ttlMs) return
+        refreshDeviceContacts()
+    }
+
     private fun doFetchContacts() {
         try {
             val list = Platform.contacts.fetchAll()

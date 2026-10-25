@@ -513,7 +513,9 @@ fun EmptyState(
     }
 }
 
-/** Segmented — compact tab strip of Chips. */
+/** Segmented — compact tab strip of Chips (webapp style: "Ledger · Lists · …").
+ *  v1.6.14: chips are COMPACT (28 dp tall, 12 sp) so five-to-six tabs fit
+ *  side by side on a phone without crowding their neighbours. */
 @Composable
 fun Segmented(
     options: List<Triple<String, String, Int?>>,
@@ -526,7 +528,7 @@ fun Segmented(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         for ((key, label, count) in options) {
-            Chip(label = label, active = value == key, count = count, onPress = { onChange(key) })
+            Chip(label = label, active = value == key, count = count, compact = true, onPress = { onChange(key) })
         }
     }
 }

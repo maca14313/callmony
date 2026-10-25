@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -67,18 +68,18 @@ fun OnboardingSheet() {
         Modifier
             .fillMaxSize()
             .background(C.canvas)
+            // v1.6.14: the onboarding lives OUTSIDE the shell's padded column
+            // — without these insets the "Welcome" title sat under the status
+            // bar and Get started under the gesture/nav bar.
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
             .padding(bottom = 16.dp),
     ) {
         Spacer(Modifier.height(24.dp))
-        Box(
-            Modifier
-                .size(74.dp)
-                .clip(RoundedCornerShape(22.dp))
-                .background(C.brand),
-            contentAlignment = Alignment.Center,
-        ) { MdiIcon("phone-in-talk", 38, C.onBrand) }
+        // v1.6.14: the new logo here too (matches the splash)
+        com.callmony.ui.LogoTile(74, corner = 24)
         Text("Welcome to callmony", fontSize = F.title.sp, fontWeight = FontWeight.ExtraBold, color = C.ink, modifier = Modifier.padding(top = 14.dp))
         Text(t("ob.hint"), fontSize = F.small.sp, color = C.sub)
 

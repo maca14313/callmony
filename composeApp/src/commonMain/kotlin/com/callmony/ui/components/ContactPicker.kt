@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -135,7 +136,7 @@ fun ContactPicker(
                     hint = if (query.isBlank()) t("cd.noContactsHint") else query,
                 )
             } else {
-                LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                LazyColumn(Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 12.dp)) {
                     items(results, key = { it.recordID }) { c ->
                         PressableRow(
                             onClick = { onPick(c) },

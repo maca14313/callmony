@@ -61,8 +61,8 @@ android {
         applicationId = "com.callmony"
         minSdk = 23
         targetSdk = 34
-        versionCode = 23
-        versionName = "1.6.13"
+        versionCode = 24
+        versionName = "1.6.14"
     }
 
     signingConfigs {

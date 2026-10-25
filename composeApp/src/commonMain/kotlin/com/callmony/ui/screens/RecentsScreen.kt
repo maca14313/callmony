@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -136,8 +137,14 @@ fun RecentsScreen() {
     val youOwe = entries.filter { it.deletedAt == null && it.ownerId.startsWith("c:") && it.type == "debit" }
         .sumOf { it.amount - it.payments.sumOf { p -> p.amount } }
 
-    /* unified rows from the system call log */
-    val rows: List<CallRow> = remember(systemCalls) {
+    /* unified rows from the system call log.
+       v1.6.14 FIX: `contacts` is a key (RN parity — its useMemo deps are
+       [systemCalls, appRecents, contacts]). The port keyed only on
+       systemCalls, so the phone→contact match was frozen at first render:
+       every card stayed "unsaved" after the contact book loaded (or after
+       creating a contact), and tapping a card opened the action sheet
+       instead of the contact detail. */
+    val rows: List<CallRow> = remember(systemCalls, contacts) {
         systemCalls.map { c ->
             CallRow(
                 key = c.id,
@@ -438,7 +445,9 @@ private fun CallList(
     val C = C()
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)
+            // testTag lets UI tests scroll this list to deep items
+            .testTag("recentsList"),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 8.dp, bottom = 28.dp),
     ) {
         items(pagedItems, key = {

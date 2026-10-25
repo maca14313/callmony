@@ -3,7 +3,7 @@ package com.callmony.ui.components
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -29,12 +29,15 @@ import androidx.compose.ui.unit.dp
 import com.callmony.ui.kit.C
 import com.callmony.ui.kit.MdiIcon
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 
 /* SwipeRow — port of src/components/SwipeRow.tsx.
-   Claims a drag when |dx| > 12 && |dx| > 1.25·|dy|; opens past 40 px
-   (velocity factored); 160 ms snap; ±24 px overdrag clamp; tap-on-open
-   closes first. Left & right action buttons render under the row. */
+   v1.6.14 FIX: the drag detector used to be detectDragGestures, which
+   passes touch slop in ANY direction — the first onDrag callback then
+   consumed every event (change.consume() ran unconditionally), so a
+   VERTICAL swipe over a call card was eaten by the row and the Recents
+   LazyColumn could never scroll. detectHorizontalDragGestures only
+   claims horizontal motion: vertical drags fall through to the list,
+   horizontal swipes still reveal the action buttons. */
 
 data class SwipeAction(
     val label: String,
@@ -126,7 +129,7 @@ fun SwipeRow(
             Modifier
                 .graphicsLayer { translationX = x.value }
                 .pointerInput(maxLeft, maxRight) {
-                    detectDragGestures(
+                    detectHorizontalDragGestures(
                         onDragEnd = {
                             val v = x.value
                             val target = when {
@@ -147,17 +150,12 @@ fun SwipeRow(
                             }
                             scope.launch { x.animateTo(back, tween(160)) }
                         },
-                    ) { change, dragAmount ->
-                        change.consume()
-                        val dx = dragAmount.x
-                        val dy = dragAmount.y
-                        val claimed = abs(x.value) > 0.5f ||
-                            (abs(dx) > 12 && abs(dx) > 1.25f * abs(dy))
-                        if (claimed) {
-                            val over = 24f * density.density
-                            val next = (x.value + dx).coerceIn(-maxRight - over, maxLeft + over)
-                            scope.launch { x.snapTo(next) }
-                        }
+                    ) { _, dx ->
+                        // only horizontal drags ever reach here — apply the
+                        // swipe with the ±24 px overdrag clamp.
+                        val over = 24f * density.density
+                        val next = (x.value + dx).coerceIn(-maxRight - over, maxLeft + over)
+                        scope.launch { x.snapTo(next) }
                     }
                 },
         ) {

@@ -91,7 +91,14 @@ fun Sheet(
             }
         }
         // body
-        Box(Modifier.weight(1f)) {
+        // v1.6.14: footer-less sheets (ContactDetail, Calculator…) used to
+        // let their content run down to the screen edge — under the phone's
+        // gesture/navigation bar. Pad the body when no footer sits below it.
+        Box(
+            Modifier
+                .weight(1f)
+                .then(if (footer == null) Modifier.navigationBarsPadding() else Modifier)
+        ) {
             if (scrollable) {
                 Column(
                     Modifier

@@ -104,9 +104,23 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.13 (versionCode 23)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.14 (versionCode 24)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.14** — the five user reports: (1) Recents finally scrolls over the
+  call cards (SwipeRow consumed *vertical* drags before — now only horizontal
+  swipes are claimed, vertical drags reach the list); (2) call cards re-match
+  contacts the moment the contact book loads or changes (the rows memo was
+  frozen on the call-log state — RN parity restored), so tapping a card opens
+  the contact detail instead of the "unsaved number" sheet; (3) the bottom-nav
+  General/Ledger tile actually navigates (nav tiles never called `setTab`), the
+  calculator tile toggles like RN, segmented tab strips are compact; (4)
+  created contacts get the **aggregate contact id** (createContact used to
+  return the raw-contact id — nothing matched it afterwards), plus a
+  TTL-guarded contact refresh every foreground so contacts created outside the
+  app appear in search/Recents without a restart; (5) insets sweep —
+  onboarding, lock screen, calculator keypad, footer-less sheets, search and
+  picker lists all clear the status bar and the gesture/nav bar.
 - **1.6.13** — keypad crash fix (`parseHexColor` NumberFormatException on
   every avatar), calculator precision (ASCII-operator `applyOp` bug — "2 × 2"
   returned the last operand — plus decimal-exact formatting), real amount

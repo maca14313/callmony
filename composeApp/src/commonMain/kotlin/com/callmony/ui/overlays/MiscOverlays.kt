@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.aspectRatio
@@ -147,7 +148,8 @@ fun SearchOverlay() {
                 }
             }
         }
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+        // v1.6.14: keep the last results above the phone's nav bar
+        LazyColumn(Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 16.dp)) {
             if (debounced.isBlank()) {
                 item {
                     EmptyState(icon = "magnify", title = t("sr.everythingHint"), hint = t("sr.keepTyping"))

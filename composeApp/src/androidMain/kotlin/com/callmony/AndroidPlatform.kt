@@ -442,7 +442,24 @@ class AndroidContacts : ContactsService {
                 )
             }
             val results = ctx.contentResolver.applyBatch(ContactsContract.AUTHORITY, ops)
-            results.firstOrNull()?.uri?.lastPathSegment
+            // v1.6.14 FIX: results[0].uri points at the RAW contact — but
+            // fetchAll() indexes everything by the AGGREGATE Contacts._ID.
+            // Returning the raw id gave created contacts an identity that
+            // nothing else in the app matched (detail lookups, favorites,
+            // speed dials, socials all keyed on the contact id). Resolve the
+            // aggregate CONTACT_ID from the new raw row and return THAT.
+            val rawId = results.firstOrNull()?.uri?.lastPathSegment ?: return null
+            ctx.contentResolver.query(
+                ContactsContract.RawContacts.CONTENT_URI,
+                arrayOf(ContactsContract.RawContacts.CONTACT_ID),
+                "${ContactsContract.RawContacts._ID} = ?",
+                arrayOf(rawId), null,
+            )?.use { c ->
+                if (c.moveToFirst() && !c.isNull(0)) return c.getLong(0).toString()
+            }
+            // Aggregate not linked (shouldn't happen for local raw contacts)
+            // — fall back to the raw id so the caller at least has something.
+            return rawId
         } catch (_: Exception) { null }
     }
 
