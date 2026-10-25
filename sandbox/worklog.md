@@ -213,3 +213,21 @@ Work Log:
 
 Stage Summary:
 - All 17 reports fixed; 46/46 tests; Android + iOS compile; release: https://github.com/maca14313/callmony/releases/tag/v1.6.18; APK: releases/callmony-1.6.18-release.apk + /home/z/my-project/download/callmony-1.6.18-kmp-release.apk.
+
+---
+Task ID: 10
+Agent: main agent (Z.ai)
+Task: Fix the two v1.6.18 follow-up reports — (1) app freezes at the first welcome screen then ANRs ("Callmony isn't responding" → closes itself), (2) empty states (e.g. "No matching contacts") sit top-left instead of centered — and ship v1.6.19.
+
+Work Log:
+- Rebuilt the boot diagnostics: new BootDiagTest harness (Robolectric + watchman thread dumping thread stacks + live app state). The v1.6.18 fresh-install boot NEVER finished ActivityScenario.launch(): the main looper was stuck in a permanent Choreographer vsync loop driven by a Compose InfiniteTransition (onFrame → setValue → next frame, forever). The v1.6.18 round's "killed at 570 s while booting" was this hang, not sandbox slowness.
+- Bisect: removing the onboarding BasicTextField (cursor-blink theory) did NOT stop it; the app's only rememberInfiniteTransition (AlarmDialog pulse) wasn't composing (alarmQueue=0). Root cause: the Material3 indeterminate CircularProgressIndicator — RecentsScreen's "Loading calls…" Spinner(36) shown while callLogPerm == UNKNOWN && systemCalls.isEmpty(), i.e. on EVERY fresh install from the very first frame, spinning invisibly UNDER the opaque onboarding sheet forever. Endless frame loop → main thread saturated → input dispatch starved → ANR ("isn't responding") → "closing itself".
+- Control experiment: new UpgradeBootDiagTest (onboarded settings, 400 cached calls, repeating/snoozed/done reminders, entries, notes, banks) — boots + idles CLEANLY → the v1.6.18 Persist queue was NOT the culprit; the freeze is the fresh-install permission-spinner path.
+- FIX 1 (freeze): new AppState.callLogBusy (try/finally around loadSystemCalls incl. early returns); the loading spinner renders only when callLogBusy && callLogPerm == UNKNOWN && settings.onboarded (screen visible). Unresolved permission → no-calls EmptyState (never animates). Boot effect: ensureChannel() + rearmReminders() moved to Dispatchers.Default (binder calls off main).
+- FIX 2 (centering): EmptyState (Kit.kt) was a bare padded Column → top-left in sized containers. Now Box(fillMaxSize + wrapContentSize(Center)) → centered in Recents/Reminders/Trash/Notes/Banks/ContactPicker/denied card; inside scrollables fillMaxSize degrades to wrap-content (unbounded height) → natural in-flow placement, horizontal centering only (RN behavior in both contexts).
+- Verification: BootDiagTest fresh-install boot GREEN in 23 s (previously hung forever); UpgradeBootDiagTest GREEN; pure battery 46/46 (V1618 16, ReminderV1617 9, SearchContacts 12, CalcFormat 5, KmpDate 4); KeypadTest's test method now STARTS (boot completes; can't finish in this sandbox's window — environment-limited); Android release APK 1.6.19 vc29 built + aapt/apksigner verified (com.callmony 1.6.19 vc29 minSdk 23 targetSdk 34, CN=Callmony ET); both iOS targets compile clean.
+- Docs: README Versioning v1.6.19 entry; react-native/docs/CHANGELOG.md full entry; sandbox/chat-logs/2026-10-26-v1.6.19-user-reports.md (verbatim report + fix map); scripts/publish_release.py (recreated — publishes the GitHub release + APK asset using the origin remote token).
+- Shipped: commit 05fe99f pushed to origin/main (f084e6a..05fe99f, ls-remote verified); GitHub Release v1.6.19 published (id 423658006) with the APK attached; APK committed at releases/callmony-1.6.19-release.apk (SHA-256 ad295b4725c17eb65d6b3edb284d81edc797c858d73c4aabf1f9d8c0f279fdce) + copied to /home/z/my-project/download/callmony-1.6.19-kmp-release.apk.
+
+Stage Summary:
+- Both reports fixed and regression-tested; the freeze root cause is permanently guarded by the two boot harnesses. v1.6.19 live: https://github.com/maca14313/callmony/releases/tag/v1.6.19.
