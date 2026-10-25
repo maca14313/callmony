@@ -153,10 +153,15 @@ fun CallmonyApp() {
         // +4 s contacts refresh
         delay(4000)
         AppStore.refreshDeviceContacts()
-        // +8 s reminder readiness
+        // +8 s reminder readiness — v1.6.19: channel creation + alarm
+        // (re)arming are binder calls to system services; on slow/low-end
+        // devices a stack of them on the MAIN thread janks boot, so they
+        // run on the background pool instead (results are identical).
         delay(4000)
-        Platform.notify.ensureChannel()
-        AppStore.rearmReminders()
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            Platform.notify.ensureChannel()
+            AppStore.rearmReminders()
+        }
     }
 
     /* ---- alarm watcher (15 s interval) — v1.6.17 ----

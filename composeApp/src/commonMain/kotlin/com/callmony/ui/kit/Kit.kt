@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -532,23 +533,39 @@ fun EmptyState(
     onAction: (() -> Unit)? = null,
 ) {
     val C = C()
-    Column(
-        Modifier.padding(vertical = 36.dp, horizontal = 28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+    // v1.6.19 — THE "EMPTY STATE SITS TOP-LEFT" FIX. The old bare Column
+    // (padding only) started at the TOP-LEFT of whatever container it was
+    // in — screens with a sized content area (Recents "No matching
+    // contacts", Reminders, Notes, Banks, picker…) showed the mint circle
+    // + heading + hint glued to the top-left corner. Now the state fills
+    // its container and centers. In scrollables (LazyColumn items, vertical
+    // scroll columns) the height constraint is unbounded, where fillMaxSize
+    // falls back to wrap-content — so list-empty states keep their natural
+    // in-flow placement and only center horizontally (exactly the RN
+    // behavior in both contexts).
+    Box(
+        Modifier
+            .fillMaxSize()
+            .wrapContentSize(Alignment.Center),
     ) {
-        Box(
-            Modifier
-                .size(62.dp)
-                .clip(CircleShape)
-                .background(C.brandSoft),
-            contentAlignment = Alignment.Center,
-        ) { MdiIcon(icon, 30, C.brand) }
-        Text(title, fontSize = F.body.sp, fontWeight = FontWeight.Bold, color = C.ink, modifier = Modifier.padding(top = 12.dp))
-        if (!hint.isNullOrEmpty()) {
-            Text(hint, fontSize = F.small.sp, color = C.sub, modifier = Modifier.padding(top = 4.dp), textAlign = TextAlign.Center, lineHeight = 20.sp)
-        }
-        if (actionLabel != null && onAction != null) {
-            Box(Modifier.padding(top = 14.dp)) { Btn(label = actionLabel, onPress = onAction, small = true) }
+        Column(
+            Modifier.padding(vertical = 36.dp, horizontal = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                Modifier
+                    .size(62.dp)
+                    .clip(CircleShape)
+                    .background(C.brandSoft),
+                contentAlignment = Alignment.Center,
+            ) { MdiIcon(icon, 30, C.brand) }
+            Text(title, fontSize = F.body.sp, fontWeight = FontWeight.Bold, color = C.ink, modifier = Modifier.padding(top = 12.dp))
+            if (!hint.isNullOrEmpty()) {
+                Text(hint, fontSize = F.small.sp, color = C.sub, modifier = Modifier.padding(top = 4.dp), textAlign = TextAlign.Center, lineHeight = 20.sp)
+            }
+            if (actionLabel != null && onAction != null) {
+                Box(Modifier.padding(top = 14.dp)) { Btn(label = actionLabel, onPress = onAction, small = true) }
+            }
         }
     }
 }

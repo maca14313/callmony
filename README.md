@@ -104,8 +104,31 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.18 (versionCode 28)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.19 (versionCode 29)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
+
+- **1.6.19** — the two v1.6.18 follow-up reports:
+  1. **freeze at the welcome screen → "Callmony isn't responding" → closes
+     itself** — root cause: while the call-log permission was unresolved
+     (`UNKNOWN`) and no calls were cached, the Recents tab rendered an
+     INFINITE `CircularProgressIndicator` — an endless Choreographer frame
+     loop that ran invisibly UNDER the opaque onboarding sheet from the very
+     first frame and never stopped, saturating the main thread (reproduced
+     as a permanent boot hang in the Robolectric harness). The loading
+     spinner now renders ONLY while a call-log ask/fetch is genuinely in
+     flight (new `callLogBusy` state) AND the screen is actually visible;
+     an unresolved permission falls through to the no-calls empty state,
+     which never animates. Boot-time notification-channel creation + alarm
+     re-arming also moved off the main thread.
+  2. **empty states sat at the top-left** ("No matching contacts" with the
+     mint circle icon) — `EmptyState` fills its container and centers
+     itself (Recents, Reminders, Trash, Notes, Banks, contact picker…);
+     inside scrollables it keeps its natural in-flow placement (horizontal
+     centering only), exactly like the RN edition.
+  - Regression harnesses added: `BootDiagTest` (fresh-install boot must
+    idle — 23 s, previously hung forever) and `UpgradeBootDiagTest`
+    (onboarded boot with 400 cached calls + reminders). 46/46 pure tests
+    green; Android + both iOS targets compile.
 
 - **1.6.18** — the seventeen user reports:
   1. **freeze / lag / "app closing itself"** — every store mutation used to

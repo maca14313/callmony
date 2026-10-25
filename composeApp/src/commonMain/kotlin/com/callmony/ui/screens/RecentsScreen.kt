@@ -384,7 +384,20 @@ fun RecentsScreen() {
         }
         // the list
         Box(Modifier.weight(1f)) {
-            if (callLogPerm == PermState.UNKNOWN && systemCalls.isEmpty()) {
+            // v1.6.19 — THE WELCOME-SCREEN FREEZE FIX. The old condition
+            // (callLogPerm == UNKNOWN && systemCalls.isEmpty()) rendered an
+            // INFINITE CircularProgressIndicator whenever the permission was
+            // unresolved — including the entire first-run onboarding, where
+            // it spun invisibly UNDER the opaque welcome sheet and never
+            // stopped: an endless Choreographer frame loop saturating the
+            // main thread → "Callmony isn't responding" → the app closes
+            // itself. Now the spinner appears ONLY while a call-log ask or
+            // fetch is genuinely in flight AND the screen is actually
+            // visible (onboarding done). An unresolved UNKNOWN state falls
+            // through to the no-calls EmptyState — which never animates.
+            if (callLogPerm == PermState.UNKNOWN && systemCalls.isEmpty() &&
+                AppStore.state.settings.onboarded && AppStore.state.callLogBusy
+            ) {
                 Column(
                     Modifier.fillMaxSize().padding(top = 80.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,

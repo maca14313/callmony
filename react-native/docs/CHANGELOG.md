@@ -4,6 +4,57 @@ All notable changes to callmony. Dates follow the git history; the APK for each 
 
 ---
 
+# v1.6.19 — KMP: the welcome-screen freeze root-caused (infinite boot spinner) + centered empty states (2026-10-26)
+
+## The two v1.6.18 follow-up reports
+
+1. **"The app starts freezing at the first welcome screen, then closes
+   itself — 'Callmony isn't responding'."** Root cause (found with a thread
+   -dump harness): whenever the call-log permission was `UNKNOWN` and no
+   calls were cached, the Recents tab rendered an indeterminate
+   `CircularProgressIndicator` — a Compose `InfiniteTransition`, i.e. an
+   endless Choreographer frame loop. On a fresh install that spinner
+   composed from the very first frame and spun INVISIBLY UNDER the opaque
+   onboarding sheet, never stopping: the main thread was permanently busy
+   producing frames, input dispatch starved on the user's device → the ANR
+   dialog → the app "closes itself". The same loop left the Robolectric
+   boot harness unable to finish `ActivityScenario.launch()` at all — the
+   v1.6.18 round's "killed at 570 s while booting" was this bug, not
+   sandbox slowness. Fix:
+   - new `AppState.callLogBusy` — true only while a call-log ask or fetch is
+     actually in flight (set/cleared in a `try/finally` around the whole
+     `loadSystemCalls` coroutine, including the early-return paths);
+   - the loading spinner renders only when `callLogBusy` is true AND the
+     permission is still `UNKNOWN` AND the screen is actually visible
+     (onboarding completed) — an unresolved permission falls through to the
+     no-calls `EmptyState`, which never animates;
+   - boot-time notification-channel creation + alarm re-arming
+     (`ensureChannel` / `rearmReminders`) moved off the main thread onto
+     `Dispatchers.Default` (binder calls to system services on low-end
+     devices janked boot);
+   - two permanent regression harnesses: `BootDiagTest` (fresh-install boot
+     must idle: 23 s green, previously hung forever) and
+     `UpgradeBootDiagTest` (onboarded boot seeded with 400 cached calls,
+     entries, repeating/snoozed/done reminders).
+2. **"Some components sit at the left top but should be centered — e.g. the
+   'No matching contacts' empty state (mint circle, history icon)."** The
+   shared `EmptyState` composable was a bare padded `Column`, so inside any
+   sized content area it started at the top-left corner. It now fills its
+   container and centers (`fillMaxSize` + `wrapContentSize(Center)`), which
+   fixes Recents, Reminders, Trash, Notes, Banks, the contact picker and the
+   call-log denied card; inside scrollables (LazyColumn items, vertical
+   scroll columns) the height constraint is unbounded, so `fillMaxSize`
+   falls back to wrap-content and list empty states keep their natural
+   in-flow placement, centering horizontally only — the RN behavior in both
+   contexts.
+
+Verification: 46/46 pure unit tests green (V1618 16, ReminderV1617 9,
+SearchContacts 12, CalcFormat 5, KmpDate 4), both boot harnesses green,
+Android release APK 1.6.19 (versionCode 29) built + aapt/apksigner verified,
+both iOS targets compile.
+
+---
+
 # v1.6.18 — KMP: the freeze/ANR fix (async persistence), any-interval repeat reminders + alarm mode, one-tap entry editing, Record payment, attachments, block contacts, advanced search, rebuilt contact detail (2026-10-26)
 
 ## The seventeen user reports

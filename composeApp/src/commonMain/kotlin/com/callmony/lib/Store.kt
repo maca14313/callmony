@@ -54,6 +54,12 @@ class AppState {
     var systemCalls by mutableStateOf<List<DeviceCall>>(emptyList())
     var callLogPerm by mutableStateOf(PermState.UNKNOWN)
     var callLogSyncedAt by mutableStateOf(0L)
+    // v1.6.19 — TRUE only while a call-log ask/fetch is actually in flight.
+    // The boot "Loading calls…" spinner renders ONLY when this is true, so a
+    // stalled UNKNOWN permission state can never leave an infinite animation
+    // running (the v1.6.18 freeze: the spinner looped forever under the
+    // onboarding overlay, saturating the main thread → "isn't responding").
+    var callLogBusy by mutableStateOf(false)
     var contactX by mutableStateOf<List<ContactX>>(emptyList())
     var entries by mutableStateOf<List<LedgerEntry>>(emptyList())
     var groups by mutableStateOf<List<LedgerGroup>>(emptyList())
@@ -77,51 +83,60 @@ object AppStore {
 
     fun loadSystemCalls(full: Boolean = false, forceAsk: Boolean = false) {
         scope.launch {
-            // v1.6.13 FIX: READ_CALL_LOG was NEVER requested — fetchAll()
-            // silently returned [] and the perm was even marked GRANTED, so
-            // the Recents tab stayed empty and the "allow" card never showed.
-            // Ask once, dialer-style; on grant load the log, on deny surface
-            // the denied card (state.callLogPerm = DENIED). forceAsk lets the
-            // denied card's Allow button re-request.
-            if (!Platform.callLog.hasPermission()) {
-                if ((forceAsk || state.callLogPerm != PermState.DENIED) && !callLogAskInFlight) {
-                    callLogAskInFlight = true
-                    Platform.callLog.requestPermission { granted ->
-                        callLogAskInFlight = false
-                        state.callLogPerm = if (granted) PermState.GRANTED else PermState.DENIED
-                        if (granted) loadSystemCalls(full = true)
-                    }
-                }
-                return@launch
+            state.callLogBusy = true
+            try {
+                loadSystemCallsInner(full, forceAsk)
+            } finally {
+                state.callLogBusy = false
             }
-            val cur = state.systemCalls
-            var isFull = full
-            if (!isFull && (cur.isEmpty() || now() - state.callLogSyncedAt >= CALLS_FULL_TTL)) {
-                isFull = true
-            }
-            val merged: List<DeviceCall> = if (isFull) {
-                Platform.callLog.fetchAll()
-            } else {
-                val newest = cur.firstOrNull()?.date ?: 0L
-                val fresh = Platform.callLog.loadSince(newest - 60_000L)
-                if (fresh.isEmpty()) {
-                    state.callLogPerm = PermState.GRANTED
-                    state.callLogSyncedAt = now()
-                    saveCachedCalls(cur)
-                    return@launch
-                }
-                val seen = cur.map { it.id }.toHashSet()
-                (fresh.filter { it.id !in seen } + cur)
-                    .sortedByDescending { it.date }
-                    .take(400)
-            }
-            val same = merged.size == cur.size &&
-                merged.zip(cur).all { (a, b) -> a.id == b.id && a.date == b.date }
-            if (!same) state.systemCalls = merged
-            state.callLogPerm = PermState.GRANTED
-            state.callLogSyncedAt = now()
-            if (!same || isFull) saveCachedCalls(merged)
         }
+    }
+
+    private fun loadSystemCallsInner(full: Boolean, forceAsk: Boolean) {
+        // v1.6.13 FIX: READ_CALL_LOG was NEVER requested — fetchAll()
+        // silently returned [] and the perm was even marked GRANTED, so
+        // the Recents tab stayed empty and the "allow" card never showed.
+        // Ask once, dialer-style; on grant load the log, on deny surface
+        // the denied card (state.callLogPerm = DENIED). forceAsk lets the
+        // denied card's Allow button re-request.
+        if (!Platform.callLog.hasPermission()) {
+            if ((forceAsk || state.callLogPerm != PermState.DENIED) && !callLogAskInFlight) {
+                callLogAskInFlight = true
+                Platform.callLog.requestPermission { granted ->
+                    callLogAskInFlight = false
+                    state.callLogPerm = if (granted) PermState.GRANTED else PermState.DENIED
+                    if (granted) loadSystemCalls(full = true)
+                }
+            }
+            return
+        }
+        val cur = state.systemCalls
+        var isFull = full
+        if (!isFull && (cur.isEmpty() || now() - state.callLogSyncedAt >= CALLS_FULL_TTL)) {
+            isFull = true
+        }
+        val merged: List<DeviceCall> = if (isFull) {
+            Platform.callLog.fetchAll()
+        } else {
+            val newest = cur.firstOrNull()?.date ?: 0L
+            val fresh = Platform.callLog.loadSince(newest - 60_000L)
+            if (fresh.isEmpty()) {
+                state.callLogPerm = PermState.GRANTED
+                state.callLogSyncedAt = now()
+                saveCachedCalls(cur)
+                return
+            }
+            val seen = cur.map { it.id }.toHashSet()
+            (fresh.filter { it.id !in seen } + cur)
+                .sortedByDescending { it.date }
+                .take(400)
+        }
+        val same = merged.size == cur.size &&
+            merged.zip(cur).all { (a, b) -> a.id == b.id && a.date == b.date }
+        if (!same) state.systemCalls = merged
+        state.callLogPerm = PermState.GRANTED
+        state.callLogSyncedAt = now()
+        if (!same || isFull) saveCachedCalls(merged)
     }
 
     /* ---------------- hydrate ---------------- */
