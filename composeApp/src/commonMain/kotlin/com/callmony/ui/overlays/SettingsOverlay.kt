@@ -189,10 +189,18 @@ fun SettingsOverlay() {
                 }
                 if (settings.pinHash != null) {
                     Text(t("st.autolock"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, bottom = 6.dp))
+                    // v1.6.18: added "Never" — the v1.6.17 default (1 minute)
+                    // surprised users as "the app closes itself" while they
+                    // were simply reading the screen with no touch for a minute.
                     Segmented(
-                        listOf(Triple("0", t("st.immediately"), null), Triple("1", t("st.after1"), null), Triple("5", t("st.after5"), null)),
+                        listOf(
+                            Triple("0", t("st.immediately"), null),
+                            Triple("1", t("st.after1"), null),
+                            Triple("5", t("st.after5"), null),
+                            Triple("-1", t("st.never"), null),
+                        ),
                         settings.autolockMin.toString(),
-                    ) { v -> AppStore.updateSettings { it.copy(autolockMin = v.toIntOrNull() ?: 1) } }
+                    ) { v -> AppStore.updateSettings { it.copy(autolockMin = v.toIntOrNull() ?: -1) } }
                 }
             }
             /* ---- Backup & restore ---- */

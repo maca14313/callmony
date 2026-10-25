@@ -45,6 +45,8 @@ import com.callmony.lib.now
 import com.callmony.lib.openListsPending
 import com.callmony.lib.ownerNameOf
 import com.callmony.lib.r2
+import com.callmony.lib.dateOf
+import com.callmony.platform.NativeDateTime
 import com.callmony.lib.shareStatement
 import com.callmony.lib.statementText
 import com.callmony.lib.todayStr
@@ -182,9 +184,9 @@ fun LedgerSection(ownerId: String) {
         // General tab where they are the primary kinds).
         ScrollRow {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (mine.isNotEmpty() || !isGeneral) {
-                    Chip(label = t("lg.settleUp"), icon = "check-all", onPress = { doSettle() })
-                }
+                // v1.6.18 — Settle-up REMOVED at the user's request ("we don't
+                // need the settle up for now"); AppStore.settleUp stays for API
+                // compat, just not surfaced anywhere.
                 if (isGeneral) {
                     Chip(label = "+ ${t("lg.kindIncome")}", icon = "trending-up", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "credit", "income")) })
                     Chip(label = "+ ${t("lg.kindExpense")}", icon = "trending-down", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "debit", "expense")) })
@@ -244,9 +246,23 @@ fun LedgerSection(ownerId: String) {
                 }
             }
         }
-        // ungrouped
+        // ungrouped ("Single entries")
         SectionHeader(t("lg.ungrouped"), right = {
-            IconBtn(if (ungroupedCollapsed) "chevron-down" else "chevron-up", { ungroupedCollapsed = !ungroupedCollapsed }, size = 34)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                // v1.6.18 — the filter tabs under "Single entries" now carry
+                // their own ＋: tapping it creates an entry of the KIND the tab
+                // is showing (Income/Expense on General, Credit/Debit on a
+                // contact), and a plain new entry for All/Unpaid/Overdue.
+                IconBtn("plus", {
+                    val (ty, kd) = when (groupFilter) {
+                        "credit" -> if (isGeneral) "credit" to "income" else "credit" to "credit"
+                        "debit" -> if (isGeneral) "debit" to "expense" else "debit" to "debit"
+                        else -> null to null
+                    }
+                    UiStore.open(if (ty == null) Overlay.EntryEdit(null, ownerId) else Overlay.EntryEdit(null, ownerId, ty, kd))
+                }, size = 34)
+                IconBtn(if (ungroupedCollapsed) "chevron-down" else "chevron-up", { ungroupedCollapsed = !ungroupedCollapsed }, size = 34)
+            }
         })
         if (!ungroupedCollapsed) {
             ScrollRow {
@@ -369,11 +385,6 @@ fun LedgerSection(ownerId: String) {
 fun EntryCard(entry: LedgerEntry, running: Double) {
     val C = C()
     var expanded by remember(entry.id) { mutableStateOf(false) }
-    var paySheet by remember { mutableStateOf(false) }
-    var amount by remember { mutableStateOf("") }
-    var payDate by remember { mutableStateOf(todayStr()) }
-    var method by remember { mutableStateOf("cash") }
-    var payNote by remember { mutableStateOf("") }
 
     val remaining = entryRemaining(entry)
     val paid = entry.payments.sumOf { it.amount }
@@ -385,7 +396,11 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
     Card(Modifier.padding(bottom = 8.dp)) {
         Column {
             Row(
-                Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                // v1.6.18 — ONE-TAP EDIT: tapping the row opens the editor
+                // directly ("why do I have to click two save buttons" — the
+                // old flow needed row-tap → Edit button → editor). The detail
+                // (payments history) opens from the chevron on the right.
+                Modifier.fillMaxWidth().clickable { UiStore.open(Overlay.EntryEdit(entry.id, entry.ownerId)) },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -418,7 +433,9 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
                     )
                 }
                 Money(signed, signed = true, colorize = true, size = 16, weight = FontWeight.ExtraBold, compact = true)
-                MdiIcon(if (expanded) "chevron-up" else "chevron-down", 20, C.faint)
+                // v1.6.18 — the chevron is now the ONLY thing that expands
+                // the detail (payments history etc.); the row body edits.
+                IconBtn(if (expanded) "chevron-up" else "chevron-down", { expanded = !expanded }, size = 32)
             }
 
             if (expanded) {
@@ -447,6 +464,35 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
                             ) {
                                 Text("${t("lg.total")} · ${itemsCount(entry.items)}", fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub)
                                 Text(compactMoney(itemsTotal(entry.items)), fontSize = F.body.sp, fontWeight = FontWeight.ExtraBold, color = C.brand)
+                            }
+                        }
+                    }
+                    // v1.6.18 — attached lists / notes / reminders on this entry
+                    if (entry.refs.isNotEmpty()) {
+                        Text(t("ee.attached"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 4.dp))
+                        ScrollRow(Modifier.padding(bottom = 8.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                entry.refs.forEach { ref ->
+                                    val icon = when (ref.type) { "list" -> "clipboard-list-outline"; "note" -> "notebook-outline"; "reminder" -> "bell-outline"; else -> "link-variant" }
+                                    Row(
+                                        Modifier
+                                            .clip(RoundedCornerShape(999.dp))
+                                            .background(C.brand.copy(alpha = 0.08f))
+                                            .clickable {
+                                                when (ref.type) {
+                                                    "list" -> UiStore.open(Overlay.ListDetail(ref.id))
+                                                    "note" -> UiStore.open(Overlay.NoteEdit(ref.id, AppStore.state.notes.find { it.id == ref.id }?.ownerId ?: entry.ownerId))
+                                                    "reminder" -> UiStore.open(Overlay.ReminderEdit(ref.id, AppStore.state.reminders.find { it.id == ref.id }?.ownerId ?: entry.ownerId))
+                                                }
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        MdiIcon(icon, 15, C.brand)
+                                        Text(ref.label ?: ref.id, fontSize = F.tiny.sp, color = C.ink, maxLines = 1)
+                                    }
+                                }
                             }
                         }
                     }
@@ -486,8 +532,7 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
                     }
                     Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Btn(small = true, label = t("lg.addPayment"), icon = "plus", variant = "soft", onPress = { paySheet = true })
-                        Btn(small = true, label = t("act.edit"), icon = "pencil-outline", variant = "secondary", onPress = { UiStore.open(Overlay.EntryEdit(entry.id, entry.ownerId)) })
+                        Btn(small = true, label = t("lg.recordPayment"), icon = "plus", variant = "soft", onPress = { openPaymentSheet(entry.id) })
                         Btn(small = true, label = t("act.move"), icon = "account-arrow-right-outline", variant = "secondary", onPress = {
                             Confirm.ask(t("lg.entryMoved"), t("lg.movedToGeneral"), t("act.move")) { ok ->
                                 if (ok) {
@@ -506,24 +551,71 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
             }
         }
 
-        // add payment sheet
-        if (paySheet) {
-            BottomSheet(title = t("lg.addPayment"), onClose = { paySheet = false }) {
+        // v1.6.18 — Record payment opens as a ROOT-LEVEL host sheet (was a
+        // BottomSheet composed INSIDE the scrollable card: unbounded height
+        // constraints made it pop up at the top / float mid-scroll — "the add
+        // payment is not working" + "some modals open at the top").
+    }
+}
+
+/* v1.6.18 — Record-payment sheet (root-level host sheet).
+ * Renamed from "Add payment" (confusing next to + Credit/+ Debit — the user
+ * never knew whether it CREATES a new entry or registers money against one).
+ * The date is now the NATIVE calendar picker (was a hand-typed YYYY-MM-DD
+ * text field — typos produced garbage dates, another "not working" source).
+ * It reads the LIVE entry from the store, so it stays correct if state
+ * changes while it is open. */
+fun openPaymentSheet(entryId: String) {
+    com.callmony.ui.kit.HostSheets.push { close ->
+        val live = AppStore.state.entries.find { it.id == entryId } ?: run { close(); return@push }
+        val C = C()
+        var amount by remember { mutableStateOf("") }
+        var payDate by remember { mutableStateOf(todayStr()) }
+        var method by remember { mutableStateOf("cash") }
+        var payNote by remember { mutableStateOf("") }
+        val remaining = entryRemaining(live)
+        BottomSheet(title = t("lg.recordPayment"), onClose = close) {
+            Column {
+                Text(t("lg.paymentHint"), fontSize = F.tiny.sp, color = C.sub, modifier = Modifier.padding(bottom = 10.dp))
+                Text("${t("lg.kind${(live.kind ?: live.type).replaceFirstChar { it.uppercase() }}")} · ${compactMoney(live.amount)}", fontSize = F.tiny.sp, color = C.brand, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp))
                 Field(label = t("lg.paymentAmount"), value = amount, onChangeText = { amount = it }, placeholder = "0", keyboardType = "decimal-pad")
                 if (remaining > 0.005) {
                     Row(Modifier.padding(bottom = 12.dp)) {
-                        Btn(small = true, label = "${t("lg.fillRemaining")}: ${compactMoney(remaining)}", variant = "soft", onPress = { amount = remaining.toString() })
+                        Btn(small = true, label = "${t("lg.fillRemaining")}: ${compactMoney(remaining)}", variant = "soft", onPress = { amount = trimNumCompat(remaining) })
                     }
                 }
-                Field(label = t("lg.paymentDate"), value = payDate, onChangeText = { payDate = it }, placeholder = "YYYY-MM-DD")
+                com.callmony.ui.kit.PickerField(
+                    label = t("lg.paymentDate"),
+                    value = com.callmony.lib.fd(payDate),
+                    icon = "calendar-blank-outline",
+                    onPress = {
+                        val initial = try {
+                            val p = payDate.split("-")
+                            com.callmony.lib.KmpDate(
+                                p.getOrNull(0)?.toInt() ?: dateOf(now()).year,
+                                (p.getOrNull(1)?.toIntOrNull() ?: (dateOf(now()).month0 + 1)) - 1,
+                                p.getOrNull(2)?.toIntOrNull() ?: dateOf(now()).day,
+                                12, 0, 0,
+                            ).time()
+                        } catch (_: Exception) { now() }
+                        NativeDateTime.pickDate(
+                            epochMillis = initial,
+                            onPick = { epoch ->
+                                val d = dateOf(epoch)
+                                payDate = "${d.year}-${(d.month0 + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
+                            },
+                        )
+                    },
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
                 Field(label = t("lg.paymentNote"), value = payNote, onChangeText = { payNote = it }, placeholder = t("lg.optionalNote"))
                 Text(t("lg.paymentMethod"), fontSize = F.small.sp, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
                 Segmented(
                     listOf(
-                        Triple("cash", "Cash", null),
-                        Triple("bank", "Bank", null),
-                        Triple("card", "Card", null),
-                        Triple("mobile", "Mobile", null),
+                        Triple("cash", t("lg.pmCash"), null),
+                        Triple("bank", t("lg.pmBank"), null),
+                        Triple("card", t("lg.pmCard"), null),
+                        Triple("mobile", t("lg.pmMobile"), null),
                         Triple("other", t("cd.other"), null),
                     ),
                     method,
@@ -536,7 +628,7 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
                             return@Btn
                         }
                         AppStore.addPayment(
-                            entry.id,
+                            entryId,
                             Payment(
                                 id = uid(),
                                 amount = v,
@@ -546,16 +638,18 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
                                 createdAt = now(),
                             )
                         )
-                        paySheet = false
-                        amount = ""
-                        payNote = ""
                         Toasts.toast(t("lg.paymentAdded"))
+                        close()
                     })
                 }
             }
         }
     }
 }
+
+/** "500.0" → "500"; keeps "12.5" — nicer Fill-remaining button behavior. */
+private fun trimNumCompat(v: Double): String =
+    if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 
 @Composable
 private fun StatCard(label: String, value: Double, strong: Boolean, modifier: Modifier = Modifier) {

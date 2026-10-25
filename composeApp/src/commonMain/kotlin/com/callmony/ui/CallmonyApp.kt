@@ -308,9 +308,12 @@ fun CallmonyApp() {
         // alarm dialog
         if (UiStore.alarmQueue.isNotEmpty()) AlarmDialog()
 
-        // global toaster + confirm
+        // global toaster + confirm + v1.6.18 host sheets
+        // (root-level modal slot: sheets opened from deep inside scrollables
+        // still pin bottom-center on the full screen — "modals at the top")
         Toaster()
         ConfirmHost()
+        com.callmony.ui.kit.HostSheetsHost()
     }
 
     // touch anywhere refreshes the autolock timer (see pointerInput above)
@@ -346,13 +349,18 @@ private fun Header() {
                     }
                     Text(t("hdr.tagline"), fontSize = F.tiny.sp, color = C.faint)
                 }
+                // v1.6.18 — the search entry is a SOLID brand pill now (was a
+                // 40 dp ghost-grey magnify that vanished against the wordmark —
+                // “make the search icon more visible and dominant”).
                 Box(
                     Modifier
                         .size(40.dp)
                         .clip(RoundedCornerShape(20.dp))
+                        .background(C.brand)
+                        .border(1.dp, C.brand, RoundedCornerShape(20.dp))
                         .clickable { UiStore.open(Overlay.Search()) },
                     contentAlignment = Alignment.Center,
-                ) { MdiIcon("magnify", 22, C.sub) }
+                ) { MdiIcon("magnify", 24, Color.White) }
             } else {
                 // secondary: back + title
                 Box(

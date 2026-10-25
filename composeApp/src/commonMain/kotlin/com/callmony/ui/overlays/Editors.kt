@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +43,7 @@ import com.callmony.lib.fdEpoch
 import kotlinx.coroutines.delay
 import com.callmony.lib.ft
 import com.callmony.lib.now
+import com.callmony.lib.repeatLabelOf
 import com.callmony.lib.ownerNameOf
 import com.callmony.lib.timeLeftStr
 import com.callmony.lib.todayStr
@@ -207,6 +209,11 @@ fun ReminderEditOverlay(reminderId: String?, ownerId: String) {
     var kind by remember { mutableStateOf(existing?.kind ?: "payment") }
     var repeat by remember { mutableStateOf(existing?.repeat ?: "none") }
     var leads by remember { mutableStateOf(existing?.leadMinutes ?: listOf<Int>()) }
+    // v1.6.18 — ALARM reminders + custom repeat intervals
+    var isAlarm by remember { mutableStateOf(existing?.isAlarm ?: false) }
+    val existingCustom = existing?.repeat?.let { com.callmony.lib.parseCustomRepeat(it) }
+    var customN by remember { mutableStateOf(existingCustom?.first?.toString() ?: "2") }
+    var customUnit by remember { mutableStateOf(existingCustom?.second ?: "d") }
     // v1.6.17 FIX — "enter a valid date and time" when EDITING a reminder:
     // dueDate used to be initialised with fdEpoch() (the DISPLAY format
     // "Oct 25, 2026") instead of yyyy-MM-dd, so parseDue() always failed on
@@ -292,8 +299,12 @@ fun ReminderEditOverlay(reminderId: String?, ownerId: String) {
                                 notes = notes.ifEmpty { null },
                                 kind = kind,
                                 dueAt = at,
-                                repeat = repeat,
+                                // v1.6.18: malformed custom intervals ("custom:",
+                                // "custom:0d", …) degrade to one-shot instead of
+                                // silently never repeating.
+                                repeat = if (repeat.startsWith("custom:") && com.callmony.lib.parseCustomRepeat(repeat) == null) "none" else repeat,
                                 leadMinutes = leads,
+                                isAlarm = isAlarm,
                                 createdAt = existing?.createdAt ?: now(),
                                 updatedAt = now(),
                             )
@@ -476,6 +487,97 @@ fun ReminderEditOverlay(reminderId: String?, ownerId: String) {
                         ).forEach { (k, label) ->
                             Chip(label = label, compact = true, active = repeat == k, onPress = { repeat = k })
                         }
+                        // v1.6.18 — ANY interval: “every 90 minutes”, “every 2
+                        // weeks”, “every 6 months” … picking Custom reveals the
+                        // number + unit row right below.
+                        val customActive = repeat.startsWith("custom:")
+                        Chip(
+                            label = t("rm.customInterval"),
+                            compact = true,
+                            active = customActive,
+                            onPress = {
+                                repeat = if (customActive) "none" else "custom:${(customN.toIntOrNull() ?: 0).coerceAtLeast(1)}$customUnit"
+                            },
+                        )
+                    }
+                }
+            }
+            if (repeat.startsWith("custom:")) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(C.chip)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(t("rm.everyN"), fontSize = F.small.sp, color = C.sub)
+                    val nField = Modifier.widthIn(max = 64.dp)
+                    Field(
+                        value = customN,
+                        onChangeText = { v ->
+                            customN = v.filter { it.isDigit() }.take(3)
+                            val n = customN.toIntOrNull() ?: 0
+                            if (n > 0) repeat = "custom:$n$customUnit"
+                        },
+                        placeholder = "2",
+                        keyboardType = "number-pad",
+                        modifier = nField,
+                    )
+                    ScrollRow {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(
+                                "m" to t("rm.unitMinutes"),
+                                "h" to t("rm.unitHours"),
+                                "d" to t("rm.unitDays"),
+                                "w" to t("rm.unitWeeks"),
+                                "mo" to t("rm.unitMonths"),
+                            ).forEach { (u, label) ->
+                                Chip(label = label, compact = true, active = customUnit == u, onPress = {
+                                    customUnit = u
+                                    val n = customN.toIntOrNull() ?: 0
+                                    if (n > 0) repeat = "custom:$n$u"
+                                })
+                            }
+                        }
+                    }
+                }
+                Text(
+                    repeatLabelOf(repeat),
+                    fontSize = F.tiny.sp, color = C.brand,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+            }
+            // v1.6.18 — ALARM reminders: rings on the alarm stream (audible
+            // over silent / muted media) instead of the regular notification.
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (isAlarm) C.brand.copy(alpha = 0.08f) else C.chip)
+                    .clickable { isAlarm = !isAlarm }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                MdiIcon("alarm-check-outline", 20, if (isAlarm) C.brand else C.sub)
+                Column(Modifier.weight(1f)) {
+                    Text(t("rm.alarm"), fontSize = F.body.sp, color = C.ink, fontWeight = FontWeight.SemiBold)
+                    Text(t("rm.alarmHint"), fontSize = F.tiny.sp, color = C.sub)
+                }
+                Box(
+                    Modifier
+                        .size(22.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(if (isAlarm) C.brand else androidx.compose.ui.graphics.Color.Transparent)
+                        .border(1.5.dp, if (isAlarm) C.brand else C.line, androidx.compose.foundation.shape.CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (isAlarm) {
+                        Text("✓", color = C.onBrand, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
                     }
                 }
             }

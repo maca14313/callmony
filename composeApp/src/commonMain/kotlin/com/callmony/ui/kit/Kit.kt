@@ -229,6 +229,43 @@ fun ConfirmHost() {
     }
 }
 
+/* ---------------- host sheets ---------------- */
+
+/* v1.6.18 — THE "MODALS OPEN AT THE TOP" FIX.
+ * Bottom sheets that were composed INSIDE a scrollable (the ledger entry
+ * card's Record-payment, the group menus, the list row payment …) drew
+ * their full-size scrim against an UNBOUNDED height constraint, so the
+ * sheet could not pin to the bottom of the SCREEN — it appeared stuck to
+ * the top of its little container or floated mid-scroll. These sheets now
+ * open through a ROOT-LEVEL slot (exactly like Toaster / ConfirmHost),
+ * where the host Box is the full-size app root: bottom-center placement
+ * is guaranteed no matter how deeply nested the caller is. */
+object HostSheets {
+    data class Entry(val id: Long, val content: @Composable (close: () -> Unit) -> Unit)
+
+    val stack = androidx.compose.runtime.mutableStateListOf<Entry>()
+    private var nextId = 1L
+
+    fun push(content: @Composable (close: () -> Unit) -> Unit) {
+        val id = nextId++
+        stack.add(Entry(id, content))
+    }
+
+    fun pop(id: Long) {
+        stack.removeAll { it.id == id }
+    }
+}
+
+@Composable
+fun HostSheetsHost() {
+    val snapshot = HostSheets.stack.toList()
+    for (s in snapshot) {
+        androidx.compose.runtime.key(s.id) {
+            s.content { HostSheets.pop(s.id) }
+        }
+    }
+}
+
 /* ---------------- money ---------------- */
 
 @Composable

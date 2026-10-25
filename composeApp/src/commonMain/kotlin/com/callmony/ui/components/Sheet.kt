@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -50,6 +51,10 @@ fun Sheet(
     onBack: () -> Unit,
     subtitle: String? = null,
     onLongPressSubtitle: (() -> Unit)? = null,
+    /** v1.6.18 — tapping the subtitle (e.g. the phone number in the contact
+     *  navbar) performs this action (place the call); long-press still copies
+     *  (onLongPressSubtitle). A small call icon rides beside the text. */
+    onSubtitleTap: (() -> Unit)? = null,
     avatar: (@Composable () -> Unit)? = null,
     headerRight: (@Composable () -> Unit)? = null,
     footer: (@Composable () -> Unit)? = null,
@@ -84,10 +89,31 @@ fun Sheet(
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (!subtitle.isNullOrEmpty()) {
-                    LongPressText(
-                        text = subtitle,
-                        onLong = onLongPressSubtitle,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LongPressText(
+                            text = subtitle,
+                            onLong = onLongPressSubtitle,
+                            onTap = onSubtitleTap,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        // v1.6.18 — the call icon: tapping the navbar number
+                        // dials it; long-press on the text copies it (as before).
+                        if (onSubtitleTap != null) {
+                            Box(
+                                Modifier
+                                    .size(26.dp)
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(C.brandSoft)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) { onSubtitleTap() },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                com.callmony.ui.kit.MdiIcon("phone", 15, C.brand)
+                            }
+                        }
+                    }
                 }
             }
             if (headerRight != null) {
@@ -127,22 +153,26 @@ fun Sheet(
     }
 }
 
-/** Small text that copies itself on long-press (400 ms, like RN edition). */
+/** Small text that copies itself on long-press (400 ms, like RN edition).
+ *  v1.6.18: optional onTap — when set, a plain tap performs that action
+ *  (the contact navbar number: tap = call, long-press = copy). */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LongPressText(
     text: String,
     onLong: (() -> Unit)? = null,
+    onTap: (() -> Unit)? = null,
     color: Color? = null,
     fontSize: Int = 13,
     maxLines: Int = 1,
+    modifier: Modifier = Modifier,
 ) {
     val C = C()
     Box(
-        Modifier.combinedClickable(
+        modifier.combinedClickable(
             interactionSource = remember { MutableInteractionSource() },
             indication = null,
-            onClick = {},
+            onClick = { if (onTap != null) onTap() },
             onLongClick = {
                 vibrate(longArrayOf(20))
                 if (onLong != null) onLong()

@@ -65,6 +65,8 @@ import com.callmony.ui.kit.MdiIcon
 import com.callmony.ui.kit.Money
 import com.callmony.ui.kit.Pill
 import com.callmony.ui.kit.Toasts
+import com.callmony.ui.kit.Segmented
+import com.callmony.platform.NativeDateTime
 import com.callmony.ui.components.ScrollRow
 
 /* ListDetail + ListEdit. Port of src/overlays/ListOverlays.tsx. */
@@ -309,29 +311,71 @@ fun ListDetailOverlay(listId: String) {
     }
 
     // row payment sheet
+    // v1.6.18 — hoisted to a ROOT-LEVEL host sheet (was composed inside the
+    // scrollable list detail: it opened at the top / floated mid-scroll) and
+    // renamed "Add payment" → "Record payment" + native date picker.
     payItemFor?.let { itemId ->
         val item = list.items.find { it.id == itemId }
         if (item != null) {
-            var amount by remember { mutableStateOf("") }
-            var payDate by remember { mutableStateOf(todayStr()) }
-            var method by remember { mutableStateOf("cash") }
-            com.callmony.ui.components.BottomSheet(title = t("lg.addPayment"), onClose = { payItemFor = null }) {
-                Column {
-                    Field(label = t("lg.paymentAmount"), value = amount, onChangeText = { amount = it }, keyboardType = "decimal-pad", placeholder = "0")
-                    val remaining = r2(lineTotal(item) - item.payments.sumOf { it.amount })
-                    if (remaining > 0.005) {
-                        Row(Modifier.padding(bottom = 12.dp)) {
-                            Btn(small = true, label = "${t("lg.fillRemaining")}: $remaining", variant = "soft", onPress = { amount = remaining.toString() })
+            com.callmony.ui.kit.HostSheets.push { close ->
+                var amount by remember { mutableStateOf("") }
+                var payDate by remember { mutableStateOf(todayStr()) }
+                var method by remember { mutableStateOf("cash") }
+                val live = AppStore.state.lists.find { it.id == list.id }?.items?.find { it.id == itemId } ?: item
+                val remaining = r2(lineTotal(live) - live.payments.sumOf { it.amount })
+                com.callmony.ui.components.BottomSheet(title = t("lg.recordPayment"), onClose = close) {
+                    Column {
+                        Field(label = t("lg.paymentAmount"), value = amount, onChangeText = { amount = it }, keyboardType = "decimal-pad", placeholder = "0")
+                        if (remaining > 0.005) {
+                            Row(Modifier.padding(bottom = 12.dp)) {
+                                Btn(small = true, label = "${t("lg.fillRemaining")}: $remaining", variant = "soft", onPress = { amount = if (remaining == remaining.toLong().toDouble()) remaining.toLong().toString() else remaining.toString() })
+                            }
+                        }
+                        com.callmony.ui.kit.PickerField(
+                            label = t("lg.paymentDate"),
+                            value = com.callmony.lib.fd(payDate),
+                            icon = "calendar-blank-outline",
+                            onPress = {
+                                val initial = try {
+                                    val p = payDate.split("-")
+                                    com.callmony.lib.KmpDate(
+                                        p.getOrNull(0)?.toInt() ?: com.callmony.lib.dateOf(now()).year,
+                                        (p.getOrNull(1)?.toIntOrNull() ?: (com.callmony.lib.dateOf(now()).month0 + 1)) - 1,
+                                        p.getOrNull(2)?.toIntOrNull() ?: com.callmony.lib.dateOf(now()).day,
+                                        12, 0, 0,
+                                    ).time()
+                                } catch (_: Exception) { now() }
+                                NativeDateTime.pickDate(
+                                    epochMillis = initial,
+                                    onPick = { epoch ->
+                                        val d = com.callmony.lib.dateOf(epoch)
+                                        payDate = "${d.year}-${(d.month0 + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
+                                    },
+                                )
+                            },
+                            modifier = Modifier.padding(bottom = 12.dp),
+                        )
+                        Text(t("lg.paymentMethod"), fontSize = F.small.sp, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
+                        Segmented(
+                            listOf(
+                                Triple("cash", t("lg.pmCash"), null),
+                                Triple("bank", t("lg.pmBank"), null),
+                                Triple("card", t("lg.pmCard"), null),
+                                Triple("mobile", t("lg.pmMobile"), null),
+                                Triple("other", t("cd.other"), null),
+                            ),
+                            method,
+                        ) { method = it }
+                        Row(Modifier.padding(top = 12.dp)) {
+                            Btn(label = t("act.save"), onPress = {
+                                val v = amount.replace(",", ".").toDoubleOrNull()
+                                if (v == null || v <= 0) return@Btn
+                                AppStore.addItemPayment(list.id, itemId, Payment(id = uid(), amount = v, date = payDate.ifEmpty { todayStr() }, method = method, createdAt = now()))
+                                Toasts.toast(t("lg.paymentAdded"))
+                                close()
+                            })
                         }
                     }
-                    Field(label = t("lg.paymentDate"), value = payDate, onChangeText = { payDate = it }, placeholder = "YYYY-MM-DD")
-                    Btn(label = t("act.save"), onPress = {
-                        val v = amount.replace(",", ".").toDoubleOrNull()
-                        if (v == null || v <= 0) return@Btn
-                        AppStore.addItemPayment(list.id, itemId, Payment(id = uid(), amount = v, date = payDate.ifEmpty { todayStr() }, method = method, createdAt = now()))
-                        payItemFor = null
-                        Toasts.toast(t("lg.paymentAdded"))
-                    })
                 }
             }
         }

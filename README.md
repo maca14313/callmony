@@ -104,6 +104,53 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
+**1.6.18 (versionCode 28)** — see `react-native/docs/CHANGELOG.md` for the
+feature history.
+
+- **1.6.18** — the seventeen user reports:
+  1. **freeze / lag / "app closing itself"** — every store mutation used to
+     serialize the whole collection and commit it to disk (twice: row +
+     mirror) ON THE MAIN THREAD; stacked commits crossed the ANR line. All
+     persistence now runs on a single-writer FIFO IO queue (`lib/Persist.kt`)
+     — the main thread never touches the disk. The 1-minute auto-lock default
+     (read as "closing itself" while reading) is now **Never** by default,
+     with a Never chip in Settings → Security.
+  2. **repeats at ANY interval + alarm** — `custom:<n><minutes|hours|days|
+     weeks|months>` repeats with a number + unit picker in the reminder
+     editor; ALARM reminders ring on the ALARM audio stream (dedicated
+     channel, USAGE_ALARM — audible over silent mode), marked with the alarm
+     icon and a human repeat label on the cards.
+  3. **one-tap edit** — tapping an entry row opens the editor directly (was
+     row-tap → expand → Edit). The item form starts collapsed for existing
+     entries without items; its button reads "Save item" (was a second
+     "Save" that confused the footer Save).
+  4. **Record payment** — renamed from "Add payment", hoisted to a
+     root-level host sheet (it used to compose inside the scrollable card
+     and pop up at the top — read as "not working"), native calendar date
+     picker, translated payment-method chips.
+  5. **Single-entries ＋** — the section header carries a ＋ that creates an
+     entry of the kind the active tab shows (Income/Expense on General,
+     Credit/Debit on a contact).
+  6. **attachments** — lists / notes / reminders attach to any credit /
+     debit / expense / income (entry.refs): attach chips + picker sheet in
+     the editor, tattached chips on the entry detail.
+  7. **Settle up removed** (kept in the store API, unsurfaced).
+  8. **modals at the top** — root-level `HostSheets` slot; sheets composed
+     inside scrollables render through it, so bottom-center is guaranteed.
+  9. **block contacts** — More sheet → Block/Unblock (in-app block list,
+     red Blocked badge on the navbar, blocked-notice on calls).
+  10. **search** — solid brand pill entry in the header + ADVANCED SEARCH
+      TABS (All/Contacts/Entries/Lists/Notes/Reminders/Banks) with live
+      result counts.
+  11-14. **contact detail** — "＋ Add to contact" became a More sheet
+      (sideways-scrolling labeled social strip, add-to options, general
+      actions, Block/Unblock); the number picker rows carry the call/message
+      action icon; the tab body sits on its own soft card with hairlines and
+      per-block cards (no more flat slab); the navbar number: tap = call with
+      a brand call icon, long-press = copy.
+  15. **sandbox backup** — `sandbox/` in the repo now carries the worklog,
+      chat logs and SDK installer, committed every round.
+
 **1.6.17 (versionCode 27)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 

@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -24,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,6 +58,7 @@ import com.callmony.ui.kit.IconBtn
 import com.callmony.ui.kit.MdiIcon
 import com.callmony.ui.kit.Toasts
 import com.callmony.ui.components.ScrollRow
+import com.callmony.ui.kit.Segmented
 
 /* EntryEdit — the ledger entry editor: kind chips, hero amount, line items
    with math, date/method, categories (+custom), due date (auto reminder),
@@ -93,6 +98,13 @@ fun EntryEditOverlay(
     var groupSel by remember { mutableStateOf(existing?.groupId ?: groupId) }
     var items by remember { mutableStateOf(existing?.items ?: listOf<EntryItem>()) }
     var editingItem by remember { mutableStateOf<EntryItem?>(null) }
+    // v1.6.18 — attachments: lists / notes / reminders ride on entry.refs
+    var refs by remember { mutableStateOf(existing?.refs ?: listOf<com.callmony.model.LinkRef>()) }
+    // v1.6.18 — editing an EXISTING entry showed TWO save-looking buttons
+    // (the always-open item form + the footer Save) — the user saved twice.
+    // For an existing entry without items the form now starts COLLAPSED
+    // behind a “＋ Add items” row; new entries keep it open (RN parity).
+    var showItemForm by remember { mutableStateOf(existing == null || existing.items.isNotEmpty()) }
     var catManager by remember { mutableStateOf(false) }
     var showOwnerPicker by remember { mutableStateOf(false) }
 
@@ -119,6 +131,7 @@ fun EntryEditOverlay(
             method = method,
             note = note.ifEmpty { null },
             groupId = groupSel,
+            refs = refs,
             createdAt = existing?.createdAt ?: now(),
             updatedAt = now(),
         )
@@ -258,12 +271,29 @@ fun EntryEditOverlay(
                     IconBtn("close", { items = items.filter { x -> x.id != it.id } }, size = 28, danger = true)
                 }
             }
-            ItemEditor(
-                onAdd = { item -> items = items + item },
-                onUpdate = { item -> items = items.map { if (it.id == item.id) item else it } },
-                editing = editingItem,
-                onEditDone = { editingItem = null },
-            )
+            if (showItemForm) {
+                ItemEditor(
+                    onAdd = { item -> items = items + item },
+                    onUpdate = { item -> items = items.map { if (it.id == item.id) item else it } },
+                    editing = editingItem,
+                    onEditDone = { editingItem = null },
+                )
+            } else {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(C.brand.copy(alpha = 0.06f))
+                        .clickable { showItemForm = true }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    MdiIcon("plus", 16, C.brand)
+                    Text(t("lg.addItems"), fontSize = F.small.sp, color = C.brand, fontWeight = FontWeight.Bold)
+                }
+            }
             if (items.isNotEmpty()) {
                 Row(
                     Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 10.dp),
@@ -370,6 +400,27 @@ fun EntryEditOverlay(
             }
             // note
             Field(label = t("lg.note"), value = note, onChangeText = { note = it }, placeholder = t("lg.optionalNote"), multiline = true)
+            // v1.6.18 — ATTACHMENTS: any list, note or reminder can ride on
+            // this credit / debit / income / expense (entry.refs, LinkRef).
+            Text(t("ee.attached"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
+            if (refs.isEmpty()) {
+                Text(t("ee.noAttachments"), fontSize = F.tiny.sp, color = C.faint, modifier = Modifier.padding(bottom = 8.dp))
+            } else {
+                ScrollRow(Modifier.padding(bottom = 8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        refs.forEach { ref ->
+                            AttachedChip(ref = ref, onDetach = { refs = refs.filter { it.id != ref.id || it.type != ref.type } })
+                        }
+                    }
+                }
+            }
+            Row(Modifier.padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Chip(label = "＋ ${t("att.attach")}", icon = "link-plus", compact = true, onPress = {
+                    com.callmony.ui.kit.HostSheets.push { close ->
+                        AttachmentPicker(refs = refs, onChange = { refs = it }, onClose = close)
+                    }
+                })
+            }
             // owner row
             Row(
                 Modifier
@@ -498,7 +549,7 @@ private fun ItemEditor(
         }
         Row(Modifier.padding(top = 8.dp)) {
             Btn(
-                small = true, label = if (editing == null) t("lg.addItem") else t("act.save"), icon = "plus",
+                small = true, label = if (editing == null) t("lg.addItem") else t("lg.saveItem"), icon = "plus",
                 onPress = {
                     val q = qty.replace(",", ".").toDoubleOrNull() ?: 1.0
                     val p = price.replace(",", ".").toDoubleOrNull() ?: 0.0
@@ -515,3 +566,99 @@ private fun ItemEditor(
         }
     }
 }
+
+/* ---------------- v1.6.18 attachments ---------------- */
+
+private val REF_ICON = mapOf(
+    "list" to "clipboard-list-outline",
+    "note" to "notebook-outline",
+    "reminder" to "bell-outline",
+)
+
+/** A single attached entity chip with a detach ✕ (used in the entry editor). */
+@Composable
+private fun AttachedChip(ref: com.callmony.model.LinkRef, onDetach: () -> Unit) {
+    val C = C()
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(C.brand.copy(alpha = 0.08f))
+            .padding(start = 10.dp, end = 2.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        MdiIcon(REF_ICON[ref.type] ?: "link-variant", 15, C.brand)
+        Text(ref.label ?: ref.id, fontSize = F.small.sp, color = C.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        IconBtn("close", onDetach, size = 26, danger = true)
+    }
+}
+
+/**
+ * v1.6.18 — the Attach picker: one sheet, three tabs (Lists / Notes /
+ * Reminders), live from the store. Tapping a row attaches or detaches;
+ * the ＋ quick-create row at the top opens the corresponding editor on
+ * top of this sheet (the new entity shows up here as soon as it exists).
+ */
+@Composable
+fun AttachmentPicker(refs: List<com.callmony.model.LinkRef>, onChange: (List<com.callmony.model.LinkRef>) -> Unit, onClose: () -> Unit) {
+    val C = C()
+    var tab by remember { mutableStateOf("list") }
+    com.callmony.ui.components.BottomSheet(title = t("att.attachExisting"), onClose = onClose) {
+        Column {
+            Segmented(
+                listOf(
+                    Triple("list", t("misc.list"), null),
+                    Triple("note", t("misc.note"), null),
+                    Triple("reminder", t("misc.reminder"), null),
+                ),
+                tab,
+            ) { tab = it }
+            Spacer(Modifier.height(10.dp))
+            val pool: List<Triple<String, String, String>> = when (tab) {
+                "list" -> AppStore.state.lists
+                    .filter { it.deletedAt == null }
+                    .map { Triple(it.id, it.title.ifEmpty { t("ls.untitled") }, "list") }
+                "note" -> AppStore.state.notes
+                    .filter { it.deletedAt == null }
+                    .map { Triple(it.id, it.title.ifEmpty { t("nt.untitled") }, "note") }
+                else -> AppStore.state.reminders
+                    .filter { it.deletedAt == null }
+                    .map { Triple(it.id, it.title.ifEmpty { t("rm.kindCustom") }, "reminder") }
+            }
+            if (pool.isEmpty()) {
+                Text(t("ee.noAttachments"), fontSize = F.tiny.sp, color = C.faint, modifier = Modifier.padding(bottom = 8.dp))
+            } else {
+                LazyColumn(Modifier.heightIn(max = 320.dp)) {
+                    items(pool.size, key = { pool[it].first }) { i ->
+                        val (id, label, ty) = pool[i]
+                        val attached = refs.any { it.id == id && it.type == ty }
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (attached) C.brand.copy(alpha = 0.08f) else Color.Transparent)
+                                .clickable {
+                                    onChange(
+                                        if (attached) refs.filter { !(it.id == id && it.type == ty) }
+                                        else refs + com.callmony.model.LinkRef(type = ty, id = id, label = label)
+                                    )
+                                }
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            MdiIcon(REF_ICON[ty] ?: "link-variant", 18, if (attached) C.brand else C.sub)
+                            Text(label, fontSize = F.body.sp, color = C.ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (attached) MdiIcon("check-circle", 20, C.green)
+                        }
+                    }
+                }
+            }
+            Row(Modifier.padding(top = 10.dp)) {
+                Btn(small = true, label = t("act.close"), variant = "secondary", onPress = onClose)
+            }
+        }
+    }
+}
+

@@ -4,6 +4,105 @@ All notable changes to callmony. Dates follow the git history; the APK for each 
 
 ---
 
+# v1.6.18 — KMP: the freeze/ANR fix (async persistence), any-interval repeat reminders + alarm mode, one-tap entry editing, Record payment, attachments, block contacts, advanced search, rebuilt contact detail (2026-10-26)
+
+## The seventeen user reports
+
+1. **"The app is freezing, lagging and closing itself — what did you do?"**
+   Root cause: every store mutation (toggle favourite, save an entry, mark a
+   reminder, patch a contact…) ran its ENTIRE persistence inline on the MAIN
+   thread — full-collection JSON encode plus a synchronous SharedPreferences
+   `commit()` writing the value TWICE (row + safety mirror). The contact cache
+   re-serialized the whole address book on main-thread contact edits. Stacked
+   commits crossed Android's 5-second input-dispatch limit → ANR → the system
+   closes the app. Fix: `lib/Persist.kt` — a single-writer FIFO queue on
+   Dispatchers.IO (`persistDispatcher` expect/actual, IO on Android / Default on
+   iOS). `Db.save*`, the settings save, `wipeStorage`, the contacts cache and
+   the calls cache all post through it. Receivers wrap load-modify-save in
+   `Persist.postAndWait` blocks, ordered with every UI write. Unit tests keep
+   synchronous behavior (the queue flips to async only from the real app entry
+   points). The autolock default changed 1 min → **Never** (-1, + a Never chip)
+   because a lock dropping in while the user reads the screen read as "the app
+   closed itself".
+2. **Repeat reminders at ANY interval + alarm** — `repeat` now understands
+   `custom:<n><m|h|d|w|mo>`; `parseCustomRepeat` + `nextOccurrence` handle every
+   unit (minutes/hours are pure epoch arithmetic; months clamp short months);
+   the editor gained a Custom chip with a number + unit row and a live
+   "Every 2 weeks" summary; reminder cards show a human repeat label.
+   **Alarm** reminders (`Reminder.isAlarm`) fire on a dedicated
+   `callmony-reminder-alarms` channel on the ALARM audio stream (default alarm
+   sound, USAGE_ALARM — audible over silent / muted media), carry the alarm icon
+   + CATEGORY_ALARM, and ride through every receiver/reschedule path.
+3. **"Why do I have to click two save buttons when editing a credit/debit?"**
+   Tapping the entry row now opens the editor DIRECTLY (was row-tap → expand →
+   Edit button). The chevron alone expands the detail (payments history). The
+   always-open item form read as a second Save: for existing entries without
+   items it starts collapsed behind "＋ Add items", and its button reads
+   "Save item" instead of "Save".
+4. **"Add payment is not working and its name is confusing"** — renamed
+   **Record payment** (+ a hint line + the entry amount), hoisted to a
+   root-level host sheet: it used to be composed INSIDE the scrollable card,
+   where unbounded height constraints made it pop up at the top / float
+   mid-scroll (which read as "not working"). The date became the native
+   calendar picker (was a hand-typed YYYY-MM-DD field — typos produced garbage
+   dates). Payment-method chips are translated; Fill-remaining yields clean
+   numbers ("500", not "500.0").
+5. **Single-entries tabs ＋** — the "Single entries" header carries a ＋ that
+   creates an entry of the KIND the active tab shows (Income/Expense on
+   General, Credit/Debit on a contact, plain new entry for All/Unpaid/Overdue).
+6. **Attachments** — lists / notes / reminders ride on any credit/debit/expense/
+   income via `entry.refs` (LinkRef). Editor: attached chips with detach ✕ + a
+   "＋ Attach" picker sheet (Lists/Notes/Reminders tabs, tap to toggle). The
+   entry detail shows them as tappable chips that open the entity.
+7. **Settle up removed** for now (chip gone; `AppStore.settleUp` kept for API
+   compatibility, unsurfaced).
+8. **"Some modals open at the top"** — new root-level `HostSheets` slot in the
+   app shell (`ui/kit/Kit.kt` + `HostSheetsHost()` beside Toaster/ConfirmHost):
+   sheets that were composed inside scrollables (Record payment, list row
+   payments, group menus…) render through it, where the host Box is the
+   full-size app root — bottom-center placement is guaranteed.
+9. **Block contacts** — the block list existed in the store model
+   (`settings.blockedNumbers`, `Calls.isBlocked`) but was never surfaced. The
+   More sheet now has Block/Unblock with a hint line; blocked contacts carry a
+   red Blocked badge on the detail navbar; calls from the keypad/detail/search
+   show the blocked notice.
+10. **Search** — the header entry is a solid brand pill with a white magnify
+    (was a ghost-grey icon that vanished against the wordmark). The overlay
+    gained advanced filter tabs (All/Contacts/Entries/Lists/Notes/Reminders/
+    Banks) with live result counts, gating each result group.
+11. **Contact detail More** — "＋ Add to contact" became a More sheet: a
+    sideways-scrolling social strip with LABELED tiles (every number's
+    WhatsApp/Telegram + saved socials + add), the add-to options (add phone /
+    add email / add social), the general actions, and Block/Unblock.
+12. **Number rows carry the action icon** — the call/message chooser rows show
+    a call icon (message icon for SMS, WhatsApp icon for WhatsApp) next to
+    copy, so the list reads like a row of dial buttons.
+13. **Section separation** — the tab body sits on its own soft card with a
+    hairline + generous spacing; every InfoBlock is a soft outlined card. The
+    page read as one flat slab before.
+14. **Navbar number** — tap = place the call (a brand call-icon rides beside
+    the number, `Sheet.onSubtitleTap`), long-press = copy (as before).
+
+## Also in this round
+
+- 12 new i18n keys × 5 languages (st.never, rm.customInterval, rm.everyN,
+  rm.unit*, rm.alarm*, lg.recordPayment, lg.paymentHint, lg.saveItem,
+  lg.addItems, lg.pm*, cd.more, cd.addTo, cd.moreSocial, cd.blockContact,
+  cd.unblockContact, cd.blockedHint, ee.noAttachments, ls.untitled,
+  sr.filterAll) — `check_i18n_precise.py` 1025 defined / 0 missing.
+- Tests: **46/46 green** (V1618 ×16 new — custom repeat parse/nextOccurrence
+  for every unit, month clamping, repeat labels, isAlarm serialization
+  round-trip, autolock Never default, Persist sync-mode inline+flush;
+  ReminderV1617 ×9, SearchContacts ×12, CalcFormat ×5, KmpDate ×4). The
+  Robolectric full-boot smoke does not fit the 10-minute window of this
+  degraded sandbox (same as v1.6.17); compile + pure battery + verified
+  release build cover the boot path this round.
+- Android + both iOS targets compile clean; release APK 1.6.18 vc28 built,
+  aapt + apksigner verified, committed under `releases/` and attached to the
+  GitHub Release.
+- `sandbox/` (worklog, chat logs, SDK installer) is committed from now on so
+  nothing is lost if the sandbox or the chat ever disappears.
+
 ## v1.6.17 — KMP: working reminders with live countdowns, centered sheets, a real PIN, compact tabs/buttons, i18n key leaks fixed (2026-10-25)
 
 User-reported round seven on the KMP edition:

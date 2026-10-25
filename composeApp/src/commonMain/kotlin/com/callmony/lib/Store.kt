@@ -944,6 +944,7 @@ object AppStore {
                 kindLabel = kindLabel,
                 doneLabel = t("act.done"),
                 snoozeLabel = t("rm.snooze10"),
+                alarm = r.isAlarm,
             )
         } catch (_: Exception) {}
     }
@@ -967,6 +968,7 @@ object AppStore {
                     ReminderForAlarm(
                         it.id, it.title, it.notes ?: "", it.snoozedUntil ?: it.dueAt, it.kind,
                         kindLabelOf(it.kind), t("act.done"), t("rm.snooze10"),
+                        alarm = it.isAlarm,
                     )
                 }
             Platform.notify.rearmAll(pending)
@@ -978,20 +980,24 @@ object AppStore {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun saveCachedCalls(list: List<DeviceCall>) {
-        try {
-            val arr = kotlinx.serialization.json.buildJsonArray {
-                for (c in list) add(kotlinx.serialization.json.buildJsonObject {
-                    put("id", kotlinx.serialization.json.JsonPrimitive(c.id))
-                    put("cachedName", c.cachedName?.let { kotlinx.serialization.json.JsonPrimitive(it) } ?: kotlinx.serialization.json.JsonNull)
-                    put("number", kotlinx.serialization.json.JsonPrimitive(c.number))
-                    put("type", kotlinx.serialization.json.JsonPrimitive(c.type))
-                    put("date", kotlinx.serialization.json.JsonPrimitive(c.date))
-                    put("duration", kotlinx.serialization.json.JsonPrimitive(c.duration))
-                })
-            }
-            val savedAt = now()
-            Platform.kv.writeFile("calllog-cache.json", """{"savedAt":$savedAt,"list":$arr}""")
-        } catch (_: Exception) {}
+        // v1.6.18: serialize + atomic file write on the Persist IO queue —
+        // this is the FULL call-log cache, one of the biggest blobs in the app.
+        Persist.post {
+            try {
+                val arr = kotlinx.serialization.json.buildJsonArray {
+                    for (c in list) add(kotlinx.serialization.json.buildJsonObject {
+                        put("id", kotlinx.serialization.json.JsonPrimitive(c.id))
+                        put("cachedName", c.cachedName?.let { kotlinx.serialization.json.JsonPrimitive(it) } ?: kotlinx.serialization.json.JsonNull)
+                        put("number", kotlinx.serialization.json.JsonPrimitive(c.number))
+                        put("type", kotlinx.serialization.json.JsonPrimitive(c.type))
+                        put("date", kotlinx.serialization.json.JsonPrimitive(c.date))
+                        put("duration", kotlinx.serialization.json.JsonPrimitive(c.duration))
+                    })
+                }
+                val savedAt = now()
+                Platform.kv.writeFile("calllog-cache.json", """{"savedAt":$savedAt,"list":$arr}""")
+            } catch (_: Exception) {}
+        }
     }
 
     fun loadCachedCalls(): Pair<Long, List<DeviceCall>> {
@@ -1019,11 +1025,17 @@ object AppStore {
     private val contactsCacheJson = Json { ignoreUnknownKeys = true }
 
     fun saveCachedContacts(list: List<DeviceContact>) {
-        try {
-            val text = contactsCacheJson.encodeToString(
-                kotlinx.serialization.builtins.ListSerializer(com.callmony.model.DeviceContact.serializer()), list)
-            Platform.kv.writeFile("contacts-cache-v2.json", text)
-        } catch (_: Exception) {}
+        // v1.6.18 — THE BIGGEST MAIN-THREAD FREEZE of v1.6.17: this serializes
+        // the ENTIRE device address book and fsyncs it, and it used to run on
+        // whatever thread touched it — including MAIN from contact-edit click
+        // handlers (patchDeviceContact / addDeviceContactToList). Now queued.
+        Persist.post {
+            try {
+                val text = contactsCacheJson.encodeToString(
+                    kotlinx.serialization.builtins.ListSerializer(com.callmony.model.DeviceContact.serializer()), list)
+                Platform.kv.writeFile("contacts-cache-v2.json", text)
+            } catch (_: Exception) {}
+        }
     }
 
     fun loadCachedContacts(): List<DeviceContact> {
