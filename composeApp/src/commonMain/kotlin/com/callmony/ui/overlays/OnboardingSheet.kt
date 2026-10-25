@@ -64,6 +64,10 @@ fun OnboardingSheet() {
         otherCurrency.trim().uppercase().take(3).ifEmpty { "ETB" }
     } else currency
 
+    /* v1.6.16 — the Get started button is PINNED at the bottom of the
+       screen (always visible without scrolling); the country list scrolls
+       UNDER it. Previously the button lived at the very end of the scroll,
+       so users had to scroll the whole country list to reach it. */
     Column(
         Modifier
             .fillMaxSize()
@@ -73,10 +77,14 @@ fun OnboardingSheet() {
             // bar and Get started under the gesture/nav bar.
             .statusBarsPadding()
             .navigationBarsPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(bottom = 16.dp),
+            .padding(horizontal = 20.dp),
     ) {
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 12.dp),
+        ) {
         Spacer(Modifier.height(24.dp))
         // v1.6.14: the new logo here too (matches the splash)
         com.callmony.ui.LogoTile(74, corner = 24)
@@ -144,8 +152,15 @@ fun OnboardingSheet() {
         }
 
         Spacer(Modifier.height(24.dp))
-        // Get started (also pinned visually at the end of scroll)
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        }
+        // Get started — pinned footer, always visible (content scrolls under)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .background(C.canvas)
+                .padding(top = 6.dp, bottom = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
             Btn(
                 label = t("ob.getStarted"),
                 onPress = {

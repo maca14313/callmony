@@ -7,5 +7,22 @@
         <item name="android:navigationBarColor">@color/canvas</item>
         <item name="android:windowBackground">@color/canvas</item>
         <item name="android:windowLightStatusBar">true</item>
+        <!-- v1.6.16: the Android-12+ SYSTEM splash background follows the
+             window background — both now come from the APP theme picked at
+             runtime in MainActivity (the -night variant only tracks the
+             SYSTEM dark mode, which mismatched the in-app theme). -->
+        <item name="android:windowSplashScreenBackground">@color/canvas</item>
+    </style>
+
+    <!-- v1.6.16 — runtime-addressable DARK variant: applied by MainActivity
+         when the PERSISTED app theme resolves dark (user setting "dark", or
+         "auto" + system night) so the launch window + system splash never
+         flash light before a dark app (and vice versa). -->
+    <style name="Theme.Callmony.Dark">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/canvas_dark</item>
+        <item name="android:windowBackground">@color/canvas_dark</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowSplashScreenBackground">@color/canvas_dark</item>
     </style>
 </resources>

@@ -78,7 +78,17 @@ interface NotifyService {
     fun ensureChannel()
     fun hasNotifPermission(): Boolean
     fun requestNotifPermission(onResult: (Boolean) -> Unit)
-    fun schedule(id: String, title: String, body: String, at: Long, kind: String)
+
+    /** v1.6.16 — RICH NOTIFICATIONS: the system notification now carries
+     *  pre-localized action labels ("Done", "Snooze 10 minutes") and the
+     *  kind label ("Payment", "Birthday", …) so reminders that fire while
+     *  the app is closed still look right in the user's language. Labels
+     *  default to empty — callers that don't care keep the old behavior. */
+    fun schedule(
+        id: String, title: String, body: String, at: Long, kind: String,
+        kindLabel: String = "", doneLabel: String = "", snoozeLabel: String = "",
+    )
+
     fun cancel(id: String)
     /** re-arm everything the OS dropped (self-heal) */
     fun rearmAll(reminders: List<ReminderForAlarm>)
@@ -95,6 +105,9 @@ data class ReminderForAlarm(
     val body: String,
     val dueAt: Long,
     val kind: String,
+    val kindLabel: String = "",
+    val doneLabel: String = "",
+    val snoozeLabel: String = "",
 )
 
 /** Share / open external URLs (WhatsApp, Telegram, mail…). */
@@ -159,7 +172,10 @@ object Platform {
         override fun ensureChannel() {}
         override fun hasNotifPermission() = true
         override fun requestNotifPermission(onResult: (Boolean) -> Unit) { onResult(true) }
-        override fun schedule(id: String, title: String, body: String, at: Long, kind: String) {}
+        override fun schedule(
+            id: String, title: String, body: String, at: Long, kind: String,
+            kindLabel: String, doneLabel: String, snoozeLabel: String,
+        ) {}
         override fun cancel(id: String) {}
         override fun rearmAll(reminders: List<ReminderForAlarm>) {}
         override fun vibrate(pattern: LongArray) {}

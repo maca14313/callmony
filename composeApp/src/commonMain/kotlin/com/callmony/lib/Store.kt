@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.callmony.i18n.t
 import com.callmony.model.BankAccount
 import com.callmony.model.CalcList
 import com.callmony.model.CallLogEntry
@@ -907,7 +908,22 @@ object AppStore {
             val at = r.snoozedUntil ?: r.dueAt
             if (r.done || r.deletedAt != null || at <= now()) return
             Platform.notify.ensureChannel()
-            Platform.notify.schedule(r.id, r.title, r.notes ?: "", at, r.kind)
+            // v1.6.16 — pre-localized labels ride along with the alarm so the
+            // rich system notification (kind subtext + Done / Snooze actions)
+            // is in the user's language even when the app is long dead.
+            val kindLabel = when (r.kind) {
+                "payment" -> t("rm.kindPayment")
+                "todo" -> t("rm.kindTodo")
+                "birthday" -> t("rm.kindBirthday")
+                "followup" -> t("rm.kindFollowup")
+                else -> t("rm.kindCustom")
+            }
+            Platform.notify.schedule(
+                r.id, r.title, r.notes ?: "", at, r.kind,
+                kindLabel = kindLabel,
+                doneLabel = t("act.done"),
+                snoozeLabel = t("rm.snooze10"),
+            )
         } catch (_: Exception) {}
     }
 
@@ -917,9 +933,21 @@ object AppStore {
 
     fun rearmReminders() {
         try {
+            fun kindLabelOf(kind: String): String = when (kind) {
+                "payment" -> t("rm.kindPayment")
+                "todo" -> t("rm.kindTodo")
+                "birthday" -> t("rm.kindBirthday")
+                "followup" -> t("rm.kindFollowup")
+                else -> t("rm.kindCustom")
+            }
             val pending = state.reminders
                 .filter { it.deletedAt == null && !it.done && (it.snoozedUntil ?: it.dueAt) > now() }
-                .map { ReminderForAlarm(it.id, it.title, it.notes ?: "", it.snoozedUntil ?: it.dueAt, it.kind) }
+                .map {
+                    ReminderForAlarm(
+                        it.id, it.title, it.notes ?: "", it.snoozedUntil ?: it.dueAt, it.kind,
+                        kindLabelOf(it.kind), t("act.done"), t("rm.snooze10"),
+                    )
+                }
             Platform.notify.rearmAll(pending)
         } catch (_: Exception) {}
     }

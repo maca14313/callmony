@@ -4,6 +4,36 @@ All notable changes to callmony. Dates follow the git history; the APK for each 
 
 ---
 
+## v1.6.16 — KMP: search call buttons, instant keypad, themed splash, fuzzy search, rich notifications (2026-10-25)
+
+User-reported round six on the KMP edition:
+
+1. **Calling from Search made easy** — contact hits show the primary number
+   and a one-tap call button; the row itself still opens the detail sheet.
+2. **Onboarding Get started pinned** — the currency/country form scrolls
+   under an always-visible footer button.
+3. **Keypad performance** — the live-match contact index builds on
+   `Dispatchers.Default` and is cached process-wide (zero index work when
+   the sheet opens, reused across opens); live-match rows read balances from
+   a one-shot owner→balance map instead of a full ledger scan per row per
+   keystroke; the Vibrator system service is cached (a binder lookup ran on
+   every keypress — the "laggy typing"); LazyColumn keys are collision-proof.
+4. **Splash background matches the app theme** — `MainActivity` resolves the
+   persisted theme (dark / auto+system) before `super.onCreate()` and picks
+   `Theme.Callmony` or the new runtime-addressable `Theme.Callmony.Dark`;
+   the Android-12+ system splash background rides the same window color.
+5. **Forgiving contact search** — two new matchers: cross-word-boundary
+   prefixes (`abebeke` → "Abebe Kebede") and fuzzy subsequences (`abk`,
+   `kbede`); per-contact search index cached per book identity (RN parity).
+6. **Rich reminder notifications** — round logo large icon (circle-clipped,
+   brand ring), brand accent color, kind subtext, BigText body, tap-to-open,
+   and **Done / Snooze-10-min quick actions** (NotificationActionReceiver:
+   live AppStore update when the app is running, persisted-store JSON
+   surgery when it is not) + a self-dismissing confirmation; channel gains
+   description, vibration pattern, lights and badges; the status-bar icon is
+   the new monogram as a white alpha mask; BootReceiver re-arms carry the
+   localized labels.
+
 ## v1.6.15 (KMP) — versionCode 25
 - **Keypad typing is instant** (the "when i type on the keypad it lags" report): the live contact matcher re-normalized EVERY phone of EVERY contact (3 regex passes per number) on EVERY keystroke — hundreds of regex compilations per digit on a real book. Matching now runs over a precomputed index (display name, T9 letters, raw/national/normalized digit strings per phone) built once per contact-book change; each keystroke is plain `startsWith`/`contains` over that index. The exact-match pill uses the same index.
 - **The phone's clock/battery/signal are visible in LIGHT mode** (the "i cant see the phones date, charge present… when it is on dark mode but not on light mode" report): `enableEdgeToEdge()` derives the status/navigation bar icon appearance from the SYSTEM dark mode, not the app theme — with the system in dark and the app in LIGHT, white icons sat on the light canvas and vanished. A `SystemBarsAppearance` expect/actual now drives the insets controller from the APP canvas color on every theme change. Bonus fix: the OS dark-mode flow was never wired into the app's "auto" theme — `theme.osDark` is now collected from the platform, so "auto" actually follows the OS.

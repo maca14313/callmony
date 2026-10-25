@@ -676,167 +676,10 @@ private class MutableDeviceContact(
     }
 }
 
-/* ---------------- notifications (notifee equivalent) ---------------- */
-
-class AndroidNotify : NotifyService {
-    override fun ensureChannel() {
-        val ctx = AndroidPlatform.appContext
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                val ch = android.app.NotificationChannel(
-                    CHANNEL_ID, "Reminders", android.app.NotificationManager.IMPORTANCE_HIGH,
-                )
-                ch.enableVibration(true)
-                nm.createNotificationChannel(ch)
-            }
-        }
-    }
-
-    override fun hasNotifPermission(): Boolean {
-        val ctx = AndroidPlatform.appContext
-        return if (Build.VERSION.SDK_INT >= 33) {
-            AndroidPlatform.hasPerm(Manifest.permission.POST_NOTIFICATIONS)
-        } else NotificationManagerCompat.from(ctx).areNotificationsEnabled()
-    }
-
-    override fun requestNotifPermission(onResult: (Boolean) -> Unit) {
-        if (Build.VERSION.SDK_INT >= 33) {
-            PermissionBus.request(Manifest.permission.POST_NOTIFICATIONS, onResult)
-        } else onResult(hasNotifPermission())
-    }
-
-    override fun schedule(id: String, title: String, body: String, at: Long, kind: String) {
-        val ctx = AndroidPlatform.appContext
-        ensureChannel()
-        val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val pi = notifPendingIntent(id, title, body, kind)
-        val atSafe = maxOf(at, System.currentTimeMillis() + 1000)
-        try {
-            if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
-                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atSafe, pi)
-            } else {
-                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atSafe, pi)
-            }
-        } catch (_: Exception) {
-            am.set(AlarmManager.RTC_WAKEUP, atSafe, pi)
-        }
-    }
-
-    override fun cancel(id: String) {
-        val ctx = AndroidPlatform.appContext
-        val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        am.cancel(notifPendingIntent(id, "", "", ""))
-        NotificationManagerCompat.from(ctx).cancel(id.hashCode())
-    }
-
-    override fun rearmAll(reminders: List<ReminderForAlarm>) {
-        for (r in reminders) schedule(r.id, r.title, r.body, r.dueAt, r.kind)
-    }
-
-    override fun vibrate(pattern: LongArray) {
-        val ctx = AndroidPlatform.appContext
-        try {
-            val v = ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                v.vibrate(VibrationEffect.createWaveform(pattern, -1))
-            } else {
-                @Suppress("DEPRECATION")
-                v.vibrate(pattern, -1)
-            }
-        } catch (_: Exception) {}
-    }
-
-    override fun hasExactAlarmPermission(): Boolean {
-        if (Build.VERSION.SDK_INT < 31) return true
-        val am = AndroidPlatform.appContext.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        return am.canScheduleExactAlarms()
-    }
-
-    override fun requestExactAlarmPermission() {
-        if (Build.VERSION.SDK_INT in 31..32) {
-            val ctx = AndroidPlatform.appContext
-            try {
-                ctx.startActivity(
-                    Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
-            } catch (_: Exception) {}
-        }
-    }
-
-    override fun isBatteryExempt(): Boolean {
-        val ctx = AndroidPlatform.appContext
-        val pm = ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-        return pm.isIgnoringBatteryOptimizations(ctx.packageName)
-    }
-
-    override fun requestBatteryExemption() {
-        val ctx = AndroidPlatform.appContext
-        try {
-            ctx.startActivity(
-                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                    data = Uri.parse("package:${ctx.packageName}")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                },
-            )
-        } catch (_: Exception) {}
-    }
-
-    private fun notifPendingIntent(id: String, title: String, body: String, kind: String): PendingIntent {
-        val ctx = AndroidPlatform.appContext
-        val intent = Intent(ctx, AlarmReceiver::class.java).apply {
-            putExtra("id", id)
-            putExtra("title", title)
-            putExtra("body", body)
-            putExtra("kind", kind)
-        }
-        return PendingIntent.getBroadcast(
-            ctx, id.hashCode(), intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-    }
-
-    companion object {
-        const val CHANNEL_ID = "callmony-reminders"
-    }
-}
-
-class AlarmReceiver : android.content.BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        val id = intent.getStringExtra("id") ?: return
-        val title = intent.getStringExtra("title") ?: "Reminder"
-        val body = intent.getStringExtra("body") ?: ""
-        val kind = intent.getStringExtra("kind") ?: "custom"
-        val ctx = AndroidPlatform.appContext
-        val nm = NotificationManagerCompat.from(ctx)
-        if (!nm.areNotificationsEnabled()) return
-        ensureChannelStatic(ctx)
-        val notif = NotificationCompat.Builder(ctx, AndroidNotify.CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_callmony)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .build()
-        try {
-            nm.notify(id.hashCode(), notif)
-        } catch (_: SecurityException) {}
-    }
-
-    private fun ensureChannelStatic(ctx: Context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-            if (nm.getNotificationChannel(AndroidNotify.CHANNEL_ID) == null) {
-                nm.createNotificationChannel(
-                    android.app.NotificationChannel(
-                        AndroidNotify.CHANNEL_ID, "Reminders",
-                        android.app.NotificationManager.IMPORTANCE_HIGH,
-                    ).apply { enableVibration(true) },
-                )
-            }
-        }
-    }
-}
+/* ---------------- notifications ----------------
+   AndroidNotify + AlarmReceiver + NotificationActionReceiver now live in
+   NotifyActuals.kt (v1.6.16 rich notifications: logo large icon, brand
+   color, kind subtext, BigText body, Done / Snooze quick actions). */
 
 /** Re-arm reminders after reboot (RECEIVE_BOOT_COMPLETED). */
 class BootReceiver : android.content.BroadcastReceiver() {
@@ -850,13 +693,28 @@ class BootReceiver : android.content.BroadcastReceiver() {
                 try {
                     if (!AndroidPlatform.isReady()) AndroidPlatform.init(context)
                     val data = com.callmony.lib.Db.loadAll()
+                    // make t() speak the user's language in this headless
+                    // process (labels ride with the scheduled notification)
+                    com.callmony.lib.AppStore.state.settings = data.settings
                     val notify = Platform.notify as? AndroidNotify ?: return@Thread
+                    fun kindLabelOf(kind: String): String = when (kind) {
+                        "payment" -> com.callmony.i18n.t("rm.kindPayment")
+                        "todo" -> com.callmony.i18n.t("rm.kindTodo")
+                        "birthday" -> com.callmony.i18n.t("rm.kindBirthday")
+                        "followup" -> com.callmony.i18n.t("rm.kindFollowup")
+                        else -> com.callmony.i18n.t("rm.kindCustom")
+                    }
                     for (r in data.reminders.filter { it.deletedAt == null && !it.done }) {
                         val next = if (r.repeat != "none")
                             com.callmony.lib.nextOccurrence(r.dueAt, r.repeat)
                         else r.dueAt
                         if (next > System.currentTimeMillis()) {
-                            notify.schedule(r.id, r.title, r.notes ?: "", next, r.kind)
+                            notify.schedule(
+                                r.id, r.title, r.notes ?: "", next, r.kind,
+                                kindLabelOf(r.kind),
+                                com.callmony.i18n.t("act.done"),
+                                com.callmony.i18n.t("rm.snooze10"),
+                            )
                         }
                     }
                 } catch (_: Exception) {

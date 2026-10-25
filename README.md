@@ -104,8 +104,28 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.15 (versionCode 25)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.16 (versionCode 26)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
+
+- **1.6.16** — the six user reports: (1) **calling from Search made easy** —
+  every contact hit now carries the primary number + a one-tap call button
+  (no detour through the detail sheet); (2) **Get started is pinned** on the
+  onboarding — the country list scrolls UNDER the always-visible button
+  instead of the button living at the very end of the scroll; (3) **keypad
+  opens instantly** — the live-match index now builds on a background
+  dispatcher shared across opens (it used to rebuild synchronously on every
+  open), per-keystroke balance scans became a one-shot map, and the Vibrator
+  service is cached (a binder lookup used to run on EVERY keypress — the
+  typing lag); (4) **splash matches the app theme** — the launch window +
+  Android-12 system splash follow the persisted APP theme (dark users no
+  longer see a white flash first); (5) **forgiving search** — cross-word
+  prefixes ("abebeke" → Abebe Kebede) and fuzzy subsequences ("abk",
+  "kbede") now match, with the per-contact index cached like the RN edition;
+  (6) **beautiful system notifications** — the round logo as large icon,
+  brand-teal accent, reminder-kind subtext, expanded BigText body, and the
+  RN-parity **Done / Snooze 10 minutes quick actions** that resolve reminders
+  straight from the shade (app open OR closed), plus a self-dismissing
+  confirmation. The status-bar icon is the new monogram (white alpha mask).
 
 - **1.6.15** — the fifteen user reports: (1) **keypad lag eliminated** — live
   contact matching re-normalized every phone of every contact on every

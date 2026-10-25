@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -45,17 +46,15 @@ import androidx.compose.ui.unit.sp
 import com.callmony.i18n.t
 import com.callmony.lib.AppStore
 import com.callmony.lib.Calls
+import com.callmony.lib.KeypadIndex
 import com.callmony.lib.Overlay
 import com.callmony.lib.UiStore
 import com.callmony.model.contactOwnerId
 import com.callmony.lib.displayName
 import com.callmony.lib.nationalDigits
 import com.callmony.lib.normalizePhone
-import com.callmony.lib.ownerFullBalance
+import com.callmony.lib.ownerBalances
 import com.callmony.lib.prettyPhone
-import com.callmony.lib.T9_MAP
-import com.callmony.lib.t9Match
-import com.callmony.model.DeviceContact
 import com.callmony.platform.Platform
 import com.callmony.ui.kit.Avatar
 import com.callmony.ui.kit.C
@@ -71,6 +70,10 @@ import kotlinx.coroutines.launch
 
 /* KeypadSheet — the dialer half-modal rising over Recents (260 ms slide).
    Port of src/components/KeypadSheet.tsx. */
+
+/** Hoisted once — Regex objects compile on construction; constructing them
+ *  inside the recomposing body meant a fresh compile on every keystroke. */
+private val NON_DIGIT_RE = Regex("\\D")
 
 private data class Key(val d: String, val letters: String? = null)
 
@@ -93,63 +96,29 @@ fun KeypadSheet() {
     val contacts = AppStore.state.deviceContacts
     val countryCode = AppStore.state.settings.countryCode
 
-    val digits = number.replace(Regex("\\D"), "")
+    /* v1.6.16 FIX (slow open + typing lag + mid-typing kill):
+       the contact index used to be built synchronously inside this composable
+       — normalizing EVERY phone of EVERY contact with regexes on the UI
+       thread, once per open, plus a per-row full-ledger scan per keystroke.
+       Now KeypadIndex keeps the normalized index on a background dispatcher
+       (shared across opens — the sheet itself opens with ZERO index work),
+       and row balances come from a one-shot map instead of per-row scans. */
+    KeypadIndex.ensure(contacts, countryCode, AppStore.scope)
+    val index = KeypadIndex.entries
 
-    /* v1.6.15 FIX (keypad lag): matching used to re-normalize EVERY phone of
-       EVERY contact (several regex passes per number) on EVERY keystroke.
-       With a real contact book that's hundreds of regex stacks per digit —
-       the typing lag. Now a lightweight index (display name, t9 letters,
-       pre-normalized phone digits: raw / norm / national) is built ON per
-       (contacts, countryCode) and each keystroke is plain startsWith/
-       contains over that index. */
-    class Indexed(
-        val c: DeviceContact,
-        val nameLower: String,
-        val t9: String,
-        val phones: Array<Triple<String, String, String>>,
-    ) {
-        var score: Double = -1.0
-
-        /** T9 name match — `keys` passed in explicitly (never a stale capture). */
-        fun t9Match(keys: String): Boolean {
-            if (keys.isEmpty() || t9.isEmpty()) return false
-            if (t9.length < keys.length) return false
-            for (i in 0..t9.length - keys.length) {
-                var ok = true
-                for (j in keys.indices) {
-                    val lettersFor = T9_MAP[keys[j]] ?: continue
-                    if (!lettersFor.contains(t9[i + j])) { ok = false; break }
-                }
-                if (ok) return true
-            }
-            return false
-        }
+    val balByOwner = remember(AppStore.state.entries, AppStore.state.lists) {
+        ownerBalances(AppStore.state.entries, AppStore.state.lists)
     }
 
-    val index = remember(contacts, countryCode) {
-        contacts.map { c ->
-            Indexed(
-                c = c,
-                nameLower = displayName(c).lowercase(),
-                t9 = displayName(c).lowercase().replace(Regex("[^a-z]"), ""),
-                phones = c.phones.map { p ->
-                    Triple(
-                        p.number.replace(Regex("\\D"), ""),
-                        normalizePhone(p.number, countryCode).replace(Regex("\\D"), ""),
-                        nationalDigits(p.number, countryCode),
-                    )
-                }.toTypedArray(),
-            )
-        }
-    }
+    val digits = number.replace(NON_DIGIT_RE, "")
 
     /* live matches — phone prefix 4 > substring/suffix 3.5 > T9 3 */
-    val matches = remember(digits, index) {
+    val matches = remember(digits, index, countryCode) {
         if (digits.length < 2) emptyList()
         else {
             val qnat = nationalDigits(digits, countryCode)
             val t9Keys = digits.filter { it in '2'..'9' }
-            val out = mutableListOf<Indexed>()
+            val out = mutableListOf<KeypadIndex.Entry>()
             outer@ for (c in index) {
                 var score = -1.0
                 if (c.t9Match(t9Keys)) score = 3.0
@@ -168,7 +137,7 @@ fun KeypadSheet() {
                     if (out.size >= 60) break@outer
                 }
             }
-            out.sortedWith(compareByDescending<Indexed> { it.score }.thenBy { it.nameLower })
+            out.sortedWith(compareByDescending<KeypadIndex.Entry> { it.score }.thenBy { it.nameLower })
                 .map { it.c }
         }
     }
@@ -177,7 +146,7 @@ fun KeypadSheet() {
     val exactMatch = remember(number, index, countryCode) {
         if (digits.length < 6) null
         else {
-            val typed = normalizePhone(number, countryCode).replace(Regex("\\D"), "")
+            val typed = normalizePhone(number, countryCode).replace(NON_DIGIT_RE, "")
             index.find { ix -> ix.phones.any { it.second == typed } }?.c
         }
     }
@@ -341,8 +310,8 @@ fun KeypadSheet() {
                     .heightIn(max = 250.dp)
                     .padding(horizontal = 10.dp),
             ) {
-                items(matches, key = { it.recordID }) { c ->
-                    val bal = ownerFullBalance(AppStore.state.entries, AppStore.state.lists, contactOwnerId(c.recordID))
+                itemsIndexed(matches, key = { i, c -> "$i-${c.recordID}" }) { _, c ->
+                    val bal = balByOwner[contactOwnerId(c.recordID)] ?: 0.0
                     Row(
                         Modifier
                             .fillMaxWidth()

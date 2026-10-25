@@ -83,4 +83,36 @@ class SearchContactsTest {
         val hits = firstIds("sara")
         check(hits.firstOrNull() == "5") { "exact prefix contact should rank first — got $hits" }
     }
+
+    /* v1.6.16 — the forgiving matchers (user: "can't find contacts unless
+       I type most part of its name"). */
+
+    @Test
+    fun crossWordBoundaryPrefixFindsContact() {
+        // typing continuously across the first/last-name boundary — the
+        // query is a prefix of the name WITH SPACES REMOVED.
+        val hits = firstIds("abebeke")
+        check("1" in hits) { "'abebeke' (Abebe Kebede, no space) should hit — got $hits" }
+    }
+
+    @Test
+    fun fuzzySubsequenceFindsContact() {
+        // scattered letters in order — dialer-style fuzzy.
+        val hits = firstIds("abk")
+        check("1" in hits) { "'abk' (a…b…k of Abebe Kebede) should hit — got $hits" }
+        check("2" in hits) { "'abk' (Kalkidan Bekele: a…be…k) should hit — got $hits" }
+    }
+
+    @Test
+    fun perWordSubsequenceFindsContact() {
+        // "kbede" — letters of "kebede" in order but not contiguous.
+        val hits = firstIds("kbede")
+        check("1" in hits) { "'kbede' should fuzzy-hit Kebede — got $hits" }
+    }
+
+    @Test
+    fun gibberishStillEmpty() {
+        check(firstIds("zqx").isEmpty()) { "no-contact letters must not fuzzy-match" }
+        check(firstIds("qzm").isEmpty()) { "scattered no-match letters must stay empty" }
+    }
 }

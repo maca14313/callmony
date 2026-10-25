@@ -76,7 +76,10 @@ class IosNotify : NotifyService {
     override fun ensureChannel() {}
     override fun hasNotifPermission(): Boolean = true
     override fun requestNotifPermission(onResult: (Boolean) -> Unit) { onResult(true) }
-    override fun schedule(id: String, title: String, body: String, at: Long, kind: String) {
+    override fun schedule(
+        id: String, title: String, body: String, at: Long, kind: String,
+        kindLabel: String, doneLabel: String, snoozeLabel: String,
+    ) {
         // UNUserNotificationCenter scheduling ships with the Xcode build
     }
     override fun cancel(id: String) {}

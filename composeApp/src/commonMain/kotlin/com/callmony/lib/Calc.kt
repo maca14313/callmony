@@ -40,6 +40,26 @@ fun openListsPending(lists: List<CalcList>, ownerId: String): Double =
 fun ownerFullBalance(entries: List<LedgerEntry>, lists: List<CalcList>, ownerId: String): Double =
     r2(ownerBalance(entries, ownerId) + openListsPending(lists, ownerId))
 
+/** v1.6.16 — every owner's full balance in ONE pass (entries + open lists).
+ *  For lists of rows that each show a balance (keypad live matches, search
+ *  hits) this turns O(rows × entries) per keystroke into a single O(n + m)
+ *  build + O(1) lookups — the per-row full scan was a big slice of the
+ *  keypad's typing lag on real books. */
+fun ownerBalances(entries: List<LedgerEntry>, lists: List<CalcList>): Map<String, Double> {
+    val out = HashMap<String, Double>()
+    for (e in entries) {
+        if (e.deletedAt != null) continue
+        val k = e.ownerId
+        out[k] = r2((out[k] ?: 0.0) + entrySignedRemaining(e))
+    }
+    for (l in lists) {
+        if (l.deletedAt != null || !l.postToLedger || l.isTemplate) continue
+        val k = l.ownerId
+        out[k] = r2((out[k] ?: 0.0) + listTotals(l).pending)
+    }
+    return out
+}
+
 data class OwnerTotals(val credit: Double, val debit: Double, val net: Double)
 
 fun totalsForOwner(entries: List<LedgerEntry>, ownerId: String): OwnerTotals {

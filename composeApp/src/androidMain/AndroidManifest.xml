@@ -106,5 +106,11 @@
         <receiver
             android:name=".AlarmReceiver"
             android:exported="false" />
+
+        <!-- v1.6.16 — Done / Snooze 10 min quick actions on the reminder
+             notification (resolve reminders straight from the shade). -->
+        <receiver
+            android:name=".NotificationActionReceiver"
+            android:exported="false" />
     </application>
 </manifest>

@@ -12,7 +12,7 @@ import kotlin.math.pow
    React Native edition's src/lib/utils.ts. */
 
 /** The app's version (kept in sync with composeApp/build.gradle.kts). */
-const val APP_VERSION = "v1.6.15"
+const val APP_VERSION = "v1.6.16"
 
 private val RNG = kotlin.random.Random.Default
 
@@ -398,17 +398,54 @@ private fun phoneScore(phones: List<PhoneIndex>, qd: String, qnat: String): Doub
     return best
 }
 
+/* v1.6.16 — FORGIVING NAME MATCHING. Users complained they could not find
+   contacts "unless I type most part of its name". Two matchers were missing:
+
+   1. CROSS-WORD PREFIX: `abebeke` now hits "Abebe Kebede" — the query is a
+      prefix of the name with the spaces REMOVED. Typing continuously across
+      the first-name/last-name boundary used to produce ZERO results.
+   2. FUZZY SUBSEQUENCE: `abk` hits "Abebe Kebede" — every letter of the query
+      appears in order (dialer-style fuzzy). Scattered initials/fragments now
+      rank below real prefixes but still surface. */
+private fun lettersPrefix(e: SearchIndexEntry, q: String): Boolean =
+    e.letters.length >= q.length && e.letters.startsWith(q)
+
+private fun subsequenceOf(hay: String, needle: String): Boolean {
+    if (needle.isEmpty()) return true
+    if (hay.length < needle.length) return false
+    var i = 0
+    for (ch in hay) {
+        if (ch == needle[i]) {
+            i++
+            if (i == needle.length) return true
+        }
+    }
+    return false
+}
+
+/** Per-word fuzzy subsequence ("kbk" inside "Kebede" — letters in order). */
+private fun wordSubsequence(e: SearchIndexEntry, tok: String): Boolean =
+    tok.length >= 3 && e.words.any { subsequenceOf(it, tok) }
+
+private fun nameScore(e: SearchIndexEntry, tok: String): Double {
+    var s = 0.0
+    if (e.words.any { it.startsWith(tok) }) s = maxOf(s, 6.0)
+    if (tok.length >= 2 && e.initials.startsWith(tok)) s = maxOf(s, 5.2)
+    if (lettersPrefix(e, tok)) s = maxOf(s, 5.6) // v1.6.16 cross-word prefix
+    if (e.words.any { it.contains(tok) }) s = maxOf(s, 4.5)
+    if (e.nameLower.contains(tok)) s = maxOf(s, 4.0)
+    if (wordSubsequence(e, tok)) s = maxOf(s, 4.2) // v1.6.16 per-word fuzzy
+    else if (tok.length >= 3 && subsequenceOf(e.letters, tok)) s = maxOf(s, 3.4) // v1.6.16 name fuzzy
+    return s
+}
+
 fun scoreEntry(e: SearchIndexEntry, q: String, qd: String, qnat: String, digitsOnly: Boolean, cc: String): Double {
     val tokens = q.split(Regex("\\s+")).filter { it.isNotEmpty() }
     if (tokens.size > 1) {
         var weakest = Double.MAX_VALUE
         for (tok in tokens) {
             val td = tok.replace(Regex("\\D"), "")
-            var s = 0.0
-            if (e.words.any { it.startsWith(tok) }) s = 6.0
-            else if (tok.length >= 2 && e.initials.startsWith(tok)) s = 5.2
-            else if (e.words.any { it.contains(tok) }) s = 4.5
-            else if (e.nameLower.contains(tok)) s = 4.0
+            var s = nameScore(e, tok)
             if (!Regex("^\\d+$").matches(tok)) {
                 if (e.companyLower.contains(tok)) s = maxOf(s, 3.0)
                 if (e.emailLower.contains(tok)) s = maxOf(s, 3.0)
@@ -420,11 +457,7 @@ fun scoreEntry(e: SearchIndexEntry, q: String, qd: String, qnat: String, digitsO
         return (if (weakest == Double.MAX_VALUE) 0.0 else weakest) + 0.4
     }
 
-    var score = 0.0
-    if (e.words.any { it.startsWith(q) }) score = maxOf(score, 6.0)
-    if (q.length >= 2 && e.initials.startsWith(q)) score = maxOf(score, 5.2)
-    else if (e.words.any { it.contains(q) }) score = maxOf(score, 4.5)
-    else if (e.nameLower.contains(q)) score = maxOf(score, 4.0)
+    var score = nameScore(e, q)
     if (digitsOnly && qd.length >= 3 && e.letters.isNotEmpty() && t9Match(qd, e.name)) score = maxOf(score, 5.5)
     if (!digitsOnly) {
         if (e.companyLower.contains(q)) score = maxOf(score, 3.0)
@@ -435,7 +468,28 @@ fun scoreEntry(e: SearchIndexEntry, q: String, qd: String, qnat: String, digitsO
     return score
 }
 
-/** Ranked contact search — use wherever a list of contacts is filtered. */
+/** Ranked contact search — use wherever a list of contacts is filtered.
+ *
+ *  v1.6.16: the per-contact SearchIndexEntry is CACHED per contact-list
+ *  identity (like the RN edition's getContactSearchIndex) — with a real
+ *  contact book every keystroke used to re-run the regex normalization of
+ *  every phone of every contact, which read as typing lag in Search. */
+private var searchIndexCacheKey: Triple<List<DeviceContact>, String, (DeviceContact) -> String>? = null
+private var searchIndexCacheVal: List<SearchIndexEntry> = emptyList()
+
+private fun cachedEntries(
+    contacts: List<DeviceContact>,
+    countryCode: String,
+    nameOf: (DeviceContact) -> String,
+): List<SearchIndexEntry> {
+    val key = Triple(contacts, countryCode, nameOf)
+    if (searchIndexCacheKey == key) return searchIndexCacheVal
+    val built = contacts.map { buildSearchEntry(it, nameOf, countryCode) }
+    searchIndexCacheKey = key
+    searchIndexCacheVal = built
+    return built
+}
+
 fun searchContacts(
     contacts: List<DeviceContact>,
     query: String,
@@ -449,10 +503,9 @@ fun searchContacts(
     val qnat = nationalDigits(qd, countryCode)
     val digitsOnly = q == qd
     val out = mutableListOf<ScoredContact>()
-    for (c in contacts) {
-        val e = buildSearchEntry(c, nameOf, countryCode)
+    for (e in cachedEntries(contacts, countryCode, nameOf)) {
         val s = scoreEntry(e, q, qd, qnat, digitsOnly, countryCode)
-        if (s > 0) out.add(ScoredContact(c, s, e.nameLower))
+        if (s > 0) out.add(ScoredContact(e.contact, s, e.nameLower))
     }
     out.sortWith(compareByDescending<ScoredContact> { it.score }.thenBy { it.nameLower })
     return out.take(limit)

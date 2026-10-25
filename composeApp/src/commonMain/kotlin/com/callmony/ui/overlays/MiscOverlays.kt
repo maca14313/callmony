@@ -64,6 +64,7 @@ import com.callmony.lib.now
 import com.callmony.lib.ownerFullBalance
 import com.callmony.lib.ownerNameOf
 import com.callmony.lib.prettyPhone
+import com.callmony.lib.primaryPhone
 import com.callmony.lib.searchContacts
 import com.callmony.model.DeviceContact
 import com.callmony.platform.Platform
@@ -170,11 +171,37 @@ fun SearchOverlay() {
                     item { GroupLabel(t("misc.contacts")) }
                     items(matchedContacts.take(50), key = { "c-${it.recordID}" }) { c ->
                         val bal = ownerFullBalance(AppStore.state.entries, AppStore.state.lists, "c:${c.recordID}")
+                        val callNumber = primaryPhone(c)
                         PressableRow(onClick = { UiStore.open(Overlay.Contact(c.recordID)) }) {
                             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Avatar(c, size = 36)
-                                Text(displayName(c), fontSize = 16.sp, color = C.ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Column(Modifier.weight(1f)) {
+                                    Text(displayName(c), fontSize = 16.sp, color = C.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    if (callNumber != null) {
+                                        Text(
+                                            prettyPhone(callNumber, countryCode),
+                                            fontSize = 13.sp,
+                                            color = C.faint,
+                                            maxLines = 1,
+                                        )
+                                    }
+                                }
                                 if (bal != 0.0) Money(bal, signed = true, colorize = true, compact = true, size = 13)
+                                /* v1.6.16 — calling from search made EASY: a
+                                   one-tap call button on every contact hit
+                                   (no detour through the detail sheet). */
+                                if (callNumber != null) {
+                                    Box(
+                                        Modifier
+                                            .size(38.dp)
+                                            .clip(CircleShape)
+                                            .background(C.brandSoft)
+                                            .clickable {
+                                                Calls.placeCallWithToast(callNumber)
+                                            },
+                                        contentAlignment = Alignment.Center,
+                                    ) { MdiIcon("phone", 18, C.brand) }
+                                }
                             }
                         }
                     }

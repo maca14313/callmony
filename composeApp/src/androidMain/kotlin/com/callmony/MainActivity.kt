@@ -1,5 +1,6 @@
 package com.callmony
 
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -8,7 +9,30 @@ import com.callmony.lib.AppStore
 import com.callmony.ui.CallmonyApp
 
 class MainActivity : ComponentActivity() {
+
+    /* v1.6.16 — the launch window + Android-12+ system splash must carry the
+       APP theme's canvas, not the SYSTEM day/night mode (the old behavior:
+       app set to dark on a light-system phone flashed a white splash before
+       the dark app — "match the bg of the splash screen to the theme").
+       The persisted settings JSON is string-scanned for "theme" — cheaper
+       than a full parse, and this must run before super.onCreate(). */
+    private fun persistedThemeIsDark(): Boolean {
+        return try {
+            val prefs = getSharedPreferences("callmony-store", MODE_PRIVATE)
+            val raw = prefs.getString("callmony.settings", null)
+                ?: prefs.getString("callmony.settings~m", null)
+            val m = Regex("\"theme\"\\s*:\\s*\"(light|dark|auto)\"").find(raw ?: "")
+            val theme = m?.groupValues?.get(1)
+            val sysDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
+            theme == "dark" || ((theme == null || theme == "auto") && sysDark)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        if (persistedThemeIsDark()) setTheme(R.style.Theme_Callmony_Dark)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         AndroidPlatform.init(applicationContext)
