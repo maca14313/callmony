@@ -944,31 +944,76 @@ class AndroidKv(private val ctx: Context) : KvStore {
     private val docsDir: File
         get() = File(ctx.filesDir, "documents").apply { mkdirs() }
 
-    override fun read(key: String): String? = prefs.getString(key, null)
+    override fun read(key: String): String? {
+        // v1.6.15 DATA-SAFETY FIX: the mirror key is written on every save
+        // but reads NEVER fell back to it — a corrupted primary row silently
+        // returned null (data "loss"). Now: primary → "~m" mirror.
+        return try {
+            prefs.getString(key, null) ?: prefs.getString("$key~m", null)
+        } catch (_: Exception) { null }
+    }
 
     override fun write(key: String, value: String) {
-        prefs.edit().putString(key, value).apply()
-        // mirror write (the RN edition's data-safety layer)
-        prefs.edit().putString("$key~m", value).apply()
+        // v1.6.15 DATA-SAFETY: commit() (synchronous, returns success)
+        // instead of apply() (async — a hard process kill could drop the
+        // last writes). The store saves on background coroutines, so the
+        // main thread never blocks on this.
+        val editor = prefs.edit().putString(key, value)
+        editor.putString("$key~m", value) // mirror (single atomic commit)
+        editor.commit()
     }
 
     override fun remove(key: String) {
-        prefs.edit().remove(key).remove("$key~m").apply()
+        prefs.edit().remove(key).remove("$key~m").commit()
     }
 
     override fun readFile(name: String): String? = try {
         val f = File(docsDir, name)
-        if (f.exists()) f.readText() else null
-    } catch (_: Exception) { null }
+        when {
+            f.exists() -> f.readText()
+            // v1.6.15 DATA-SAFETY: fall back to the rotated backup when the
+            // main file is missing (e.g. a crash between rename steps).
+            else -> File(docsDir, "$name.bak").takeIf { it.exists() }?.readText()
+        }
+    } catch (_: Exception) {
+        try { File(docsDir, "$name.bak").readText() } catch (_: Exception) { null }
+    }
 
     override fun writeFile(name: String, content: String) {
+        // v1.6.15 DATA-SAFETY: ATOMIC write — tmp file → fsync → rename over
+        // the target, keeping the previous good file as ".bak". A crash or
+        // disk-full can never leave a half-written/truncated file behind
+        // (the old direct writeText destroyed the previous data on failure).
         try {
-            File(docsDir, name).writeText(content)
-        } catch (_: Exception) {}
+            val dir = docsDir
+            val target = File(dir, name)
+            val tmp = File(dir, "$name.tmp")
+            val bak = File(dir, "$name.bak")
+            tmp.outputStream().use { os ->
+                os.write(content.toByteArray(Charsets.UTF_8))
+                os.flush()
+                os.fd.sync()
+            }
+            if (target.exists()) {
+                try { if (bak.exists()) bak.delete() } catch (_: Exception) {}
+                try { target.copyTo(bak, overwrite = true) } catch (_: Exception) {}
+            }
+            if (!tmp.renameTo(target)) {
+                // cross-filesystem rename safety net
+                tmp.copyTo(target, overwrite = true)
+                tmp.delete()
+            }
+        } catch (_: Exception) {
+            try { File(docsDir, name).writeText(content) } catch (_: Exception) {}
+        }
     }
 
     override fun deleteFile(name: String) {
-        try { File(docsDir, name).delete() } catch (_: Exception) {}
+        try {
+            File(docsDir, name).delete()
+            File(docsDir, "$name.bak").delete()
+            File(docsDir, "$name.tmp").delete()
+        } catch (_: Exception) {}
     }
 
     override fun fileExists(name: String): Boolean = File(docsDir, name).exists()

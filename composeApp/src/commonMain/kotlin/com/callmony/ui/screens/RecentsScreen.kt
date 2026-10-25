@@ -86,6 +86,7 @@ data class CallRow(
     val at: Long,
     val duration: Int,
     val appId: String? = null,
+    val count: Int = 1, // v1.6.15: back-to-back missed calls collapsed into one card
 )
 
 @Composable
@@ -143,9 +144,12 @@ fun RecentsScreen() {
        systemCalls, so the phone→contact match was frozen at first render:
        every card stayed "unsaved" after the contact book loaded (or after
        creating a contact), and tapping a card opened the action sheet
-       instead of the contact detail. */
+       instead of the contact detail.
+       v1.6.15 (user request): consecutive BACK-TO-BACK missed calls from the
+       SAME number collapse into a single card carrying how many times it
+       was missed (stock-dialer behavior) — one glance shows “(3) missed”. */
     val rows: List<CallRow> = remember(systemCalls, contacts) {
-        systemCalls.map { c ->
+        val raw = systemCalls.map { c ->
             CallRow(
                 key = c.id,
                 phone = c.number,
@@ -160,6 +164,27 @@ fun RecentsScreen() {
                 duration = c.duration,
             )
         }
+        // collapse runs of consecutive missed calls from the same number
+        // (the log is newest-first; “back to back” = adjacent in the log)
+        val out = mutableListOf<CallRow>()
+        var i = 0
+        while (i < raw.size) {
+            val r = raw[i]
+            if (r.direction == "missed" && r.phone.replace(Regex("\\D"), "").length >= 3) {
+                var j = i + 1
+                while (j < raw.size &&
+                    raw[j].direction == "missed" &&
+                    raw[j].phone.replace(Regex("\\D"), "") == r.phone.replace(Regex("\\D"), "")
+                ) j++
+                val run = j - i
+                out.add(if (run > 1) r.copy(key = r.key + "-x$run", count = run) else r)
+                i = j
+            } else {
+                out.add(r)
+                i++
+            }
+        }
+        out
     }
 
     val favSet = remember(contactX) { contactX.filter { it.favorite }.map { it.recordID }.toSet() }
@@ -218,6 +243,15 @@ fun RecentsScreen() {
     fun onWhatsApp(phone: String) { Messengers.waLink(phone) }
     fun onSMS(phone: String) { Messengers.smsLink(phone) }
     fun onToggleFav(recordID: String) { AppStore.toggleFavorite(recordID) }
+    fun onCopy(phone: String) {
+        Platform.share.copyText(phone)
+        Toasts.toast(t("cd.numberCopied"))
+    }
+    fun onCreateContact(phone: String) { UiStore.open(Overlay.ContactNew(phone = phone)) }
+    fun onDetail(row: CallRow) {
+        if (row.contact != null) UiStore.open(Overlay.Contact(row.contact.recordID, initialSeg = "info"))
+        else sheetRow = row
+    }
 
     fun askContacts() {
         if (contactsAskedOnce) {
@@ -379,6 +413,9 @@ fun RecentsScreen() {
                     onWhatsApp = ::onWhatsApp,
                     onSMS = ::onSMS,
                     onToggleFav = ::onToggleFav,
+                    onCopy = ::onCopy,
+                    onCreateContact = ::onCreateContact,
+                    onDetail = ::onDetail,
                     onRefresh = { AppStore.loadSystemCalls(true) },
                     refreshing = refreshing,
                 )
@@ -424,6 +461,7 @@ private fun DayFilters(filter: String, onSet: (String) -> Unit, missedCount: Int
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun CallList(
     pagedItems: List<Any>,
@@ -439,6 +477,9 @@ private fun CallList(
     onWhatsApp: (String) -> Unit,
     onSMS: (String) -> Unit,
     onToggleFav: (String) -> Unit,
+    onCopy: (String) -> Unit,
+    onCreateContact: (String) -> Unit,
+    onDetail: (CallRow) -> Unit,
     onRefresh: () -> Unit,
     refreshing: Boolean,
 ) {
@@ -450,26 +491,31 @@ private fun CallList(
             .testTag("recentsList"),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 8.dp, bottom = 28.dp),
     ) {
-        items(pagedItems, key = {
-            when (it) {
-                is String -> "D-$it"
-                is CallRow -> it.key
-                else -> "x"
-            }
-        }) { item ->
+        pagedItems.forEach { item ->
             when (item) {
-                is String -> DayHeader(item, filter, onFilter, missedCount)
-                is CallRow -> CallCard(
-                    row = item,
-                    balance = item.contact?.let { balances[it.recordID] } ?: 0.0,
-                    countryCode = countryCode,
-                    onTap = onTap,
-                    onLongPress = onLongPress,
-                    onCall = onCall,
-                    onWhatsApp = onWhatsApp,
-                    onSMS = onSMS,
-                    onToggleFav = onToggleFav,
-                )
+                // v1.6.15 (user request): the day header (date · ＋ new-contact
+                // · direction filter chips) rides along STICKY under the owe
+                // chips while the call cards scroll — RN parity
+                // (FlatList stickyHeaderIndices).
+                is String -> stickyHeader(key = "D-$item") {
+                    DayHeader(item, filter, onFilter, missedCount)
+                }
+                is CallRow -> item(key = item.key) {
+                    CallCard(
+                        row = item,
+                        balance = item.contact?.let { balances[it.recordID] } ?: 0.0,
+                        countryCode = countryCode,
+                        onTap = onTap,
+                        onLongPress = onLongPress,
+                        onCall = onCall,
+                        onWhatsApp = onWhatsApp,
+                        onSMS = onSMS,
+                        onToggleFav = onToggleFav,
+                        onCopy = onCopy,
+                        onCreateContact = onCreateContact,
+                        onDetail = onDetail,
+                    )
+                }
             }
         }
     }
@@ -508,12 +554,17 @@ fun CallCard(
     onWhatsApp: (String) -> Unit,
     onSMS: (String) -> Unit,
     onToggleFav: (String) -> Unit,
+    onCopy: (String) -> Unit,
+    onCreateContact: (String) -> Unit,
+    onDetail: (CallRow) -> Unit,
 ) {
     val C = C()
     val digits = row.phone.replace(Regex("\\D"), "")
     val hasRealNumber = digits.replaceFirst(Regex("^0+"), "").length >= 3
+    // v1.6.15 (user request): when the number is NOT saved as a contact, the
+    // PHONE NUMBER itself is the card's name line (stock-dialer behavior) —
+    // the carrier-cached name no longer takes the title slot.
     val title = row.contact?.let { displayName(it) }
-        ?: row.name
         ?: (if (hasRealNumber) prettyPhone(row.phone, countryCode) else "")
         .ifEmpty { t("cl.unknownNumber") }
     val meta = when (row.direction) {
@@ -523,14 +574,22 @@ fun CallCard(
     }
     val callNumber = row.contact?.phones?.firstOrNull()?.number ?: row.phone
 
+    // v1.6.15 (user request): the full quick-action set on swipe, not just
+    // call + favourite — left drag: Call · WhatsApp · SMS · Favourite;
+    // right drag: Copy number · Create/Add contact · Info.
     val leftActions = if (hasRealNumber) buildList {
         add(SwipeAction(t("act.call"), "phone", Color(0xFF16a085)) { onCall(callNumber) })
+        add(SwipeAction(t("act.whatsapp"), "whatsapp", Color(0xFF1faa53)) { onWhatsApp(callNumber) })
+        add(SwipeAction(t("act.sms"), "message-text-outline", Color(0xFF4a7d9b)) { onSMS(callNumber) })
         if (row.contact != null) add(SwipeAction(t("cd.favorites"), "star", Color(0xFFb97d10)) { onToggleFav(row.contact!!.recordID) })
     } else emptyList()
-    val rightActions = if (hasRealNumber) listOf(
-        SwipeAction(t("act.whatsapp"), "whatsapp", Color(0xFF1faa53)) { onWhatsApp(callNumber) },
-        SwipeAction(t("act.sms"), "message-text-outline", Color(0xFF4a7d9b)) { onSMS(callNumber) },
-    ) else emptyList()
+    val rightActions = if (hasRealNumber) buildList {
+        add(SwipeAction(t("cd.copyNumber"), "content-copy", Color(0xFF5c6f6c)) { onCopy(callNumber) })
+        add(
+            if (row.contact != null) SwipeAction(t("cd.callHistory"), "account-circle-outline", C.brand) { onDetail(row) }
+            else SwipeAction(t("cd.createContact"), "account-plus-outline", C.brand) { onCreateContact(callNumber) }
+        )
+    } else emptyList()
 
     Column(Modifier.padding(bottom = 6.dp)) {
         SwipeRow(
@@ -564,6 +623,15 @@ fun CallCard(
                     )
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         MdiIcon(meta.first, 14, meta.second)
+                        // v1.6.15: "(3)" badge for back-to-back missed-call runs
+                        if (row.count > 1) {
+                            Text(
+                                "(${row.count})",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = C.red,
+                            )
+                        }
                         Text(
                             ft(row.at) + if (row.duration > 0) " · ${durationStr(row.duration)}" else "",
                             fontSize = 13.sp,

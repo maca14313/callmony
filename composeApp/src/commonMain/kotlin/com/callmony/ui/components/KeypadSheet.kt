@@ -53,6 +53,7 @@ import com.callmony.lib.nationalDigits
 import com.callmony.lib.normalizePhone
 import com.callmony.lib.ownerFullBalance
 import com.callmony.lib.prettyPhone
+import com.callmony.lib.T9_MAP
 import com.callmony.lib.t9Match
 import com.callmony.model.DeviceContact
 import com.callmony.platform.Platform
@@ -94,20 +95,66 @@ fun KeypadSheet() {
 
     val digits = number.replace(Regex("\\D"), "")
 
+    /* v1.6.15 FIX (keypad lag): matching used to re-normalize EVERY phone of
+       EVERY contact (several regex passes per number) on EVERY keystroke.
+       With a real contact book that's hundreds of regex stacks per digit —
+       the typing lag. Now a lightweight index (display name, t9 letters,
+       pre-normalized phone digits: raw / norm / national) is built ON per
+       (contacts, countryCode) and each keystroke is plain startsWith/
+       contains over that index. */
+    class Indexed(
+        val c: DeviceContact,
+        val nameLower: String,
+        val t9: String,
+        val phones: Array<Triple<String, String, String>>,
+    ) {
+        var score: Double = -1.0
+
+        /** T9 name match — `keys` passed in explicitly (never a stale capture). */
+        fun t9Match(keys: String): Boolean {
+            if (keys.isEmpty() || t9.isEmpty()) return false
+            if (t9.length < keys.length) return false
+            for (i in 0..t9.length - keys.length) {
+                var ok = true
+                for (j in keys.indices) {
+                    val lettersFor = T9_MAP[keys[j]] ?: continue
+                    if (!lettersFor.contains(t9[i + j])) { ok = false; break }
+                }
+                if (ok) return true
+            }
+            return false
+        }
+    }
+
+    val index = remember(contacts, countryCode) {
+        contacts.map { c ->
+            Indexed(
+                c = c,
+                nameLower = displayName(c).lowercase(),
+                t9 = displayName(c).lowercase().replace(Regex("[^a-z]"), ""),
+                phones = c.phones.map { p ->
+                    Triple(
+                        p.number.replace(Regex("\\D"), ""),
+                        normalizePhone(p.number, countryCode).replace(Regex("\\D"), ""),
+                        nationalDigits(p.number, countryCode),
+                    )
+                }.toTypedArray(),
+            )
+        }
+    }
+
     /* live matches — phone prefix 4 > substring/suffix 3.5 > T9 3 */
-    val matches = remember(digits, contacts, countryCode) {
+    val matches = remember(digits, index) {
         if (digits.length < 2) emptyList()
         else {
             val qnat = nationalDigits(digits, countryCode)
-            val out = mutableListOf<Triple<DeviceContact, Double, String>>() // contact, score, nameLower
-            outer@ for (c in contacts) {
-                val name = displayName(c)
+            val t9Keys = digits.filter { it in '2'..'9' }
+            val out = mutableListOf<Indexed>()
+            outer@ for (c in index) {
                 var score = -1.0
-                if (t9Match(digits, name)) score = 3.0
-                for (p in c.phones) {
-                    val raw = p.number.replace(Regex("\\D"), "")
-                    val norm = normalizePhone(p.number, countryCode).replace(Regex("\\D"), "")
-                    val nat = nationalDigits(p.number, countryCode)
+                if (c.t9Match(t9Keys)) score = 3.0
+                for (t in c.phones) {
+                    val (raw, norm, nat) = t
                     if (raw.startsWith(digits) || norm.startsWith(digits) || (qnat.isNotEmpty() && nat.startsWith(qnat))) {
                         score = 4.0; break
                     }
@@ -116,21 +163,22 @@ fun KeypadSheet() {
                     }
                 }
                 if (score > 0) {
-                    out.add(Triple(c, score, name.lowercase()))
+                    c.score = score
+                    out.add(c)
                     if (out.size >= 60) break@outer
                 }
             }
-            out.sortedWith(compareByDescending<Triple<DeviceContact, Double, String>> { it.second }.thenBy { it.third })
-                .map { it.first }
+            out.sortedWith(compareByDescending<Indexed> { it.score }.thenBy { it.nameLower })
+                .map { it.c }
         }
     }
 
-    /* exact-match pill — ≥6 digits fully equal */
-    val exactMatch = remember(number, contacts, countryCode) {
+    /* exact-match pill — ≥6 digits fully equal (uses the same index) */
+    val exactMatch = remember(number, index, countryCode) {
         if (digits.length < 6) null
         else {
             val typed = normalizePhone(number, countryCode).replace(Regex("\\D"), "")
-            contacts.find { c -> c.phones.any { normalizePhone(it.number, countryCode).replace(Regex("\\D"), "") == typed } }
+            index.find { ix -> ix.phones.any { it.second == typed } }?.c
         }
     }
 
@@ -356,10 +404,11 @@ fun KeypadSheet() {
                 )
             }
         }
-        // number display — real text field (native copy/paste menu)
-        // readOnly: the 12-key grid is the input method; tapping the display
-        // must NOT open the text IME (RN parity: showSoftInputOnFocus=false).
-        // Selection handles + Copy still work; Paste uses the sheet's button.
+        // number display — v1.6.15: a REAL editable native field with the
+        // software keyboard suppressed (RN parity: TextInput with
+        // showSoftInputOnFocus=false). Long-press gives the full native
+        // Copy · Cut · Paste · Select-all menu with selection handles;
+        // the 12-key grid stays the only way to type digits.
         Row(
             Modifier
                 .fillMaxWidth()
@@ -367,23 +416,16 @@ fun KeypadSheet() {
                 .heightIn(min = 62.dp, max = 84.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BasicTextField(
+            NoImeNumberField(
                 value = number,
                 onValueChange = { onChangeNumber(it) },
-                readOnly = true,
-                textStyle = TextStyle(
-                    fontSize = when {
-                        number.length <= 12 -> 28.sp
-                        number.length <= 16 -> 24.sp
-                        else -> 21.sp
-                    },
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 1.2.sp,
-                    color = C.ink,
-                    textAlign = TextAlign.Center,
-                ),
-                singleLine = true,
-                cursorBrush = SolidColor(C.brand),
+                fontSizeSp = when {
+                    number.length <= 12 -> 28
+                    number.length <= 16 -> 24
+                    else -> 21
+                },
+                textColor = C.ink,
+                cursorColor = C.brand,
                 modifier = Modifier.weight(1f).defaultMinSize(minHeight = 44.dp),
             )
             // paste + backspace

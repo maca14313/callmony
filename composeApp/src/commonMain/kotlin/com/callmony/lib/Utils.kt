@@ -11,6 +11,9 @@ import kotlin.math.pow
 /* callmony — utilities (dates, money, phones, misc). Exact port of the
    React Native edition's src/lib/utils.ts. */
 
+/** The app's version (kept in sync with composeApp/build.gradle.kts). */
+const val APP_VERSION = "v1.6.15"
+
 private val RNG = kotlin.random.Random.Default
 
 fun uid(): String =

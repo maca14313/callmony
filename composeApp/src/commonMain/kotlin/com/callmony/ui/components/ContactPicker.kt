@@ -78,6 +78,9 @@ fun ContactPicker(
         if (contacts.isEmpty()) AppStore.refreshDeviceContacts()
     }
 
+    // v1.6.15: native back closes the picker itself (inner handler wins)
+    com.callmony.ui.kit.AppBackHandler(enabled = true) { onBack() }
+
     Column(Modifier.fillMaxSize().background(C.canvas).statusBarsPadding()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp).height(56.dp),

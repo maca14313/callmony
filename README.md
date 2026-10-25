@@ -104,9 +104,48 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.14 (versionCode 24)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.15 (versionCode 25)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.15** — the fifteen user reports: (1) **keypad lag eliminated** — live
+  contact matching re-normalized every phone of every contact on every
+  keystroke; a precomputed index (name / T9 letters / raw·national·normalized
+  digit strings) makes each keystroke plain `startsWith`/`contains` work;
+  (2) **status-bar icons follow the app theme** — `enableEdgeToEdge()` picked
+  the SYSTEM dark mode, so with the system dark + app light the clock/battery
+  turned invisible; appearance now tracks the app canvas (and the OS dark
+  flow finally feeds the app's "auto" theme); (3) **search opens the keyboard
+  by itself** (auto-focused field); (4) **the native back button behaves** —
+  back closes the top sheet / picker / alarm / keypad / More sheet and
+  returns to Recents instead of killing the app (root + nested handlers);
+  (5) **the keypad tile sits in the MIDDLE of the bottom navigation**
+  (Recents · Calculator · Keypad · General · More); (6) **copy / cut / paste
+  in the keypad number display** — a real native EditText with the software
+  keyboard suppressed (RN `showSoftInputOnFocus` parity): long-press shows
+  the full Copy · Cut · Paste · Select-all menu with selection handles;
+  (7) **the day header (date · ＋ new-contact · filter chips) is STICKY**
+  while the call cards scroll (RN `stickyHeaderIndices` parity);
+  (8) **richer swipe actions** — left: Call · WhatsApp · SMS · Favourite,
+  right: Copy number · Create contact / Info (was call + favourite only);
+  (9) **data-safety hardening** — the SharedPreferences mirror key is now
+  actually READ as a fallback (writes were mirrored but reads never fell
+  back), writes commit synchronously in one atomic edit, and file writes are
+  atomic (tmp → fsync → rename) with a rotated `.bak` + read fallback;
+  (10) **no more "old logo"** — the logo decodes eagerly at process start
+  (the splash/navbar can never flash the fallback tile), a second independent
+  copy lives in `res/drawable-nodpi` as a fallback source, and every
+  phone-in-talk fallback glyph is gone (splash, navbar, PIN screen, About);
+  (11) **contact-detail ledger puts +Credit/+Debit before +Income/+Expense**
+  (General keeps income-first); (12) **back-to-back missed calls from the
+  same number collapse into ONE card with a "(N)" badge** (stock-dialer
+  behavior); (13) **unsaved numbers show the PHONE NUMBER as the card
+  title** (the carrier-cached name no longer takes the slot);
+  (14) **save-button spinner fixed** (brand spinner on brand background was
+  invisible — uses the button's foreground now) and About shows the live
+  version; (15) **iOS actually compiles again** — the v1.6.13 alert-based
+  date picker used UIKit symbols that don't exist in the Linux cross-compile
+  klibs; the pickers were rewritten with the verified-binding subset
+  (bottom-sheet UIDatePicker, tap-outside-to-confirm).
 - **1.6.14** — the five user reports: (1) Recents finally scrolls over the
   call cards (SwipeRow consumed *vertical* drags before — now only horizontal
   swipes are claimed, vertical drags reach the list); (2) call cards re-match

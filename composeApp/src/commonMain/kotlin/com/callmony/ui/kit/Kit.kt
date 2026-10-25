@@ -347,10 +347,12 @@ fun Btn(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (loading) {
+            // v1.6.15: the spinner uses the button's foreground color — a
+            // brand-colored spinner on the brand background was invisible.
             CircularProgressIndicator(
                 modifier = Modifier.size(18.dp),
                 strokeWidth = 2.dp,
-                color = C.brand,
+                color = fg,
             )
         } else if (icon != null) {
             MdiIcon(icon, 18, fg)

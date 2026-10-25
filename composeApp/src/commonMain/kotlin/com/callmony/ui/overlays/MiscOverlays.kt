@@ -40,6 +40,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
@@ -97,6 +99,13 @@ fun SearchOverlay() {
     val contacts = AppStore.state.deviceContacts
     val countryCode = AppStore.state.settings.countryCode
 
+    /* v1.6.15 (user request): opening the search must raise the keyboard on
+       its own — focus the field as soon as the overlay composes. */
+    val fieldFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        runCatching { fieldFocus.requestFocus() }
+    }
+
     LaunchedEffect(query) {
         delay(70)
         debounced = query
@@ -140,7 +149,7 @@ fun SearchOverlay() {
                     singleLine = true,
                     textStyle = TextStyle(fontSize = 16.sp, color = C.ink),
                     cursorBrush = SolidColor(C.brand),
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).focusRequester(fieldFocus),
                     decorationBox = { inner -> if (query.isEmpty()) Text(t("sr.placeholder"), fontSize = 16.sp, color = C.faint) else inner() },
                 )
                 if (query.isNotEmpty()) {
@@ -453,7 +462,7 @@ fun AboutOverlay() {
             )
             Text(t("hdr.tagline"), fontSize = F.small.sp, color = C.sub)
             Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Pill("v1.6.13", "brand")
+                Pill(com.callmony.lib.APP_VERSION, "brand")
                 Pill(t("about.offline"), "green", icon = "cloud-off-outline")
             }
             Spacer(Modifier.height(10.dp))
@@ -512,6 +521,10 @@ fun AlarmDialog() {
     }
 
     fun close() { UiStore.shiftAlarm() }
+
+    // v1.6.15: the native back button dismisses the alarm dialog instead of
+    // exiting the app (inner handler wins over the shell's root handler)
+    com.callmony.ui.kit.AppBackHandler(enabled = true) { close() }
 
     Box(
         Modifier

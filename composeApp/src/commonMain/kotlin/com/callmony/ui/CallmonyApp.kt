@@ -52,13 +52,17 @@ import com.callmony.lib.now
 import com.callmony.platform.PermState
 import com.callmony.platform.Platform
 import com.callmony.theme.F
+import com.callmony.theme.osDark
+import androidx.compose.runtime.collectAsState
 import com.callmony.ui.components.BottomSheet
 import com.callmony.ui.components.KeypadSheet
 import com.callmony.ui.components.SheetScrim
+import com.callmony.ui.kit.AppBackHandler
 import com.callmony.ui.kit.C
 import com.callmony.ui.kit.ConfirmHost
 import com.callmony.ui.kit.MdiIcon
 import com.callmony.ui.kit.Spinner
+import com.callmony.ui.kit.SystemBarsAppearance
 import com.callmony.ui.kit.Toaster
 import com.callmony.ui.overlays.AboutOverlay
 import com.callmony.ui.overlays.AlarmDialog
@@ -97,6 +101,38 @@ fun CallmonyApp() {
 
     /* ---- the new logo (bundled compose resource; decoded once) ---- */
     val logoBmp by rememberLogoBitmap()
+
+    /* ---- v1.6.15: the OS dark mode feeds the app's "auto" theme ----
+       (theme.osDark was never synced from the platform flow, so "auto"
+       always resolved to LIGHT on Android) */
+    LaunchedEffect(Unit) {
+        Platform.ui.osDarkFlow.collect { osDark.value = it }
+    }
+
+    /* ---- v1.6.15: status/navigation bar icons follow the APP canvas ----
+       enableEdgeToEdge() derives icon appearance from the SYSTEM dark mode;
+       with the system dark + app theme light the phone's clock/battery/
+       signal turned invisible (white icons over the light canvas). */
+    val osDarkNow by osDark.collectAsState()
+    val lightCanvas = when (AppStore.state.settings.theme) {
+        "light" -> true
+        "dark" -> false
+        else -> !osDarkNow
+    }
+    SystemBarsAppearance(lightCanvas)
+
+    /* ---- v1.6.15: native back button closes modals / goes back first ----
+       (previously back ALWAYS exited the app, even with a sheet open) */
+    val canGoBack = UiStore.overlayStack.isNotEmpty() || UiStore.keypadOpen ||
+        UiStore.moreOpen || UiStore.tab != "recents"
+    AppBackHandler(enabled = canGoBack) {
+        when {
+            UiStore.overlayStack.isNotEmpty() -> UiStore.pop()
+            UiStore.keypadOpen -> UiStore.keypadOpen = false
+            UiStore.moreOpen -> UiStore.moreOpen = false
+            UiStore.tab != "recents" -> UiStore.setTab("recents")
+        }
+    }
 
     /* ---- boot: hydrate with a 5 s bail-out ---- */
     LaunchedEffect(Unit) {
@@ -169,13 +205,23 @@ fun CallmonyApp() {
                         contentScale = ContentScale.Crop,
                     )
                 } else {
+                    // v1.6.15: brand tile + wordmark initial — NEVER the old
+                    // phone-in-talk glyph (the eager decode in Application
+                    // makes this branch effectively unreachable).
                     Box(
                         Modifier
                             .size(88.dp)
                             .clip(RoundedCornerShape(24.dp))
                             .background(C.brand),
                         contentAlignment = Alignment.Center,
-                    ) { MdiIcon("phone-in-talk", 44, C.onBrand) }
+                    ) {
+                        Text(
+                            "c",
+                            fontSize = 44.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = C.onBrand,
+                        )
+                    }
                 }
                 Text(
                     buildString { append("call"); append("mony") },
@@ -320,8 +366,16 @@ private fun BottomNav() {
                 .height(64.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // v1.6.15 (user request): the KEYPAD sits in the MIDDLE slot of
+            // the five-tile bar: Recents · Calculator · Keypad · General · More
             NavSlot("recents", "history", "Recents", Modifier.weight(1f))
-            // keypad — the floating dialer button
+            NavSlot("calculator", "calculator-variant", "Calculator", Modifier.weight(1f)) {
+                // RN parity: tap toggles the calculator sheet over the current tab
+                val calcOpen = UiStore.overlayStack.any { it is Overlay.Calculator }
+                if (calcOpen) UiStore.closeType("Calculator")
+                else UiStore.open(Overlay.Calculator())
+            }
+            // keypad — the floating dialer button (middle of the bar)
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 val active = UiStore.keypadOpen
                 Box(
@@ -341,12 +395,6 @@ private fun BottomNav() {
                         },
                     contentAlignment = Alignment.Center,
                 ) { MdiIcon("dialpad", 22, if (active) C.brand else Color.White) }
-            }
-            NavSlot("calculator", "calculator-variant", "Calculator", Modifier.weight(1f)) {
-                // RN parity: tap toggles the calculator sheet over the current tab
-                val calcOpen = UiStore.overlayStack.any { it is Overlay.Calculator }
-                if (calcOpen) UiStore.closeType("Calculator")
-                else UiStore.open(Overlay.Calculator())
             }
             NavSlot("general", "wallet-outline", "General", Modifier.weight(1f))
             // More
@@ -385,8 +433,10 @@ private fun BottomNav() {
 
 /* ---------------- Logo tile (the new logo, everywhere) ---------------- */
 
-/** The new logo as a rounded tile; falls back to the brand tile while the
- *  bitmap decodes. Used by the header/navbar, splash and About. */
+/** The new logo as a rounded tile; falls back to a plain brand tile while
+ *  the bitmap decodes (v1.6.15: no more old-glyph fallback — the eager
+ *  decode at process start means the real logo is there from frame one).
+ *  Used by the header/navbar, splash and About. */
 @Composable
 fun LogoTile(sizeDp: Int, corner: Int = sizeDp / 3) {
     val C = C()
@@ -407,7 +457,14 @@ fun LogoTile(sizeDp: Int, corner: Int = sizeDp / 3) {
                 .clip(RoundedCornerShape(corner.dp))
                 .background(C.brand),
             contentAlignment = Alignment.Center,
-        ) { MdiIcon("phone-in-talk", sizeDp / 2, C.onBrand) }
+        ) {
+            Text(
+                "c",
+                fontSize = (sizeDp * 0.5f).sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = C.onBrand,
+            )
+        }
     }
 }
 

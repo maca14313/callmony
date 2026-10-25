@@ -445,7 +445,7 @@ fun LockScreen() {
                 .clip(RoundedCornerShape(18.dp))
                 .background(C.brand),
             contentAlignment = Alignment.Center,
-        ) { MdiIcon("phone-in-talk", 32, C.onBrand) }
+        ) { com.callmony.ui.LogoTile(62, corner = 18) }
         Text("callmony", fontSize = F.title.sp, fontWeight = FontWeight.ExtraBold, color = C.ink, modifier = Modifier.padding(top = 10.dp))
         Text(t("st.enterPin"), fontSize = F.small.sp, color = C.sub, modifier = Modifier.padding(top = 4.dp))
         Row(Modifier.padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {

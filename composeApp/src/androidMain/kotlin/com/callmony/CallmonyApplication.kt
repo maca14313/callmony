@@ -3,11 +3,16 @@ package com.callmony
 import android.app.Application
 import android.content.res.Configuration
 import com.callmony.platform.Platform
+import com.callmony.ui.kit.decodeLogoEagerly
 
 class CallmonyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         AndroidPlatform.init(this)
+        // v1.6.15: decode the logo on a background thread at process start —
+        // the first composed frame (the splash) already carries the real
+        // bitmap, so the fallback tile never flashes (read as "old logo").
+        decodeLogoEagerly()
         registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) {
                 ActivityRef.activity = activity

@@ -176,15 +176,26 @@ fun LedgerSection(ownerId: String) {
             }
         }
         // action chips (side-scroll)
+        // v1.6.15 (user request): on the CONTACT DETAIL page the + Credit and
+        // + Debit chips come FIRST, before + Income and + Expense (the
+        // contact ledger is credit/debit-first; income/expense lead the
+        // General tab where they are the primary kinds).
         ScrollRow {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (mine.isNotEmpty() || !isGeneral) {
                     Chip(label = t("lg.settleUp"), icon = "check-all", onPress = { doSettle() })
                 }
-                Chip(label = "+ ${t("lg.kindIncome")}", icon = "trending-up", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "credit", if (isGeneral) "income" else "credit")) })
-                Chip(label = "+ ${t("lg.kindExpense")}", icon = "trending-down", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "debit", if (isGeneral) "expense" else "debit")) })
-                Chip(label = "+ ${t("lg.kindCredit")}", icon = "hand-coin-outline", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "credit", "credit")) })
-                Chip(label = "+ ${t("lg.kindDebit")}", icon = "credit-card-outline", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "debit", "debit")) })
+                if (isGeneral) {
+                    Chip(label = "+ ${t("lg.kindIncome")}", icon = "trending-up", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "credit", "income")) })
+                    Chip(label = "+ ${t("lg.kindExpense")}", icon = "trending-down", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "debit", "expense")) })
+                    Chip(label = "+ ${t("lg.kindCredit")}", icon = "hand-coin-outline", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "credit", "credit")) })
+                    Chip(label = "+ ${t("lg.kindDebit")}", icon = "credit-card-outline", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "debit", "debit")) })
+                } else {
+                    Chip(label = "+ ${t("lg.kindCredit")}", icon = "hand-coin-outline", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "credit", "credit")) })
+                    Chip(label = "+ ${t("lg.kindDebit")}", icon = "credit-card-outline", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "debit", "debit")) })
+                    Chip(label = "+ ${t("lg.kindIncome")}", icon = "trending-up", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "credit", "income")) })
+                    Chip(label = "+ ${t("lg.kindExpense")}", icon = "trending-down", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "debit", "expense")) })
+                }
                 Chip(label = t("lg.newGroup"), icon = "folder-plus-outline", onPress = { renameGroup = "new"; renameTitle = "" })
                 Chip(label = t("lg.shareStatement"), icon = "share-variant-outline", onPress = { shareSheet = true })
             }

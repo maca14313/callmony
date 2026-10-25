@@ -56,6 +56,9 @@ fun Sheet(
     content: @Composable () -> Unit,
 ) {
     val C = C()
+    // v1.6.15: the native back button closes the sheet itself (inner
+    // handlers take precedence over the shell's root back handler)
+    com.callmony.ui.kit.AppBackHandler(enabled = true) { onBack() }
     Column(Modifier.fillMaxSize().background(C.canvas).statusBarsPadding()) {
         // header: back chevron · avatar · title (auto-shrink) · actions
         Row(
@@ -170,6 +173,8 @@ fun BottomSheet(
     content: @Composable () -> Unit,
 ) {
     val C = C()
+    // v1.6.15: the native back button closes the bottom sheet first
+    com.callmony.ui.kit.AppBackHandler(enabled = true) { onClose() }
     Column(
         Modifier
             .fillMaxWidth()
