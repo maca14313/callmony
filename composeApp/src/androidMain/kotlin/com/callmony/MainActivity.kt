@@ -32,10 +32,13 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // v1.6.20 — boot phase marker (picked up by freeze/crash reports)
+        com.callmony.lib.Diag.mark("activity.create")
         if (persistedThemeIsDark()) setTheme(R.style.Theme_Callmony_Dark)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         AndroidPlatform.init(applicationContext)
+        com.callmony.lib.Diag.mark("activity.content")
         setContent {
             CallmonyApp()
         }

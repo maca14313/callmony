@@ -4,6 +4,63 @@ All notable changes to callmony. Dates follow the git history; the APK for each 
 
 ---
 
+# v1.6.20 — KMP: the app now SHOWS the problem when it freezes or crashes (in-app freeze/crash diagnostics) (2026-10-26)
+
+## Why
+
+The v1.6.19 root-cause fix was verified in the boot harnesses (fresh-install
+boot went from "hangs forever" to 23 s), but the reporting device still froze
+at the first welcome screen and closed itself. Rather than guess at a cause we
+cannot reproduce in the sandbox, the app now diagnoses itself and **shows the
+problem on screen the moment it is trying to close**.
+
+## What was built
+
+- **ANR watchdog** (`androidMain …/lib/DiagAndroid.kt`, pure accounting in
+  `commonMain lib/Diag.kt`): a daemon thread posts a heartbeat to the main
+  handler every second and catches BOTH freeze shapes —
+  *hard blockage* (the heartbeat doesn't run for 5 s: main is stuck inside
+  one message — binder call, deadlock, tight loop) and *saturation* (the
+  heartbeat runs but ≥ 4 s late: main returns to the looper yet every slot
+  is eaten — the v1.6.18 forever-spinner class). On detection it captures
+  the main-thread stack, the boot phase and a full app-state snapshot.
+- **Diagnostics screen in its own `:diag` process** (`diag/DiagActivity`):
+  painted with plain Views (no Compose, no app runtime) so it comes up even
+  while the main process is frozen solid or dying — it pops OVER the frozen
+  app with the headline, the exact phase (`ui.onboarding`, `store.read`, …),
+  the main-thread stack and a monospace report card, plus **Copy report** /
+  **Reopen app** / **Close**. Labels reuse the app's 5 i18n catalogs.
+- **Crash firewall**: a chained uncaught-exception handler saves the same
+  kind of report (exception + main-thread stack + phase + state), shows the
+  diagnostics screen, then hands over to the platform handler so the process
+  still dies cleanly.
+- **In-app overlay** (`ui/overlays/DiagnosticsOverlay.kt`): a live freeze
+  caught this session ("The app just froze — here's what was blocking it")
+  and any unseen report from the previous run ("Callmony froze and was
+  closed last time") render ABOVE everything, even the lock screen, with
+  Copy / Got it. If the system ANR-kills the app anyway, the report persists
+  (own `filesDir/diag` store — deliberately outside the app's Persist queue
+  so a frozen app can't deadlock its own diagnostics) and shows at next
+  launch. Settings gained a **Diagnostics** section listing every stored
+  report (expandable, copyable, clearable) with a red badge for unseen ones.
+- **Boot-phase tracker**: every milestone from `app.init` through
+  `store.read`, `ui.splash`, `ui.onboarding` to `ui.idle` is stamped, so a
+  captured report answers "WHERE was it" with an exact machine-observed
+  phase — "it freezes at the welcome screen" becomes `phase: ui.onboarding`
+  plus the stack that was blocking.
+- Reports are capped at 12, thread-safe, and the watchdog only runs while
+  the app is on screen; the `:diag` process and Robolectric unit tests skip
+  the whole machinery (tests keep the exact pre-v1.6.20 behavior).
+- i18n: 20 new `diag.*` keys across all 5 languages (1045/1045 parity, 0
+  missing). `BootDiagTest` now also asserts the boot phase advanced past the
+  splash; new `DiagTest` (8 tests) covers the detector accounting
+  (hard-blockage, saturation, cooldown) and the record/seen/report flow.
+  Pure battery: 54/54 green. Android + both iOS targets compile.
+
+Android release APK 1.6.20 (versionCode 30) built + aapt/apksigner verified.
+
+---
+
 # v1.6.19 — KMP: the welcome-screen freeze root-caused (infinite boot spinner) + centered empty states (2026-10-26)
 
 ## The two v1.6.18 follow-up reports

@@ -45,6 +45,7 @@ import com.callmony.i18n.LANGUAGES
 import com.callmony.i18n.currentLang
 import com.callmony.i18n.t
 import com.callmony.lib.AppStore
+import com.callmony.lib.Diag
 import com.callmony.lib.Overlay
 import com.callmony.lib.UiStore
 import com.callmony.lib.dueStatus
@@ -72,6 +73,7 @@ import com.callmony.ui.components.CalculatorSheet
 import com.callmony.ui.overlays.ContactCreatorOverlay
 import com.callmony.ui.overlays.ContactDetailOverlay
 import com.callmony.ui.overlays.ContactEditorOverlay
+import com.callmony.ui.overlays.DiagnosticsOverlay
 import com.callmony.ui.overlays.EntryEditOverlay
 import com.callmony.ui.overlays.ListDetailOverlay
 import com.callmony.ui.overlays.ListEditOverlay
@@ -100,6 +102,11 @@ import kotlinx.coroutines.launch
 @Composable
 fun CallmonyApp() {
     val C = C()
+
+    // v1.6.20 — boot/UI phase marker: every freeze/crash report carries the
+    // phase it was captured in, so "it freezes at the welcome screen"
+    // becomes an exact, machine-observed answer.
+    Diag.mark("ui.compose")
 
     /* ---- the new logo (bundled compose resource; decoded once) ---- */
     val logoBmp by rememberLogoBitmap()
@@ -148,6 +155,7 @@ fun CallmonyApp() {
     /* ---- shell boot effect (skipped in safe mode) ---- */
     LaunchedEffect(AppStore.state.hydrated) {
         if (!AppStore.state.hydrated) return@LaunchedEffect
+        Diag.mark("ui.main")
         // permissions + system calls (Android asks once, dialer-style)
         AppStore.loadSystemCalls()
         // +4 s contacts refresh
@@ -162,6 +170,10 @@ fun CallmonyApp() {
             Platform.notify.ensureChannel()
             AppStore.rearmReminders()
         }
+        // v1.6.20 — "boot settled": a report captured after this point is a
+        // mid-session problem, not a startup one.
+        delay(3000)
+        Diag.mark("ui.idle")
     }
 
     /* ---- alarm watcher (15 s interval) — v1.6.17 ----
@@ -216,6 +228,7 @@ fun CallmonyApp() {
 
     if (!AppStore.state.hydrated) {
         // splash
+        Diag.mark("ui.splash")
         Box(Modifier.fillMaxSize().background(C.canvas), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 val bmp = logoBmp
@@ -260,6 +273,11 @@ fun CallmonyApp() {
         return
     }
 
+    // v1.6.20 — freeze/crash diagnostics surface: a live freeze caught this
+    // session, or a report from the previous run that ended in a freeze /
+    // crash, shows HERE — above the lock screen, above everything.
+    DiagnosticsOverlay()
+
     // lock screen while locked
     if (UiStore.locked) {
         LockScreen()
@@ -294,6 +312,7 @@ fun CallmonyApp() {
 
         // onboarding
         if (!AppStore.state.settings.onboarded) {
+            Diag.mark("ui.onboarding")
             Box(Modifier.fillMaxSize().background(C.canvas)) { OnboardingSheet() }
         }
 

@@ -71,6 +71,14 @@ class BootDiagTest {
             check(!activity.isDestroyed) { "Activity destroyed during boot" }
         }
         scenario.close()
+        // v1.6.20 — the boot-phase tracker must have advanced past the splash:
+        // a fresh install ends on the onboarding welcome screen ("ui.onboarding"),
+        // or settles to "ui.idle" once the 11 s boot chain finished.
+        val phase = com.callmony.lib.Diag.phase
+        println("=== DIAG PHASE AT BOOT END: $phase ===")
+        check(phase == "ui.onboarding" || phase == "ui.idle" || phase == "ui.main") {
+            "boot phase stuck at '$phase' — the app never reached its UI"
+        }
         println("=== BOOT DIAG: completed all 150 pumps without hanging ===")
     }
 }

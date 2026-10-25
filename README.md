@@ -104,9 +104,24 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.19 (versionCode 29)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.20 (versionCode 30)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.20** — "still the same, the app is freezing and crashing — make it
+  show the problem in the app when it is trying to close": built exactly
+  that. An ANR watchdog detects both freeze shapes (hard main-thread
+  blockage ≥ 5 s, and saturation ≥ 4 s where the thread keeps running but
+  every slot is eaten), captures the main-thread stack + the boot phase +
+  a full app-state snapshot, and pops a **separate-process diagnostics
+  screen** (plain Views, `:diag` process — immune to the frozen main
+  process) showing exactly what is wrong, with Copy report / Reopen app /
+  Close. A crash firewall gives uncaught exceptions the same treatment.
+  If the system ANR-kills the app anyway, the report persists and the next
+  launch opens on "Callmony froze and was closed last time — here's what
+  was running" (full-screen in-app overlay, above even the lock screen).
+  Settings gained a Diagnostics section with every stored report. Every
+  boot milestone from `app.init` to `ui.idle` is stamped, so each report
+  answers WHERE it froze with a machine-observed phase instead of a guess.
 - **1.6.19** — the two v1.6.18 follow-up reports:
   1. **freeze at the welcome screen → "Callmony isn't responding" → closes
      itself** — root cause: while the call-log permission was unresolved

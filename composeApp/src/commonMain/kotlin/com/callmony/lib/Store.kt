@@ -143,9 +143,13 @@ object AppStore {
 
     fun hydrate() {
         scope.launch {
+            Diag.mark("store.read")
             val data = Db.loadAll()
             val callsCache = loadCachedCalls()
             val storedPin = Db.readPinFile()
+            // v1.6.20 — persisted freeze/crash reports feed the in-app
+            // diagnostics overlay ("the app froze last time — here's why").
+            Diag.loadFromStorage()
             if (data.settings.pinHash != null) {
                 state.settings = data.settings.copy(pinHash = null)
                 Db.saveSettings(state.settings)
@@ -162,6 +166,7 @@ object AppStore {
             state.recents = data.recents
             state.messages = data.messages
             state.hydrated = true
+            Diag.mark("store.loaded")
             if (callsCache.second.isNotEmpty()) {
                 state.systemCalls = callsCache.second
                 state.callLogPerm = PermState.GRANTED
