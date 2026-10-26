@@ -4,6 +4,67 @@ All notable changes to callmony. Dates follow the git history; the APK for each 
 
 ---
 
+## v1.6.24 — every reported feature back, on the freeze-free foundation; diagnostics removed; UI depth polish (2026-10-26)
+
+The user re-sent the full report list on top of the v1.6.16 rollback
+baseline ("v1.6.16 is the last version that didn't freeze — don't make it
+crash like you did before"). Everything on that list was already solved by
+the v1.6.17/18 work; the freeze those versions carried was root-caused and
+fixed during v1.6.19–23. So v1.6.24 = the feature work restored ON TOP of
+the fixes:
+
+- **Restored from v1.6.17**: reminders that actually fire (edit
+  false-positive fix, permission at save, closed-app repeat advance +
+  re-arm); live NOW clock + 12/24 h everywhere; saved-countdown and live
+  card countdowns; the PIN truly locks (launch lock, real-touch autolock,
+  background immediate) with the keypad bottom-center, not top-left;
+  compact no-overlap tabs; all raw i18n keys defined in all 5 languages;
+  aligned side-by-side fields; no ugly wraps; compact buttons.
+- **Restored from v1.6.18**: repeat reminders at ANY interval
+  (custom:<n>m|h|d|w|mo) + ALARM mode (dedicated channel on the ALARM
+  stream, audible over silent); one-tap entry editing (no more two save
+  buttons); Record payment (renamed, root-level host sheet, native date
+  picker); Single-entries ＋ creates the tab's kind; attachments
+  (lists/notes/reminders on any credit/debit/expense/income via entry.refs
+  + picker sheet); Settle up removed; modals anchored to the bottom
+  (HostSheets root-level slot); block contacts (More sheet + Blocked badge
+  + blocked-notice calls); dominant solid search pill + advanced filter
+  tabs with live counts; the rebuilt contact detail (More sheet with
+  sideways-scrolling labeled social strip + add-to options + Block, action
+  icons on number rows, soft-card section separation, navbar number
+  tap-to-call with call icon + long-press copy).
+- **Baked in from v1.6.19–23 (the freeze fixes — the whole point)**: the
+  boot spinner renders only while a call-log ask/fetch is genuinely in
+  flight (no more invisible infinite animation under the onboarding sheet
+  → ANR); ALL persistence runs on the single-writer IO queue (the main
+  thread never touches the disk); every store publication happens in one
+  batched main-thread hop (no background thread ever touches Compose
+  snapshot state); the autolock touch observer awaits the down FIRST and
+  refreshes per event until release (the old observer returned without
+  awaiting anything, which busy-spun the main thread from the first touch
+  until the 5-second ANR — the actual "freezing and crushing"); the
+  contacts fetch is single-flight through a Mutex gate (no more two
+  concurrent whole-book reads on the permission grant).
+- **Removed**: the entire v1.6.20–23 diagnostics experiment — ANR
+  watchdog, freeze reports, crash firewall, the separate :diag process and
+  its screen, the in-app diagnostics overlay, the Settings row. It was
+  never requested, and its reports (including three false positives)
+  caused confusion. The only survivor is a 15-line BootTrace phase marker
+  that the Robolectric boot harnesses assert against (the regression
+  guard for the freeze-on-open class).
+- **UI polish**: cards, primary buttons, bottom sheets and the keypad
+  now float with soft shadows over their surfaces (the "flat / bulky"
+  report).
+- Verified: full pure test suite + BootDiagTest/UpgradeBootDiagTest/
+  StartupTest green through the diag-free path; both iOS targets compile;
+  APK `com.callmony` 1.6.24 versionCode 35, signed with the same release
+  key as every prior version (installs directly over anything, data
+  intact). The 5 Recents Robolectric timeouts reproduce identically on
+  unmodified code (documented sandbox-load flakiness, A/B-proven in the
+  v1.6.22 round).
+
+---
+
 ## v1.6.16 rollback (versionCode 34) — full rollback to v1.6.16 (2026-10-26)
 
 At the user's request, the app went back to **v1.6.16 exactly**. The source

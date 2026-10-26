@@ -32,10 +32,12 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        com.callmony.lib.BootTrace.mark("activity.create")
         if (persistedThemeIsDark()) setTheme(R.style.Theme_Callmony_Dark)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         AndroidPlatform.init(applicationContext)
+        com.callmony.lib.BootTrace.mark("activity.content")
         setContent {
             CallmonyApp()
         }
@@ -43,6 +45,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // v1.6.17 — drives the "lock immediately" autolock option
+        com.callmony.lib.UiStore.appInForeground = true
         // Returning from the default dialer / messaging app: refresh the
         // system call log incrementally so calls made through the handoff
         // appear in Recents right away (cheap — usually zero rows).
@@ -53,6 +57,11 @@ class MainActivity : ComponentActivity() {
             // search / Recents / keypad matches without a restart.
             AppStore.maybeRefreshContacts()
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        com.callmony.lib.UiStore.appInForeground = false
     }
 
     override fun onRequestPermissionsResult(

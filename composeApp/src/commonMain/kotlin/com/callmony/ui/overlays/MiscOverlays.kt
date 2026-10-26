@@ -72,6 +72,7 @@ import com.callmony.theme.F
 import com.callmony.ui.components.BottomSheet
 import com.callmony.ui.components.Sheet
 import com.callmony.ui.components.PressableRow
+import com.callmony.ui.components.ScrollRow
 import com.callmony.ui.kit.Avatar
 import com.callmony.ui.kit.Btn
 import com.callmony.ui.kit.C
@@ -124,6 +125,17 @@ fun SearchOverlay() {
     val reminders = AppStore.state.reminders.filter { it.deletedAt == null && debounced.isNotBlank() && it.title.contains(debounced, true) }.take(5)
     val banks = AppStore.state.banks.filter { it.deletedAt == null && debounced.isNotBlank() && ((it.bankName ?: it.label).contains(debounced, true)) }.take(5)
 
+    // v1.6.18 — ADVANCED SEARCH TABS: narrow the results by type (the All tab
+    // keeps the old every-group behavior; the tab row only shows when there
+    // is a query — it doubles as a live result-count filter).
+    var advTab by remember { mutableStateOf("all") }
+    val showContacts = advTab == "all" || advTab == "contacts"
+    val showEntries = advTab == "all" || advTab == "entries"
+    val showLists = advTab == "all" || advTab == "lists"
+    val showNotes = advTab == "all" || advTab == "notes"
+    val showReminders = advTab == "all" || advTab == "reminders"
+    val showBanks = advTab == "all" || advTab == "banks"
+
     Column(Modifier.fillMaxSize().background(C.canvas).statusBarsPadding()) {
         // search field
         Row(
@@ -158,6 +170,20 @@ fun SearchOverlay() {
                 }
             }
         }
+        // v1.6.18 — advanced filter tabs (only while typing)
+        if (debounced.isNotBlank()) {
+            ScrollRow(Modifier.padding(horizontal = 16.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    com.callmony.ui.kit.Chip(label = t("sr.filterAll"), compact = true, active = advTab == "all", onPress = { advTab = "all" })
+                    com.callmony.ui.kit.Chip(label = "${t("misc.contacts")} ${if (matchedContacts.isEmpty()) "" else "· ${matchedContacts.size}"}", compact = true, active = advTab == "contacts", onPress = { advTab = "contacts" })
+                    com.callmony.ui.kit.Chip(label = "${t("misc.entry")} ${if (entries.isEmpty()) "" else "· ${entries.size}"}", compact = true, active = advTab == "entries", onPress = { advTab = "entries" })
+                    com.callmony.ui.kit.Chip(label = "${t("misc.list")} ${if (lists.isEmpty()) "" else "· ${lists.size}"}", compact = true, active = advTab == "lists", onPress = { advTab = "lists" })
+                    com.callmony.ui.kit.Chip(label = "${t("misc.note")} ${if (notes.isEmpty()) "" else "· ${notes.size}"}", compact = true, active = advTab == "notes", onPress = { advTab = "notes" })
+                    com.callmony.ui.kit.Chip(label = "${t("misc.reminder")} ${if (reminders.isEmpty()) "" else "· ${reminders.size}"}", compact = true, active = advTab == "reminders", onPress = { advTab = "reminders" })
+                    com.callmony.ui.kit.Chip(label = "${t("misc.bank")} ${if (banks.isEmpty()) "" else "· ${banks.size}"}", compact = true, active = advTab == "banks", onPress = { advTab = "banks" })
+                }
+            }
+        }
         // v1.6.14: keep the last results above the phone's nav bar
         LazyColumn(Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 16.dp)) {
             if (debounced.isBlank()) {
@@ -167,7 +193,7 @@ fun SearchOverlay() {
             } else if (matchedContacts.isEmpty() && entries.isEmpty() && lists.isEmpty() && notes.isEmpty() && reminders.isEmpty() && banks.isEmpty()) {
                 item { EmptyState(icon = "magnify", title = t("sr.noResultsFor"), hint = debounced) }
             } else {
-                if (matchedContacts.isNotEmpty()) {
+                if (matchedContacts.isNotEmpty() && showContacts) {
                     item { GroupLabel(t("misc.contacts")) }
                     items(matchedContacts.take(50), key = { "c-${it.recordID}" }) { c ->
                         val bal = ownerFullBalance(AppStore.state.entries, AppStore.state.lists, "c:${c.recordID}")
@@ -206,7 +232,7 @@ fun SearchOverlay() {
                         }
                     }
                 }
-                if (entries.isNotEmpty()) {
+                if (entries.isNotEmpty() && showEntries) {
                     item { GroupLabel(t("misc.entry")) }
                     items(entries, key = { "e-${it.id}" }) { e ->
                         PressableRow(onClick = { UiStore.open(Overlay.EntryEdit(e.id, e.ownerId)) }) {
@@ -218,7 +244,7 @@ fun SearchOverlay() {
                         }
                     }
                 }
-                if (lists.isNotEmpty()) {
+                if (lists.isNotEmpty() && showLists) {
                     item { GroupLabel(t("misc.list")) }
                     items(lists, key = { "l-${it.id}" }) { l ->
                         PressableRow(onClick = { UiStore.open(Overlay.ListDetail(l.id)) }) {
@@ -229,7 +255,7 @@ fun SearchOverlay() {
                         }
                     }
                 }
-                if (notes.isNotEmpty()) {
+                if (notes.isNotEmpty() && showNotes) {
                     item { GroupLabel(t("misc.note")) }
                     items(notes, key = { "n-${it.id}" }) { n ->
                         PressableRow(onClick = { UiStore.open(Overlay.NoteEdit(n.id, n.ownerId)) }) {
@@ -240,7 +266,7 @@ fun SearchOverlay() {
                         }
                     }
                 }
-                if (reminders.isNotEmpty()) {
+                if (reminders.isNotEmpty() && showReminders) {
                     item { GroupLabel(t("misc.reminder")) }
                     items(reminders, key = { "r-${it.id}" }) { r ->
                         PressableRow(onClick = { UiStore.open(Overlay.ReminderEdit(r.id, r.ownerId)) }) {
@@ -252,7 +278,7 @@ fun SearchOverlay() {
                         }
                     }
                 }
-                if (banks.isNotEmpty()) {
+                if (banks.isNotEmpty() && showBanks) {
                     item { GroupLabel(t("misc.bank")) }
                     items(banks, key = { "b-${it.id}" }) { b ->
                         PressableRow(onClick = { UiStore.open(Overlay.BankEdit(b.id, b.ownerId)) }) {
@@ -407,12 +433,16 @@ fun MergeOverlay() {
                                         // v1.6.13: WRITE_CONTACTS gate for merges.
                                         val ok = com.callmony.lib.requestContactsWrite() &&
                                             Platform.contacts.addPhoneToContact(a.recordID, "other", b.phones.firstOrNull()?.number ?: "")
-                                        if (ok) {
-                                            Platform.contacts.deleteContact(b.recordID)
-                                            AppStore.state.deviceContacts.find { it.recordID == b.recordID }?.let { }
-                                            pairs = pairs.filter { it.first != a && it.second != a && it.first != b && it.second != b }
-                                            Toasts.toast(t("spd.contactsMerged"))
-                                        } else Toasts.toast(t("act.couldntCopy"), "error")
+                                        if (ok) Platform.contacts.deleteContact(b.recordID)
+                                        // v1.6.21 — binder work above ran on the Default
+                                        // worker; state writes + toasts publish on Main
+                                        // (single-writer snapshot rule).
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                            if (ok) {
+                                                pairs = pairs.filter { it.first != a && it.second != a && it.first != b && it.second != b }
+                                                Toasts.toast(t("spd.contactsMerged"))
+                                            } else Toasts.toast(t("act.couldntCopy"), "error")
+                                        }
                                     }
                                 },
                                 modifier = Modifier.weight(1f),
@@ -547,7 +577,14 @@ fun AlarmDialog() {
         Platform.notify.vibrate(longArrayOf(0, 400, 200, 400))
     }
 
-    fun close() { UiStore.shiftAlarm() }
+    /* v1.6.17 — RN dismiss() parity: closing the dialog resolves the
+     * reminder — repeating ones advance to their next occurrence (and the
+     * next alarm gets armed), one-shots are marked done. The old plain
+     * shiftAlarm left them overdue in the list forever. */
+    fun close() {
+        if (r.repeat != "none") AppStore.fireReminder(r.id) else AppStore.completeReminder(r.id)
+        UiStore.shiftAlarm()
+    }
 
     // v1.6.15: the native back button dismisses the alarm dialog instead of
     // exiting the app (inner handler wins over the shell's root handler)

@@ -331,3 +331,21 @@ Work Log:
 Stage Summary:
 - main now ships the exact v1.6.16 app (versionName 1.6.16, versionCode 34). GitHub Release v1.6.16-rollback published with the APK. v1.6.17-v1.6.23 NOT deleted — they remain in git history (7087815..81e9a1d) and on the Releases page. No tests rerun: the tree is a previously-released known-good state; the build itself (compile/link/sign) passed clean.
 - User data written by any 1.6.17-1.6.23 install loads cleanly under v1.6.16 code (verified by config + schema diff before rolling back).
+
+---
+Task ID: 16
+Agent: main agent (Z.ai)
+Task: User re-sent the full v1.6.17/18 report list on top of the v1.6.16 rollback baseline ("v1.6.16 is the last version that didn't freeze — don't make it crash like you did before") — restore all requested features WITHOUT the freeze, remove the diagnostics experiment, polish the UI, ship v1.6.24.
+
+Work Log:
+- Recon: origin/main == local (549c5f3, the rollback). Mapped the diag suite at 550ffb8: 8 files (Diag.kt, DiagAndroid.kt, DiagActivity.kt, DiagnosticsOverlay.kt, DiagStorage.ios.kt, DiagTest.kt + hooks in manifest/styles/Application/MainActivity/Store/CallmonyApp/SettingsOverlay).
+- Restored composeApp/ + iosApp/ from 550ffb8 (all v1.6.17/18 features + all v1.6.19-23 stability fixes).
+- Diag removal surgery: deleted the 6 diag source/test files; stripped hooks from CallmonyApplication (DiagHooks.install/isDiagProcess/appForeground), MainActivity (2 marks -> BootTrace), Store.kt (hydrate marks -> BootTrace, Diag.loadFromStorage() removed), CallmonyApp.kt (marks -> BootTrace, DiagnosticsOverlay render + import removed), SettingsOverlay.kt (Diagnostics row + import removed), styles.xml (Theme.Callmony.Diag), AndroidManifest (:diag activity). Created lib/BootTrace.kt — the 15-line phase-marker survivor that BootDiagTest/UpgradeBootDiagTest assert against. Unused diag i18n keys left in catalogs (invisible, zero risk). Project-wide sweep: no code refs to Diag remain.
+- UI polish ("ugly/bulky/flat"): Card gets soft shadow (2dp, both pressable + plain branches), primary/danger Btn get 2dp shadow, bottom Sheet surface + KeypadSheet panel get 10dp shadow -> layered depth in both themes.
+- Version: 1.6.24 / versionCode 35. Android compileDebugKotlinAndroid + assembleRelease clean; both iOS targets compile (re-verified after the polish edits).
+- Tests: BootDiagTest, UpgradeBootDiagTest, StartupTest, KeypadTest, CalcFormatTest, V1618Test, ReminderV1617Test, lib.* ALL GREEN through the diag-free path. RecentsScrollTest x2 + RecentsV1615Test x3: same 5 ComposeTimeoutException failures as every previous round (known sandbox-load flakiness, A/B-proven on unmodified code in the v1.6.22 round; boot harnesses drive the same screens and pass).
+- APK verified: aapt com.callmony 1.6.24 vc35 minSdk 23 targetSdk 34; apksigner SHA-256 2f6d65be...869ad identical to every prior release -> installs over any version with data intact. Committed at releases/callmony-1.6.24-release.apk + /home/z/my-project/download/callmony-1.6.24-kmp-release.apk.
+- Docs: README Versioning 1.6.24 entry, react-native/docs/CHANGELOG.md full entry, sandbox/chat-logs/2026-10-26-v1.6.24-user-reports.md (verbatim report + decode + fix map). GitHub Release v1.6.24 published with the APK.
+
+Stage Summary:
+- v1.6.24 = v1.6.17/18 feature set + v1.6.19-23 freeze fixes - the diagnostics suite + depth polish. The freeze chain is broken at every link that was ever found: gesture observer awaits events (no busy-spin), boot spinner gated, IO off the main thread, state published in one main hop, contacts single-flight. Live: https://github.com/maca14313/callmony/releases/tag/v1.6.24

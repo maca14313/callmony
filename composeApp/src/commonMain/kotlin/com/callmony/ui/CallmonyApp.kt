@@ -45,6 +45,7 @@ import com.callmony.i18n.LANGUAGES
 import com.callmony.i18n.currentLang
 import com.callmony.i18n.t
 import com.callmony.lib.AppStore
+import com.callmony.lib.BootTrace
 import com.callmony.lib.Overlay
 import com.callmony.lib.UiStore
 import com.callmony.lib.dueStatus
@@ -57,6 +58,9 @@ import androidx.compose.runtime.collectAsState
 import com.callmony.ui.components.BottomSheet
 import com.callmony.ui.components.KeypadSheet
 import com.callmony.ui.components.SheetScrim
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.pointerInput
 import com.callmony.ui.kit.AppBackHandler
 import com.callmony.ui.kit.C
 import com.callmony.ui.kit.ConfirmHost
@@ -99,6 +103,8 @@ import kotlinx.coroutines.launch
 fun CallmonyApp() {
     val C = C()
 
+    BootTrace.mark("ui.compose")
+
     /* ---- the new logo (bundled compose resource; decoded once) ---- */
     val logoBmp by rememberLogoBitmap()
 
@@ -139,51 +145,98 @@ fun CallmonyApp() {
         AppStore.hydrate()
         AppStore.scope.launch {
             delay(5000)
-            if (!AppStore.state.hydrated) AppStore.state.hydrated = true
+            // v1.6.21 — the bail-out write is a snapshot write too: hop to Main
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                if (!AppStore.state.hydrated) AppStore.state.hydrated = true
+            }
         }
     }
 
     /* ---- shell boot effect (skipped in safe mode) ---- */
     LaunchedEffect(AppStore.state.hydrated) {
         if (!AppStore.state.hydrated) return@LaunchedEffect
+        BootTrace.mark("ui.main")
         // permissions + system calls (Android asks once, dialer-style)
         AppStore.loadSystemCalls()
         // +4 s contacts refresh
         delay(4000)
         AppStore.refreshDeviceContacts()
-        // +8 s reminder readiness
+        // +8 s reminder readiness — v1.6.19: channel creation + alarm
+        // (re)arming are binder calls to system services; on slow/low-end
+        // devices a stack of them on the MAIN thread janks boot, so they
+        // run on the background pool instead (results are identical).
+        // v1.6.21 — snapshot the reminder list + localized labels on MAIN
+        // first (state reads / t() are snapshot reads too — single-writer
+        // rule); the Default hop below is binder-only.
         delay(4000)
-        Platform.notify.ensureChannel()
-        AppStore.rearmReminders()
+        val alarms = AppStore.remindersForRearm()
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            Platform.notify.ensureChannel()
+            Platform.notify.rearmAll(alarms)
+        }
+        delay(3000)
+        BootTrace.mark("ui.idle")
     }
 
-    /* ---- alarm watcher (15 s interval) ---- */
+    /* ---- alarm watcher (15 s interval) — v1.6.17 ----
+       Only reminders that JUST became due (within the last 45 s) pop the
+       in-app dialog; stale overdue ones no longer ambush the user on every
+       launch, and each due moment fires exactly once (session set +
+       lastFiredAt persisted via markReminderFired). */
     LaunchedEffect(Unit) {
+        val shown = HashSet<String>()
         while (true) {
             val nowMs = now()
             AppStore.state.reminders.forEach { r ->
                 if (r.deletedAt == null && !r.done) {
                     val effective = r.snoozedUntil ?: r.dueAt
                     val lead = r.leadMinutes.minOrNull() ?: 0
-                    val dueSoon = effective <= nowMs && (r.lastFiredAt == null || r.lastFiredAt!! < effective - 60000)
-                    val leadDue = lead > 0 && (effective - lead * 60000L) <= nowMs && !r.firedLeads.contains(lead)
-                    if (dueSoon || leadDue) UiStore.pushAlarm(r)
+                    val key = "${r.id}@$effective"
+                    val justDue = effective <= nowMs && effective > nowMs - 45_000 && !shown.contains(key)
+                    val leadAt = effective - lead * 60000L
+                    val leadDue = lead > 0 && !r.firedLeads.contains(lead) &&
+                        leadAt <= nowMs && leadAt > nowMs - 45_000
+                    if (justDue || leadDue) {
+                        shown.add(key)
+                        AppStore.markReminderFired(r.id, if (leadDue && !justDue) lead else null)
+                        UiStore.pushAlarm(r)
+                    }
                 }
             }
             delay(15000)
         }
     }
 
-    /* ---- autolock ---- */
-    var lastActive by remember { mutableStateOf(now()) }
+    /* ---- autolock — v1.6.17: real idle tracking ----
+       Any touch refreshes `lastActive` (awaitEachGesture observes without
+       consuming), so the 1/5-minute options no longer lock the app while
+       the user is actively using it; "immediately" locks when the app goes
+       to the background (MainActivity keeps UiStore.appInForeground true
+       between onResume and onPause).
+       v1.6.21 — THE FREEZE FIX (decoded from the v1.6.20 diagnostics
+       report: main blocked ~6 s in Snapshot.current at the touch observer):
+       this used to be `mutableStateOf` — a Compose SNAPSHOT write on EVERY
+       touch, colliding with background workers publishing store state.
+       Autolock never needs recomposition (only the idle poller below reads
+       the timestamp), so it is now a plain field on a remember'd ref — the
+       gesture observer and the poller both run on the main dispatcher
+       (single thread, ZERO snapshot traffic per touch).
+       v1.6.22 — the v1.6.21 report then exposed the REAL bug underneath:
+       the observer's block never awaited an event, so awaitEachGesture's
+       internal `while (isActive) { block() }` loop busy-spun the main
+       thread from the FIRST touch (RUNNABLE at ForEachGesture.kt:102,
+       5003 ms no progress → system ANR → "crashing"). Removing the
+       snapshot write only changed what the spin looked like in the dump.
+       The block now awaits the down FIRST — see the pointerInput below. */
+    val lastActive = remember { TimeRef(now()) }
     LaunchedEffect(Unit) {
         while (true) {
             delay(10000)
             if (AppStore.state.settings.pinHash != null && !UiStore.locked) {
-                val idle = now() - lastActive
+                val idle = now() - lastActive.v
                 val limit = AppStore.state.settings.autolockMin
                 when {
-                    limit == 0 && !isAppForeground() -> UiStore.locked = true
+                    limit == 0 && !UiStore.appInForeground -> UiStore.locked = true
                     limit > 0 && idle > limit * 60000L -> UiStore.locked = true
                 }
             }
@@ -192,6 +245,7 @@ fun CallmonyApp() {
 
     if (!AppStore.state.hydrated) {
         // splash
+        BootTrace.mark("ui.splash")
         Box(Modifier.fillMaxSize().background(C.canvas), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 val bmp = logoBmp
@@ -242,7 +296,37 @@ fun CallmonyApp() {
         return
     }
 
-    Box(Modifier.fillMaxSize().background(C.canvas)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(C.canvas)
+            // v1.6.17 — autolock idle timer: every touch refreshes it.
+            // v1.6.22 — THE FREEZE ROOT CAUSE, decoded from the v1.6.20 +
+            // v1.6.21 diagnostics reports: awaitEachGesture REQUIRES its
+            // block to await at least one pointer event. This block only
+            // wrote the timestamp and returned, so the internal
+            // `while (isActive) { block() }` loop busy-spun the main
+            // thread at 100% CPU from the FIRST touch until the system
+            // ANR-killed the app (v1.6.20: spin + a snapshot write per
+            // lap → blocked in SnapshotKt.readable; v1.6.21: plain-field
+            // spin → RUNNABLE at ForEachGesture.kt:102 — exactly the
+            // reported stack). The block now awaits the down BEFORE
+            // writing, so the loop parks between gestures: ~zero CPU,
+            // and every gesture still refreshes the timer.
+            // awaitFirstDown(requireUnconsumed = false) + no consume =
+            // pure observer; children receive every tap exactly as before.
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    lastActive.v = now()
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        lastActive.v = now()
+                        if (event.changes.all { !it.pressed }) break
+                    }
+                }
+            },
+    ) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Header()
             Box(Modifier.weight(1f)) {
@@ -258,6 +342,7 @@ fun CallmonyApp() {
 
         // onboarding
         if (!AppStore.state.settings.onboarded) {
+            BootTrace.mark("ui.onboarding")
             Box(Modifier.fillMaxSize().background(C.canvas)) { OnboardingSheet() }
         }
 
@@ -266,9 +351,9 @@ fun CallmonyApp() {
             SheetScrim(onDismiss = { UiStore.keypadOpen = false }) { KeypadSheet() }
         }
 
-        // More sheet
+        // More sheet (BottomSheet carries its own scrim since v1.6.17)
         if (UiStore.moreOpen) {
-            SheetScrim(onDismiss = { UiStore.moreOpen = false }) { MoreSheet() }
+            MoreSheet()
         }
 
         // overlay stack
@@ -277,18 +362,19 @@ fun CallmonyApp() {
         // alarm dialog
         if (UiStore.alarmQueue.isNotEmpty()) AlarmDialog()
 
-        // global toaster + confirm
+        // global toaster + confirm + v1.6.18 host sheets
+        // (root-level modal slot: sheets opened from deep inside scrollables
+        // still pin bottom-center on the full screen — "modals at the top")
         Toaster()
         ConfirmHost()
+        com.callmony.ui.kit.HostSheetsHost()
     }
 
-    // touch anywhere refreshes the autolock timer
+    // touch anywhere refreshes the autolock timer (see pointerInput above)
     DisposableEffect(Unit) {
         onDispose { }
     }
 }
-
-private fun isAppForeground(): Boolean = true
 
 /* ---------------- Header ---------------- */
 
@@ -317,13 +403,18 @@ private fun Header() {
                     }
                     Text(t("hdr.tagline"), fontSize = F.tiny.sp, color = C.faint)
                 }
+                // v1.6.18 — the search entry is a SOLID brand pill now (was a
+                // 40 dp ghost-grey magnify that vanished against the wordmark —
+                // “make the search icon more visible and dominant”).
                 Box(
                     Modifier
                         .size(40.dp)
                         .clip(RoundedCornerShape(20.dp))
+                        .background(C.brand)
+                        .border(1.dp, C.brand, RoundedCornerShape(20.dp))
                         .clickable { UiStore.open(Overlay.Search()) },
                     contentAlignment = Alignment.Center,
-                ) { MdiIcon("magnify", 22, C.sub) }
+                ) { MdiIcon("magnify", 24, Color.White) }
             } else {
                 // secondary: back + title
                 Box(
@@ -661,3 +752,11 @@ private fun ThemeSheet(onClose: () -> Unit) {
         }
     }
 }
+
+/* v1.6.21 — plain mutable timestamp holder for the autolock idle tracker.
+   Deliberately NOT Compose state: it is written on every touch (gesture
+   observer) and read only by the 10 s idle poller — both on the main
+   dispatcher — so it must never enter the snapshot system (the v1.6.20
+   freeze report showed the main thread blocked ~6 s inside Snapshot.current
+   on this exact write). */
+internal class TimeRef(var v: Long)

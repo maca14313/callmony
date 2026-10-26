@@ -104,9 +104,28 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.16 (versionCode 34 — rollback release)** — see
-`react-native/docs/CHANGELOG.md` for the feature history.
+**1.6.24 (versionCode 35)** — see `react-native/docs/CHANGELOG.md` for the
+feature history.
 
+- **1.6.24** — everything from the user's full report list is back, on the
+  freeze-free foundation: the v1.6.17/18 feature work (working reminders
+  with any-interval repeat + ALARM mode, live NOW clock with 12/24 h and
+  post-save countdowns, a PIN that truly locks with a bottom-center keypad,
+  compact no-overlap tabs and buttons, zero raw i18n keys, one-tap entry
+  editing, Record payment, per-tab ＋ for single entries, attachments of
+  lists/notes/reminders on any entry, settle-up removed, bottom-anchored
+  host sheets, contact blocking, dominant search entry + advanced filter
+  tabs, the rebuilt contact detail with More sheet / labeled social strip /
+  action icons on numbers / section separation / navbar call icon, aligned
+  side-by-side fields, no ugly wraps) — PLUS every freeze root-cause fix
+  from v1.6.19–23 is baked in (gated boot spinner, single-writer IO
+  persistence queue, single-batch state publishing, the fixed touch
+  observer, single-flight contacts fetch), and the v1.6.20–23 diagnostics
+  experiment (watchdog, freeze reports, diag screen/process) is REMOVED —
+  it was never requested and only caused confusion. UI polish: cards,
+  primary buttons, bottom sheets and the keypad now float with soft
+  shadows. Same release key as every prior version — installs directly
+  over anything, data intact.
 - **1.6.16 rollback (versionCode 34)** — full rollback to v1.6.16 at the
   user's request: the app source tree is byte-identical to the original
   v1.6.16 release (commit `34076f2`) except ONE build line — `versionCode`

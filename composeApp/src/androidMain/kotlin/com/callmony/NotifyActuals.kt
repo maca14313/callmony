@@ -81,6 +81,38 @@ class AndroidNotify : NotifyService {
                 }
                 nm.createNotificationChannel(ch)
             }
+            ensureAlarmChannel(nm)
+        }
+    }
+
+    /* v1.6.18 — ALARM reminders: a dedicated channel on the ALARM audio
+       stream. Alarms ring like a clock alarm — audible over silent-mode
+       media and DND (when the user lets alarms through), instead of the
+       regular notification blip. Channels are immutable after creation,
+       so this must exist BEFORE the first alarm notification is posted. */
+    fun ensureAlarmChannel(nm: NotificationManager? = null) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val ctx = AndroidPlatform.appContext
+        val mgr = nm ?: ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (mgr.getNotificationChannel(ALARM_CHANNEL_ID) == null) {
+            val ch = NotificationChannel(
+                ALARM_CHANNEL_ID, "Reminder alarms", NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                description = "Reminders set as alarms — they ring on the alarm stream, audible over silent mode"
+                setSound(
+                    android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM),
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build(),
+                )
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 400, 200, 400, 200, 400)
+                enableLights(true)
+                lightColor = NotifArt.BRAND_ARGB
+                setShowBadge(true)
+            }
+            mgr.createNotificationChannel(ch)
         }
     }
 
@@ -106,11 +138,12 @@ class AndroidNotify : NotifyService {
         kindLabel: String,
         doneLabel: String,
         snoozeLabel: String,
+        alarm: Boolean,
     ) {
         val ctx = AndroidPlatform.appContext
         ensureChannel()
         val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val pi = notifPendingIntent(id, title, body, kind, kindLabel, doneLabel, snoozeLabel)
+        val pi = notifPendingIntent(id, title, body, kind, kindLabel, doneLabel, snoozeLabel, alarm)
         val atSafe = maxOf(at, System.currentTimeMillis() + 1000)
         try {
             if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
@@ -126,12 +159,15 @@ class AndroidNotify : NotifyService {
     override fun cancel(id: String) {
         val ctx = AndroidPlatform.appContext
         val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        am.cancel(notifPendingIntent(id, "", "", "", "", "", ""))
+        // cancel BOTH PendingIntent variants (regular + alarm-channel);
+        // requestCode and extras match, so both cancel cleanly.
+        am.cancel(notifPendingIntent(id, "", "", "", "", "", "", false))
+        am.cancel(notifPendingIntent(id, "", "", "", "", "", "", true))
         NotificationManagerCompat.from(ctx).cancel(id.hashCode())
     }
 
     override fun rearmAll(reminders: List<ReminderForAlarm>) {
-        for (r in reminders) schedule(r.id, r.title, r.body, r.dueAt, r.kind, r.kindLabel, r.doneLabel, r.snoozeLabel)
+        for (r in reminders) schedule(r.id, r.title, r.body, r.dueAt, r.kind, r.kindLabel, r.doneLabel, r.snoozeLabel, r.alarm)
     }
 
     /* v1.6.16 KEYSTROKE LAG FIX: every keypad keypress vibrated, and each
@@ -186,7 +222,7 @@ class AndroidNotify : NotifyService {
 
     private fun notifPendingIntent(
         id: String, title: String, body: String, kind: String,
-        kindLabel: String, doneLabel: String, snoozeLabel: String,
+        kindLabel: String, doneLabel: String, snoozeLabel: String, alarm: Boolean,
     ): PendingIntent {
         val ctx = AndroidPlatform.appContext
         val intent = Intent(ctx, AlarmReceiver::class.java).apply {
@@ -197,6 +233,7 @@ class AndroidNotify : NotifyService {
             putExtra("kindLabel", kindLabel)
             putExtra("doneLabel", doneLabel)
             putExtra("snoozeLabel", snoozeLabel)
+            putExtra("alarm", alarm)
         }
         return PendingIntent.getBroadcast(
             ctx, id.hashCode(), intent,
@@ -206,6 +243,7 @@ class AndroidNotify : NotifyService {
 
     companion object {
         const val CHANNEL_ID = "callmony-reminders"
+        const val ALARM_CHANNEL_ID = "callmony-reminder-alarms"
 
         @Volatile private var cachedVibrator: Vibrator? = null
 
@@ -235,45 +273,95 @@ class AlarmReceiver : android.content.BroadcastReceiver() {
         val kindLabel = intent.getStringExtra("kindLabel") ?: ""
         val doneLabel = intent.getStringExtra("doneLabel")?.ifBlank { "Done" } ?: "Done"
         val snoozeLabel = intent.getStringExtra("snoozeLabel")?.ifBlank { "Snooze 10 min" } ?: "Snooze 10 min"
+        val isAlarm = intent.getBooleanExtra("alarm", false)
         // CallmonyApplication.onCreate initializes the platform before any
         // component runs, but be defensive anyway (fresh OEM process paths).
         if (!AndroidPlatform.isReady()) AndroidPlatform.init(context.applicationContext)
         val ctx = AndroidPlatform.appContext
         val nm = NotificationManagerCompat.from(ctx)
-        if (!nm.areNotificationsEnabled()) return
-        AndroidNotify().ensureChannel()
+        if (nm.areNotificationsEnabled()) {
+            val notify = AndroidNotify()
+            notify.ensureChannel()
+            if (isAlarm) notify.ensureAlarmChannel()
 
-        val bodyText = body.ifBlank { kindLabel.ifBlank { "Reminder" } }
+            val bodyText = body.ifBlank { kindLabel.ifBlank { "Reminder" } }
 
-        val contentPi = PendingIntent.getActivity(
-            ctx, id.hashCode(),
-            Intent(ctx, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val donePi = NotificationActionReceiver.pending(ctx, id, NotificationActionReceiver.ACTION_DONE)
-        val snoozePi = NotificationActionReceiver.pending(ctx, id, NotificationActionReceiver.ACTION_SNOOZE)
+            val contentPi = PendingIntent.getActivity(
+                ctx, id.hashCode(),
+                Intent(ctx, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val donePi = NotificationActionReceiver.pending(ctx, id, NotificationActionReceiver.ACTION_DONE)
+            val snoozePi = NotificationActionReceiver.pending(ctx, id, NotificationActionReceiver.ACTION_SNOOZE)
 
-        val builder = NotificationCompat.Builder(ctx, AndroidNotify.CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_callmony)
-            .setLargeIcon(NotifArt.roundLogo(ctx))
-            .setContentTitle(title)
-            .setContentText(bodyText)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(bodyText))
-            .setColor(NotifArt.BRAND_ARGB)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setContentIntent(contentPi)
-            .setAutoCancel(true)
-            .setShowWhen(true)
-            .setWhen(System.currentTimeMillis())
-            .addAction(R.drawable.ic_stat_done, doneLabel, donePi)
-            .addAction(R.drawable.ic_stat_snooze, snoozeLabel, snoozePi)
-        if (kindLabel.isNotBlank()) builder.setSubText(kindLabel)
-        try {
-            nm.notify(id.hashCode(), builder.build())
-        } catch (_: SecurityException) {}
+            val channel = if (isAlarm) AndroidNotify.ALARM_CHANNEL_ID else AndroidNotify.CHANNEL_ID
+            val builder = NotificationCompat.Builder(ctx, channel)
+                .setSmallIcon(R.drawable.ic_stat_callmony)
+                .setLargeIcon(NotifArt.roundLogo(ctx))
+                .setContentTitle(title)
+                .setContentText(bodyText)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(bodyText))
+                .setColor(NotifArt.BRAND_ARGB)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(if (isAlarm) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setContentIntent(contentPi)
+                .setAutoCancel(true)
+                .setShowWhen(true)
+                .setWhen(System.currentTimeMillis())
+                .addAction(R.drawable.ic_stat_done, doneLabel, donePi)
+                .addAction(R.drawable.ic_stat_snooze, snoozeLabel, snoozePi)
+            if (kindLabel.isNotBlank()) builder.setSubText(kindLabel)
+            try {
+                nm.notify(id.hashCode(), builder.build())
+            } catch (_: SecurityException) {}
+        }
+        /* v1.6.17 — "the reminder is not working" for REPEATS while the app
+         * is closed: the RN edition relies on notifee's repeatFrequency, which
+         * re-arms the OS trigger automatically every day/week. AlarmManager
+         * alarms are one-shot — without this the second occurrence of a
+         * daily reminder never fired until the app was opened again. Advance
+         * the persisted due moment to the next occurrence and arm the next
+         * alarm right here, in the background thread (goAsync keeps the
+         * process alive while the JSON surgery + reschedule run).
+         * v1.6.18: the load-modify-save runs as ONE atomic block on the
+         * Persist queue — ordered with every UI write, never racing them. */
+        val pending = goAsync()
+        // v1.6.21 — single-writer snapshot rule: read the live flag on the MAIN
+        // thread (onReceive) instead of from the worker, and post the live
+        // store update BACK to main — the worker thread never touches
+        // Compose state (cross-thread snapshot writes were the contention
+        // behind the v1.6.20 freeze report).
+        val live = AppStore.state.hydrated
+        Thread {
+            try {
+                if (live) {
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        try { AppStore.fireReminder(id) } catch (_: Exception) {}
+                    }
+                } else {
+                    com.callmony.lib.Persist.postAndWait {
+                        val rec = Db.loadAll().reminders.find { it.id == id } ?: return@postAndWait
+                        if (rec.repeat != "none" && !rec.done && rec.deletedAt == null) {
+                            val nextDue = com.callmony.lib.nextOccurrence(rec.dueAt, rec.repeat)
+                            val nowMs = com.callmony.lib.now()
+                            val next = Db.loadAll().reminders.map {
+                                if (it.id == id) it.copy(dueAt = nextDue, lastFiredAt = nowMs, firedLeads = emptyList(), snoozedUntil = null) else it
+                            }
+                            Db.saveReminders(next)
+                            (Platform.notify as? AndroidNotify)?.schedule(
+                                rec.id, rec.title, rec.notes ?: "", nextDue, rec.kind,
+                                alarm = rec.isAlarm,
+                            )
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+            } finally {
+                pending.finish()
+            }
+        }.start()
     }
 }
 
@@ -287,42 +375,51 @@ class NotificationActionReceiver : android.content.BroadcastReceiver() {
         val action = intent.action ?: return
         if (!AndroidPlatform.isReady()) AndroidPlatform.init(context.applicationContext)
         val ctx = AndroidPlatform.appContext
+        // v1.6.21 — single-writer snapshot rule: read the live flag on the
+        // MAIN thread (onReceive) and post the live store update BACK to
+        // main; the worker thread only does JSON surgery / notifications.
+        val live = AppStore.state.hydrated
         val pending = goAsync()
         Thread {
             try {
                 val nm = NotificationManagerCompat.from(ctx)
                 nm.cancel(id.hashCode())
                 val now = System.currentTimeMillis()
-                when (action) {
-                    ACTION_DONE -> {
-                        if (AppStore.state.hydrated) {
-                            AppStore.completeReminder(id)
-                        } else {
-                            val next = Db.loadAll().reminders.map {
-                                if (it.id == id) it.copy(done = true, doneAt = now, updatedAt = now) else it
+                if (live) {
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        try {
+                            when (action) {
+                                ACTION_DONE -> AppStore.completeReminder(id)
+                                ACTION_SNOOZE -> AppStore.snoozeReminder(id, now + 10 * 60000L)
                             }
-                            Db.saveReminders(next)
-                        }
-                        confirm(ctx, nm, id, ACTION_DONE)
+                        } catch (_: Exception) {}
                     }
-                    ACTION_SNOOZE -> {
-                        val until = now + 10 * 60000L
-                        if (AppStore.state.hydrated) {
-                            AppStore.snoozeReminder(id, until)
-                        } else {
-                            val next = Db.loadAll().reminders.map {
-                                if (it.id == id) it.copy(snoozedUntil = until, updatedAt = now) else it
+                } else {
+                    com.callmony.lib.Persist.postAndWait {
+                        when (action) {
+                            ACTION_DONE -> {
+                                val next = Db.loadAll().reminders.map {
+                                    if (it.id == id) it.copy(done = true, doneAt = now, updatedAt = now) else it
+                                }
+                                Db.saveReminders(next)
                             }
-                            Db.saveReminders(next)
-                            next.find { it.id == id }?.let { rec ->
-                                (Platform.notify as? AndroidNotify)?.schedule(
-                                    rec.id, rec.title, rec.notes ?: "", until, rec.kind,
-                                )
+                            ACTION_SNOOZE -> {
+                                val until = now + 10 * 60000L
+                                val next = Db.loadAll().reminders.map {
+                                    if (it.id == id) it.copy(snoozedUntil = until, updatedAt = now) else it
+                                }
+                                Db.saveReminders(next)
+                                next.find { it.id == id }?.let { rec ->
+                                    (Platform.notify as? AndroidNotify)?.schedule(
+                                        rec.id, rec.title, rec.notes ?: "", until, rec.kind,
+                                        alarm = rec.isAlarm,
+                                    )
+                                }
                             }
                         }
-                        confirm(ctx, nm, id, ACTION_SNOOZE)
                     }
                 }
+                confirm(ctx, nm, id, action)
             } catch (_: Exception) {
             } finally {
                 pending.finish()

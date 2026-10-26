@@ -12,10 +12,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -24,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,6 +52,10 @@ fun Sheet(
     onBack: () -> Unit,
     subtitle: String? = null,
     onLongPressSubtitle: (() -> Unit)? = null,
+    /** v1.6.18 — tapping the subtitle (e.g. the phone number in the contact
+     *  navbar) performs this action (place the call); long-press still copies
+     *  (onLongPressSubtitle). A small call icon rides beside the text. */
+    onSubtitleTap: (() -> Unit)? = null,
     avatar: (@Composable () -> Unit)? = null,
     headerRight: (@Composable () -> Unit)? = null,
     footer: (@Composable () -> Unit)? = null,
@@ -83,10 +90,31 @@ fun Sheet(
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (!subtitle.isNullOrEmpty()) {
-                    LongPressText(
-                        text = subtitle,
-                        onLong = onLongPressSubtitle,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LongPressText(
+                            text = subtitle,
+                            onLong = onLongPressSubtitle,
+                            onTap = onSubtitleTap,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        // v1.6.18 — the call icon: tapping the navbar number
+                        // dials it; long-press on the text copies it (as before).
+                        if (onSubtitleTap != null) {
+                            Box(
+                                Modifier
+                                    .size(26.dp)
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(C.brandSoft)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) { onSubtitleTap() },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                com.callmony.ui.kit.MdiIcon("phone", 15, C.brand)
+                            }
+                        }
+                    }
                 }
             }
             if (headerRight != null) {
@@ -126,22 +154,26 @@ fun Sheet(
     }
 }
 
-/** Small text that copies itself on long-press (400 ms, like RN edition). */
+/** Small text that copies itself on long-press (400 ms, like RN edition).
+ *  v1.6.18: optional onTap — when set, a plain tap performs that action
+ *  (the contact navbar number: tap = call, long-press = copy). */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LongPressText(
     text: String,
     onLong: (() -> Unit)? = null,
+    onTap: (() -> Unit)? = null,
     color: Color? = null,
     fontSize: Int = 13,
     maxLines: Int = 1,
+    modifier: Modifier = Modifier,
 ) {
     val C = C()
     Box(
-        Modifier.combinedClickable(
+        modifier.combinedClickable(
             interactionSource = remember { MutableInteractionSource() },
             indication = null,
-            onClick = {},
+            onClick = { if (onTap != null) onTap() },
             onLongClick = {
                 vibrate(longArrayOf(20))
                 if (onLong != null) onLong()
@@ -162,7 +194,13 @@ fun LongPressText(
     }
 }
 
-/** Partial bottom sheet — grabber, whole header tappable, four close paths. */
+/** Partial bottom sheet — grabber, whole header tappable, four close paths.
+ *  v1.6.17: the sheet now carries its OWN full-size scrim and pins itself to
+ *  the BOTTOM-CENTER of the host. Previously every BottomSheet rendered as a
+ *  bare Column — inside OverlayHost's plain Box that meant TOP-START, so the
+ *  PIN keypad, restore sheet and all long-press menus appeared stuck to the
+ *  top-left corner. Wrapping every call site was error-prone; the container
+ *  now guarantees correct placement for all ~25 usages. */
 @Composable
 fun BottomSheet(
     title: String? = null,
@@ -175,68 +213,86 @@ fun BottomSheet(
     val C = C()
     // v1.6.15: the native back button closes the bottom sheet first
     com.callmony.ui.kit.AppBackHandler(enabled = true) { onClose() }
-    Column(
+    Box(
         Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
-            .background(C.card)
-            .navigationBarsPadding(),
+            .fillMaxSize()
+            .background(C.scrim)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClose() },
+        contentAlignment = Alignment.BottomCenter,
     ) {
-        // grabber row — tapping it closes the sheet
-        Box(
+        Column(
             Modifier
                 .fillMaxWidth()
+                // absorb taps so touching the sheet itself never dismisses
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                ) { onClose() }
-                .padding(vertical = 10.dp),
-            contentAlignment = Alignment.Center,
+                ) {}
+                // v1.6.24 — depth: the sheet floats above the scrim
+                .shadow(10.dp, RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
+                .clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
+                .background(C.card)
+                .navigationBarsPadding(),
         ) {
+            // grabber row — tapping it closes the sheet
             Box(
                 Modifier
-                    .width(44.dp)
-                    .height(5.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(C.line),
-            )
-        }
-        if (title != null) {
-            Row(
-                Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp)
-                    .padding(bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onClose() }
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    title,
-                    fontSize = F.h2.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = C.ink,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                Box(
+                    Modifier
+                        .width(44.dp)
+                        .height(5.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(C.line),
                 )
-                if (headerRight != null) headerRight() else IconBtn("close", onClose, size = 36)
             }
-        }
-        Box(Modifier.weight(1f, fill = false)) {
-            if (noScroll) {
-                Column(Modifier.fillMaxWidth()) { content() }
-            } else {
-                Column(
+            if (title != null) {
+                Row(
                     Modifier
                         .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
                         .padding(horizontal = 18.dp)
-                        .padding(bottom = 18.dp),
-                ) { content() }
+                        .padding(bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        title,
+                        fontSize = F.h2.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = C.ink,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (headerRight != null) headerRight() else IconBtn("close", onClose, size = 36)
+                }
             }
+            Box(Modifier.weight(1f, fill = false).heightIn(max = (maxHeightPct * 760).dp)) {
+                if (noScroll) {
+                    Column(Modifier.fillMaxWidth()) { content() }
+                } else {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 18.dp)
+                            .padding(bottom = 18.dp),
+                    ) { content() }
+                }
+            }
+            // NOTE: no Toaster here — the single shell-level Toaster in
+            // CallmonyApp renders after this sheet in z-order, so toasts show on
+            // top of every sheet. A second instance here duplicated every toast.
         }
-        // NOTE: no Toaster here — the single shell-level Toaster in
-        // CallmonyApp renders after this sheet in z-order, so toasts show on
-        // top of every sheet. A second instance here duplicated every toast.
     }
 }
 

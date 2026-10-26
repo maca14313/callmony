@@ -38,6 +38,7 @@ import com.callmony.lib.fd
 import com.callmony.lib.fdEpoch
 import com.callmony.lib.ft
 import com.callmony.lib.listTotals
+import com.callmony.lib.repeatLabelOf
 import com.callmony.lib.now
 import com.callmony.lib.relTime
 import com.callmony.model.CalcList
@@ -400,12 +401,26 @@ fun RemindersSection(
                                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                                             if (!r.done && dueStatus(r.snoozedUntil ?: r.dueAt) == "overdue") Pill(t("rm.overdue"), "red")
                                             if (r.snoozedUntil != null && !r.done) Pill(t("rm.snoozed"), "neutral", icon = "clock-outline")
+                                            // v1.6.18 — ALARM reminders are marked with the alarm icon
+                                            if (!r.done && r.isAlarm) MdiIcon("alarm-check-outline", 13, C.brand)
                                             Text(
                                                 "${fdEpoch(r.snoozedUntil ?: r.dueAt)} · ${ft(r.snoozedUntil ?: r.dueAt)}",
                                                 fontSize = F.tiny.sp,
                                                 color = C.sub,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f, fill = false),
                                             )
-                                            if (r.repeat != "none") MdiIcon("repeat", 13, C.sub)
+                                            // v1.6.17 — live "in 2h 15m" / "3h late" countdown
+                                            if (!r.done) com.callmony.ui.kit.LiveCountdown(r.snoozedUntil ?: r.dueAt)
+                                            // v1.6.18 — human repeat label ("Every 2 weeks"),
+                                            // tooltip-free reminder of the interval
+                                            if (r.repeat != "none") {
+                                                MdiIcon("repeat", 13, C.sub)
+                                                if (!repeatLabelOf(r.repeat).isBlank()) {
+                                                    Text(repeatLabelOf(r.repeat), fontSize = F.tiny.sp, color = C.sub, maxLines = 1)
+                                                }
+                                            }
                                         }
                                     }
                                     IconBtn("dots-vertical", { menuFor = r }, size = 32)
