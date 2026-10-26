@@ -4,6 +4,78 @@ All notable changes to callmony. Dates follow the git history; the APK for each 
 
 ---
 
+# v1.6.23 — KMP: the "freeze" reports were false alarms — watchdog pause/resume fixed + double contact-read gated (2026-10-26)
+
+## Why
+
+Three diagnostics reports arrived from app v1.6.22: "no progress for
+5791 ms" (fresh install, contacts permission flow), "144822 ms" and
+"340354 ms" (backgrounded with sheets/overlays open). Decoding them
+produced the best possible outcome: **none was a real freeze.**
+
+The v1.6.22 spin probe (three main-thread samples per report) showed:
+
+- Report A: main parked idle at `nativePollOnce` in every sample — but
+  TWO DefaultDispatcher workers simultaneously inside
+  `AndroidContacts.fetchAll` (one from the permission-grant callback
+  path `Store.kt:263`, one from the direct refresh path `Store.kt:269`).
+- Report B: main idle except one sample caught mid-**healthy** MoreSheet
+  composition.
+- Report C: main idle except one sample mid-normal touch dispatch.
+
+Zero gesture-loop stacks anywhere — the v1.6.22 `awaitEachGesture`
+busy-spin fix held.
+
+## Bug 1 — the watchdog read away-time as blockage
+
+The watchdog pauses heartbeat posts while the app is not foregrounded —
+and `onActivityPaused` fires for the **system permission dialog**, app
+switches and screen-off. The `BlockageDetector`, however, kept its
+pre-pause baseline (`lastRanAt`), so on the inactive→active transition
+`now - lastRanAt` equaled the away-time: 5.8 s in the permission dialog
+(Report A), 144 s and 340 s in the background (Reports B/C) — phantom
+"Main thread blocked" reports over a healthy idle main thread.
+
+**Fix:** `BlockageDetector.resume()` clears the post/run baselines; the
+watchdog thread calls it on every inactive→active transition. The next
+episode measures from a FRESH heartbeat post — the paused gap can never
+read as a freeze, and a real stall after resume is still caught (it just
+needs 5 s of genuine silence from the fresh post). The report cooldown
+survives resumes, so false-alarm spam stays suppressed. Three new
+DiagTest cases cover: the cleared gap, the fresh-post baseline
+(never-ran path), and cooldown survival (12/12 green).
+
+## Bug 2 — the permission grant double-read the whole contact book
+
+Report A's dump showed two concurrent whole-book `fetchAll` reads over
+the 1239-contact book on a low-end device. Root cause: the
+permission-grant callback's `scope.launch { doFetchContacts() }` escapes
+the `contactsRefreshInFlight` single-flight guard — the guard's
+launching coroutine returns immediately after spawning the fetch,
+resetting the flag in its `finally`. On a fresh install: grant →
+callback fetch starts → onResume TTL refresh passes the reset guard →
+second full read, concurrently.
+
+**Fix:** `doFetchContacts` itself is now the single-flight unit — every
+caller funnels through a `Mutex` gate (`tryLock` → read → `finally
+unlock`); whoever holds it does the read, everyone else returns
+instantly. The outer refresh guard stays for its original purpose
+(deduping refresh attempts while an editor is open).
+
+## Verification
+
+- DiagTest 12/12 (9 prior + 3 new resume cases); BootDiagTest,
+  UpgradeBootDiagTest, StartupTest, CalcFormatTest, KeypadTest, V1618Test
+  and the lib.* battery green through the gated fetch path.
+- The 5 Recents Robolectric timeouts remain the known sandbox-load
+  flakiness (previously A/B-verified to fail identically on unmodified
+  code).
+- Android APK verified: `com.callmony 1.6.23 versionCode 33`, minSdk 23,
+  targetSdk 34; both iOS targets compile — published as
+  [v1.6.23](https://github.com/maca14313/callmony/releases/tag/v1.6.23).
+
+---
+
 # v1.6.22 — KMP: the freeze decoded for real — awaitEachGesture busy-spin fixed (2026-10-26)
 
 ## Why

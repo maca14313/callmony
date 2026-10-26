@@ -104,6 +104,26 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
+**1.6.23 (versionCode 33)** — see `react-native/docs/CHANGELOG.md` for the
+feature history.
+
+- **1.6.23** — the three v1.6.22 "freeze" reports were decoded and **all
+  three were watchdog false positives** — the spin probe proved the main
+  thread healthy in every sample (idle, composing normally, dispatching a
+  touch), with zero gesture-loop stacks anywhere: the v1.6.22 freeze fix
+  held. The detector paused with the app (permission dialog, app switch,
+  screen off) but kept its pre-pause baseline, so the return to the
+  foreground read the away-time as "no progress" (5.8 s in the contacts
+  permission dialog; 144 s / 340 s backgrounded). **Fix:**
+  `BlockageDetector.resume()` clears the baseline when surveillance
+  resumes — only real stalls report (3 new unit tests; the cooldown
+  survives). The false alarm also exposed a real bug: the
+  permission-grant fetch escaped the single-flight guard (its launching
+  coroutine returns immediately after spawning the fetch), so a fresh
+  install ran **two whole-book `fetchAll` reads concurrently** over the
+  1239-contact book — `doFetchContacts` now funnels every caller through
+  a Mutex gate: one read, everyone else returns instantly.
+
 **1.6.22 (versionCode 32)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
