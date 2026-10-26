@@ -87,9 +87,6 @@ interface NotifyService {
     fun schedule(
         id: String, title: String, body: String, at: Long, kind: String,
         kindLabel: String = "", doneLabel: String = "", snoozeLabel: String = "",
-        /** v1.6.18 — ALARM reminders ring on the ALARM audio stream through a
-         *  dedicated channel (audible over silent / muted media). */
-        alarm: Boolean = false,
     )
 
     fun cancel(id: String)
@@ -111,7 +108,6 @@ data class ReminderForAlarm(
     val kindLabel: String = "",
     val doneLabel: String = "",
     val snoozeLabel: String = "",
-    val alarm: Boolean = false,
 )
 
 /** Share / open external URLs (WhatsApp, Telegram, mail…). */
@@ -178,7 +174,7 @@ object Platform {
         override fun requestNotifPermission(onResult: (Boolean) -> Unit) { onResult(true) }
         override fun schedule(
             id: String, title: String, body: String, at: Long, kind: String,
-            kindLabel: String, doneLabel: String, snoozeLabel: String, alarm: Boolean,
+            kindLabel: String, doneLabel: String, snoozeLabel: String,
         ) {}
         override fun cancel(id: String) {}
         override fun rearmAll(reminders: List<ReminderForAlarm>) {}
@@ -212,7 +208,3 @@ object Platform {
         override fun setNavColor(rgba: Long) {}
     }
 }
-
-/** v1.6.18 — dispatcher for the Persist single-writer queue.
- *  Android: real IO (disk commits); iOS/native: Default (background pool). */
-expect val persistDispatcher: kotlinx.coroutines.CoroutineDispatcher

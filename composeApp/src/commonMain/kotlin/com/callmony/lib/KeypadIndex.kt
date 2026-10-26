@@ -80,15 +80,7 @@ object KeypadIndex {
         job?.cancel()
         job = scope.launch(Dispatchers.Default) {
             val built = build(contacts, countryCode)
-            if (keyContacts === contacts && keyCc == countryCode) {
-                // v1.6.21 — single-writer snapshot rule: the publish is a
-                // main-dispatcher hop; the Default worker never writes
-                // Compose state directly (cross-thread snapshot writes were
-                // the lock contention behind the v1.6.20 freeze report).
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    if (keyContacts === contacts && keyCc == countryCode) entries = built
-                }
-            }
+            if (keyContacts === contacts && keyCc == countryCode) entries = built
         }
     }
 

@@ -41,9 +41,6 @@ object IosPlatform {
         Platform.share = IosShare()
         Platform.kv = IosKv()
         Platform.ui = IosUi()
-        // v1.6.18 — same freeze fix as Android: persistence goes through the
-        // single-writer IO queue instead of blocking the caller's thread.
-        com.callmony.lib.Persist.enableAsync()
     }
 }
 
@@ -81,7 +78,7 @@ class IosNotify : NotifyService {
     override fun requestNotifPermission(onResult: (Boolean) -> Unit) { onResult(true) }
     override fun schedule(
         id: String, title: String, body: String, at: Long, kind: String,
-        kindLabel: String, doneLabel: String, snoozeLabel: String, alarm: Boolean,
+        kindLabel: String, doneLabel: String, snoozeLabel: String,
     ) {
         // UNUserNotificationCenter scheduling ships with the Xcode build
     }
@@ -161,4 +158,3 @@ class IosUi : UiPlatform {
     override fun setStatusBarMode(dark: Boolean) {}
     override fun setNavColor(rgba: Long) {}
 }
-

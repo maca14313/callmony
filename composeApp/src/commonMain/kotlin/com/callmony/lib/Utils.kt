@@ -3,7 +3,6 @@ package com.callmony.lib
 import com.callmony.model.AVATAR_PALETTE
 import com.callmony.model.CURRENCIES
 import com.callmony.model.DeviceContact
-import com.callmony.i18n.t
 import com.callmony.platform.Platform
 import kotlin.math.abs
 import kotlin.math.floor
@@ -13,7 +12,7 @@ import kotlin.math.pow
    React Native edition's src/lib/utils.ts. */
 
 /** The app's version (kept in sync with composeApp/build.gradle.kts). */
-const val APP_VERSION = "v1.6.17"
+const val APP_VERSION = "v1.6.16"
 
 private val RNG = kotlin.random.Random.Default
 
@@ -228,46 +227,12 @@ fun fdShortEpoch(epoch: Long): String {
     return "${DateNames.months[d.month0]} ${d.day}"
 }
 
-/** v1.6.17 — the app-wide clock format: the user picks 12 h (AM/PM) or
- *  24 h in Settings and in the reminder editor; every rendered time
- *  follows it (ft() = formatted time). */
-fun clock24(): Boolean = AppStore.state.settings.clock24
-
 fun ft(epoch: Long): String {
     val d = dateOf(epoch)
-    return if (clock24()) {
-        "${d.hour.toString().padStart(2, '0')}:${d.minute.toString().padStart(2, '0')}"
-    } else {
-        val h = d.hour
-        val ampm = if (h < 12) "AM" else "PM"
-        val h12 = if (h % 12 == 0) 12 else h % 12
-        "$h12:${d.minute.toString().padStart(2, '0')} $ampm"
-    }
-}
-
-/** Compact duration like "2d 3h", "3h 15m", "45m", "30s". */
-fun spanStr(ms: Long): String {
-    val s = ms / 1000
-    if (s < 60) return "${s}s"
-    val m = s / 60
-    if (m < 60) return "${m}m"
-    val h = m / 60
-    if (h < 24) {
-        val mm = m % 60
-        return if (mm > 0) "${h}h ${mm}m" else "${h}h"
-    }
-    val d = h / 24
-    val hh = h % 24
-    return if (hh > 0) "${d}d ${hh}h" else "${d}d"
-}
-
-/** v1.6.17 — live countdown to a due moment: "in 2h 15m" or "3h late"
- *  (localized via rm.timeLeft / rm.timeLate). Used on reminder cards and
- *  right after saving a reminder. */
-fun timeLeftStr(dueAt: Long, nowMs: Long = now()): String {
-    val diff = dueAt - nowMs
-    return if (diff >= 0) t("rm.timeLeft", mapOf("left" to spanStr(diff)))
-    else t("rm.timeLate", mapOf("left" to spanStr(-diff)))
+    val h = d.hour
+    val ampm = if (h < 12) "AM" else "PM"
+    val h12 = if (h % 12 == 0) 12 else h % 12
+    return "$h12:${d.minute.toString().padStart(2, '0')} $ampm"
 }
 
 /* v1.6.8 — the Recents day headers show ONLY "Mon D" (e.g. "Oct 24"). */

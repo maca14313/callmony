@@ -100,37 +100,26 @@ object Db {
     fun saveMessages(v: List<MessageLog>) = writeArr(K.messages, v, MessageLog.serializer())
 
     fun saveSettings(s: Settings) {
-        // v1.6.18: serialization + disk write happen on the Persist IO queue —
-        // never on the caller's (usually MAIN) thread. The frozen-UI lag and
-        // the stacked-commit ANRs ("app closes itself") lived here.
-        Persist.post {
-            try {
-                val persistable = s.copy(pinHash = null)
-                Platform.kv.write(K.settings, json.encodeToString(Settings.serializer(), persistable))
-            } catch (_: Exception) {}
-        }
+        try {
+            val persistable = s.copy(pinHash = null)
+            Platform.kv.write(K.settings, json.encodeToString(Settings.serializer(), persistable))
+        } catch (_: Exception) {}
     }
 
     private fun <T> writeArr(key: String, v: List<T>, serializer: kotlinx.serialization.KSerializer<T>) {
-        // v1.6.18: the whole save (encode + mirrored commit) runs inside the
-        // Persist queue — FIFO, single writer, off the main thread.
-        Persist.post {
-            try {
-                val text = json.encodeToString(kotlinx.serialization.builtins.ListSerializer(serializer), v)
-                Platform.kv.write(key, text) // KvStore.write mirrors automatically
-            } catch (_: Exception) {}
-        }
+        try {
+            val text = json.encodeToString(kotlinx.serialization.builtins.ListSerializer(serializer), v)
+            Platform.kv.write(key, text) // KvStore.write mirrors automatically
+        } catch (_: Exception) {}
     }
 
     fun wipeStorage() {
-        Persist.post {
-            for (k in listOf(K.contactX, K.entries, K.groups, K.lists, K.notes, K.reminders, K.banks, K.recents, K.messages, K.settings)) {
-                Platform.kv.remove(k)
-                Platform.kv.remove(mirrorKey(k))
-            }
-            // PIN file
-            Platform.kv.deleteFile("pin.json")
+        for (k in listOf(K.contactX, K.entries, K.groups, K.lists, K.notes, K.reminders, K.banks, K.recents, K.messages, K.settings)) {
+            Platform.kv.remove(k)
+            Platform.kv.remove(mirrorKey(k))
         }
+        // PIN file
+        Platform.kv.deleteFile("pin.json")
     }
 
     /* ---------------- PIN file (no_backup equivalent) ---------------- */

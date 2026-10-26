@@ -61,8 +61,8 @@ android {
         applicationId = "com.callmony"
         minSdk = 23
         targetSdk = 34
-        versionCode = 33
-        versionName = "1.6.23"
+        versionCode = 34 // rollback release: v1.6.16 code exactly; VC must stay above 33 (v1.6.23) so it installs as an update
+        versionName = "1.6.16"
     }
 
     signingConfigs {

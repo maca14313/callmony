@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -67,7 +66,6 @@ import com.callmony.ui.kit.Field
 import com.callmony.ui.kit.IconBtn
 import com.callmony.ui.kit.MdiIcon
 import com.callmony.ui.kit.Money
-import com.callmony.ui.kit.Divider
 import com.callmony.ui.kit.Pill
 import com.callmony.ui.kit.Segmented
 import com.callmony.ui.kit.Spinner
@@ -118,6 +116,7 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
     var phoneSheet by remember { mutableStateOf<String?>(null) }
     var tgPicker by remember { mutableStateOf(false) }
     var emailPicker by remember { mutableStateOf(false) }
+    var addSheet by remember { mutableStateOf(false) }
     var bodyReady by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { bodyReady = true }
@@ -189,9 +188,7 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
         Triple("note-text-outline", t("tab.notes")) { seg = "notes" },
         Triple("bell-outline", t("tab.reminders")) { seg = "reminders" },
         Triple("information-outline", t("tab.info")) { seg = "info" },
-        // v1.6.18 — was “＋ Add to contact”; the add-to options now live INSIDE
-        // the More sheet together with everything else (user request).
-        Triple("dots-horizontal-circle-outline", t("cd.more")) { moreOpen = true },
+        Triple("plus", t("cd.addToContact")) { addSheet = true },
     )
 
     fun toggleFav() {
@@ -211,8 +208,6 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
         subtitle = phone?.let { prettyPhone(it, countryCode) } ?: contact.company ?: t("cd.noPhone"),
         onBack = pop,
         onLongPressSubtitle = { copyNumber() },
-        // v1.6.18 — tapping the navbar number DIALS it; long-press still copies.
-        onSubtitleTap = if (phone != null) ({ Calls.placeCall(phone) }) else null,
         avatar = { Avatar(contact, size = 34) },
         headerRight = {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -284,10 +279,6 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
                     Money(pendingLists, signed = true, size = 11, weight = FontWeight.SemiBold, compact = true)
                     Text(")", fontSize = 11.sp, color = C.faint)
                 }
-                // v1.6.18 — blocked contacts carry a red badge on the navbar row
-                if (phone != null && Calls.isBlocked(phone)) {
-                    Pill(t("cd.blocked"), "red")
-                }
             }
             // quick actions — 6×2 grid
             Column(verticalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.padding(bottom = 8.dp)) {
@@ -330,26 +321,7 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
                 ),
                 seg,
             ) { seg = it }
-            // v1.6.18 — SECTION SEPARATION: the tab body sits on its own soft
-            // card surface with a hairline outline + generous top spacing —
-            // the page read as one flat block before.
-            Spacer(Modifier.height(10.dp))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(C.line)
-                    .padding(0.dp),
-            )
-            Spacer(Modifier.height(10.dp))
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(C.card)
-                    .border(1.dp, C.line, RoundedCornerShape(20.dp))
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
-            ) {
+            Column(Modifier.padding(top = 12.dp)) {
                 if (!bodyReady) {
                     Box(Modifier.fillMaxWidth().padding(vertical = 34.dp), contentAlignment = Alignment.Center) { Spinner(22) }
                 } else {
@@ -377,9 +349,6 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
         NumberPickerSheet(
             phones = dedupePhones(),
             countryCode = countryCode,
-            // v1.6.18 — the row icon matches the action the sheet was opened
-            // for: a call icon when Call was tapped, a message icon for SMS.
-            actionIcon = when (action) { "sms" -> "message-text-outline"; "whatsapp" -> "whatsapp"; else -> "phone" },
             onPick = { fireAction(action, it) },
             onClose = { numPicker = null },
             onAddEdit = {
@@ -410,82 +379,43 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
         )
     }
 
-    // ＋ add-to-contact chooser — v1.6.18: GONE; everything lives in the
-    // More sheet now (see below).
-
-    // more sheet — v1.6.18 REBUILD: social strip that scrolls sideways with
-    // labeled icons (every number’s WhatsApp/Telegram + saved socials), the
-    // add-to options, the general actions, and Block / Unblock.
-    if (moreOpen) {
-        val blockedNow = phone != null && Calls.isBlocked(phone)
-        BottomSheet(title = displayName(contact), onClose = { moreOpen = false }) {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                // social strip (horizontal, scrolls if it overflows)
-                Text(t("cd.moreSocial"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 8.dp))
-                ScrollRow {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        dedupePhones().forEach { p ->
-                            val digits = normalizePhone(p.number, countryCode).replace(Regex("\\D"), "")
-                            if (digits.length >= 7) {
-                                MoreSocialItem("whatsapp", "WhatsApp", Color(0xFF1faa53)) { Messengers.waLink(p.number) }
-                                MoreSocialItem("send", "Telegram", C.blue) { Messengers.tgLink(digits) }
-                            }
-                        }
-                        socials.forEach { s ->
-                            MoreSocialItem(socialIcon(s.app), SOCIAL_APPS.find { it.first == s.app }?.second ?: s.app, C.sub) {
-                                Platform.share.openUrl(socialUrl(s))
-                            }
-                        }
-                        MoreSocialItem("plus", t("ce.addSocial"), C.brand) { moreOpen = false; socialSheet = "telegram" }
-                    }
-                }
-                Divider()
-                // add-to group
-                Text(t("cd.addTo"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 2.dp))
+    // ＋ add-to-contact chooser
+    if (addSheet) {
+        BottomSheet(onClose = { addSheet = false }) {
+            Column {
                 listOf(
-                    Triple("phone-plus", t("ce.addPhone")) { moreOpen = false; UiStore.open(Overlay.ContactEdit(recordID)) },
-                    Triple("email-plus-outline", t("ce.addEmail")) { moreOpen = false; UiStore.open(Overlay.ContactEdit(recordID)) },
-                    Triple("link-plus", t("ce.addSocial")) { moreOpen = false; socialSheet = "telegram" },
+                    Triple("phone-plus", t("ce.addPhone")) { addSheet = false; UiStore.open(Overlay.ContactEdit(recordID)) },
+                    Triple("email-plus-outline", t("ce.addEmail")) { addSheet = false; UiStore.open(Overlay.ContactEdit(recordID)) },
+                    Triple("link-variant", t("ce.addSocial")) { addSheet = false; socialSheet = "telegram" },
+                    Triple("pencil-outline", t("act.edit")) { addSheet = false; UiStore.open(Overlay.ContactEdit(recordID)) },
                 ).forEach { (icon, label, run) ->
-                    PressableRow(onClick = { run() }) {
+                    PressableRow(onClick = run) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             MdiIcon(icon, 20, C.ink)
                             Text(label, fontSize = 16.sp, color = C.ink)
                         }
                     }
                 }
-                Divider()
-                // general group
+            }
+        }
+    }
+
+    // more sheet
+    if (moreOpen) {
+        BottomSheet(title = displayName(contact), onClose = { moreOpen = false }) {
+            Column {
                 listOf(
                     Triple("pencil-outline", t("cd.editContact")) { UiStore.open(Overlay.ContactEdit(recordID)) },
                     Triple("card-account-details-outline", t("cd.shareVcard")) { shareContactVcard(contact) },
-                    Triple("email-outline", t("act.email")) { email?.let { Messengers.mailTo(it) } ?: Toasts.toast(t("cd.noEmail"), "error") },
+                    Triple("email-outline", t("act.email")) { email?.let { Messengers.mailTo(it) } },
                     Triple("content-copy", t("cd.copyNumber")) { copyNumber() },
                     Triple("dialpad", t("cd.openInDialer")) { phone?.let { Platform.calls.dial(it) } },
+                    Triple("link-plus", t("ce.addSocial")) { socialSheet = "telegram" },
                 ).forEach { (icon, label, run) ->
                     PressableRow(onClick = { moreOpen = false; run() }) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             MdiIcon(icon, 20, C.ink)
                             Text(label, fontSize = 16.sp, color = C.ink)
-                        }
-                    }
-                }
-                Divider()
-                // v1.6.18 — block / unblock (in-app block list; calls from the
-                // keypad / detail / search show the blocked notice)
-                val blockLabel = if (blockedNow) t("cd.unblockContact") else t("cd.blockContact")
-                PressableRow(onClick = {
-                    if (phone != null) {
-                        AppStore.toggleBlocked(phone)
-                        Toasts.toast(if (blockedNow) t("cd.numberUnblocked") else t("cd.numberBlocked"))
-                        moreOpen = false
-                    } else Toasts.toast(t("cd.noPhone"), "error")
-                }) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        MdiIcon(if (blockedNow) "lock-off-outline" else "lock-outline", 20, if (blockedNow) C.green else C.red)
-                        Column(Modifier.weight(1f)) {
-                            Text(blockLabel, fontSize = 16.sp, color = if (blockedNow) C.green else C.red)
-                            Text(t("cd.blockedHint"), fontSize = F.tiny.sp, color = C.faint, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -701,38 +631,9 @@ private fun isPrimaryMark(number: String, contact: DeviceContact): Boolean {
 @Composable
 private fun InfoBlock(title: String, children: @Composable () -> Unit) {
     val C = C()
-    // v1.6.18 — soft card + hairline per block: visual FILLING between the
-    // sections (the tab read as one flat slab before).
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(bottom = 10.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(C.card)
-            .border(1.dp, C.line, RoundedCornerShape(14.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    ) {
+    Column(Modifier.padding(bottom = 12.dp)) {
         Text(title, fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 5.dp))
         children()
-    }
-}
-
-/** v1.6.18 — one labeled social tile in the More sheet’s sideways strip. */
-@Composable
-private fun MoreSocialItem(icon: String, label: String, tint: Color, onPress: () -> Unit) {
-    val C = C()
-    Column(
-        Modifier
-            .width(64.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(C.chip)
-            .clickable { onPress() }
-            .padding(vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        MdiIcon(icon, 20, tint)
-        Text(label, fontSize = F.tiny.sp, color = C.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -745,7 +646,6 @@ fun NumberPickerSheet(
     onPick: (String) -> Unit,
     onClose: () -> Unit,
     onAddEdit: () -> Unit,
-    actionIcon: String = "phone",
 ) {
     val C = C()
     BottomSheet(title = t("cd.chooseNumber"), onClose = onClose) {
@@ -755,9 +655,6 @@ fun NumberPickerSheet(
                     Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Pill(p.label, "brand")
                         Text(prettyPhone(p.number, countryCode), fontSize = F.body.sp, color = C.ink, modifier = Modifier.weight(1f))
-                        // v1.6.18 — every row carries the ACTION icon (call /
-                        // message) so the list reads like a list of dial buttons.
-                        IconBtn(actionIcon, { onPick(p.number) }, size = 30)
                         IconBtn("content-copy", { Platform.share.copyText(p.number); Toasts.toast(t("act.copied")) }, size = 28)
                     }
                 }

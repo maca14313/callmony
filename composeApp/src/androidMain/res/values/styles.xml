@@ -25,15 +25,4 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowSplashScreenBackground">@color/canvas_dark</item>
     </style>
-    <!-- v1.6.20 — the separate-process diagnostics screen (plain Views, no
-         Compose): always dark, no splash — it must come up instantly and
-         legibly over a frozen/dying main process. -->
-    <style name="Theme.Callmony.Diag" parent="android:Theme.Material.NoActionBar">
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">#101418</item>
-        <item name="android:windowBackground">#101418</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:colorAccent">@color/brand</item>
-        <item name="android:colorPrimary">@color/brand</item>
-    </style>
 </resources>

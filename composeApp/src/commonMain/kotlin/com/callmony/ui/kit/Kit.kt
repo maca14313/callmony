@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -230,43 +229,6 @@ fun ConfirmHost() {
     }
 }
 
-/* ---------------- host sheets ---------------- */
-
-/* v1.6.18 — THE "MODALS OPEN AT THE TOP" FIX.
- * Bottom sheets that were composed INSIDE a scrollable (the ledger entry
- * card's Record-payment, the group menus, the list row payment …) drew
- * their full-size scrim against an UNBOUNDED height constraint, so the
- * sheet could not pin to the bottom of the SCREEN — it appeared stuck to
- * the top of its little container or floated mid-scroll. These sheets now
- * open through a ROOT-LEVEL slot (exactly like Toaster / ConfirmHost),
- * where the host Box is the full-size app root: bottom-center placement
- * is guaranteed no matter how deeply nested the caller is. */
-object HostSheets {
-    data class Entry(val id: Long, val content: @Composable (close: () -> Unit) -> Unit)
-
-    val stack = androidx.compose.runtime.mutableStateListOf<Entry>()
-    private var nextId = 1L
-
-    fun push(content: @Composable (close: () -> Unit) -> Unit) {
-        val id = nextId++
-        stack.add(Entry(id, content))
-    }
-
-    fun pop(id: Long) {
-        stack.removeAll { it.id == id }
-    }
-}
-
-@Composable
-fun HostSheetsHost() {
-    val snapshot = HostSheets.stack.toList()
-    for (s in snapshot) {
-        androidx.compose.runtime.key(s.id) {
-            s.content { HostSheets.pop(s.id) }
-        }
-    }
-}
-
 /* ---------------- money ---------------- */
 
 @Composable
@@ -379,25 +341,24 @@ fun Btn(
             .clip(shape)
             .background(bg)
             .clickable(enabled = !off) { onPress() }
-            // v1.6.17 — compact buttons (user request): less air, same tap target comfort
-            .padding(horizontal = if (small) 12.dp else 16.dp, vertical = if (small) 6.dp else 10.dp)
-            .heightIn(min = if (small) 34.dp else 44.dp),
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
+            .padding(horizontal = if (small) 14.dp else 18.dp, vertical = if (small) 8.dp else 12.dp)
+            .heightIn(min = if (small) 40.dp else 48.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (loading) {
             // v1.6.15: the spinner uses the button's foreground color — a
             // brand-colored spinner on the brand background was invisible.
             CircularProgressIndicator(
-                modifier = Modifier.size(17.dp),
+                modifier = Modifier.size(18.dp),
                 strokeWidth = 2.dp,
                 color = fg,
             )
         } else if (icon != null) {
-            MdiIcon(icon, 17, fg)
+            MdiIcon(icon, 18, fg)
         }
         if (label != null) {
-            Text(label, color = fg, fontSize = if (small) 13.sp else 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label, color = fg, fontSize = if (small) 14.sp else 16.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -533,50 +494,30 @@ fun EmptyState(
     onAction: (() -> Unit)? = null,
 ) {
     val C = C()
-    // v1.6.19 — THE "EMPTY STATE SITS TOP-LEFT" FIX. The old bare Column
-    // (padding only) started at the TOP-LEFT of whatever container it was
-    // in — screens with a sized content area (Recents "No matching
-    // contacts", Reminders, Notes, Banks, picker…) showed the mint circle
-    // + heading + hint glued to the top-left corner. Now the state fills
-    // its container and centers. In scrollables (LazyColumn items, vertical
-    // scroll columns) the height constraint is unbounded, where fillMaxSize
-    // falls back to wrap-content — so list-empty states keep their natural
-    // in-flow placement and only center horizontally (exactly the RN
-    // behavior in both contexts).
-    Box(
-        Modifier
-            .fillMaxSize()
-            .wrapContentSize(Alignment.Center),
+    Column(
+        Modifier.padding(vertical = 36.dp, horizontal = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Column(
-            Modifier.padding(vertical = 36.dp, horizontal = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Box(
-                Modifier
-                    .size(62.dp)
-                    .clip(CircleShape)
-                    .background(C.brandSoft),
-                contentAlignment = Alignment.Center,
-            ) { MdiIcon(icon, 30, C.brand) }
-            Text(title, fontSize = F.body.sp, fontWeight = FontWeight.Bold, color = C.ink, modifier = Modifier.padding(top = 12.dp))
-            if (!hint.isNullOrEmpty()) {
-                Text(hint, fontSize = F.small.sp, color = C.sub, modifier = Modifier.padding(top = 4.dp), textAlign = TextAlign.Center, lineHeight = 20.sp)
-            }
-            if (actionLabel != null && onAction != null) {
-                Box(Modifier.padding(top = 14.dp)) { Btn(label = actionLabel, onPress = onAction, small = true) }
-            }
+        Box(
+            Modifier
+                .size(62.dp)
+                .clip(CircleShape)
+                .background(C.brandSoft),
+            contentAlignment = Alignment.Center,
+        ) { MdiIcon(icon, 30, C.brand) }
+        Text(title, fontSize = F.body.sp, fontWeight = FontWeight.Bold, color = C.ink, modifier = Modifier.padding(top = 12.dp))
+        if (!hint.isNullOrEmpty()) {
+            Text(hint, fontSize = F.small.sp, color = C.sub, modifier = Modifier.padding(top = 4.dp), textAlign = TextAlign.Center, lineHeight = 20.sp)
+        }
+        if (actionLabel != null && onAction != null) {
+            Box(Modifier.padding(top = 14.dp)) { Btn(label = actionLabel, onPress = onAction, small = true) }
         }
     }
 }
 
 /** Segmented — compact tab strip of Chips (webapp style: "Ledger · Lists · …").
  *  v1.6.14: chips are COMPACT (28 dp tall, 12 sp) so five-to-six tabs fit
- *  side by side on a phone without crowding their neighbours.
- *  v1.6.17: the strip carries its OWN 5 dp vertical padding so it can never
- *  sit flush against the container above/below it — the "tabs overlap with
- *  the container" report — no matter whether the call site remembers to
- *  add spacing. */
+ *  side by side on a phone without crowding their neighbours. */
 @Composable
 fun Segmented(
     options: List<Triple<String, String, Int?>>,
@@ -584,9 +525,7 @@ fun Segmented(
     onChange: (String) -> Unit,
 ) {
     Row(
-        Modifier
-            .padding(top = 5.dp, bottom = 5.dp)
-            .horizontalScrollCompat(),
+        Modifier.horizontalScrollCompat(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -600,30 +539,6 @@ fun Segmented(
 private fun Modifier.horizontalScrollCompat(): Modifier {
     val state = androidx.compose.foundation.rememberScrollState()
     return this.horizontalScroll(state)
-}
-
-/** v1.6.17 — live countdown to (or past) a due moment, e.g. "in 2h 15m"
- *  or "3h late". Ticks every 30 s; green while ahead, red once overdue.
- *  Used on reminder cards and anywhere a due moment is shown. */
-@Composable
-fun LiveCountdown(dueAt: Long, fontSize: androidx.compose.ui.unit.TextUnit? = null, bold: Boolean = false) {
-    val C = C()
-    var tick by remember { mutableStateOf(com.callmony.lib.now()) }
-    LaunchedEffect(dueAt) {
-        while (true) {
-            kotlinx.coroutines.delay(30_000)
-            tick = com.callmony.lib.now()
-        }
-    }
-    val left = dueAt - tick
-    Text(
-        com.callmony.lib.timeLeftStr(dueAt, tick),
-        fontSize = fontSize ?: F.tiny.sp,
-        fontWeight = if (bold) FontWeight.Bold else FontWeight.SemiBold,
-        color = if (left >= 0) C.green else C.red,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
 }
 
 @Composable
@@ -695,50 +610,6 @@ fun Divider() {
             .height(1.dp)
             .background(C.line)
     )
-}
-
-/** v1.6.17 — PickerField: a tappable read-only field (native date/time
- *  pickers). Mirrors Field's exact metrics (label above, 48 dp input box)
- *  so a PickerField beside a Field aligns perfectly — the old inline
- *  label-inside-the-box variant sat taller/shorter than its neighbour and
- *  the pair looked broken ("one has a label, the other doesn't, one gets
- *  pushed below"). */
-@Composable
-fun PickerField(
-    label: String,
-    value: String,
-    icon: String? = null,
-    onPress: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val C = C()
-    Column(modifier.padding(bottom = 12.dp)) {
-        Text(label, fontSize = F.small.sp, fontWeight = FontWeight.SemiBold, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .border(1.dp, C.line, RoundedCornerShape(14.dp))
-                .background(C.inputBg, RoundedCornerShape(14.dp))
-                .clickable { onPress() }
-                .padding(horizontal = 14.dp)
-                .heightIn(min = 48.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (icon != null) MdiIcon(icon, 17, C.brand)
-            Text(
-                value,
-                fontSize = F.body.sp,
-                color = C.ink,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            MdiIcon("chevron-down", 18, C.faint)
-        }
-    }
 }
 
 @Composable

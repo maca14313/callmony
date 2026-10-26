@@ -41,7 +41,6 @@ import androidx.compose.ui.unit.sp
 import com.callmony.i18n.currentLang
 import com.callmony.i18n.t
 import com.callmony.lib.AppStore
-import com.callmony.lib.Diag
 import com.callmony.model.COUNTRY_CODES
 import com.callmony.model.CURRENCIES
 import com.callmony.lib.Overlay
@@ -133,7 +132,7 @@ fun SettingsOverlay() {
                         }
                     }
                 }
-                Row(Modifier.padding(bottom = 8.dp)) {
+                Row {
                     ScrollRow {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             COUNTRY_CODES.forEach { cc ->
@@ -143,16 +142,6 @@ fun SettingsOverlay() {
                             }
                         }
                     }
-                }
-                // v1.6.17 — 12 h (AM/PM) vs 24 h clock, app-wide
-                Text(t("st.clockFormat"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Chip(label = t("st.clock12"), compact = true, active = !settings.clock24, onPress = {
-                        AppStore.updateSettings { it.copy(clock24 = false) }
-                    })
-                    Chip(label = t("st.clock24"), compact = true, active = settings.clock24, onPress = {
-                        AppStore.updateSettings { it.copy(clock24 = true) }
-                    })
                 }
             }
             /* ---- Security ---- */
@@ -190,18 +179,10 @@ fun SettingsOverlay() {
                 }
                 if (settings.pinHash != null) {
                     Text(t("st.autolock"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, bottom = 6.dp))
-                    // v1.6.18: added "Never" — the v1.6.17 default (1 minute)
-                    // surprised users as "the app closes itself" while they
-                    // were simply reading the screen with no touch for a minute.
                     Segmented(
-                        listOf(
-                            Triple("0", t("st.immediately"), null),
-                            Triple("1", t("st.after1"), null),
-                            Triple("5", t("st.after5"), null),
-                            Triple("-1", t("st.never"), null),
-                        ),
+                        listOf(Triple("0", t("st.immediately"), null), Triple("1", t("st.after1"), null), Triple("5", t("st.after5"), null)),
                         settings.autolockMin.toString(),
-                    ) { v -> AppStore.updateSettings { it.copy(autolockMin = v.toIntOrNull() ?: -1) } }
+                    ) { v -> AppStore.updateSettings { it.copy(autolockMin = v.toIntOrNull() ?: 1) } }
                 }
             }
             /* ---- Backup & restore ---- */
@@ -230,31 +211,6 @@ fun SettingsOverlay() {
                 Btn(small = true, label = t("ie.exportTx"), icon = "cash-multiple", variant = "secondary", onPress = {
                     if (exportTransactionsCsv()) Toasts.toast(t("ie.txExported")) else Toasts.toast(t("ie.noTxToExport"), "error")
                 })
-            }
-            /* ---- Diagnostics (v1.6.20) ---- */
-            SectionLabel(t("st.diagnostics"))
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 14.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(C.card)
-                    .clickable { Diag.listOpen = true }
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                MdiIcon("alert-circle-outline", 18, if (Diag.reports.any { !it.seen }) C.red else C.sub)
-                Text(t("st.diagnostics"), fontSize = F.body.sp, color = C.ink, modifier = Modifier.weight(1f))
-                if (Diag.reports.isNotEmpty()) {
-                    Text(
-                        "${Diag.reports.size}",
-                        fontSize = F.small.sp,
-                        color = if (Diag.reports.any { !it.seen }) C.red else C.sub,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                MdiIcon("chevron-right", 18, C.faint)
             }
             /* ---- Danger zone ---- */
             SectionLabel(t("st.data"))
@@ -388,10 +344,7 @@ fun PinFlowSheet(mode: String, onClose: () -> Unit) {
     }
 
     BottomSheet(title = title, onClose = onClose) {
-        // v1.6.17: fillMaxWidth so horizontalAlignment actually centers the
-        // dots + pad (a wrap-width Column inside the sheet used to stick to
-        // the LEFT edge — "the PIN keypad is aligned to left").
-        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Row(Modifier.padding(vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 repeat(4) { i ->
                     Box(

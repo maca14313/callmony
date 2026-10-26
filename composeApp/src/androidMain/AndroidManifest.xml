@@ -91,17 +91,6 @@
             </intent-filter>
         </activity>
 
-        <!-- v1.6.20 — the "show the problem when the app is trying to close"
-             screen: plain-View diagnostics activity in its own :diag process,
-             popped by the ANR watchdog / crash firewall over the frozen app. -->
-        <activity
-            android:name=".diag.DiagActivity"
-            android:process=":diag"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:taskAffinity=""
-            android:theme="@style/Theme.Callmony.Diag" />
-
         <!-- Reminder alarms re-armed after device reboot -->
         <receiver
             android:name=".BootReceiver"

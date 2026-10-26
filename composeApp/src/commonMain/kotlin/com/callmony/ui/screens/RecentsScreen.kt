@@ -384,20 +384,7 @@ fun RecentsScreen() {
         }
         // the list
         Box(Modifier.weight(1f)) {
-            // v1.6.19 — THE WELCOME-SCREEN FREEZE FIX. The old condition
-            // (callLogPerm == UNKNOWN && systemCalls.isEmpty()) rendered an
-            // INFINITE CircularProgressIndicator whenever the permission was
-            // unresolved — including the entire first-run onboarding, where
-            // it spun invisibly UNDER the opaque welcome sheet and never
-            // stopped: an endless Choreographer frame loop saturating the
-            // main thread → "Callmony isn't responding" → the app closes
-            // itself. Now the spinner appears ONLY while a call-log ask or
-            // fetch is genuinely in flight AND the screen is actually
-            // visible (onboarding done). An unresolved UNKNOWN state falls
-            // through to the no-calls EmptyState — which never animates.
-            if (callLogPerm == PermState.UNKNOWN && systemCalls.isEmpty() &&
-                AppStore.state.settings.onboarded && AppStore.state.callLogBusy
-            ) {
+            if (callLogPerm == PermState.UNKNOWN && systemCalls.isEmpty()) {
                 Column(
                     Modifier.fillMaxSize().padding(top = 80.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -720,20 +707,15 @@ fun CallRowSheet(row: CallRow, onClose: () -> Unit, onDelete: (() -> Unit)?) {
                     // v1.6.13: WRITE_CONTACTS gate (was failing silently).
                     val ok = com.callmony.lib.requestContactsWrite() &&
                         Platform.contacts.addPhoneToContact(c.recordID, "other", row.phone)
-                    // v1.6.21 — binder work above ran on the Default worker;
-                    // every state write + toast publishes on Main instead
-                    // (single-writer snapshot rule).
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        addingTo = null
-                        if (ok) {
-                            AppStore.patchDeviceContact(c.recordID) { old ->
-                                if (old.phones.any { it.number == row.phone }) old
-                                else old.copy(phones = old.phones + com.callmony.model.DevicePhone(row.phone, "other", row.phone))
-                            }
-                            Toasts.toast(t("cd.numberAddedTo", mapOf("name" to displayName(c))))
-                            onClose()
-                        } else Toasts.toast(t("act.couldntCopy"), "error")
-                    }
+                    addingTo = null
+                    if (ok) {
+                        AppStore.patchDeviceContact(c.recordID) { old ->
+                            if (old.phones.any { it.number == row.phone }) old
+                            else old.copy(phones = old.phones + com.callmony.model.DevicePhone(row.phone, "other", row.phone))
+                        }
+                        Toasts.toast(t("cd.numberAddedTo", mapOf("name" to displayName(c))))
+                        onClose()
+                    } else Toasts.toast(t("act.couldntCopy"), "error")
                 }
             },
             onBack = { addToExisting = false },

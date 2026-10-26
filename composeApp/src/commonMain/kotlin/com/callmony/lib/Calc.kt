@@ -1,6 +1,5 @@
 package com.callmony.lib
 
-import com.callmony.i18n.t
 import com.callmony.model.CalcList
 import com.callmony.model.EntryItem
 import com.callmony.model.LedgerEntry
@@ -155,54 +154,29 @@ private fun sameDay(a: KmpDate, b: KmpDate): Boolean =
 private fun daysInMonth(year: Int, month0: Int): Int =
     KmpDate(year, month0 + 1, 0).day
 
-/** Next occurrence strictly after `from` for a repeating reminder.
- *  v1.6.18: understands custom intervals ("custom:<n><unit>", unit ∈
- *  m minutes | h hours | d days | w weeks | mo months) on top of the
- *  five fixed repeats — "a repeat reminder that works in ANY interval". */
+/** Next occurrence strictly after `from` for a repeating reminder. */
 fun nextOccurrence(dueAt: Long, repeat: Repeat, from: Long = now()): Long {
     if (repeat == "none") return dueAt
-    val custom = parseCustomRepeat(repeat)
-    if (custom != null && (custom.second == "m" || custom.second == "h")) {
-        // sub-day intervals are pure epoch arithmetic
-        val stepMs = if (custom.second == "m") custom.first * 60_000L else custom.first * 3_600_000L
-        var t = dueAt
-        var guard = 0
-        while (t <= from && guard < 100_000) { t += stepMs; guard++ }
-        return t
-    }
     var next = dateOf(dueAt)
     val f = dateOf(from)
     var guard = 0
     while (next.time() <= from && guard < 500) {
         guard++
-        next = when {
-            repeat == "daily" -> next.addDays(1)
-            repeat == "weekly" -> next.addDays(7)
-            repeat == "monthly" -> {
+        next = when (repeat) {
+            "daily" -> next.addDays(1)
+            "weekly" -> next.addDays(7)
+            "monthly" -> {
                 val day = next.day
                 val firstOfNext = KmpDate(next.year, next.month0 + 1, 1)
                 val dim = KmpDate(firstOfNext.year, firstOfNext.month0 + 1, 0).day
                 KmpDate(firstOfNext.year, firstOfNext.month0, minOf(day, dim), next.hour, next.minute, next.second)
             }
-            repeat == "yearly" -> {
+            "yearly" -> {
                 val day = next.day
                 val month = next.month0
                 val n = KmpDate(next.year + 1, month, 1)
                 val dim = KmpDate(n.year, n.month0 + 1, 0).day
                 KmpDate(n.year, n.month0, minOf(day, dim), next.hour, next.minute, next.second)
-            }
-            custom != null -> when (custom.second) {
-                // every N days / N weeks
-                "d" -> next.addDays(custom.first)
-                "w" -> next.addDays(custom.first * 7)
-                // every N months (day clamped, like the fixed monthly branch)
-                else -> {
-                    val total = next.month0 + custom.first
-                    val y = next.year + total / 12
-                    val m = total % 12
-                    val dim = daysInMonth(y, m)
-                    KmpDate(y, m, minOf(next.day, dim), next.hour, next.minute, next.second)
-                }
             }
             else -> return next.time()
         }
@@ -211,46 +185,6 @@ fun nextOccurrence(dueAt: Long, repeat: Repeat, from: Long = now()): Long {
         next = next.addDays(1)
     }
     return next.time()
-}
-
-/** v1.6.18 — parse "custom:<n><unit>" (m|h|d|w|mo). Null when not custom
- *  or malformed. n must be a positive integer. */
-fun parseCustomRepeat(repeat: String): Pair<Int, String>? {
-    if (!repeat.startsWith("custom:")) return null
-    val body = repeat.removePrefix("custom:")
-    val unit: String = when {
-        body.endsWith("mo") -> "mo"
-        body.length >= 2 && (body.endsWith("m") || body.endsWith("h") || body.endsWith("d") || body.endsWith("w")) ->
-            body.takeLast(1)
-        else -> return null
-    }
-    val digits = body.dropLast(if (unit == "mo") 2 else 1)
-    val n = digits.toIntOrNull() ?: return null
-    if (n <= 0) return null
-    return n to unit
-}
-
-/** v1.6.18 — human label for any repeat value, used on reminder cards and
- *  the editor summary ("Every 2 weeks", "Every 90 minutes"). */
-fun repeatLabelOf(repeat: String): String {
-    return when (repeat) {
-        "none" -> ""
-        "daily" -> t("rm.repeatDaily")
-        "weekly" -> t("rm.repeatWeekly")
-        "monthly" -> t("rm.repeatMonthly")
-        "yearly" -> t("rm.repeatYearly")
-        else -> {
-            val c = parseCustomRepeat(repeat) ?: return ""
-            val unit = when (c.second) {
-                "m" -> if (c.first == 1) t("rm.unitMinute") else t("rm.unitMinutes")
-                "h" -> if (c.first == 1) t("rm.unitHour") else t("rm.unitHours")
-                "d" -> if (c.first == 1) t("rm.unitDay") else t("rm.unitDays")
-                "w" -> if (c.first == 1) t("rm.unitWeek") else t("rm.unitWeeks")
-                else -> if (c.first == 1) t("rm.unitMonth") else t("rm.unitMonths")
-            }
-            "${t("rm.everyN")} ${c.first} $unit"
-        }
-    }
 }
 
 /** Due status for display */

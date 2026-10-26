@@ -313,3 +313,21 @@ Stage Summary:
 - The v1.6.22 spin probe paid off immediately: it settled all three reports as false positives with a healthy main thread, then pinned the watchdog pause/resume accounting bug (fixed with resume() + transition detection, 3 new tests) and the permission-grant double whole-book read (fixed with the Mutex gate). From v1.6.23 on, a freeze report means a REAL stall measured from a fresh heartbeat. Live: https://github.com/maca14313/callmony/releases/tag/v1.6.23
 - contactX=0 CLARIFIED: contactX is the app's OWN per-contact extension table (favorites/blocked/social links) — 0 on a fresh pre-onboarding install is EXPECTED, not a bug. Removed from the pending list.
 - STILL PENDING from the user's bug list (unchanged): left/top-alignment bugs (empty-state screens, PIN keypad centering), double-save, Add payment issues, modals→bottom sheets, Reminder repeat/interval refinements, contact-detail 4 items + block flow, advanced search tabs polish, i18n key leaks, tabs compactness.
+
+---
+Task ID: 15
+Agent: main agent (Z.ai)
+Task: User requested a full rollback to v1.6.16 ("dont want anything just go back to v1.6.16 it works ... dont change anything") — execute it exactly, no pushback.
+
+Work Log:
+- Confirmed v1.6.16 = commit 34076f2 (versionCode 26, versionName 1.6.16); repo was clean at 550ffb8 (v1.6.23).
+- Data-safety pre-check: v1.6.16 Db.kt JSON loader has ignoreUnknownKeys=true + coerceInputValues=true + per-row fallbacks; storage keys/files identical through v1.6.23; only new serialized fields after v1.6.16 are Reminder.isAlarm and Settings.clock24 (ignored by the old reader) -> rollback keeps user data, no uninstall needed.
+- git read-tree -u --reset 34076f2 on main -> working tree byte-identical to v1.6.16 (git diff 34076f2 -- composeApp/ iosApp/ = empty).
+- Sole build change: versionCode 26 -> 34 in composeApp/build.gradle.kts (Android blocks installing a lower build number over v1.6.23=33; uninstall-first would delete user data). versionName stays 1.6.16. Purity proof: git diff 34076f2 over composeApp/src + build.gradle.kts + iosApp/ + gradle config = exactly that one line.
+- Restored release infra from HEAD: scripts/publish_release.py, sandbox/install_sdk.sh, sandbox/worklog.md, sandbox/chat-logs/.
+- BUILD: assembleRelease clean (2m 54s). aapt: com.callmony versionCode=34 versionName=1.6.16 minSdk 23 targetSdk 34. apksigner: signer SHA-256 2f6d65be...869ad identical to v1.6.23 APK -> installs as direct update with data intact.
+- Docs: README Versioning + react-native/docs/CHANGELOG.md rollback entries; sandbox/chat-logs/2026-10-26-v1.6.16-rollback.md. APK committed at releases/callmony-1.6.16-rollback-release.apk + copied to /home/z/my-project/download/callmony-1.6.16-rollback-kmp-release.apk.
+
+Stage Summary:
+- main now ships the exact v1.6.16 app (versionName 1.6.16, versionCode 34). GitHub Release v1.6.16-rollback published with the APK. v1.6.17-v1.6.23 NOT deleted — they remain in git history (7087815..81e9a1d) and on the Releases page. No tests rerun: the tree is a previously-released known-good state; the build itself (compile/link/sign) passed clean.
+- User data written by any 1.6.17-1.6.23 install loads cleanly under v1.6.16 code (verified by config + schema diff before rolling back).

@@ -172,7 +172,7 @@ data class ListItem(
 )
 
 typealias ListKind = String // calculating | simple | checklist | todo
-typealias Repeat = String // none | daily | weekly | monthly | yearly | custom:<n><m|h|d|w|mo> (v1.6.18 any-interval repeats)
+typealias Repeat = String // none | daily | weekly | monthly | yearly
 
 @Serializable
 data class CalcList(
@@ -238,10 +238,6 @@ data class Reminder(
     val snoozedUntil: Long? = null,
     val lastFiredAt: Long? = null,
     val firedLeads: List<Int> = emptyList(),
-    // v1.6.18 — ALARM reminders: rings on the ALARM stream (audible over
-    // silent / media-muted) through a dedicated high-importance channel,
-    // instead of the regular reminder notification sound.
-    val isAlarm: Boolean = false,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
     val deletedAt: Long? = null,
@@ -304,9 +300,8 @@ data class Settings(
     val language: String = "en", // en | am | om | ar | ti
     val currency: String = "ETB",
     val countryCode: String = "ET",
-    val clock24: Boolean = false, // v1.6.17: 12 h (AM/PM) | 24 h clock everywhere
     val pinHash: PinHash? = null,
-    val autolockMin: Int = -1, // 0 = lock immediately on blur; -1 = never (v1.6.18 default — the 1-minute default read as "the app closes itself")
+    val autolockMin: Int = 1, // 0 = lock immediately on blur
     val hideBalances: Boolean = false,
     val customCategories: List<String> = emptyList(),
     val startTab: String? = "recents",
