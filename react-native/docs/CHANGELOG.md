@@ -4,6 +4,119 @@ All notable changes to callmony. Dates follow the git history; the APK for each 
 
 ---
 
+# v1.6.22 — KMP: the freeze decoded for real — awaitEachGesture busy-spin fixed (2026-10-26)
+
+## Why
+
+"still the same, still crushing, freezing" — the v1.6.21 app sent its own
+diagnostics report, and this time the capture was complete enough to name
+the true root cause:
+
+```
+kind: freeze   phase: ui.main
+problem: Main thread blocked — no progress for 5003 ms
+
+Thread: main (main, RUNNABLE)
+  at AtomicReferenceFieldUpdater…get
+  at kotlinx.coroutines.JobSupport.isActive
+  at ForEachGestureKt$awaitEachGesture$2.invokeSuspend(ForEachGesture.kt:102)
+  … resumed from offerPointerEvent ← touch dispatch ← looper
+```
+
+Three facts, one conclusion: the main thread was **RUNNABLE** (not waiting
+on any lock — and the full thread dump showed every other thread parked,
+so no lock holder existed), it was parked at **the `while (isActive)` loop
+condition inside `awaitEachGesture` itself**, and it had made **zero
+progress for 5 seconds**. A thread that is "running" a plain atomic read
+for 5 seconds is a thread executing the same loop over and over: a
+**busy-spin**.
+
+## What was actually wrong (since v1.6.17)
+
+The autolock touch observer on the root Box of the main UI — present on
+every screen:
+
+```kotlin
+.pointerInput(Unit) {
+    awaitEachGesture {
+        lastActive.v = now()   // ← returns without awaiting ANY event
+    }
+}
+```
+
+`awaitEachGesture` is `awaitPointerEventScope { while (isActive) {
+block() } }` and its contract REQUIRES the block to await at least one
+pointer event. This block wrote a timestamp and returned — so from the
+**first touch on the app** the loop spun the main thread at 100% CPU
+inside the touch dispatch, forever: our watchdog fires at 5 s, Android's
+input-dispatch ANR fires at ~5 s ("Callmony isn't responding" → Close app
+— the reported "crushing"), and the :diag-process diagnostics screen pops
+with the report.
+
+This also retro-explains the entire freeze saga:
+
+- **v1.6.20's report** (BLOCKED in `SnapshotKt.readable` while writing
+  `lastActive` state) was the SAME spin — with a `mutableStateOf` write
+  every lap, which is what collided with the snapshot system.
+- **v1.6.21's fix** (plain-field `lastActive` + the single-writer snapshot
+  rule) removed the snapshot collision — genuinely — but the spin itself
+  kept spinning; the report just changed shape (RUNNABLE at the loop
+  condition instead of BLOCKED at a state write).
+- The Robolectric boot harnesses never caught it because no touch events
+  are ever dispatched in the harness: the handler coroutine stays parked
+  at its first await and the spin never starts.
+
+## The fix
+
+The observer now **awaits the down FIRST**, then refreshes the idle timer
+per event until all pointers release:
+
+```kotlin
+.pointerInput(Unit) {
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false)   // suspends — the loop parks between gestures
+        lastActive.v = now()
+        while (true) {
+            val event = awaitPointerEvent()
+            lastActive.v = now()
+            if (event.changes.all { !it.pressed }) break
+        }
+    }
+}
+```
+
+Still a pure observer — `requireUnconsumed = false` and nothing consumed —
+so children receive every tap, swipe and child gesture exactly as before.
+Every other `pointerInput` in the app was audited (SwipeRow ×3, KeypadSheet
+long-press, Calculator hold-to-repeat): all use `detectTapGestures` /
+`detectHorizontalDragGestures`, framework detectors that always suspend.
+
+## Diagnostics hardened
+
+`captureFreezeReport` now embeds a **3-sample main-thread spin probe**
+(three stacks, 200 ms apart): identical stacks → hard block; the same top
+frames wandering → spin/livelock; different stacks each sample →
+saturation. The v1.6.21 report's single sample made a busy-spin look like
+an innocent transient ("RUNNABLE at an atomic get"); three samples settle
+it at a glance.
+
+## Verification
+
+- BootDiagTest, UpgradeBootDiagTest, StartupTest, DiagTest + the pure
+  battery green with the fix.
+- The 5 Recents Robolectric timeouts (RecentsScrollTest ×2,
+  RecentsV1615Test ×3 — "Condition still not satisfied after 20000 ms"
+  waiting for `hydrated`) reproduce identically on **unmodified v1.6.21
+  code** (A/B via `git stash`) — sandbox-load flakiness on the 4 GB box,
+  not a regression.
+- `compileKotlinIosArm64` + `compileKotlinIosSimulatorArm64` clean (the
+  fix is in commonMain).
+- Release APK verified: `com.callmony 1.6.22 versionCode 32`, minSdk 23,
+  targetSdk 34 — published as
+  [v1.6.22](https://github.com/maca14313/callmony/releases/tag/v1.6.22).
+
+---
+
 # v1.6.21 — KMP: the first diagnostics report named the freeze — fixed at the exact stack (single-writer snapshot rule) (2026-10-26)
 
 ## Why

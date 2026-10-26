@@ -104,6 +104,31 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
+**1.6.22 (versionCode 32)** — see `react-native/docs/CHANGELOG.md` for the
+feature history.
+
+- **1.6.22** — the second diagnostics report (from app v1.6.21) cracked
+  the freeze for real: the main thread was **RUNNABLE** (no lock holder
+  anywhere in the full thread dump) parked at **ForEachGesture.kt:102 —
+  `awaitEachGesture`'s internal `while (isActive)` loop condition**. The
+  autolock touch observer on the root of the main UI (every screen, since
+  v1.6.17) was `awaitEachGesture { lastActive.v = now() }` — a block that
+  **returns without awaiting any pointer event**, which turns
+  `awaitEachGesture`'s contract-violating loop into an **infinite 100% CPU
+  busy-spin on the main thread from the first touch** until Android's
+  5-second input ANR kills the app ("freezing and crushing"). v1.6.20's
+  snapshot-lock blockage was the SAME spin with a `mutableStateOf` write
+  per lap; v1.6.21 removed the snapshot write (true, but only half the
+  bug) and the spin kept spinning. **Fix:** the observer now awaits the
+  down FIRST (`awaitFirstDown(requireUnconsumed = false)` — still a pure
+  non-consuming observer) and refreshes the idle timer per event until all
+  pointers release; the loop parks between gestures at ~zero CPU. Every
+  other gesture handler in the app audited (all use the always-suspending
+  framework detectors). Freeze reports now also carry a **3-sample
+  main-thread spin probe** (200 ms apart: identical stacks = hard block,
+  wandering same-top-frames = spin, different stacks = saturation) — the
+  v1.6.21 single-sample report made a busy-spin read like a transient.
+
 **1.6.21 (versionCode 31)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
