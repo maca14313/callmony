@@ -303,9 +303,20 @@ internal class AnrWatchdog(
 
     override fun run() {
         try { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND) } catch (_: Throwable) {}
+        var prevActive = true
         while (running) {
             try {
                 val active = DiagHooks.appForeground && !DiagHooks.crashInFlight
+                // v1.6.23 — returning to the foreground must never be read as
+                // a freeze: the time the app spent PAUSED (a system permission
+                // dialog, switched away, screen off — onActivityPaused fires
+                // for all of them) is not blockage. Drop the detector baseline
+                // on the inactive→active transition so the next measurement
+                // starts from a fresh heartbeat post. (The v1.6.22 reports
+                // "no progress for 5791/144822/340354 ms" were this false
+                // positive — the main thread was healthy in every sample.)
+                if (active && !prevActive) det.resume()
+                prevActive = active
                 if (active) {
                     val hard = det.hardBlockageMs(SystemClock.elapsedRealtime())
                     if (hard != null) {

@@ -246,4 +246,20 @@ class BlockageDetector(
         lastReportAt = now
         return true
     }
+
+    /** v1.6.23 — surveillance resumed after a pause (the app came back to
+     *  the foreground / the watchdog reactivated). Drops the pre-pause
+     *  baseline so the time spent PAUSED — a system permission dialog,
+     *  the app switched away, the screen off — can never be read as a
+     *  freeze on return. The three v1.6.22 "freeze" reports were exactly
+     *  this: 5.8 s in the contacts permission dialog, 144 s and 340 s
+     *  backgrounded, all with a perfectly healthy (idle) main thread.
+     *  The next episode is measured from a FRESH post; the report
+     *  cooldown survives so report spam stays suppressed. */
+    fun resume() {
+        postedOnce = false
+        ranOnce = false
+        lastPostedAt = 0L
+        lastRanAt = 0L
+    }
 }

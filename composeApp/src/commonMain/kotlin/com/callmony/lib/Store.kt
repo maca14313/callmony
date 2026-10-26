@@ -31,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -238,6 +239,17 @@ object AppStore {
 
     private var contactsRefreshInFlight = false
 
+    /* v1.6.23 — the FETCH is the real single-flight unit. The outer
+       contactsRefreshInFlight guard above resets when its launching
+       coroutine returns — and the permission-grant path returns immediately
+       after SPAWNING its fetch — so on a fresh install (permission dialog
+       → grant) the grant-callback fetch and the onResume TTL refresh ran
+       TWO whole-book AndroidContacts.fetchAll() reads side by side (caught
+       live in a v1.6.22 diagnostics report: two DefaultDispatcher workers
+       both inside fetchAll). Every caller now funnels through this gate:
+       whoever gets it does the read, everyone else returns instantly. */
+    private val contactsFetchGate = Mutex()
+
     fun setDeviceContacts(list: List<DeviceContact>) {
         state.deviceContacts = list
         state.contactsLoadedAt = now()
@@ -285,6 +297,7 @@ object AppStore {
     }
 
     private suspend fun doFetchContacts() {
+        if (!contactsFetchGate.tryLock()) return
         try {
             // v1.6.21 — the address-book read (binder + cursor over every
             // contact) stays on the Default worker; the publish below is ONE
@@ -298,7 +311,10 @@ object AppStore {
                 }
                 saveCachedContacts(list)
             }
-        } catch (_: Exception) { }
+        } catch (_: Exception) {
+        } finally {
+            contactsFetchGate.unlock()
+        }
     }
 
     fun patchDeviceContact(recordID: String, patch: (DeviceContact) -> DeviceContact) {

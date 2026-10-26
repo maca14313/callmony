@@ -63,6 +63,51 @@ class DiagTest {
         assertTrue("a minute later a new episode reports", d.shouldReport(now = 70_000))
     }
 
+    /* v1.6.23 — the pause/resume accounting. The three v1.6.22 “freeze”
+       reports were false positives: the app sat PAUSED (permission dialog /
+       backgrounded / screen off — onActivityPaused fires for all of them)
+       for 5.8 s / 144 s / 340 s, and on return the watchdog read the gap
+       since the last heartbeat RUN as blockage, with a healthy idle main
+       thread in every sample. resume() must clear that gap. */
+
+    @Test
+    fun detectorResumeClearsThePausedGap() {
+        val d = BlockageDetector(latencyThresholdMs = 4_000, silentThresholdMs = 5_000)
+        d.onPosted(1_000)
+        d.onRan(1_100)
+        // the app is paused for 144 s (a v1.6.22 report) — surveillance
+        // resumes; the gap must not read as a freeze
+        d.resume()
+        assertNull("the paused gap is not blockage", d.hardBlockageMs(145_000))
+        // …and after a fresh post, a REAL stall is still caught
+        d.onPosted(145_500)
+        assertNotNull("a real stall after resume is still caught", d.hardBlockageMs(150_800))
+        assertEquals(5_300L, d.hardBlockageMs(150_800))
+    }
+
+    @Test
+    fun detectorResumeMeasuresFromTheFreshPostBeforeAnyRun() {
+        // resume() with no run history at all: the first post after resume
+        // becomes the baseline (postedOnce-but-never-ran path)
+        val d = BlockageDetector(latencyThresholdMs = 4_000, silentThresholdMs = 5_000)
+        d.onPosted(1_000) // pre-pause post, never ran
+        d.resume()
+        assertNull(d.hardBlockageMs(3_000))
+        d.onPosted(10_000)
+        assertNull("under the threshold from the FRESH post", d.hardBlockageMs(13_000))
+        assertNotNull("over the threshold from the fresh post", d.hardBlockageMs(15_100))
+    }
+
+    @Test
+    fun detectorResumeKeepsTheReportCooldown() {
+        val d = BlockageDetector(latencyThresholdMs = 4_000, silentThresholdMs = 5_000, cooldownMs = 60_000)
+        d.onPosted(0)
+        assertTrue(d.shouldReport(now = 5_000))
+        d.resume()
+        assertTrue("cooldown window survives the resume", d.shouldReport(now = 65_000))
+        assertFalse("and still suppresses within it", d.shouldReport(now = 66_000))
+    }
+
     /* ---------------- Diag record / seen flow ---------------- */
 
     @Test
