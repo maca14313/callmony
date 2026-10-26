@@ -233,12 +233,13 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
             Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(top = 10.dp, bottom = 40.dp),
+                .padding(horizontal = 12.dp)
+                .padding(top = 8.dp, bottom = 32.dp),
         ) {
-            // balance line
+            // balance line — v1.6.25 compact: sits directly beneath the
+            // header (redesign spec), tighter 8dp follow space.
             Row(
-                Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -289,21 +290,23 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
                     Pill(t("cd.blocked"), "red")
                 }
             }
-            // quick actions — 6×2 grid
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+            // quick actions — 6×2 grid — v1.6.25 compact: 7dp tile padding,
+            // 20dp icons, 2dp gaps (4dp spacing system); every original
+            // label preserved (truncating exactly as before on narrow cells).
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.padding(bottom = 8.dp)) {
                 for (row in 0..1) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                         quickActions.subList(row * 6, row * 6 + 6).forEach { (icon, label, run) ->
                             Column(
                                 Modifier
                                     .weight(1f)
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(RoundedCornerShape(10.dp))
                                     .clickable { run() }
-                                    .padding(vertical = 9.dp),
+                                    .padding(vertical = 7.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(3.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
-                                MdiIcon(icon, 22, C.brand)
+                                MdiIcon(icon, 20, C.brand)
                                 Text(
                                     label,
                                     fontSize = F.tiny.sp,
@@ -330,10 +333,10 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
                 ),
                 seg,
             ) { seg = it }
-            // v1.6.18 — SECTION SEPARATION: the tab body sits on its own soft
-            // card surface with a hairline outline + generous top spacing —
-            // the page read as one flat block before.
-            Spacer(Modifier.height(10.dp))
+            // v1.6.18 — SECTION SEPARATION; v1.6.25 compact (4dp system):
+            // 6dp to the hairline, 8dp to the tab body card, 16dp card
+            // corners, 10dp inset.
+            Spacer(Modifier.height(6.dp))
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -341,14 +344,14 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
                     .background(C.line)
                     .padding(0.dp),
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(16.dp))
                     .background(C.card)
-                    .border(1.dp, C.line, RoundedCornerShape(20.dp))
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                    .border(1.dp, C.line, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 10.dp, vertical = 10.dp),
             ) {
                 if (!bodyReady) {
                     Box(Modifier.fillMaxWidth().padding(vertical = 34.dp), contentAlignment = Alignment.Center) { Spinner(22) }
@@ -416,10 +419,16 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
     // more sheet — v1.6.18 REBUILD: social strip that scrolls sideways with
     // labeled icons (every number’s WhatsApp/Telegram + saved socials), the
     // add-to options, the general actions, and Block / Unblock.
+    // v1.6.25 — THE "app closes when I tap More / the navbar three dots"
+    // CRASH FIX: this content used to wrap itself in its own
+    // verticalScroll Column, but BottomSheet ALREADY scrolls its content —
+    // a scrollable measured inside another scrollable gets an INFINITE max
+    // height and Compose throws IllegalStateException at measure time, so
+    // tapping More (quick action) or ⋮ (navbar) killed the app instantly.
     if (moreOpen) {
         val blockedNow = phone != null && Calls.isBlocked(phone)
         BottomSheet(title = displayName(contact), onClose = { moreOpen = false }) {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+            Column {
                 // social strip (horizontal, scrolls if it overflows)
                 Text(t("cd.moreSocial"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 8.dp))
                 ScrollRow {
@@ -706,13 +715,13 @@ private fun InfoBlock(title: String, children: @Composable () -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(bottom = 10.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .padding(bottom = 8.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(C.card)
-            .border(1.dp, C.line, RoundedCornerShape(14.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .border(1.dp, C.line, RoundedCornerShape(12.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
-        Text(title, fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 5.dp))
+        Text(title, fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 4.dp))
         children()
     }
 }

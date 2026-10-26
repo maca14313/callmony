@@ -23,6 +23,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -483,9 +484,23 @@ fun LockScreen() {
         PinPad(onKey = { d ->
             if (entered.length < 4) {
                 entered += d
-                if (entered.length == 4) submit(entered)
+                // v1.6.25 — THE 4TH-DOT FIX: submit used to run synchronously
+                // in the same frame the 4th digit landed, so the recomposition
+                // that unlocks (or shakes + clears) happened BEFORE the 4th
+                // dot ever painted — "the dots get coloured every time but not
+                // on the fourth". The submit now runs from a LaunchedEffect
+                // one beat later (see below), letting the filled 4th dot
+                // render first. It still works exactly as before.
             }
         }, onBack = { if (entered.isNotEmpty()) entered = entered.dropLast(1) })
+
+        // v1.6.25 — submit one beat after the 4th digit paints
+        if (entered.length == 4) {
+            LaunchedEffect(entered) {
+                kotlinx.coroutines.delay(160)
+                submit(entered)
+            }
+        }
         Text(
             t("st.forgotPin"),
             fontSize = F.small.sp,

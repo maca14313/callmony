@@ -4,6 +4,91 @@ All notable changes to callmony. Dates follow the git history; the APK for each 
 
 ---
 
+## v1.6.25 — the More-sheet crash fixed; press feedback everywhere; compact flat redesign; search filters before typing (2026-10-26)
+
+The user tested v1.6.24 on their Samsung A12 and reported nine issues
+(verbatim log: `sandbox/chat-logs/2026-10-26-v1.6.25-user-reports.md`),
+led by a hard crash. All nine are fixed:
+
+- **THE CRASH — "when i click the more btn and the three dots in the navbar
+  in the detail contact page the app closes"**: the ContactDetail More sheet
+  wrapped its content in its own `verticalScroll` Column while `BottomSheet`
+  already scrolls its content — a vertically scrollable measured inside
+  another scrollable receives an INFINITE max-height constraint and Compose
+  throws `IllegalStateException` at measure time. Both triggers (the More
+  quick-action tile and the navbar dots-vertical) set the same `moreOpen`
+  flag, so both died instantly. The inner scroll is removed (the only
+  call site in the app with the pattern) and the path is locked with three
+  new Robolectric tests (`MoreSheetCrashTest`: quick action, navbar dots,
+  block-row render — all compose the real sheet with real stores).
+- **"every input on this app should have some indication it was clicked"**:
+  the app is bare Compose (no MaterialTheme wrapper), so `LocalIndication`'s
+  default draws nothing — no chip, tile, keypad key, card or row ever showed
+  a press. New multiplatform `PressIndication` (an `IndicationNodeFactory` +
+  `DrawModifierNode` pair: a bounded press veil that springs in on press and
+  fades out on release) is provided through `LocalIndication` at the app
+  root, reaching every default `clickable`/`combinedClickable` on every
+  screen, sheet and overlay; `PressableRow` and `LongPressText` no longer
+  null their indication; scrims and toasts stay perfectly quiet.
+- **PIN "dots get coloured every time but not on the fourth"**: the submit
+  ran synchronously in the same frame the 4th digit landed, so the unlock
+  (or shake-and-clear) recomposed before the 4th dot ever painted. The
+  submit now runs from a `LaunchedEffect` 160 ms after the 4th digit — the
+  filled dot renders first, unlocking still works exactly as before.
+- **"on the credit or others where is the icon to update the existing one"**:
+  every credit/debit/income/expense card now carries a visible pencil
+  button beside the amount that opens the editor directly (the row tap
+  still edits too, and the chevron still expands the detail).
+- **Single-entries tabs ("should have a btn to add new one / should not
+  overlap with its cards")**: the section header now shows a LABELED
+  kind-aware add chip (＋ Credit on the Credit tab, ＋ Income on General's
+  income tab, …) next to the plain ＋, and the filter strip carries its own
+  vertical padding so the chips never sit flush against the cards.
+- **Attachments ("it means to add to it… just like they do with their own
+  if we clicked them")**: attached lists/notes/reminders now ride directly
+  on the COLLAPSED entry card (they used to hide inside the expanded
+  detail), and tapping one opens the entity exactly like its own section
+  does — list → list detail, note → note editor, reminder → reminder
+  editor (shared `openRef` helper). Attaching still lives in the entry
+  editor (＋ Attach → the three-tab picker).
+- **Search "advanced tabs… even before the search begins… like credit, and
+  others, date and more"**: the type tabs (All/Contacts/Entries/Lists/
+  Notes/Reminders/Banks with live counts) are always visible now, plus a
+  new always-visible refinement row — kind (All kinds/Credit/Debit/Income/
+  Expense) and date (Any date/Today/Last 7 days/Last 30 days/Overdue).
+  With an empty query, picking a filter enters BROWSE mode: the list shows
+  everything of that type, pre-filtered, before a single letter is typed.
+  Five new i18n keys across all five languages.
+- **The redesign ("improve the ui… beautiful, compact, modern… most
+  important the ui is so ugly and bulky")**, executed to the user's strict
+  spec — original palette only, every label/amount/control preserved:
+  flat surfaces + subtle borders instead of the v1.6.24 shadows (cards
+  hairline-only at 16dp corners/12dp inset, primary buttons flat, sheets
+  and keypad 10→6dp lift); compact 48dp sheet navbar; the contact balance
+  pill directly beneath the header; the 6×2 quick-action grid at 7dp
+  tiles / 20dp icons / 2dp gaps; three financial summary cards in one row
+  (Net keeps its selected-state styling); Credit/Debit/Income (General:
+  Income/Expense/Credit) as three equal-width brand-soft buttons in one
+  FIXED row with the remaining actions in a scroll row beneath; compact
+  entry cards (34dp icon tiles, 30dp icon buttons, 6dp card gaps); the
+  whole spacing snapped to the 4dp/8dp system.
+- **Bonus — the Recents Robolectric battery is green for the first time in
+  five rounds**: while building the crash repro, the notorious flakiness
+  (the same 5 `ComposeTimeoutException`s every round, previously
+  A/B-proven as sandbox load) was decoded — the batteries' `@Before` reset
+  `state.hydrated = false`, but the hydrate `LaunchedEffect` runs once per
+  composition, so whenever the rule-launch boot finished before `@Before`
+  ran, the reset parked the app on the splash forever and the first
+  `waitUntil` deadlocked. Test-only fix (no hydrated reset; every test
+  already waits for `hydrated=true` before seeding). Full suite 65/65.
+
+Build: Android `assembleRelease` clean (versionCode 36 / versionName
+1.6.25, minSdk 23, targetSdk 34); `apksigner` SHA-256 `2f6d65be…869ad`
+identical to every prior release (installs over anything, data intact);
+both iOS targets compile; 65/65 unit tests green.
+
+---
+
 ## v1.6.24 — every reported feature back, on the freeze-free foundation; diagnostics removed; UI depth polish (2026-10-26)
 
 The user re-sent the full report list on top of the v1.6.16 rollback

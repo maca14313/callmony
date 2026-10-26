@@ -272,9 +272,9 @@ fun KeypadSheet() {
     Column(
         Modifier
             .fillMaxWidth()
-            // v1.6.24 — depth: the keypad floats above the scrim like the sheets
-            .shadow(10.dp, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-            .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+            // v1.6.25 — flat spec: modest 6dp lift (was 10dp)
+            .shadow(6.dp, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
             .background(C.card)
             .navigationBarsPadding(),
     ) {

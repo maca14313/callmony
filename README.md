@@ -104,9 +104,39 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.24 (versionCode 35)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.25 (versionCode 36)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.25** — the v1.6.24 follow-up round, crash-first: (1) **THE MORE-SHEET
+  CRASH FIXED** — tapping More (quick action) or the navbar three dots in a
+  contact's page killed the app: the sheet wrapped its content in a
+  `verticalScroll` while `BottomSheet` already scrolls, so the inner
+  scrollable was measured with infinite height and Compose threw at measure
+  time; the inner scroll is gone and the path is locked with 3 regression
+  tests; (2) **every input shows it was clicked** — the app is bare Compose
+  (no MaterialTheme), so nothing ever rendered a press indication; a new
+  multiplatform bounded press veil is provided app-root through
+  `LocalIndication`; (3) **the PIN's 4th dot now colors** — the submit ran in
+  the same frame the 4th digit landed, so the unlock/shake recomposed before
+  the dot painted; the submit now runs one beat later (160 ms); (4) **entry
+  cards carry a visible pencil edit button** ("where is the icon to update
+  the existing one"); (5) **Single-entries tabs** got a labeled kind-aware
+  ＋ add chip and the filter strip its own padding (no more cards flush
+  against the chips); (6) **attachments of lists/notes/reminders now ride on
+  the collapsed entry card and open exactly like their own sections** when
+  tapped; (7) **search filters BEFORE typing** — type tabs are always
+  visible, plus a new kind row (Credit/Debit/Income/Expense) and date row
+  (Today/7 days/30 days/Overdue); an empty query with a filter selected
+  browses everything of that type; (8) **the compact/flat redesign** per the
+  user's spec — Credit/Debit/Income in one fixed row, three summary cards in
+  one row, 4dp/8dp spacing system, consistent 16/12/10dp radii, flat surfaces
+  + subtle borders (the v1.6.24 shadows are gone), compact 48dp sheet
+  headers, tighter quick-action grid and entry cards — all with the original
+  palette only, every label/amount/control preserved; (9) the Recents test
+  battery's notorious 5-round flakiness root-caused (a `@Before` reset of
+  `state.hydrated` deadlocked the splash whenever boot finished first) —
+  full suite 65/65 green for the first time. Same release key as every prior
+  version — installs directly over anything, data intact.
 - **1.6.24** — everything from the user's full report list is back, on the
   freeze-free foundation: the v1.6.17/18 feature work (working reminders
   with any-interval repeat + ALARM mode, live NOW clock with 12/24 h and

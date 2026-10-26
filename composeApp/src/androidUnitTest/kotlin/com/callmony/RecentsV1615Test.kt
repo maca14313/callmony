@@ -42,7 +42,8 @@ class RecentsV1615Test {
         UiStore.tabInternal = "recents"
         UiStore.locked = false
         Toasts.items.clear()
-        AppStore.state.hydrated = false
+        // v1.6.25 — hydrated is no longer reset (see RecentsScrollTest: the
+        // post-boot reset deadlocked the splash — the battery's flakiness).
         AppStore.state.systemCalls = emptyList()
         AppStore.state.deviceContacts = emptyList()
     }

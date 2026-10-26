@@ -54,7 +54,15 @@ class RecentsScrollTest {
         UiStore.tabInternal = "recents"
         UiStore.locked = false
         Toasts.items.clear()
-        AppStore.state.hydrated = false
+        // v1.6.25 — state.hydrated is NO LONGER reset here: the hydrate
+        // LaunchedEffect(Unit) runs exactly once per composition, so when the
+        // rule-launch boot finished BEFORE this @Before ran, the reset parked
+        // the app on the splash forever and the first waitUntil deadlocked —
+        // this exact race was the battery's notorious "sandbox flakiness"
+        // (same 5 ComposeTimeoutExceptions every round, A/B-proven on
+        // unmodified code). Seeding still lands safely: every test waits for
+        // hydrated=true FIRST, so the boot's empty publish always happens
+        // before the seeds.
         AppStore.state.systemCalls = emptyList()
         AppStore.state.deviceContacts = emptyList()
     }

@@ -1,16 +1,20 @@
 package com.callmony.ui.kit
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.node.DelegatableNode
+import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,6 +67,7 @@ import com.callmony.theme.ThemeColors
 import com.callmony.theme.resolveTheme
 import com.callmony.ui.icons.MdiIcons
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /* callmony — shared UI kit (primitives, toast, confirm).
@@ -70,6 +75,55 @@ import kotlin.math.abs
 
 @Composable
 fun C(): ThemeColors = resolveTheme(AppStore.state.settings.theme)
+
+/* ---------------- v1.6.25 — press feedback everywhere ---------------- */
+
+/* The app is bare Compose (no MaterialTheme wrapper), so LocalIndication's
+   default draws NOTHING — no tappable ever showed that it was tapped (user
+   report: "every input on this app should have some indication it was
+   clicked"). This is a compact bounded press indication: while pressed, a
+   soft dark veil fades in over the component's own bounds; on release it
+   fades out — flat and subtle (no ripple color surprises in either theme),
+   works for every default-`clickable` in the tree once provided through
+   LocalIndication at the app root. */
+object PressIndication : androidx.compose.foundation.IndicationNodeFactory {
+    override fun create(interactionSource: InteractionSource): DelegatableNode =
+        PressIndicationNode(interactionSource)
+
+    // equals/hashCode by identity — Compose caches instances with these.
+    // A singleton: any constant hash satisfies the contract (equal objects
+    // have equal hashes) and stays multiplatform (no System.* on native).
+    override fun equals(other: Any?): Boolean = other === this
+    override fun hashCode(): Int = 0x50524553 // "PRES"
+}
+
+private class PressIndicationNode(
+    private val interactionSource: InteractionSource,
+) : Modifier.Node(), DrawModifierNode {
+    private val progress: Animatable<Float, AnimationVector1D> = Animatable(0f)
+
+    override fun onAttach() {
+        coroutineScope.launch {
+            interactionSource.interactions.collect { interaction ->
+                when (interaction) {
+                    is PressInteraction.Press -> progress.animateTo(
+                        1f, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+                    )
+                    is PressInteraction.Release -> progress.animateTo(0f, tween(180))
+                    is PressInteraction.Cancel -> progress.animateTo(0f, tween(120))
+                }
+            }
+        }
+    }
+
+    override fun ContentDrawScope.draw() {
+        drawContent()
+        val p = progress.value
+        if (p > 0.01f) {
+            drawRect(Color.Black.copy(alpha = p * 0.10f))
+        }
+    }
+}
 
 /* ---------------- toast ---------------- */
 
@@ -376,8 +430,9 @@ fun Btn(
     val shape = RoundedCornerShape(if (small) 12.dp else 14.dp)
     Row(
         modifier
-            // v1.6.24 — depth: filled buttons float a hair above the surface
-            .then(if (variant == "primary" || variant == "danger") Modifier.shadow(2.dp, shape) else Modifier)
+            // v1.6.25 — flat design (user spec): the filled button keeps its
+            // solid brand fill as the affordance; the v1.6.24 drop shadow is
+            // gone — clean flat surfaces + subtle borders, no heavy shadows.
             .then(if (variant == "secondary") Modifier.border(1.dp, C.line, shape) else Modifier)
             .clip(shape)
             .background(bg)
@@ -494,28 +549,28 @@ fun Chip(
 @Composable
 fun Card(modifier: Modifier = Modifier, onPress: (() -> Unit)? = null, children: @Composable () -> Unit) {
     val C = C()
-    val shape = RoundedCornerShape(18.dp)
-    // v1.6.24 — depth: cards lift a hair off the canvas (soft shadow + the
-    // existing hairline) so sections read as layered surfaces, not flat
-    // white-on-white blocks — the "flat / bulky" report.
+    // v1.6.25 — FLAT + BORDERED (redesign spec: "clean, flat surfaces and
+    // subtle borders over heavy shadows, neumorphism, gradients"). The
+    // v1.6.24 2dp shadow is gone; the hairline outline carries the layer.
+    // Radius/padding snapped to the 4dp system: 16dp corners, 12dp inset.
+    val shape = RoundedCornerShape(16.dp)
     if (onPress != null) {
-        Box(Modifier.shadow(2.dp, shape).clip(shape).clickable { onPress() }) {
+        Box(Modifier.clip(shape).clickable { onPress() }) {
             Column(
                 modifier
                     .clip(shape)
                     .background(C.card)
                     .border(1.dp, C.line, shape)
-                    .padding(16.dp)
+                    .padding(12.dp)
             ) { children() }
         }
     } else {
         Column(
             modifier
-                .shadow(2.dp, shape)
                 .clip(shape)
                 .background(C.card)
                 .border(1.dp, C.line, shape)
-                .padding(16.dp)
+                .padding(12.dp)
         ) { children() }
     }
 }

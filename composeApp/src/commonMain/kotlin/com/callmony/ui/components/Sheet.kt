@@ -68,11 +68,13 @@ fun Sheet(
     com.callmony.ui.kit.AppBackHandler(enabled = true) { onBack() }
     Column(Modifier.fillMaxSize().background(C.canvas).statusBarsPadding()) {
         // header: back chevron · avatar · title (auto-shrink) · actions
+        // v1.6.25 — compact (redesign spec): 48dp header band, 2dp band
+        // padding — every control preserved, just less air.
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .height(56.dp),
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+                .height(48.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
@@ -169,10 +171,11 @@ fun LongPressText(
     modifier: Modifier = Modifier,
 ) {
     val C = C()
+    // v1.6.25 — default indication (visible tap feedback) when tappable
+    val tappable = onTap != null || onLong != null
     Box(
         modifier.combinedClickable(
-            interactionSource = remember { MutableInteractionSource() },
-            indication = null,
+            enabled = tappable,
             onClick = { if (onTap != null) onTap() },
             onLongClick = {
                 vibrate(longArrayOf(20))
@@ -231,9 +234,10 @@ fun BottomSheet(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                 ) {}
-                // v1.6.24 — depth: the sheet floats above the scrim
-                .shadow(10.dp, RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
-                .clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
+                // v1.6.25 — flat spec: a modest 6dp lift (was 10dp) — the
+                // sheet floats over the scrim without a heavy shadow.
+                .shadow(6.dp, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .background(C.card)
                 .navigationBarsPadding(),
         ) {
@@ -320,7 +324,11 @@ fun SheetScrim(onDismiss: () -> Unit, fill: Boolean = false, content: @Composabl
     }
 }
 
-/** Generic long-pressable row wrapper (650 ms like the RN cards). */
+/** Generic long-pressable row wrapper (650 ms like the RN cards).
+ *  v1.6.25 — default indication: rows now visibly react to taps (user
+ *  report: every input needs a clicked indication) — the explicit
+ *  indication=null is gone; the bounded press veil comes from the app
+ *  root's LocalIndication. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PressableRow(
@@ -331,8 +339,6 @@ fun PressableRow(
 ) {
     Box(
         modifier.combinedClickable(
-            interactionSource = remember { MutableInteractionSource() },
-            indication = null,
             onClick = onClick,
             onLongClick = {
                 vibrate(longArrayOf(30))

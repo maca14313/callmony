@@ -60,12 +60,15 @@ import com.callmony.lib.UiStore
 import com.callmony.lib.displayName
 import com.callmony.lib.fdEpoch
 import com.callmony.lib.ft
+import com.callmony.lib.dateOf
+import com.callmony.lib.entryRemaining
 import com.callmony.lib.now
 import com.callmony.lib.ownerFullBalance
 import com.callmony.lib.ownerNameOf
 import com.callmony.lib.prettyPhone
 import com.callmony.lib.primaryPhone
 import com.callmony.lib.searchContacts
+import com.callmony.lib.todayStr
 import com.callmony.model.DeviceContact
 import com.callmony.platform.Platform
 import com.callmony.theme.F
@@ -118,23 +121,64 @@ fun SearchOverlay() {
         else searchContacts(contacts, debounced, ::displayName, countryCode)
     }
 
-    val matchedContacts = results?.map { it.contact } ?: emptyList()
-    val entries = AppStore.state.entries.filter { it.deletedAt == null && debounced.isNotBlank() && matchesEntry(it, debounced) }.take(5)
-    val lists = AppStore.state.lists.filter { it.deletedAt == null && debounced.isNotBlank() && it.title.contains(debounced, true) }.take(5)
-    val notes = AppStore.state.notes.filter { it.deletedAt == null && debounced.isNotBlank() && (it.title.contains(debounced, true) || it.body.contains(debounced, true)) }.take(5)
-    val reminders = AppStore.state.reminders.filter { it.deletedAt == null && debounced.isNotBlank() && it.title.contains(debounced, true) }.take(5)
-    val banks = AppStore.state.banks.filter { it.deletedAt == null && debounced.isNotBlank() && ((it.bankName ?: it.label).contains(debounced, true)) }.take(5)
-
-    // v1.6.18 — ADVANCED SEARCH TABS: narrow the results by type (the All tab
-    // keeps the old every-group behavior; the tab row only shows when there
-    // is a query — it doubles as a live result-count filter).
+    // v1.6.25 — ADVANCED FILTERS BEFORE TYPING (user report: "the search
+    // should have advanced tabs that helps for advanced search, even before
+    // the search begins so it can filter, like credit, and others, date and
+    // more"). Two always-visible filter rows: the type tabs (All / Contacts /
+    // Entries / Lists / Notes / Reminders / Banks — counts live) and the
+    // entry refinement row (kind: Credit/Debit/Income/Expense; date: Today /
+    // 7 days / 30 days / Overdue). With NO query, picking a filter enters
+    // BROWSE mode — the list shows everything of that type, pre-filtered,
+    // before a single letter is typed.
     var advTab by remember { mutableStateOf("all") }
+    var kindFilter by remember { mutableStateOf<String?>(null) }
+    var dateFilter by remember { mutableStateOf<String?>(null) }
+
+    val hasQuery = debounced.isNotBlank()
+    val browsing = !hasQuery && (advTab != "all" || kindFilter != null || dateFilter != null)
     val showContacts = advTab == "all" || advTab == "contacts"
     val showEntries = advTab == "all" || advTab == "entries"
     val showLists = advTab == "all" || advTab == "lists"
     val showNotes = advTab == "all" || advTab == "notes"
     val showReminders = advTab == "all" || advTab == "reminders"
     val showBanks = advTab == "all" || advTab == "banks"
+
+    fun inDateWindow(e: com.callmony.model.LedgerEntry): Boolean = when (dateFilter) {
+        "today" -> e.date == todayStr()
+        "7d" -> e.date >= daysAgoStr(7)
+        "30d" -> e.date >= daysAgoStr(30)
+        "overdue" -> e.dueDate != null && e.dueDate!! < todayStr() && entryRemaining(e) > 0.005
+        else -> true
+    }
+
+    val matchedContacts = when {
+        hasQuery -> results?.map { it.contact } ?: emptyList()
+        browsing && showContacts -> contacts
+        else -> emptyList()
+    }
+    val entries = AppStore.state.entries
+        .filter { it.deletedAt == null }
+        .filter { !hasQuery || matchesEntry(it, debounced) }
+        .filter { kindFilter == null || (it.kind ?: it.type) == kindFilter }
+        .filter { inDateWindow(it) }
+        .let { if (hasQuery) it.take(5) else it.take(30) }
+        .filter { hasQuery || browsing } // entries only appear on query or browse
+    val lists = AppStore.state.lists
+        .filter { it.deletedAt == null && (!hasQuery || it.title.contains(debounced, true)) }
+        .let { if (hasQuery) it.take(5) else it.take(20) }
+        .filter { hasQuery || browsing }
+    val notes = AppStore.state.notes
+        .filter { it.deletedAt == null && (!hasQuery || (it.title.contains(debounced, true) || it.body.contains(debounced, true))) }
+        .let { if (hasQuery) it.take(5) else it.take(20) }
+        .filter { hasQuery || browsing }
+    val reminders = AppStore.state.reminders
+        .filter { it.deletedAt == null && (!hasQuery || it.title.contains(debounced, true)) }
+        .let { if (hasQuery) it.take(5) else it.take(20) }
+        .filter { hasQuery || browsing }
+    val banks = AppStore.state.banks
+        .filter { it.deletedAt == null && (!hasQuery || ((it.bankName ?: it.label).contains(debounced, true))) }
+        .let { if (hasQuery) it.take(5) else it.take(20) }
+        .filter { hasQuery || browsing }
 
     Column(Modifier.fillMaxSize().background(C.canvas).statusBarsPadding()) {
         // search field
@@ -170,23 +214,45 @@ fun SearchOverlay() {
                 }
             }
         }
-        // v1.6.18 — advanced filter tabs (only while typing)
-        if (debounced.isNotBlank()) {
-            ScrollRow(Modifier.padding(horizontal = 16.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    com.callmony.ui.kit.Chip(label = t("sr.filterAll"), compact = true, active = advTab == "all", onPress = { advTab = "all" })
-                    com.callmony.ui.kit.Chip(label = "${t("misc.contacts")} ${if (matchedContacts.isEmpty()) "" else "· ${matchedContacts.size}"}", compact = true, active = advTab == "contacts", onPress = { advTab = "contacts" })
-                    com.callmony.ui.kit.Chip(label = "${t("misc.entry")} ${if (entries.isEmpty()) "" else "· ${entries.size}"}", compact = true, active = advTab == "entries", onPress = { advTab = "entries" })
-                    com.callmony.ui.kit.Chip(label = "${t("misc.list")} ${if (lists.isEmpty()) "" else "· ${lists.size}"}", compact = true, active = advTab == "lists", onPress = { advTab = "lists" })
-                    com.callmony.ui.kit.Chip(label = "${t("misc.note")} ${if (notes.isEmpty()) "" else "· ${notes.size}"}", compact = true, active = advTab == "notes", onPress = { advTab = "notes" })
-                    com.callmony.ui.kit.Chip(label = "${t("misc.reminder")} ${if (reminders.isEmpty()) "" else "· ${reminders.size}"}", compact = true, active = advTab == "reminders", onPress = { advTab = "reminders" })
-                    com.callmony.ui.kit.Chip(label = "${t("misc.bank")} ${if (banks.isEmpty()) "" else "· ${banks.size}"}", compact = true, active = advTab == "banks", onPress = { advTab = "banks" })
-                }
+        // v1.6.25 — advanced filter tabs, ALWAYS visible (not only while
+        // typing) with live counts; picking one with an empty query starts
+        // browsing that type immediately.
+        ScrollRow(Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                com.callmony.ui.kit.Chip(label = t("sr.filterAll"), compact = true, active = advTab == "all", onPress = { advTab = "all" })
+                com.callmony.ui.kit.Chip(label = "${t("misc.contacts")} ${if (matchedContacts.isEmpty()) "" else "· ${matchedContacts.size}"}".trim(), compact = true, active = advTab == "contacts", onPress = { advTab = "contacts" })
+                com.callmony.ui.kit.Chip(label = "${t("misc.entry")} ${if (entries.isEmpty()) "" else "· ${entries.size}"}".trim(), compact = true, active = advTab == "entries", onPress = { advTab = "entries" })
+                com.callmony.ui.kit.Chip(label = "${t("misc.list")} ${if (lists.isEmpty()) "" else "· ${lists.size}"}".trim(), compact = true, active = advTab == "lists", onPress = { advTab = "lists" })
+                com.callmony.ui.kit.Chip(label = "${t("misc.note")} ${if (notes.isEmpty()) "" else "· ${notes.size}"}".trim(), compact = true, active = advTab == "notes", onPress = { advTab = "notes" })
+                com.callmony.ui.kit.Chip(label = "${t("misc.reminder")} ${if (reminders.isEmpty()) "" else "· ${reminders.size}"}".trim(), compact = true, active = advTab == "reminders", onPress = { advTab = "reminders" })
+                com.callmony.ui.kit.Chip(label = "${t("misc.bank")} ${if (banks.isEmpty()) "" else "· ${banks.size}"}".trim(), compact = true, active = advTab == "banks", onPress = { advTab = "banks" })
+            }
+        }
+        // v1.6.25 — entry refinement row: kind + date windows (applies in
+        // query AND browse mode).
+        ScrollRow(Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                com.callmony.ui.kit.Chip(label = t("sr.allKinds"), compact = true, active = kindFilter == null, onPress = { kindFilter = null })
+                com.callmony.ui.kit.Chip(label = t("lg.credit"), compact = true, active = kindFilter == "credit", onPress = { kindFilter = "credit" })
+                com.callmony.ui.kit.Chip(label = t("lg.debit"), compact = true, active = kindFilter == "debit", onPress = { kindFilter = "debit" })
+                com.callmony.ui.kit.Chip(label = t("lg.income"), compact = true, active = kindFilter == "income", onPress = { kindFilter = "income" })
+                com.callmony.ui.kit.Chip(label = t("lg.expense"), compact = true, active = kindFilter == "expense", onPress = { kindFilter = "expense" })
+                com.callmony.ui.kit.Chip(label = t("sr.anyDate"), compact = true, active = dateFilter == null, onPress = { dateFilter = null })
+                com.callmony.ui.kit.Chip(label = t("rm.today"), compact = true, active = dateFilter == "today", onPress = { dateFilter = "today" })
+                com.callmony.ui.kit.Chip(label = t("sr.last7"), compact = true, active = dateFilter == "7d", onPress = { dateFilter = "7d" })
+                com.callmony.ui.kit.Chip(label = t("sr.last30"), compact = true, active = dateFilter == "30d", onPress = { dateFilter = "30d" })
+                com.callmony.ui.kit.Chip(label = t("sr.overdueOnly"), compact = true, active = dateFilter == "overdue", onPress = { dateFilter = "overdue" })
             }
         }
         // v1.6.14: keep the last results above the phone's nav bar
         LazyColumn(Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 16.dp)) {
-            if (debounced.isBlank()) {
+            if (browsing) {
+                // v1.6.25 browse mode — the filters themselves list the data;
+                // when a filter matches nothing the empty state shows below
+                if (matchedContacts.isEmpty() && entries.isEmpty() && lists.isEmpty() && notes.isEmpty() && reminders.isEmpty() && banks.isEmpty()) {
+                    item { EmptyState(icon = "magnify", title = t("sr.noResults"), hint = t("sr.tryHint")) }
+                }
+            } else if (debounced.isBlank()) {
                 item {
                     EmptyState(icon = "magnify", title = t("sr.everythingHint"), hint = t("sr.keepTyping"))
                 }
@@ -298,6 +364,13 @@ fun SearchOverlay() {
 private fun matchesEntry(e: com.callmony.model.LedgerEntry, q: String): Boolean =
     (e.category ?: "").contains(q, true) || (e.note ?: "").contains(q, true) ||
         e.kind?.contains(q, true) == true || e.type.contains(q, true)
+
+/** v1.6.25 — "YYYY-MM-DD" of N days ago (string-compare-safe against
+ *  entry.date for the search date windows). */
+private fun daysAgoStr(days: Int): String {
+    val d = dateOf(now() - days * 86_400_000L)
+    return "${d.year}-${(d.month0 + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
+}
 
 @Composable
 private fun GroupLabel(label: String) {

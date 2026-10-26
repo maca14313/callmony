@@ -151,8 +151,10 @@ fun LedgerSection(ownerId: String) {
     }
 
     Column {
-        // summary strip
-        Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // summary strip — v1.6.25 compact: three cards in ONE row, 12dp
+        // corners, 8/7dp inset (4dp spacing system), Net card keeps its
+        // subtle selected-state styling (brandSoft + brand hairline).
+        Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             StatCard(if (isGeneral) t("lg.income") else t("cd.theyOweYou"), credit, false, Modifier.weight(1f))
             StatCard(if (isGeneral) t("lg.expense") else t("cd.youOweThem"), debit, false, Modifier.weight(1f))
             StatCard(t("lg.net"), r2(credit - debit), true, Modifier.weight(1f))
@@ -160,16 +162,16 @@ fun LedgerSection(ownerId: String) {
         if (!isGeneral && pendingLists > 0.005) {
             Row(
                 Modifier
-                    .padding(bottom = 10.dp)
+                    .padding(bottom = 8.dp)
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(18.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(C.card)
-                    .border(1.dp, C.line, RoundedCornerShape(18.dp))
-                    .padding(10.dp),
+                    .border(1.dp, C.line, RoundedCornerShape(12.dp))
+                    .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                MdiIcon("information-outline", 18, C.amber)
+                MdiIcon("information-outline", 16, C.amber)
                 Text(
                     "${t("lg.openLists")}: ${compactMoney(pendingLists)} · ${t("lg.countedInBalance")}",
                     fontSize = F.tiny.sp,
@@ -177,25 +179,53 @@ fun LedgerSection(ownerId: String) {
                 )
             }
         }
-        // action chips (side-scroll)
-        // v1.6.15 (user request): on the CONTACT DETAIL page the + Credit and
-        // + Debit chips come FIRST, before + Income and + Expense (the
-        // contact ledger is credit/debit-first; income/expense lead the
-        // General tab where they are the primary kinds).
-        ScrollRow {
+        // primary action row — v1.6.25 (redesign spec: "Place Credit, Debit,
+        // and Income actions in one row"): the three PRIMARY kinds are now
+        // three equal-width compact buttons in a FIXED row (no scrolling to
+        // reach them); the secondary actions scroll beside them below.
+        Row(Modifier.padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val primary = if (isGeneral) {
+                Triple("income" to "credit", "expense" to "debit", "credit" to "credit")
+            } else {
+                Triple("credit" to "credit", "debit" to "debit", "income" to "credit")
+            }
+            val labels = if (isGeneral) {
+                Triple(t("lg.kindIncome"), t("lg.kindExpense"), t("lg.kindCredit"))
+            } else {
+                Triple(t("lg.kindCredit"), t("lg.kindDebit"), t("lg.kindIncome"))
+            }
+            val icons = if (isGeneral) Triple("trending-up", "trending-down", "hand-coin-outline")
+            else Triple("hand-coin-outline", "credit-card-outline", "trending-up")
+            listOf(
+                Triple(icons.first, labels.first) { UiStore.open(Overlay.EntryEdit(null, ownerId, primary.first.first, primary.first.second)) },
+                Triple(icons.second, labels.second) { UiStore.open(Overlay.EntryEdit(null, ownerId, primary.second.first, primary.second.second)) },
+                Triple(icons.third, labels.third) { UiStore.open(Overlay.EntryEdit(null, ownerId, primary.third.first, primary.third.second)) },
+            ).forEach { (icon, label, run) ->
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(C.brandSoft)
+                        .border(1.dp, C.brand, RoundedCornerShape(12.dp))
+                        .clickable { run() }
+                        .padding(horizontal = 6.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    MdiIcon("plus", 14, C.brand)
+                    Text(" ${label}", fontSize = F.tiny.sp, color = C.brand, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        // secondary action chips (side-scroll) — every original label kept
+        ScrollRow(Modifier.padding(bottom = 2.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 // v1.6.18 — Settle-up REMOVED at the user's request ("we don't
                 // need the settle up for now"); AppStore.settleUp stays for API
                 // compat, just not surfaced anywhere.
                 if (isGeneral) {
-                    Chip(label = "+ ${t("lg.kindIncome")}", icon = "trending-up", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "credit", "income")) })
-                    Chip(label = "+ ${t("lg.kindExpense")}", icon = "trending-down", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "debit", "expense")) })
-                    Chip(label = "+ ${t("lg.kindCredit")}", icon = "hand-coin-outline", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "credit", "credit")) })
                     Chip(label = "+ ${t("lg.kindDebit")}", icon = "credit-card-outline", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "debit", "debit")) })
                 } else {
-                    Chip(label = "+ ${t("lg.kindCredit")}", icon = "hand-coin-outline", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "credit", "credit")) })
-                    Chip(label = "+ ${t("lg.kindDebit")}", icon = "credit-card-outline", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "debit", "debit")) })
-                    Chip(label = "+ ${t("lg.kindIncome")}", icon = "trending-up", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "credit", "income")) })
                     Chip(label = "+ ${t("lg.kindExpense")}", icon = "trending-down", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "debit", "expense")) })
                 }
                 Chip(label = t("lg.newGroup"), icon = "folder-plus-outline", onPress = { renameGroup = "new"; renameTitle = "" })
@@ -246,32 +276,58 @@ fun LedgerSection(ownerId: String) {
                 }
             }
         }
-        // ungrouped ("Single entries")
+        // ungrouped ("Single entries") — v1.6.25 compact heading + controls
         SectionHeader(t("lg.ungrouped"), right = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                // v1.6.18 — the filter tabs under "Single entries" now carry
-                // their own ＋: tapping it creates an entry of the KIND the tab
-                // is showing (Income/Expense on General, Credit/Debit on a
-                // contact), and a plain new entry for All/Unpaid/Overdue.
-                IconBtn("plus", {
-                    val (ty, kd) = when (groupFilter) {
-                        "credit" -> if (isGeneral) "credit" to "income" else "credit" to "credit"
-                        "debit" -> if (isGeneral) "debit" to "expense" else "debit" to "debit"
-                        else -> null to null
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                // v1.6.18 — the filter tabs under "Single entries" carry a
+                // ＋ of their own (creates the KIND the tab is showing);
+                // v1.6.25 makes it a LABELED compact chip instead of the
+                // ghost icon the user could never find, and the kind now
+                // follows the active tab exactly (credit tab → + Credit…).
+                val addLabel = when (groupFilter) {
+                    "credit" -> if (isGeneral) t("lg.kindIncome") else t("lg.kindCredit")
+                    "debit" -> if (isGeneral) t("lg.kindExpense") else t("lg.kindDebit")
+                    else -> null
+                }
+                if (addLabel != null) {
+                    Row(
+                        Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(C.brandSoft)
+                            .border(1.dp, C.brand, RoundedCornerShape(999.dp))
+                            .clickable {
+                                val (ty, kd) = when (groupFilter) {
+                                    "credit" -> if (isGeneral) "credit" to "income" else "credit" to "credit"
+                                    "debit" -> if (isGeneral) "debit" to "expense" else "debit" to "debit"
+                                    else -> null to null
+                                }
+                                UiStore.open(if (ty == null) Overlay.EntryEdit(null, ownerId) else Overlay.EntryEdit(null, ownerId, ty, kd))
+                            }
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        MdiIcon("plus", 13, C.brand)
+                        Text(addLabel, fontSize = F.tiny.sp, color = C.brand, fontWeight = FontWeight.Bold)
                     }
-                    UiStore.open(if (ty == null) Overlay.EntryEdit(null, ownerId) else Overlay.EntryEdit(null, ownerId, ty, kd))
-                }, size = 34)
-                IconBtn(if (ungroupedCollapsed) "chevron-down" else "chevron-up", { ungroupedCollapsed = !ungroupedCollapsed }, size = 34)
+                }
+                IconBtn("plus", {
+                    UiStore.open(Overlay.EntryEdit(null, ownerId))
+                }, size = 30)
+                IconBtn(if (ungroupedCollapsed) "chevron-down" else "chevron-up", { ungroupedCollapsed = !ungroupedCollapsed }, size = 30)
             }
         })
         if (!ungroupedCollapsed) {
-            ScrollRow {
+            // v1.6.25 — THE TABS/CARDS OVERLAP FIX: the filter strip gets its
+            // own vertical padding (2dp top / 6dp bottom) so the chips can
+            // never sit flush against the entry cards under them.
+            ScrollRow(Modifier.padding(top = 2.dp, bottom = 6.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Chip(label = t("lg.filterAll"), active = groupFilter == "all", onPress = { groupFilter = "all" })
-                    Chip(label = if (isGeneral) t("lg.income") else t("lg.credit"), active = groupFilter == "credit", onPress = { groupFilter = "credit" })
-                    Chip(label = if (isGeneral) t("lg.expense") else t("lg.debit"), active = groupFilter == "debit", onPress = { groupFilter = "debit" })
-                    Chip(label = t("lg.filterUnpaid"), active = groupFilter == "unpaid", onPress = { groupFilter = "unpaid" })
-                    Chip(label = t("lg.filterOverdue"), active = groupFilter == "overdue", onPress = { groupFilter = "overdue" })
+                    Chip(label = t("lg.filterAll"), active = groupFilter == "all", onPress = { groupFilter = "all" }, compact = true)
+                    Chip(label = if (isGeneral) t("lg.income") else t("lg.credit"), active = groupFilter == "credit", onPress = { groupFilter = "credit" }, compact = true)
+                    Chip(label = if (isGeneral) t("lg.expense") else t("lg.debit"), active = groupFilter == "debit", onPress = { groupFilter = "debit" }, compact = true)
+                    Chip(label = t("lg.filterUnpaid"), active = groupFilter == "unpaid", onPress = { groupFilter = "unpaid" }, compact = true)
+                    Chip(label = t("lg.filterOverdue"), active = groupFilter == "overdue", onPress = { groupFilter = "overdue" }, compact = true)
                 }
             }
             if (ungrouped.isEmpty()) {
@@ -393,24 +449,23 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
     val dueToday = entry.dueDate == todayStr() && remaining > 0.005
     val kind = entry.kind ?: (if (entry.type == "credit") "credit" else "debit")
 
-    Card(Modifier.padding(bottom = 8.dp)) {
+    Card(Modifier.padding(bottom = 6.dp)) {
         Column {
             Row(
                 // v1.6.18 — ONE-TAP EDIT: tapping the row opens the editor
-                // directly ("why do I have to click two save buttons" — the
-                // old flow needed row-tap → Edit button → editor). The detail
-                // (payments history) opens from the chevron on the right.
+                // directly; the detail (payments history) opens from the
+                // chevron on the right.
                 Modifier.fillMaxWidth().clickable { UiStore.open(Overlay.EntryEdit(entry.id, entry.ownerId)) },
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Box(
                     Modifier
-                        .size(38.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(10.dp))
                         .background(if (entry.type == "credit") C.brandSoft else C.red.copy(alpha = 0.1f)),
                     contentAlignment = Alignment.Center,
-                ) { MdiIcon(KIND_ICON[kind] ?: "swap-vertical", 19, if (entry.type == "credit") C.brand else C.red) }
+                ) { MdiIcon(KIND_ICON[kind] ?: "swap-vertical", 17, if (entry.type == "credit") C.brand else C.red) }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
@@ -432,10 +487,44 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Money(signed, signed = true, colorize = true, size = 16, weight = FontWeight.ExtraBold, compact = true)
+                Money(signed, signed = true, colorize = true, size = 15, weight = FontWeight.ExtraBold, compact = true)
+                // v1.6.25 — VISIBLE EDIT ICON (user report: "on the credit or
+                // others where is the icon to update the existing one"): a
+                // pencil button on every entry card opens the editor — the
+                // row tap still edits too, but now there is a discoverable,
+                // always-visible affordance for it.
+                IconBtn("pencil-outline", { UiStore.open(Overlay.EntryEdit(entry.id, entry.ownerId)) }, size = 30, color = C.brand)
                 // v1.6.18 — the chevron is now the ONLY thing that expands
                 // the detail (payments history etc.); the row body edits.
-                IconBtn(if (expanded) "chevron-up" else "chevron-down", { expanded = !expanded }, size = 32)
+                IconBtn(if (expanded) "chevron-up" else "chevron-down", { expanded = !expanded }, size = 30)
+            }
+
+            // v1.6.25 — ATTACHED LISTS/NOTES/REMINDERS ride DIRECTLY on the
+            // collapsed card (they used to hide inside the expanded detail —
+            // the user never saw them). Each chip OPENS its entity exactly
+            // like it does from its own section: a list opens the list
+            // detail, a note opens the note editor, a reminder opens the
+            // reminder editor.
+            if (entry.refs.isNotEmpty() && !expanded) {
+                ScrollRow(Modifier.padding(top = 4.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        entry.refs.forEach { ref ->
+                            val icon = when (ref.type) { "list" -> "clipboard-list-outline"; "note" -> "notebook-outline"; "reminder" -> "bell-outline"; else -> "link-variant" }
+                            Row(
+                                Modifier
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(C.brand.copy(alpha = 0.08f))
+                                    .clickable { openRef(ref, entry) }
+                                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                MdiIcon(icon, 13, C.brand)
+                                Text(ref.label ?: ref.id, fontSize = F.tiny.sp, color = C.ink, maxLines = 1)
+                            }
+                        }
+                    }
+                }
             }
 
             if (expanded) {
@@ -478,13 +567,7 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
                                         Modifier
                                             .clip(RoundedCornerShape(999.dp))
                                             .background(C.brand.copy(alpha = 0.08f))
-                                            .clickable {
-                                                when (ref.type) {
-                                                    "list" -> UiStore.open(Overlay.ListDetail(ref.id))
-                                                    "note" -> UiStore.open(Overlay.NoteEdit(ref.id, AppStore.state.notes.find { it.id == ref.id }?.ownerId ?: entry.ownerId))
-                                                    "reminder" -> UiStore.open(Overlay.ReminderEdit(ref.id, AppStore.state.reminders.find { it.id == ref.id }?.ownerId ?: entry.ownerId))
-                                                }
-                                            }
+                                            .clickable { openRef(ref, entry) }
                                             .padding(horizontal = 10.dp, vertical = 6.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -555,6 +638,18 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
         // BottomSheet composed INSIDE the scrollable card: unbounded height
         // constraints made it pop up at the top / float mid-scroll — "the add
         // payment is not working" + "some modals open at the top").
+    }
+}
+
+/* v1.6.25 — one tap on an attached ref opens the entity EXACTLY like its
+ * own section does (list → list detail, note → note editor, reminder →
+ * reminder editor) — the "attach means add to it, and if we click them it
+ * should do what it does on its own" requirement. */
+private fun openRef(ref: com.callmony.model.LinkRef, entry: LedgerEntry) {
+    when (ref.type) {
+        "list" -> UiStore.open(Overlay.ListDetail(ref.id))
+        "note" -> UiStore.open(Overlay.NoteEdit(ref.id, AppStore.state.notes.find { it.id == ref.id }?.ownerId ?: entry.ownerId))
+        "reminder" -> UiStore.open(Overlay.ReminderEdit(ref.id, AppStore.state.reminders.find { it.id == ref.id }?.ownerId ?: entry.ownerId))
     }
 }
 
@@ -654,14 +749,16 @@ private fun trimNumCompat(v: Double): String =
 @Composable
 private fun StatCard(label: String, value: Double, strong: Boolean, modifier: Modifier = Modifier) {
     val C: ThemeColors = C()
+    // v1.6.25 — compact: 12dp corners, 8/7dp inset; the Net card keeps its
+    // subtle selected-state styling (brandSoft fill + brand hairline).
     Column(
         modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(if (strong) C.brandSoft else C.card)
-            .border(1.dp, if (strong) C.brand else C.line, RoundedCornerShape(14.dp))
-            .padding(horizontal = 10.dp, vertical = 9.dp),
+            .border(1.dp, if (strong) C.brand else C.line, RoundedCornerShape(12.dp))
+            .padding(horizontal = 8.dp, vertical = 7.dp),
     ) {
-        Text(label, fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.SemiBold, maxLines = 1)
-        Money(value = value, colorize = true, size = 16, weight = FontWeight.ExtraBold, compact = true)
+        Text(label, fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Money(value = value, colorize = true, size = 15, weight = FontWeight.ExtraBold, compact = true)
     }
 }

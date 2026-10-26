@@ -65,6 +65,7 @@ import com.callmony.ui.kit.AppBackHandler
 import com.callmony.ui.kit.C
 import com.callmony.ui.kit.ConfirmHost
 import com.callmony.ui.kit.MdiIcon
+import com.callmony.ui.kit.PressIndication
 import com.callmony.ui.kit.Spinner
 import com.callmony.ui.kit.SystemBarsAppearance
 import com.callmony.ui.kit.Toaster
@@ -101,6 +102,21 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun CallmonyApp() {
+    // v1.6.25 — GLOBAL PRESS FEEDBACK (user report: "every input on this
+    // app should have some indication it was clicked"). The app is bare
+    // Compose — no MaterialTheme — so LocalIndication's default draws
+    // nothing and NO tappable (chips, tiles, keypad keys, cards, tabs…)
+    // ever reacted to a press. Providing PressIndication here reaches every
+    // default-`clickable`/`combinedClickable` in the whole tree, across all
+    // screens, sheets and overlays; scrims/toasts that pass indication=null
+    // explicitly stay perfectly quiet.
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.foundation.LocalIndication provides PressIndication,
+    ) { CallmonyAppContent() }
+}
+
+@Composable
+private fun CallmonyAppContent() {
     val C = C()
 
     BootTrace.mark("ui.compose")
