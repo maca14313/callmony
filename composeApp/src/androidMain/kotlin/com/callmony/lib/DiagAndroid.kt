@@ -113,6 +113,24 @@ internal fun mainThreadStackText(maxFrames: Int = 60): String = try {
     }
 } catch (_: Throwable) { "<stack capture failed>" }
 
+/* v1.6.22 — SPIN PROBE: three main-thread samples ~200 ms apart, taken
+   when a freeze is confirmed. A single sample cannot tell a hard block
+   from a busy-spin — the v1.6.21 report caught a spin mid-lap (RUNNABLE
+   at an innocent-looking atomic get) and read like a transient. Three
+   samples settle it: identical stacks → hard block; the same handful of
+   top frames wandering → spin/livelock (a handler looping without
+   awaiting); different stacks every time → saturation. */
+internal fun mainThreadSpinProbe(): String = try {
+    val t = Looper.getMainLooper().thread
+    if (t == null) "" else buildString {
+        for (i in 0 until 3) {
+            if (i > 0) try { Thread.sleep(200) } catch (_: Throwable) { }
+            appendLine("spin-probe sample#$i state=${t.state}")
+            t.stackTrace.take(8).forEach { appendLine("  at $it") }
+        }
+    }
+} catch (_: Throwable) { "" }
+
 /* v1.6.21 — FULL thread dump. The v1.6.20 freeze report only carried the
    6 deepest-stacked threads × 4 frames, and the snapshot-lock holder was
    among the missing. Now: EVERY thread, RUNNABLE/BLOCKED/WAITING-first
@@ -170,7 +188,7 @@ internal fun captureFreezeReport(ctx: Context, headline: String): DiagReport = D
     kind = "freeze",
     phase = Diag.phase,
     headline = headline,
-    stack = mainThreadStackText() + "\n" + otherThreadsBriefText(),
+    stack = mainThreadStackText() + "\n" + mainThreadSpinProbe() + "\n" + otherThreadsBriefText(),
     detail = Diag.snapshot() + "\n" + deviceInfoText(ctx),
 )
 

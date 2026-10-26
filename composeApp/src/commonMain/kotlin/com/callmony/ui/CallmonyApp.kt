@@ -59,6 +59,7 @@ import com.callmony.ui.components.BottomSheet
 import com.callmony.ui.components.KeypadSheet
 import com.callmony.ui.components.SheetScrim
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
 import com.callmony.ui.kit.AppBackHandler
 import com.callmony.ui.kit.C
@@ -225,7 +226,14 @@ fun CallmonyApp() {
        Autolock never needs recomposition (only the idle poller below reads
        the timestamp), so it is now a plain field on a remember'd ref — the
        gesture observer and the poller both run on the main dispatcher
-       (single thread, ZERO snapshot traffic per touch). */
+       (single thread, ZERO snapshot traffic per touch).
+       v1.6.22 — the v1.6.21 report then exposed the REAL bug underneath:
+       the observer's block never awaited an event, so awaitEachGesture's
+       internal `while (isActive) { block() }` loop busy-spun the main
+       thread from the FIRST touch (RUNNABLE at ForEachGesture.kt:102,
+       5003 ms no progress → system ANR → "crashing"). Removing the
+       snapshot write only changed what the spin looked like in the dump.
+       The block now awaits the down FIRST — see the pointerInput below. */
     val lastActive = remember { TimeRef(now()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -304,11 +312,29 @@ fun CallmonyApp() {
             .fillMaxSize()
             .background(C.canvas)
             // v1.6.17 — autolock idle timer: every touch refreshes it.
-            // awaitEachGesture only OBSERVES the event stream (no consume),
-            // so children still receive every tap exactly as before.
+            // v1.6.22 — THE FREEZE ROOT CAUSE, decoded from the v1.6.20 +
+            // v1.6.21 diagnostics reports: awaitEachGesture REQUIRES its
+            // block to await at least one pointer event. This block only
+            // wrote the timestamp and returned, so the internal
+            // `while (isActive) { block() }` loop busy-spun the main
+            // thread at 100% CPU from the FIRST touch until the system
+            // ANR-killed the app (v1.6.20: spin + a snapshot write per
+            // lap → blocked in SnapshotKt.readable; v1.6.21: plain-field
+            // spin → RUNNABLE at ForEachGesture.kt:102 — exactly the
+            // reported stack). The block now awaits the down BEFORE
+            // writing, so the loop parks between gestures: ~zero CPU,
+            // and every gesture still refreshes the timer.
+            // awaitFirstDown(requireUnconsumed = false) + no consume =
+            // pure observer; children receive every tap exactly as before.
             .pointerInput(Unit) {
                 awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
                     lastActive.v = now()
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        lastActive.v = now()
+                        if (event.changes.all { !it.pressed }) break
+                    }
                 }
             },
     ) {
