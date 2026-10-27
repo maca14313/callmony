@@ -25,16 +25,26 @@ class MainActivity : ComponentActivity() {
        the log itself; without it the observer simply never fires. */
     private val mainHandler = Handler(Looper.getMainLooper())
     private val callLogRefresh = Runnable {
-        // AppStore.loadSystemCalls is permission-gated, incremental
-        // (loadSince) and publishes on the main dispatcher — safe from here.
-        if (AppStore.state.hydrated) AppStore.loadSystemCalls()
+        // v1.6.31 — THE "CLOSES WHEN I OPEN IT" HARDENING: this Runnable is
+        // triggered EXTERNALLY (the call-log provider can notify at any
+        // moment — some OEM providers fire right after registration). Any
+        // throwable escaping here would kill the process from a binder
+        // callback; guard it so a refresh failure degrades to a no-op.
+        try {
+            // AppStore.loadSystemCalls is permission-gated, incremental
+            // (loadSince), catches Throwable internally (v1.6.31) and
+            // publishes on the main dispatcher — safe from here.
+            if (AppStore.state.hydrated) AppStore.loadSystemCalls()
+        } catch (_: Throwable) {}
     }
     private val callLogObserver = object : android.database.ContentObserver(mainHandler) {
         override fun onChange(selfChange: Boolean) {
-            // debounce: collapse the provider's burst of notifications into
-            // ONE refresh, ~1.2s after the last write
-            mainHandler.removeCallbacks(callLogRefresh)
-            mainHandler.postDelayed(callLogRefresh, 1200L)
+            try {
+                // debounce: collapse the provider's burst of notifications into
+                // ONE refresh, ~1.2s after the last write
+                mainHandler.removeCallbacks(callLogRefresh)
+                mainHandler.postDelayed(callLogRefresh, 1200L)
+            } catch (_: Throwable) {}
         }
     }
 
@@ -102,16 +112,21 @@ class MainActivity : ComponentActivity() {
         )
         com.callmony.lib.AppStore.hydrate()
         com.callmony.lib.BootTrace.mark("activity.content")
-        // v1.6.30 — watch the system call log so an ended call reaches the
-        // top of Recents BEFORE the user returns (see callLogObserver)
+        setContent {
+            CallmonyApp()
+        }
+        // v1.6.31 — THE "CLOSES WHEN I OPEN IT" HARDENING, part 2: the
+        // observer used to register BEFORE setContent, adding an
+        // externally-triggered call-log refresh into the exact window where
+        // first-frame composition + hydrate's concurrent JSON decodes peak
+        // the heap on low-RAM devices. Registering AFTER setContent keeps
+        // the same behaviour (the observer only matters minutes later, after
+        // a call ends) while keeping the boot window single-purpose.
         contentResolver.registerContentObserver(
             android.provider.CallLog.Calls.CONTENT_URI,
             true,
             callLogObserver,
         )
-        setContent {
-            CallmonyApp()
-        }
     }
 
     override fun onResume() {

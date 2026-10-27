@@ -48,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -191,6 +192,48 @@ fun Modifier.pressVeil(corner: Dp = 14.dp): Modifier = composed {
                 drawRoundRect(
                     color = Color.Black.copy(alpha = v * 0.16f),
                     cornerRadius = CornerRadius(cornerPx, cornerPx),
+                )
+            }
+        }
+}
+
+/* v1.6.31 — RING COLOUR ON ACTIVE INPUTS (user report: "need a ring colour
+   on the inputs when they are active"). Every input box showed (and still
+   shows) the same resting hairline whether it was being typed into or not,
+   so the active field was invisible in a form. focusRing() is a pure
+   OBSERVER modifier for an input's own box: onFocusChanged reports focus
+   gained by the box OR ANY DESCENDANT (the BasicTextField inside), and a
+   brand-coloured 2dp ring fades in around the box's own corner radius while
+   the input is active, then fades out — no focus is requested or moved, the
+   caret/IME/long-press menu are untouched, and the resting hairline border
+   stays underneath. Same animation discipline as pressVeil: a terminating
+   tween/spring per state change, zero infinite animations. */
+fun Modifier.focusRing(corner: Dp = 14.dp, width: Dp = 2.dp): Modifier = composed {
+    val brand = C().brand
+    var focused by remember { mutableStateOf(false) }
+    val ring = remember { Animatable(0f) }
+    LaunchedEffect(focused) {
+        ring.animateTo(
+            targetValue = if (focused) 1f else 0f,
+            animationSpec = if (focused) {
+                spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
+            } else tween(160),
+        )
+    }
+    this
+        .onFocusChanged { focused = it.hasFocus }
+        .drawWithContent {
+            drawContent()
+            val a = ring.value
+            if (a > 0.01f) {
+                val w = width.toPx()
+                val hw = w / 2
+                drawRoundRect(
+                    color = brand.copy(alpha = a),
+                    topLeft = androidx.compose.ui.geometry.Offset(hw, hw),
+                    size = androidx.compose.ui.geometry.Size(size.width - w, size.height - w),
+                    cornerRadius = CornerRadius(corner.toPx(), corner.toPx()),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = w * a),
                 )
             }
         }
@@ -814,6 +857,11 @@ fun Field(
                 // showed zero reaction to a touch. The veil is an observer
                 // (never consumes) — every field gesture is untouched.
                 .pressVeil()
+                // v1.6.31 — RING COLOUR WHILE ACTIVE: the same box gains a
+                // brand ring for as long as the field (or any input inside
+                // it) holds focus (user report: "need a ring colour on the
+                // inputs when they are active").
+                .focusRing()
                 .border(1.dp, C.line, RoundedCornerShape(14.dp))
                 .background(C.inputBg, RoundedCornerShape(14.dp))
                 .padding(horizontal = 14.dp)

@@ -63,6 +63,7 @@ import com.callmony.ui.kit.C
 import com.callmony.ui.kit.IconBtn
 import com.callmony.ui.kit.MdiIcon
 import com.callmony.ui.kit.Money
+import com.callmony.ui.kit.focusRing
 import com.callmony.ui.kit.pressVeil
 import com.callmony.ui.kit.Toasts
 import com.callmony.ui.kit.vibrate
@@ -426,7 +427,10 @@ fun KeypadSheet() {
                     .defaultMinSize(minHeight = 44.dp)
                     // v1.6.29 — INPUT PRESS FEEDBACK: the number display is
                     // an input too (paste/cut live here) — same veil.
-                    .pressVeil(corner = 10.dp),
+                    .pressVeil(corner = 10.dp)
+                    // v1.6.31 — ring colour while the number display is
+                    // active (the caret lives here)
+                    .focusRing(corner = 10.dp),
             )
             // paste + backspace
             if (number.isEmpty()) {

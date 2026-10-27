@@ -78,6 +78,7 @@ import com.callmony.ui.kit.Field
 import com.callmony.ui.kit.IconBtn
 import com.callmony.ui.kit.MdiIcon
 import com.callmony.ui.kit.Money
+import com.callmony.ui.kit.focusRing
 import com.callmony.ui.kit.pressVeil
 import com.callmony.ui.kit.Pill
 import com.callmony.ui.kit.SectionHeader
@@ -848,6 +849,8 @@ private fun QuickItemInput(
         modifier
             // v1.6.29 — INPUT PRESS FEEDBACK (same veil as every Field)
             .pressVeil()
+            // v1.6.31 — ring colour while the quick item input is active
+            .focusRing()
             .clip(RoundedCornerShape(14.dp))
             .border(1.dp, C.line, RoundedCornerShape(14.dp))
             .background(C.inputBg, RoundedCornerShape(14.dp))

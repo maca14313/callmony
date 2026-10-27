@@ -104,9 +104,28 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.30 (versionCode 41)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.31 (versionCode 42)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.31** — the "closes when I open it" hardening + the active-input ring:
+  (1) **THE LAUNCH-CRASH FIX** — both store coroutine scopes ran with NO
+  exception handler, so any uncaught throwable in a background coroutine at
+  open (an OutOfMemoryError during the big-book JSON decode on a 2 GB device,
+  a cursor Error from the call-log provider — `catch (Exception)` does not
+  catch `Error`) killed the process; now a CoroutineExceptionHandler logs and
+  degrades, hydrate catches `Throwable` and still publishes (a dead hydrate
+  used to mean a blank app), the call-log sync path catches `Throwable`
+  end-to-end, the ContentObserver's debounced refresh is fully guarded, and
+  the observer registers AFTER `setContent` so the externally-triggered
+  refresh can never collide with the first-frame composition + hydrate decode
+  window where heap use peaks on low-RAM phones; (2) **A RING COLOUR ON
+  ACTIVE INPUTS** — every input box (Field, the entry-editor hero amount, all
+  three search boxes, the ledger quick item, the keypad number display) gains
+  a brand-coloured 2dp ring while it holds focus, fading in/out — a pure
+  observer that never requests or steals focus; (3) **THE CONTACT-DETAIL
+  HISTORY BUTTON** sits at the START of the left side of the balance row with
+  a fixed 8dp gap to the balance pill beside it (was centered and flush
+  against its neighbour).
 - **1.6.30** — no splash + the lighter recents: (1) **THE SPLASH IS GONE**
   ("if you can't make it not show the splash screen slower, just remove
   it") — the app composes the real shell from frame one; the pre-setContent

@@ -49,6 +49,7 @@ import com.callmony.ui.kit.C
 import com.callmony.ui.kit.EmptyState
 import com.callmony.ui.kit.IconBtn
 import com.callmony.ui.kit.MdiIcon
+import com.callmony.ui.kit.focusRing
 import com.callmony.ui.kit.pressVeil
 import com.callmony.ui.kit.Toaster
 import com.callmony.ui.kit.Toasts
@@ -106,6 +107,8 @@ fun ContactPicker(
                 .padding(horizontal = 18.dp)
                 // v1.6.29 — INPUT PRESS FEEDBACK (search box reacts to touch)
                 .pressVeil()
+                // v1.6.31 — ring colour while the picker search is active
+                .focusRing()
                 .clip(RoundedCornerShape(14.dp))
                 .background(C.inputBg)
                 .padding(horizontal = 14.dp, vertical = 12.dp),

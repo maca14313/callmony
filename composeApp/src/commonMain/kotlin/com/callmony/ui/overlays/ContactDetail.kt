@@ -243,9 +243,16 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
             // before beside where the total and the settled up shows in the
             // same row before them") — one tap jumps to the Info tab, whose
             // first block is this contact's full call history.
+            // v1.6.31 — LEFT-ANCHORED WITH BREATHING ROOM (user report:
+            // "CONTACT DETAIL's history button should have some space between
+            // his neighbor, it should be at the start of the left side"):
+            // the row was CENTER-arranged with the chip flush against the
+            // balance pill — now the row starts at the LEFT edge like every
+            // other content row on the page, and a fixed 8dp gap separates
+            // the history chip from the pill beside it.
             Row(
                 Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.Center,
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.Start),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // v1.6.29 — the history icon is a REAL CHIP now (user
