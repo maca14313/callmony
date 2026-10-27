@@ -176,6 +176,18 @@ object AppStore {
             BootTrace.mark("store.read")
             val data = Db.loadAll()
             val callsCache = loadCachedCalls()
+            // v1.6.26 — THE "RECENTS SHOWS THE NUMBER, THEN THE NAME" FIX.
+            // The cached CALL LOG was published at hydrate, but the cached
+            // CONTACT BOOK was not — the Recents cards rendered against an
+            // EMPTY contact list for the seconds the real fetch takes (the
+            // boot chain only starts it at +4 s), so every saved contact
+            // showed its RAW PHONE NUMBER as the title until the book landed
+            // and the (systemCalls, contacts) recomposition swapped the name
+            // in. The cached book (contacts-cache-v2.json, kept fresh by
+            // saveCachedContacts on every fetch/patch) now publishes in the
+            // SAME batched main hop, so the very first Recents frame already
+            // matches names; the fresh fetch replaces it silently later.
+            val contactsCache = loadCachedContacts()
             val storedPin = Db.readPinFile()
             // v1.6.21 — ALL state writes (and the t() reads inside the
             // reminder rescheduling below) happen in ONE batched main hop:
@@ -197,6 +209,7 @@ object AppStore {
                 state.banks = data.banks
                 state.recents = data.recents
                 state.messages = data.messages
+                if (contactsCache.isNotEmpty()) state.deviceContacts = contactsCache
                 state.hydrated = true
                 BootTrace.mark("store.loaded")
                 if (callsCache.second.isNotEmpty()) {
@@ -354,8 +367,8 @@ object AppStore {
         )
     }
 
-    fun addSocial(recordID: String, app: String, handle: String) {
-        val entry = SocialLink(id = "soc-${now()}-${(0..9999).random()}", app = app, handle = handle.trim())
+    fun addSocial(recordID: String, app: String, handle: String, label: String = "") {
+        val entry = SocialLink(id = "soc-${now()}-${(0..9999).random()}", app = app, handle = handle.trim(), label = label.trim())
         upsertContactX(
             recordID,
             { it.copy(socials = it.socials + entry, updatedAt = now()) },

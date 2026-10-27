@@ -285,151 +285,192 @@ fun CalculatorSheet() {
             }
         },
     ) {
-        // v1.6.14: navigationBarsPadding — the calculator has no Sheet
-        // footer, so without this the bottom key row sat under the phone's
-        // gesture/navigation bar.
-        Column(Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 18.dp)) {
-            // display
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .border(1.dp, C.line, RoundedCornerShape(20.dp))
-                    .background(C.card)
-                    .padding(horizontal = 18.dp, vertical = 16.dp),
-            ) {
-                Text(
-                    displayMain,
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = C.sub,
-                    textAlign = TextAlign.End,
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    displaySub ?: "",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = if (displaySub == "Error") C.red else C.brand,
-                    textAlign = TextAlign.End,
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            // memory row
-            Row(
-                Modifier.padding(top = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                MemBtn("M+", C) { memoryAdd(1) }
-                MemBtn("M−", C) { memoryAdd(-1) }
-                MemBtn("MR", C, memory != null) { memoryRecall() }
-                if (memory != null) MemBtn(t("calc.clearMemory"), C) { memory = null }
-                if (pickHandler != null) {
-                    Box(
-                        Modifier
-                            .weight(1f),
-                        contentAlignment = Alignment.CenterEnd,
-                    ) {
-                        Box(
-                            Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(C.brand)
-                                .clickable { useValue() }
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                        ) {
-                            Text(t("calc.useValue"), color = C.onBrand, fontWeight = FontWeight.ExtraBold, fontSize = F.small.sp)
-                        }
-                    }
-                }
-            }
-            // history
-            if (showHistory) {
-                Column(
+        // v1.6.26 — THE CALCULATOR REDESIGN (user spec: "the calculator
+        // should have 55% height the keypads and 45% height the display,
+        // don't give the display a visible border, and make the keys and the
+        // numbers colourful"). The body splits EXACTLY 45/55: the display
+        // zone (display card + memory row + history) takes weight(45f),
+        // the keypad zone weight(55f); the display card lost its hairline
+        // border (the flat canvas tone alone separates it), and every key
+        // now carries its own hue — operators keep the brand green, AC is
+        // red, ⌫ amber, % blue, = solid ink, and the digits cycle a soft
+        // five-colour tint so the pad reads like a modern calculator.
+        Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
+            // display zone — 45% of the body height
+            Column(Modifier.weight(45f)) {
+                // display — NO visible border (v1.6.26)
+                Box(
                     Modifier
-                        .padding(top = 12.dp)
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .border(1.dp, C.line, RoundedCornerShape(16.dp))
-                        .background(C.card)
-                        .heightIn(max = 160.dp)
-                        .verticalScroll(rememberScrollState()),
+                        .weight(1f)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(C.card),
+                    contentAlignment = Alignment.BottomEnd,
                 ) {
-                    if (history.isEmpty()) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
                         Text(
-                            t("calc.noCalculations"),
-                            color = C.sub,
-                            fontSize = F.small.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                            displaySub ?: "",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (displaySub == "Error") C.red else C.sub,
+                            textAlign = TextAlign.End,
+                            modifier = Modifier.fillMaxWidth(),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            displayMain,
+                            fontSize = 40.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = C.ink,
+                            textAlign = TextAlign.End,
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    history.forEachIndexed { _, h ->
-                        Column(
+                }
+                // memory row
+                Row(
+                    Modifier.padding(top = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    MemBtn("M+", C) { memoryAdd(1) }
+                    MemBtn("M−", C) { memoryAdd(-1) }
+                    MemBtn("MR", C, memory != null) { memoryRecall() }
+                    if (memory != null) MemBtn(t("calc.clearMemory"), C) { memory = null }
+                    if (pickHandler != null) {
+                        Box(
                             Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    expr = h.expr
-                                    result = null
-                                    justEvaluated = false
-                                }
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                                .weight(1f),
+                            contentAlignment = Alignment.CenterEnd,
                         ) {
-                            Text("${h.expr} =", color = C.sub, fontSize = F.small.sp)
-                            Text(h.result, color = C.ink, fontSize = F.body.sp, fontWeight = FontWeight.Bold)
+                            Box(
+                                Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(C.brand)
+                                    .clickable { useValue() }
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                            ) {
+                                Text(t("calc.useValue"), color = C.onBrand, fontWeight = FontWeight.ExtraBold, fontSize = F.small.sp)
+                            }
+                        }
+                    }
+                }
+                // history (inside the 45% zone; caps itself so the split holds)
+                if (showHistory) {
+                    Column(
+                        Modifier
+                            .padding(top = 10.dp)
+                            .fillMaxWidth()
+                            .weight(0.9f, fill = false)
+                            .clip(RoundedCornerShape(16.dp))
+                            .border(1.dp, C.line, RoundedCornerShape(16.dp))
+                            .background(C.card)
+                            .heightIn(max = 150.dp)
+                            .verticalScroll(rememberScrollState()),
+                    ) {
+                        if (history.isEmpty()) {
+                            Text(
+                                t("calc.noCalculations"),
+                                color = C.sub,
+                                fontSize = F.small.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                            )
+                        }
+                        history.forEachIndexed { _, h ->
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        expr = h.expr
+                                        result = null
+                                        justEvaluated = false
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                            ) {
+                                Text("${h.expr} =", color = C.sub, fontSize = F.small.sp)
+                                Text(h.result, color = C.ink, fontSize = F.body.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
             }
-            // keypad 4×5
+            // keypad zone — 55% of the body height, 4×5 grid
             Column(
-                Modifier.padding(top = 14.dp).weight(1f),
+                Modifier.padding(top = 12.dp).weight(55f),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                val rows = listOf(
-                    listOf(Triple("AC", "fn", { vibrate(longArrayOf(10)); expr = ""; result = null; justEvaluated = false }),
-                        Triple("⌫", "fn-hold", { backspace() }),
-                        Triple("%", "fn", { pressPercent() }),
-                        Triple("÷", "op", { pressOp("÷") })),
-                    listOf(Triple("7", "num", { pressDigit("7") }), Triple("8", "num", { pressDigit("8") }),
-                        Triple("9", "num", { pressDigit("9") }), Triple("×", "op", { pressOp("×") })),
-                    listOf(Triple("4", "num", { pressDigit("4") }), Triple("5", "num", { pressDigit("5") }),
-                        Triple("6", "num", { pressDigit("6") }), Triple("−", "op", { pressOp("−") })),
-                    listOf(Triple("1", "num", { pressDigit("1") }), Triple("2", "num", { pressDigit("2") }),
-                        Triple("3", "num", { pressDigit("3") }), Triple("+", "op", { pressOp("+") })),
-                    listOf(Triple("±", "fn", { pressSign() }), Triple("0", "num", { pressDigit("0") }),
-                        Triple(".", "num", { pressDigit(".") }), Triple("=", "eq", { pressEquals() })),
+                // v1.6.26 — the colourful key palette (soft tinted tile +
+                // strong matching glyph). Hues stay inside the app's family
+                // (teal/amber/blue/rose/violet) so nothing clashes with the
+                // brand green reserved for the operators.
+                val numTints = listOf(
+                    Color(0xFF16a085) to Color(0x1f16a085), // teal
+                    Color(0xFF4a7d9b) to Color(0x1f4a7d9b), // blue
+                    Color(0xFF7c5cb8) to Color(0x1f7c5cb8), // violet
+                    Color(0xFFb97d10) to Color(0x1fb97d10), // amber
+                    Color(0xFFc65b6e) to Color(0x1fc65b6e), // rose
                 )
+                val rows = listOf(
+                    listOf(
+                        CalcKey("AC", CalcKeyKind.CLEAR) { vibrate(longArrayOf(10)); expr = ""; result = null; justEvaluated = false },
+                        CalcKey("⌫", CalcKeyKind.BACK) { backspace() },
+                        CalcKey("%", CalcKeyKind.PERCENT) { pressPercent() },
+                        CalcKey("÷", CalcKeyKind.OP) { pressOp("÷") },
+                    ),
+                    listOf(
+                        CalcKey("7", CalcKeyKind.NUM) { pressDigit("7") },
+                        CalcKey("8", CalcKeyKind.NUM) { pressDigit("8") },
+                        CalcKey("9", CalcKeyKind.NUM) { pressDigit("9") },
+                        CalcKey("×", CalcKeyKind.OP) { pressOp("×") },
+                    ),
+                    listOf(
+                        CalcKey("4", CalcKeyKind.NUM) { pressDigit("4") },
+                        CalcKey("5", CalcKeyKind.NUM) { pressDigit("5") },
+                        CalcKey("6", CalcKeyKind.NUM) { pressDigit("6") },
+                        CalcKey("−", CalcKeyKind.OP) { pressOp("−") },
+                    ),
+                    listOf(
+                        CalcKey("1", CalcKeyKind.NUM) { pressDigit("1") },
+                        CalcKey("2", CalcKeyKind.NUM) { pressDigit("2") },
+                        CalcKey("3", CalcKeyKind.NUM) { pressDigit("3") },
+                        CalcKey("+", CalcKeyKind.OP) { pressOp("+") },
+                    ),
+                    listOf(
+                        CalcKey("±", CalcKeyKind.PERCENT) { pressSign() },
+                        CalcKey("0", CalcKeyKind.NUM) { pressDigit("0") },
+                        CalcKey(".", CalcKeyKind.NUM) { pressDigit(".") },
+                        CalcKey("=", CalcKeyKind.EQ) { pressEquals() },
+                    ),
+                )
+                var numIdx = 0
                 for (row in rows) {
                     Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        for ((label, kind, onPress) in row) {
-                            val bg = when (kind) {
-                                "eq" -> C.ink
-                                "op" -> C.brandSoft
-                                else -> if (kind == "num") C.card else C.chip
+                        for (ck in row) {
+                            val (fg, bg) = when (ck.kind) {
+                                CalcKeyKind.EQ -> C.onBrand to C.ink
+                                CalcKeyKind.OP -> C.brand to C.brandSoft
+                                CalcKeyKind.CLEAR -> C.red to Color(0x1fd64545)
+                                CalcKeyKind.BACK -> C.amber to Color(0x1fb97d10)
+                                CalcKeyKind.PERCENT -> C.blue to Color(0x1f4a7d9b)
+                                CalcKeyKind.NUM -> numTints[numIdx++ % numTints.size].let { it.first to it.second }
                             }
-                            val fg = when (kind) {
-                                "eq" -> C.onBrand
-                                "op" -> C.brand
-                                else -> C.ink
-                            }
+                            val isHold = ck.kind == CalcKeyKind.BACK
                             Box(
                                 Modifier
                                     .weight(1f)
                                     .aspectRatio(1f)
                                     .clip(RoundedCornerShape(22.dp))
-                                    .border(1.dp, C.line, RoundedCornerShape(22.dp))
                                     .background(bg)
                                     .then(
-                                        if (kind == "fn-hold") {
+                                        if (isHold) {
                                             Modifier.pointerInput(Unit) {
                                                 detectTapGestures(
                                                     onPress = {
-                                                        onPress()
+                                                        ck.onPress()
                                                         startBackspaceRepeat()
                                                         tryAwaitRelease()
                                                         stopRepeat()
@@ -437,15 +478,15 @@ fun CalculatorSheet() {
                                                 )
                                             }
                                         } else {
-                                            Modifier.clickable { onPress() }
+                                            Modifier.clickable { ck.onPress() }
                                         }
                                     ),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    label,
-                                    fontSize = if (kind == "num") 26.sp else 22.sp,
-                                    fontWeight = if (kind == "eq" || kind == "op") FontWeight.ExtraBold else FontWeight.SemiBold,
+                                    ck.label,
+                                    fontSize = if (ck.kind == CalcKeyKind.NUM) 25.sp else 22.sp,
+                                    fontWeight = if (ck.kind == CalcKeyKind.EQ || ck.kind == CalcKeyKind.OP) FontWeight.ExtraBold else FontWeight.Bold,
                                     color = fg,
                                 )
                             }
@@ -453,10 +494,15 @@ fun CalculatorSheet() {
                     }
                 }
             }
-            androidx.compose.foundation.layout.Spacer(Modifier.padding(bottom = 20.dp))
+            androidx.compose.foundation.layout.Spacer(Modifier.padding(bottom = 14.dp))
         }
     }
 }
+
+/* v1.6.26 — one calculator key: label + kind (colour) + action. */
+private data class CalcKey(val label: String, val kind: CalcKeyKind, val onPress: () -> Unit)
+
+private enum class CalcKeyKind { NUM, OP, EQ, CLEAR, BACK, PERCENT }
 
 @Composable
 private fun MemBtn(label: String, C: ThemeColors, active: Boolean = false, onPress: () -> Unit) {

@@ -275,8 +275,9 @@ fun KeypadSheet() {
             // v1.6.25 — flat spec: modest 6dp lift (was 10dp)
             .shadow(6.dp, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
             .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .background(C.card)
-            .navigationBarsPadding(),
+            .background(C.card),
+            // v1.6.26: no navigationBarsPadding — the keypad sheet anchors on
+            // top of the always-visible app nav inside the content area.
     ) {
         // grabber
         Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {

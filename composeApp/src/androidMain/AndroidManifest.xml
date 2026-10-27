@@ -69,12 +69,24 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
+    <!-- v1.6.26 — THE NO-DATA-LOSS LAYER (user report: "it should be the
+         most secure app, any data should not be lost even after reinstall or
+         update"). Android Auto Backup mirrors the app's whole private
+         storage (the ledger/notes/reminders/settings JSON + its on-disk
+         mirrors) to the user's Google account, so a reinstall on a new/reset
+         device restores everything via the system restore flow. The explicit
+         rules below pin that intent for both the pre-12 (fullBackupContent)
+         and 12+ (dataExtractionRules) backup engines; the in-app FILE
+         export/import (Settings → Backup) covers devices without cloud
+         restore. -->
     <application
         android:name=".CallmonyApplication"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:supportsRtl="true"
         android:theme="@style/Theme.Callmony">
 
@@ -90,6 +102,28 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- v1.6.26 — file sharing for BACKUP exports (and CSV/vCard): serves
+             the temp file under cacheDir/backups to the system share sheet
+             ("Save to Files / Drive / Downloads"). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- v1.6.26 — SAF file picker host for Restore-from-file: transparent,
+             no history, never surfaces in recents. -->
+        <activity
+            android:name=".FilePickActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:exported="false" />
 
         <!-- Reminder alarms re-armed after device reboot -->
         <receiver

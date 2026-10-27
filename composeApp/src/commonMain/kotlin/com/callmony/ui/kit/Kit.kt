@@ -176,10 +176,14 @@ fun Toaster() {
     // cutout (the "toast covers the clock" bug). With fillMaxSize the
     // BottomCenter alignment pins the toast above the bottom nav, like RN's
     // `position: absolute; bottom: 96`.
+    // v1.6.26: the Toaster now lives INSIDE the content area (between the
+    // app header and the always-visible bottom nav), so a small 10dp offset
+    // floats it just above the nav — the old 96dp was calibrated for the
+    // full-screen host.
     Box(
         Modifier
             .fillMaxSize()
-            .padding(bottom = 96.dp)
+            .padding(bottom = 10.dp)
             .padding(horizontal = 20.dp),
         contentAlignment = Alignment.BottomCenter,
     ) {
@@ -492,14 +496,17 @@ fun Chip(
     count: Int? = null,
     compact: Boolean = false,
     iconOnly: Boolean = false,
+    /** v1.6.26 — per-chip icon/text colour when INACTIVE (Segmented tabs
+     *  with icons, e.g. the bank tab's blue tint). */
+    tint: Color? = null,
 ) {
     val C = C()
     val shape = RoundedCornerShape(999.dp)
-    val bg = if (active) C.brand else C.chip
+    val bg = if (active) (tint ?: C.brand) else C.chip
     val body: @Composable () -> Unit = {
         Row(
             Modifier
-                .then(if (!iconOnly) Modifier.border(1.dp, if (active) C.brand else C.line, shape) else Modifier)
+                .then(if (!iconOnly) Modifier.border(1.dp, if (active) (tint ?: C.brand) else C.line, shape) else Modifier)
                 .background(bg, shape)
                 .padding(
                     horizontal = when { iconOnly -> 6.dp; compact -> 9.dp; else -> 13.dp },
@@ -510,14 +517,14 @@ fun Chip(
             horizontalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp),
         ) {
             if (icon != null) {
-                MdiIcon(icon, when { iconOnly -> 15; compact -> 13; else -> 15 }, if (active) C.onBrand else if (danger) C.red else C.sub)
+                MdiIcon(icon, when { iconOnly -> 15; compact -> 13; else -> 15 }, if (active) C.onBrand else if (danger) C.red else (tint ?: C.sub))
             }
             if (!iconOnly) {
                 Text(
                     label,
                     fontSize = if (compact) 12.sp else 14.sp,
                     fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                    color = if (active) C.onBrand else if (danger) C.red else C.ink,
+                    color = if (active) C.onBrand else if (danger) C.red else (tint ?: C.ink),
                     maxLines = 1,
                 )
             }
@@ -534,7 +541,7 @@ fun Chip(
                         if (count > 9) "9+" else "$count",
                         fontSize = if (compact || iconOnly) 11.sp else 13.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (active) C.brand else Color.White,
+                        color = if (active) (tint ?: C.brand) else Color.White,
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -645,11 +652,18 @@ fun EmptyState(
  *  v1.6.17: the strip carries its OWN 5 dp vertical padding so it can never
  *  sit flush against the container above/below it — the "tabs overlap with
  *  the container" report — no matter whether the call site remembers to
- *  add spacing. */
+ *  add spacing.
+ *  v1.6.26 — TABS WITH ICONS (+ optional per-tab colour): `iconOf` supplies
+ *  a glyph per key (contact detail: Ledger/Lists/Notes/Bank/Reminders/Info),
+ *  and `tintOf` overrides a tab's accent (the Bank tab gets its own colour
+ *  — user request). Both optional and positioned BEFORE onChange so every
+ *  existing trailing-lambda call site keeps compiling unchanged. */
 @Composable
 fun Segmented(
     options: List<Triple<String, String, Int?>>,
     value: String,
+    iconOf: ((String) -> String)? = null,
+    tintOf: ((String) -> Color?)? = null,
     onChange: (String) -> Unit,
 ) {
     Row(
@@ -660,7 +674,15 @@ fun Segmented(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         for ((key, label, count) in options) {
-            Chip(label = label, active = value == key, count = count, compact = true, onPress = { onChange(key) })
+            Chip(
+                label = label,
+                active = value == key,
+                count = count,
+                compact = true,
+                onPress = { onChange(key) },
+                icon = iconOf?.invoke(key),
+                tint = tintOf?.invoke(key),
+            )
         }
     }
 }

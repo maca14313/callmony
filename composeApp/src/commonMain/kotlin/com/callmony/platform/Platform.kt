@@ -124,6 +124,19 @@ interface ShareService {
     }
     /** Plain text share sheet. */
     fun shareText(text: String, title: String)
+    /** v1.6.26 — share CONTENT as a real FILE (backup JSON, CSV exports…).
+     *  The platform writes it to a shareable temp file and hands a file URI
+     *  to the system sheet, so "Save to Files / Drive / Downloads" actually
+     *  saves a file instead of pasting megabytes of text into a chat box.
+     *  Default fallback: plain-text share (platforms without file support). */
+    fun shareFile(fileName: String, content: String, mime: String = "application/json") {
+        shareText(content, fileName)
+    }
+    /** v1.6.26 — let the user PICK a file (backup JSON) and hand its text
+     *  back. null = cancelled / unsupported / unreadable. Default: none. */
+    fun pickFile(mime: String = "*/*", onText: (String?) -> Unit) {
+        onText(null)
+    }
     /** Copy to the system clipboard. */
     fun copyText(text: String)
     /** Read the clipboard (for keypad paste). */

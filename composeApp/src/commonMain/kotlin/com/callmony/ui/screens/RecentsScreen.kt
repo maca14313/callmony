@@ -3,6 +3,8 @@ package com.callmony.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,9 +52,11 @@ import com.callmony.lib.entrySignedRemaining
 import com.callmony.lib.ft
 import com.callmony.lib.listTotals
 import com.callmony.lib.prettyPhone
+import com.callmony.lib.primaryPhone
 import com.callmony.lib.relTime
 import com.callmony.model.DeviceContact
 import com.callmony.platform.PermState
+import com.callmony.theme.F
 import com.callmony.platform.Platform
 import com.callmony.ui.components.BottomSheet
 import com.callmony.ui.components.PressableRow
@@ -65,6 +69,8 @@ import com.callmony.ui.kit.Chip
 import com.callmony.ui.kit.EmptyState
 import com.callmony.ui.kit.MdiIcon
 import com.callmony.ui.kit.Money
+import com.callmony.ui.kit.Pill
+import com.callmony.ui.kit.IconBtn
 import com.callmony.ui.kit.Spinner
 import com.callmony.ui.kit.Toasts
 import com.callmony.ui.kit.vibrate
@@ -103,6 +109,10 @@ fun RecentsScreen() {
 
     var filter by remember { mutableStateOf("all") }
     var sheetRow by remember { mutableStateOf<CallRow?>(null) }
+    // v1.6.26 — the long-press call-icon "which number?" picker (held HERE,
+    // not inside the card: a BottomSheet composed inside a LazyColumn item
+    // collapses its full-screen scrim to item size — unbounded height)
+    var callOptsRow by remember { mutableStateOf<CallRow?>(null) }
     var page by remember { mutableStateOf(1) }
     var refreshing by remember { mutableStateOf(false) }
     var contactsAskedOnce by remember { mutableStateOf(false) }
@@ -429,6 +439,7 @@ fun RecentsScreen() {
                     onCopy = ::onCopy,
                     onCreateContact = ::onCreateContact,
                     onDetail = ::onDetail,
+                    onPickNumber = { callOptsRow = it },
                     onRefresh = { AppStore.loadSystemCalls(true) },
                     refreshing = refreshing,
                 )
@@ -443,6 +454,40 @@ fun RecentsScreen() {
             onClose = { sheetRow = null },
             onDelete = row.appId?.let { id -> { AppStore.deleteRecent(id); Toasts.toast(t("cd.logDeleted")) } },
         )
+    }
+
+    // v1.6.26 — long-press the call icon → every number the contact has
+    // (rendered HERE at screen level so the scrim covers the screen)
+    callOptsRow?.let { row ->
+        val numbers = remember(row) {
+            val seen = mutableSetOf<String>()
+            row.contact?.phones?.mapNotNull { p ->
+                val key = com.callmony.lib.normalizePhone(p.number, countryCode).replace(Regex("\\D"), "").ifEmpty { p.number.replace(Regex("\\D"), "") }
+                if (key.isNotEmpty() && seen.add(key)) p else null
+            } ?: emptyList()
+        }
+        BottomSheet(title = t("cd.chooseNumber"), onClose = { callOptsRow = null }) {
+            Column {
+                numbers.forEach { p ->
+                    PressableRow(onClick = { callOptsRow = null; Calls.placeCall(p.number) }) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Pill(p.label, "brand")
+                            Text(
+                                prettyPhone(p.number, countryCode),
+                                fontSize = F.body.sp,
+                                color = C.ink,
+                                modifier = Modifier.weight(1f),
+                            )
+                            IconBtn("phone-outline", { callOptsRow = null; Calls.placeCall(p.number) }, size = 30)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -493,6 +538,7 @@ private fun CallList(
     onCopy: (String) -> Unit,
     onCreateContact: (String) -> Unit,
     onDetail: (CallRow) -> Unit,
+    onPickNumber: (CallRow) -> Unit,
     onRefresh: () -> Unit,
     refreshing: Boolean,
 ) {
@@ -527,6 +573,7 @@ private fun CallList(
                         onCopy = onCopy,
                         onCreateContact = onCreateContact,
                         onDetail = onDetail,
+                        onPickNumber = onPickNumber,
                     )
                 }
             }
@@ -556,6 +603,7 @@ private fun DayHeader(label: String, filter: String, onFilter: (String) -> Unit,
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun CallCard(
     row: CallRow,
@@ -570,6 +618,11 @@ fun CallCard(
     onCopy: (String) -> Unit,
     onCreateContact: (String) -> Unit,
     onDetail: (CallRow) -> Unit,
+    /** v1.6.26 — long-press on the call icon when the contact has more
+     *  than one distinct number (the picker itself renders at screen level
+     *  in RecentsScreen — a BottomSheet inside a LazyColumn item would
+     *  collapse its scrim). */
+    onPickNumber: (CallRow) -> Unit,
 ) {
     val C = C()
     val digits = row.phone.replace(Regex("\\D"), "")
@@ -585,7 +638,21 @@ fun CallCard(
         "incoming" -> Triple("phone-incoming", C.green, t("cd.incoming"))
         else -> Triple("phone-outgoing", C.brand, t("cd.outgoing"))
     }
-    val callNumber = row.contact?.phones?.firstOrNull()?.number ?: row.phone
+    // v1.6.26 — the card calls the contact's FAVOURITE number first
+    // (ContactX.primaryPhone), falling back to the first stored phone, then
+    // the raw call-log number — matching what the contact detail page dials.
+    val callNumber = primaryPhone(row.contact) ?: row.phone
+    // v1.6.26 — LONG-PRESS THE CALL ICON → every number the contact has
+    // (user report: "when the call icon is pressed longer it should show
+    // the phone number options to call if there is any"). Distinct numbers
+    // only; the picker is hoisted to screen level via onPickNumber.
+    val distinctNumbers = remember(row.contact, countryCode) {
+        val seen = mutableSetOf<String>()
+        row.contact?.phones?.mapNotNull { p ->
+            val key = com.callmony.lib.normalizePhone(p.number, countryCode).replace(Regex("\\D"), "").ifEmpty { p.number.replace(Regex("\\D"), "") }
+            if (key.isNotEmpty() && seen.add(key)) p else null
+        } ?: emptyList()
+    }
 
     // v1.6.15 (user request): the full quick-action set on swipe, not just
     // call + favourite — left drag: Call · WhatsApp · SMS · Favourite;
@@ -685,7 +752,18 @@ fun CallCard(
                                 .size(40.dp)
                                 .clip(CircleShape)
                                 .background(C.cardAlt)
-                                .clickable { onCall(callNumber) },
+                                .combinedClickable(
+                                    onClick = { onCall(callNumber) },
+                                    onLongClick = {
+                                        // v1.6.26 — hold the call button: pick
+                                        // WHICH number to call when the contact
+                                        // has more than one.
+                                        if (distinctNumbers.size > 1) {
+                                            vibrate(longArrayOf(20))
+                                            onPickNumber(row)
+                                        } else onCall(callNumber)
+                                    },
+                                ),
                             contentAlignment = Alignment.Center,
                         ) { MdiIcon("phone-outline", 19, C.brand) }
                     }

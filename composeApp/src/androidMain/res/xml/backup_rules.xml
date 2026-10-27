@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v1.6.26 — Android Auto Backup rules (pre-Android 12 engine).
+     Everything in the app's private storage is app DATA (ledger/notes/
+     reminders/settings JSON + their on-disk mirrors + the contacts-cache
+     + the PIN file). Only the listed domains ride the backup; cacheDir is
+     NOT listed (temp share files — re-creatable, and the backup engine
+     skips the cache on its own). -->
+<full-backup-content>
+    <include domain="sharedpref" path="." />
+    <include domain="file" path="." />
+    <include domain="database" path="." />
+    <include domain="external" path="." />
+</full-backup-content>

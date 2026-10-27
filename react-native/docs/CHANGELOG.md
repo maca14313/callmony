@@ -4,6 +4,106 @@ All notable changes to callmony. Dates follow the git history; the APK for each 
 
 ---
 
+## v1.6.26 — always-visible bottom nav; names-first recents; 55/45 calculator; search kind+custom-date; file backup/restore; contact-detail grid More (2026-10-27)
+
+User reports (verbatim log: `sandbox/chat-logs/2026-10-27-v1.6.26-user-reports.md`):
+the recents card showed the phone number instead of the name for a moment at
+open; the call icon should offer the number options on long press; the bottom
+navigation should be there ALWAYS, with nothing covered by it; the calculator
+should be 55% keypad / 45% display, borderless display, colourful keys; the
+search credit tab did not show the contacts that have them and the date tab
+needs a custom range; the app should never lose data, even across a reinstall
+or update; the contact detail first row should scroll with a fixed More tile
+that shows a GRID of everything; the second row should go away in favour of
+icon tabs with the bank in a different colour; "+ Expense" looked different
+from its friends; the choose-a-number picker needs a favourite icon.
+
+1. **Recents names at open** (`Store.hydrate`) — the cached call log was
+   published at boot but the cached contact book was not, so Recents matched
+   every card against an EMPTY book for the seconds the real fetch takes
+   (the boot chain only starts it at +4 s): every saved contact's card showed
+   the RAW PHONE NUMBER as its title until the book landed. The cached book
+   (contacts-cache-v2.json) now publishes in the SAME batched main hop —
+   the very first frame matches names, the fresh fetch replaces it silently.
+2. **Long-press the call icon** (`CallCard`) — holding the call button on a
+   recent card opens the "Choose a number" sheet listing the contact's
+   distinct numbers when there is more than one (single-number contacts keep
+   the plain tap-to-call). The picker is held at SCREEN level, not inside the
+   card — a BottomSheet composed inside a LazyColumn item collapses its
+   full-screen scrim to item size (unbounded height). The card (and swipe
+   actions) now dial the contact's FAVOURITE number first
+   (`primaryPhone()`: ContactX.primaryPhone → first phone → raw number).
+3. **Always-visible bottom nav** (`CallmonyApp`) — every overlay used to
+   render in a full-screen Box AFTER the shell Column (hiding the nav under
+   contact detail / search / settings / calculator / keypad / sheets). All
+   of them — OverlayHost, keypad, More sheet, alarm dialog, toaster,
+   confirm, host sheets — now compose INSIDE the content area between the
+   header and the nav. The nav is present everywhere, and because the
+   content Box ENDS where the nav begins, nothing can render under it
+   either. All the now-redundant per-screen system-bar paddings
+   (Sheet/BottomSheet/Calculator/KeypadSheet/ContactPicker/Search) were
+   stripped; the nav (and the full-screen splash/lock/onboarding surfaces)
+   own their insets. The toast offset was recalibrated (96dp → 10dp) for
+   the new host.
+4. **Calculator 55/45** — the sheet body splits EXACTLY: display zone
+   (display card + memory row + history) weight(45f), keypad weight(55f).
+   The display lost its visible border; the main line grew to 40sp ExtraBold
+   with the live preview above it (24sp). Every key is colourful: operators
+   keep the brand green (brandSoft tile), AC is red, backspace amber, % and
+   ± blue, = solid ink, and the digits + '.' cycle a soft five-hue tint
+   (teal/blue/violet/amber/rose) with matching strong glyphs.
+5. **Search** — (a) the kind row (Credit/Debit/Income/Expense) now filters
+   CONTACTS too: a contact matches when it has ≥1 non-deleted entry of that
+   kind inside the active date window — browsing Credit lists exactly the
+   people you credited, and in query mode the kind/date filters narrow the
+   name hits as well; (b) a CUSTOM date-range chip opens a from/to sheet
+   (two native Material calendar PickerFields, both ends optional) and the
+   range applies to entries AND contact matching.
+6. **Data safety (reinstall/update)** — three layers: (a) explicit Android
+   Auto Backup rules for BOTH engines (fullBackupContent pre-12 +
+   dataExtractionRules 12+: sharedpref/file/database/external all ride the
+   cloud backup and device-to-device transfer); (b) Export backup now shares
+   a REAL FILE — the JSON is written to cacheDir/backups and served through
+   a FileProvider so the system sheet offers "Save to Files / Drive /
+   Downloads" (a backup saved to Downloads SURVIVES an uninstall — the old
+   text-share pasted megabytes into a chat box); (c) Restore-from-file: a
+   new transparent FilePickActivity hosts the SAF picker (ACTION_OPEN_
+   DOCUMENT results only arrive on an Activity), streams the picked file's
+   text back on the main thread and restores it (merge, with confirm).
+   Update-installs never lost data (same signing key + lenient JSON loader
+   + mirrored prefs commits) — this round covers the reinstall case.
+7. **Contact detail** — the first icon row is now a SIDE-SCROLLING strip
+   (Call · SMS · WhatsApp · Telegram · Email) with a FIXED More tile
+   pinned at the end that never scrolls away; the ledger icon and the
+   whole 6×2 grid are GONE — the segmented tabs below carry their own
+   icons now (book/lists/notes/bank/bell/info) with the BANK tab in its
+   own blue (active AND inactive). The More sheet is a GRID: quick
+   actions, every saved social WITH ITS LABEL, per-number WhatsApp +
+   Telegram, an add-social tile and an edit tile — followed by the
+   add-to rows, general actions and Block/Unblock (nothing lost).
+   SocialLink gained an optional `label` field (default "" — old rows
+   fall back to the app name everywhere they render); the Add-social
+   sheet asks for it at creation ("e.g. Work, Family").
+8. **"+ Expense" consistency** — the ledger's secondary actions
+   (+ Expense / + Debit, New group, Share statement) were generic ghost
+   chips under the primary row's custom pills; both rows now share ONE
+   ActionPill design (brandSoft tile, brand hairline, glyph, bold tiny
+   label) — every action button on the ledger page is identical.
+9. **Favourite number star** — the choose-a-number picker rows carry a
+   star (filled amber when active) that sets that number as the
+   contact's primary/favourite number — the number the app dials first
+   from the Recents card, the contact navbar and the pickers.
+
+Verification: full unit suite 62/62 GREEN (incl. the 5-test Recents
+Robolectric battery and the 3 MoreSheetCrashTest regression cases — the
+latter updated for the new composition order: overlays now compose BEFORE
+the bottom nav). Android `assembleRelease` clean; `aapt`: com.callmony
+1.6.26 vc37, minSdk 23, targetSdk 34; `apksigner` SHA-256 `2f6d65be…869ad`
+identical to every prior release (installs as a direct update, data
+intact). Both iOS targets compile (klibs cross-compiled).
+
+---
+
 ## v1.6.25 — the More-sheet crash fixed; press feedback everywhere; compact flat redesign; search filters before typing (2026-10-26)
 
 The user tested v1.6.24 on their Samsung A12 and reported nine issues

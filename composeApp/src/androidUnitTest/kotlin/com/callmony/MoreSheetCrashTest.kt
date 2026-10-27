@@ -100,10 +100,11 @@ class MoreSheetCrashTest {
     @Test
     fun quickActionMoreOpensSheetWithoutCrash() {
         openDetailWithSocials()
-        // the MORE quick-action tile in the 6x2 grid — [1] because the
-        // bottom-nav More tab (CallmonyApp) shares the same glyph and is
-        // composed first; the overlay tile comes after it in the tree.
-        rule.onAllNodesWithContentDescription("dots-horizontal-circle-outline")[1].performClick()
+        // the MORE tile at the end of the first action row — [0] because
+        // v1.6.26 hosts every overlay INSIDE the content area, which now
+        // composes BEFORE the bottom nav (the bottom-nav More tab shares the
+        // same glyph and comes after it in the tree).
+        rule.onAllNodesWithContentDescription("dots-horizontal-circle-outline")[0].performClick()
         rule.waitForIdle()
         // the sheet content rendered — the Add-to group header
         rule.waitUntil(timeoutMillis = 30000) {

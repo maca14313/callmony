@@ -780,6 +780,42 @@ class AndroidShare : ShareService {
         } catch (_: Exception) {}
     }
 
+    // v1.6.26 — share content as a REAL FILE: written under cacheDir/backups
+    // and served through the FileProvider (manifest + res/xml/file_paths.xml),
+    // so the system sheet offers "Save to Files / Drive / Save to Downloads"
+    // and every messaging app attaches an actual .json/.csv document. This
+    // is the backbone of the no-data-loss backup story — a backup saved to
+    // the phone's Downloads SURVIVES an uninstall+reinstall.
+    override fun shareFile(fileName: String, content: String, mime: String) {
+        val ctx = AndroidPlatform.appContext
+        try {
+            val dir = File(ctx.cacheDir, "backups").apply { mkdirs() }
+            val f = File(dir, fileName)
+            f.writeText(content, Charsets.UTF_8)
+            val uri = androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", f)
+            ctx.startActivity(
+                Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                    type = mime
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_TITLE, fileName)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }, fileName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        } catch (_: Exception) {
+            // fall back to the plain-text share (provider missing, IO error…)
+            shareText(content, fileName)
+        }
+    }
+
+    // v1.6.26 — pick a backup file from anywhere (SAF). The picker runs in a
+    // dedicated transparent activity (FilePickActivity) because ACTION_OPEN_DOCUMENT
+    // results only arrive on an Activity; the activity writes the file's text
+    // into the pending callback and finishes.
+    override fun pickFile(mime: String, onText: (String?) -> Unit) {
+        val ctx = AndroidPlatform.appContext
+        if (!FilePickActivity.request(ctx, mime, onText)) onText(null)
+    }
+
     override fun copyText(text: String) {
         try {
             val cm = AndroidPlatform.appContext.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager

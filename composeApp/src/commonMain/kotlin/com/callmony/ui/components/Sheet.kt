@@ -66,7 +66,12 @@ fun Sheet(
     // v1.6.15: the native back button closes the sheet itself (inner
     // handlers take precedence over the shell's root back handler)
     com.callmony.ui.kit.AppBackHandler(enabled = true) { onBack() }
-    Column(Modifier.fillMaxSize().background(C.canvas).statusBarsPadding()) {
+    // v1.6.26 — sheets render INSIDE the shell's content area (between the
+    // app header and the always-visible bottom nav), so they no longer pad
+    // the system bars themselves — the shell already did it above, and the
+    // nav below owns the gesture-bar inset. (Previously each sheet was a
+    // full-screen surface and had to handle both insets itself.)
+    Column(Modifier.fillMaxSize().background(C.canvas)) {
         // header: back chevron · avatar · title (auto-shrink) · actions
         // v1.6.25 — compact (redesign spec): 48dp header band, 2dp band
         // padding — every control preserved, just less air.
@@ -126,11 +131,12 @@ fun Sheet(
         // body
         // v1.6.14: footer-less sheets (ContactDetail, Calculator…) used to
         // let their content run down to the screen edge — under the phone's
-        // gesture/navigation bar. Pad the body when no footer sits below it.
+        // gesture/navigation bar. v1.6.26: the always-visible app nav now
+        // terminates the content area above the system bar, so the old
+        // navigationBarsPadding here would just add dead air above it.
         Box(
             Modifier
                 .weight(1f)
-                .then(if (footer == null) Modifier.navigationBarsPadding() else Modifier)
         ) {
             if (scrollable) {
                 Column(
@@ -149,7 +155,6 @@ fun Sheet(
                 Modifier
                     .fillMaxWidth()
                     .background(C.canvas)
-                    .navigationBarsPadding()
                     .padding(horizontal = 18.dp, vertical = 10.dp),
             ) { footer() }
         }
@@ -238,8 +243,10 @@ fun BottomSheet(
                 // sheet floats over the scrim without a heavy shadow.
                 .shadow(6.dp, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .background(C.card)
-                .navigationBarsPadding(),
+                .background(C.card),
+                // v1.6.26: no navigationBarsPadding — BottomSheets anchor on
+                // top of the always-visible app nav inside the content area;
+                // the nav owns the system gesture-bar inset.
         ) {
             // grabber row — tapping it closes the sheet
             Box(

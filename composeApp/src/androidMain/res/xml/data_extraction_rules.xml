@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v1.6.26 — data extraction rules (Android 12+ backup + device-transfer
+     engine). Same intent as backup_rules.xml: the whole private data set
+     rides the cloud backup / device-to-device transfer; cacheDir (temp
+     share files) is simply not listed. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="sharedpref" path="." />
+        <include domain="file" path="." />
+        <include domain="database" path="." />
+        <include domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="." />
+        <include domain="file" path="." />
+        <include domain="database" path="." />
+        <include domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>

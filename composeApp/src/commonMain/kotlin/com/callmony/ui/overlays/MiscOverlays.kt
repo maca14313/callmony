@@ -130,9 +130,21 @@ fun SearchOverlay() {
     // 7 days / 30 days / Overdue). With NO query, picking a filter enters
     // BROWSE mode — the list shows everything of that type, pre-filtered,
     // before a single letter is typed.
+    // v1.6.26 — TWO USER REPORTS ON TOP:
+    // (a) "when i click the credit tab it is not showing the contacts that
+    //     have them" — the kind row now filters CONTACTS too: a contact
+    //     matches when it has ≥1 entry of that kind inside the active date
+    //     window (so Credit lists exactly the people you credited).
+    // (b) "the date tab should have custom date to filter any date" — a
+    //     Custom chip opens a from/to picker (native Material calendar);
+    //     both ends optional, and the range applies to entries AND to the
+    //     contact matching in (a).
     var advTab by remember { mutableStateOf("all") }
     var kindFilter by remember { mutableStateOf<String?>(null) }
     var dateFilter by remember { mutableStateOf<String?>(null) }
+    var customFrom by remember { mutableStateOf<String?>(null) } // YYYY-MM-DD
+    var customTo by remember { mutableStateOf<String?>(null) } // YYYY-MM-DD
+    var customSheet by remember { mutableStateOf(false) }
 
     val hasQuery = debounced.isNotBlank()
     val browsing = !hasQuery && (advTab != "all" || kindFilter != null || dateFilter != null)
@@ -148,12 +160,32 @@ fun SearchOverlay() {
         "7d" -> e.date >= daysAgoStr(7)
         "30d" -> e.date >= daysAgoStr(30)
         "overdue" -> e.dueDate != null && e.dueDate!! < todayStr() && entryRemaining(e) > 0.005
+        // v1.6.26 — custom range: open ends allowed (from-only / to-only)
+        "custom" -> (customFrom == null || e.date >= customFrom!!) && (customTo == null || e.date <= customTo!!)
         else -> true
     }
 
+    // v1.6.26 — recordIDs that carry ≥1 entry of the active kind inside the
+    // active date window. This is what makes the kind row filter CONTACTS.
+    val contactsWithKind = remember(kindFilter, dateFilter, customFrom, customTo, AppStore.state.entries) {
+        if (kindFilter == null && dateFilter == null) null
+        else {
+            val set = mutableSetOf<String>()
+            AppStore.state.entries.forEach { e ->
+                if (e.deletedAt == null && e.ownerId.startsWith("c:") &&
+                    (kindFilter == null || (e.kind ?: e.type) == kindFilter) && inDateWindow(e)
+                ) set.add(e.ownerId.substring(2))
+            }
+            set
+        }
+    }
+
     val matchedContacts = when {
-        hasQuery -> results?.map { it.contact } ?: emptyList()
-        browsing && showContacts -> contacts
+        hasQuery -> (results?.map { it.contact } ?: emptyList())
+            // v1.6.26 — kind/date filters apply to QUERY results too
+            .filter { c -> contactsWithKind == null || c.recordID in contactsWithKind }
+        browsing && showContacts ->
+            if (contactsWithKind == null) contacts else contacts.filter { it.recordID in contactsWithKind!! }
         else -> emptyList()
     }
     val entries = AppStore.state.entries
@@ -180,7 +212,7 @@ fun SearchOverlay() {
         .let { if (hasQuery) it.take(5) else it.take(20) }
         .filter { hasQuery || browsing }
 
-    Column(Modifier.fillMaxSize().background(C.canvas).statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(C.canvas)) {
         // search field
         Row(
             Modifier
@@ -242,10 +274,15 @@ fun SearchOverlay() {
                 com.callmony.ui.kit.Chip(label = t("sr.last7"), compact = true, active = dateFilter == "7d", onPress = { dateFilter = "7d" })
                 com.callmony.ui.kit.Chip(label = t("sr.last30"), compact = true, active = dateFilter == "30d", onPress = { dateFilter = "30d" })
                 com.callmony.ui.kit.Chip(label = t("sr.overdueOnly"), compact = true, active = dateFilter == "overdue", onPress = { dateFilter = "overdue" })
+                // v1.6.26 — CUSTOM DATE RANGE (user report: "the date tab
+                // should have custom date to filter any date")
+                com.callmony.ui.kit.Chip(label = t("sr.customDate"), icon = "calendar-blank-outline", compact = true, active = dateFilter == "custom", onPress = { customSheet = true })
             }
         }
         // v1.6.14: keep the last results above the phone's nav bar
-        LazyColumn(Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 16.dp)) {
+        // v1.6.26 — no navigationBarsPadding: the search renders inside the
+        // shell content area, above the always-visible app nav.
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             if (browsing) {
                 // v1.6.25 browse mode — the filters themselves list the data;
                 // when a filter matches nothing the empty state shows below
@@ -359,6 +396,105 @@ fun SearchOverlay() {
             item { Spacer(Modifier.height(24.dp)) }
         }
     }
+
+    // v1.6.26 — the custom date-range sheet (from → to, native calendar)
+    if (customSheet) {
+        CustomDateRangeSheet(
+            from = customFrom,
+            to = customTo,
+            onClose = { customSheet = false },
+            onApply = { f, toD ->
+                customFrom = f
+                customTo = toD
+                dateFilter = "custom"
+                customSheet = false
+            },
+        )
+    }
+}
+
+/** v1.6.26 — pick ANY date range for the search date filter (user report:
+ *  "the date tab should have custom date to filte any date"). Both ends
+ *  optional (an open-ended range is valid); Apply activates the Custom
+ *  chip with the chosen window. */
+@Composable
+private fun CustomDateRangeSheet(
+    from: String?,
+    to: String?,
+    onClose: () -> Unit,
+    onApply: (String?, String?) -> Unit,
+) {
+    val C = C()
+    var localFrom by remember { mutableStateOf(from) }
+    var localTo by remember { mutableStateOf(to) }
+    BottomSheet(title = t("sr.customDate"), onClose = onClose) {
+        Column {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.weight(1f)) {
+                    com.callmony.ui.kit.PickerField(
+                        label = t("sr.dateFrom"),
+                        value = localFrom?.let { com.callmony.lib.fd(it) } ?: t("sr.anyDate"),
+                        icon = "calendar-arrow-left",
+                        onPress = {
+                            val initial = try {
+                                com.callmony.lib.KmpDate(
+                                    localFrom?.split("-")?.getOrNull(0)?.toInt() ?: dateOf(now()).year,
+                                    ((localFrom?.split("-")?.getOrNull(1)?.toIntOrNull() ?: (dateOf(now()).month0 + 1))) - 1,
+                                    localFrom?.split("-")?.getOrNull(2)?.toIntOrNull() ?: dateOf(now()).day,
+                                    12, 0, 0,
+                                ).time()
+                            } catch (_: Exception) { now() }
+                            com.callmony.platform.NativeDateTime.pickDate(
+                                epochMillis = initial,
+                                onPick = { epoch -> localFrom = isoOf(epoch) },
+                            )
+                        },
+                    )
+                }
+                Box(Modifier.weight(1f)) {
+                    com.callmony.ui.kit.PickerField(
+                        label = t("sr.dateTo"),
+                        value = localTo?.let { com.callmony.lib.fd(it) } ?: t("sr.anyDate"),
+                        icon = "calendar-arrow-right",
+                        onPress = {
+                            val initial = try {
+                                com.callmony.lib.KmpDate(
+                                    localTo?.split("-")?.getOrNull(0)?.toInt() ?: dateOf(now()).year,
+                                    ((localTo?.split("-")?.getOrNull(1)?.toIntOrNull() ?: (dateOf(now()).month0 + 1))) - 1,
+                                    localTo?.split("-")?.getOrNull(2)?.toIntOrNull() ?: dateOf(now()).day,
+                                    12, 0, 0,
+                                ).time()
+                            } catch (_: Exception) { now() }
+                            com.callmony.platform.NativeDateTime.pickDate(
+                                epochMillis = initial,
+                                onPick = { epoch -> localTo = isoOf(epoch) },
+                            )
+                        },
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Btn(
+                    label = t("sr.clear"),
+                    variant = "secondary",
+                    small = true,
+                    onPress = { localFrom = null; localTo = null },
+                )
+                Btn(
+                    label = t("sr.applyRange"),
+                    small = true,
+                    onPress = { onApply(localFrom, localTo) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+/** v1.6.26 — "YYYY-MM-DD" of an epoch (string-compare-safe, like daysAgoStr). */
+private fun isoOf(epoch: Long): String {
+    val d = dateOf(epoch)
+    return "${d.year}-${(d.month0 + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
 }
 
 private fun matchesEntry(e: com.callmony.model.LedgerEntry, q: String): Boolean =

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v1.6.26 — what the FileProvider may share: the temp backup/export files
+     the app writes under cacheDir/backups (callmony-backup.json, CSV, vCard). -->
+<paths>
+    <cache-path name="backups" path="backups/" />
+</paths>

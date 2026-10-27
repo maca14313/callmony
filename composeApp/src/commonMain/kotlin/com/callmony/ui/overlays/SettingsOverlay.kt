@@ -205,13 +205,44 @@ fun SettingsOverlay() {
                 }
             }
             /* ---- Backup & restore ---- */
+            // v1.6.26 — FILE-based backup/restore (user report: "it should be
+            // the most secure app, any data should not be lost even after
+            // reinstall or update"). Export now shares a REAL .json file —
+            // save it to Downloads/Drive and it survives an UNINSTALL (the
+            // old text-share pasted megabytes into a chat box); Restore-from-
+            // file picks that file back from anywhere on the phone. The
+            // paste-based restore stays for hand-edited/forwarded text.
+            // Update-installs never lose data (same signing key + lenient
+            // JSON loader + mirrored prefs commits) — this section covers
+            // the reinstall/factory-reset case.
             SectionLabel(t("st.backup"))
             Column(Modifier.padding(bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Btn(small = true, label = t("bkp.exportBackup"), icon = "download", variant = "secondary", onPress = {
                     val json = com.callmony.lib.Backup.exportAll()
-                    com.callmony.platform.Platform.share.shareText(json, "callmony-backup.json")
+                    com.callmony.platform.Platform.share.shareFile(
+                        "callmony-backup-${com.callmony.lib.fdEpoch(com.callmony.lib.now()).replace(Regex("[^0-9A-Za-z-]"), "")}.json",
+                        json,
+                        "application/json",
+                    )
                     AppStore.updateSettings { it.copy(lastBackupAt = now()) }
                     Toasts.toast(t("bkp.backupExported"))
+                })
+                Btn(small = true, label = t("bkp.restoreFromFile"), icon = "file-restore-outline", variant = "secondary", onPress = {
+                    Toasts.toast(t("bkp.pickingFile"))
+                    com.callmony.platform.Platform.share.pickFile("*/*") { text ->
+                        if (text == null) return@pickFile
+                        val data = com.callmony.lib.Backup.parse(text)
+                        if (data == null) {
+                            Toasts.toast(t("bkp.notValidBackup"), "error")
+                        } else {
+                            Confirm.ask(t("bkp.mergeIn"), t("bkp.safetyNote"), t("bkp.mergeIn")) { ok ->
+                                if (ok) {
+                                    AppStore.restoreBackup(data, "merge")
+                                    Toasts.toast(t("bkp.restored"))
+                                }
+                            }
+                        }
+                    }
                 })
                 Btn(small = true, label = t("bkp.restoreBackup"), icon = "restore", variant = "secondary", onPress = { restoreConfirm = true })
                 settings.lastBackupAt?.let {

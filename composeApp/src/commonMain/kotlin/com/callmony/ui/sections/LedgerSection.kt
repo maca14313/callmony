@@ -180,9 +180,10 @@ fun LedgerSection(ownerId: String) {
             }
         }
         // primary action row — v1.6.25 (redesign spec: "Place Credit, Debit,
-        // and Income actions in one row"): the three PRIMARY kinds are now
-        // three equal-width compact buttons in a FIXED row (no scrolling to
-        // reach them); the secondary actions scroll beside them below.
+        // and Income actions in one row"): the three PRIMARY kinds are three
+        // equal-width compact buttons in a FIXED row (no scrolling to reach
+        // them); the secondary actions scroll beneath them in the SAME pill
+        // style (v1.6.26 consistency fix).
         Row(Modifier.padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val primary = if (isGeneral) {
                 Triple("income" to "credit", "expense" to "debit", "credit" to "credit")
@@ -194,42 +195,33 @@ fun LedgerSection(ownerId: String) {
             } else {
                 Triple(t("lg.kindCredit"), t("lg.kindDebit"), t("lg.kindIncome"))
             }
-            val icons = if (isGeneral) Triple("trending-up", "trending-down", "hand-coin-outline")
-            else Triple("hand-coin-outline", "credit-card-outline", "trending-up")
             listOf(
-                Triple(icons.first, labels.first) { UiStore.open(Overlay.EntryEdit(null, ownerId, primary.first.first, primary.first.second)) },
-                Triple(icons.second, labels.second) { UiStore.open(Overlay.EntryEdit(null, ownerId, primary.second.first, primary.second.second)) },
-                Triple(icons.third, labels.third) { UiStore.open(Overlay.EntryEdit(null, ownerId, primary.third.first, primary.third.second)) },
+                Triple("plus", labels.first) { UiStore.open(Overlay.EntryEdit(null, ownerId, primary.first.first, primary.first.second)) },
+                Triple("plus", labels.second) { UiStore.open(Overlay.EntryEdit(null, ownerId, primary.second.first, primary.second.second)) },
+                Triple("plus", labels.third) { UiStore.open(Overlay.EntryEdit(null, ownerId, primary.third.first, primary.third.second)) },
             ).forEach { (icon, label, run) ->
-                Row(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(C.brandSoft)
-                        .border(1.dp, C.brand, RoundedCornerShape(12.dp))
-                        .clickable { run() }
-                        .padding(horizontal = 6.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    MdiIcon("plus", 14, C.brand)
-                    Text(" ${label}", fontSize = F.tiny.sp, color = C.brand, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
+                ActionPill(icon, label, Modifier.weight(1f)) { run() }
             }
         }
-        // secondary action chips (side-scroll) — every original label kept
+        // secondary action chips — v1.6.26: THE “+ Expense LOOKS DIFFERENT
+        // FROM ITS FRIENDS” FIX (user report). The secondary row used the
+        // generic ghost Chip style while the primary row above had its own
+        // pill design — now every action button on this page shares ONE
+        // visual language: the same brand-soft pill, brand hairline, bold
+        // tiny label and 12dp radius as the primary row (flat, side-scroll
+        // when narrow).
         ScrollRow(Modifier.padding(bottom = 2.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 // v1.6.18 — Settle-up REMOVED at the user's request ("we don't
                 // need the settle up for now"); AppStore.settleUp stays for API
                 // compat, just not surfaced anywhere.
                 if (isGeneral) {
-                    Chip(label = "+ ${t("lg.kindDebit")}", icon = "credit-card-outline", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "debit", "debit")) })
+                    ActionPill("plus", t("lg.kindDebit")) { UiStore.open(Overlay.EntryEdit(null, ownerId, "debit", "debit")) }
                 } else {
-                    Chip(label = "+ ${t("lg.kindExpense")}", icon = "trending-down", onPress = { UiStore.open(Overlay.EntryEdit(null, ownerId, "debit", "expense")) })
+                    ActionPill("plus", t("lg.kindExpense")) { UiStore.open(Overlay.EntryEdit(null, ownerId, "debit", "expense")) }
                 }
-                Chip(label = t("lg.newGroup"), icon = "folder-plus-outline", onPress = { renameGroup = "new"; renameTitle = "" })
-                Chip(label = t("lg.shareStatement"), icon = "share-variant-outline", onPress = { shareSheet = true })
+                ActionPill("folder-plus-outline", t("lg.newGroup")) { renameGroup = "new"; renameTitle = "" }
+                ActionPill("share-variant-outline", t("lg.shareStatement")) { shareSheet = true }
             }
         }
         // groups
@@ -760,5 +752,27 @@ private fun StatCard(label: String, value: Double, strong: Boolean, modifier: Mo
     ) {
         Text(label, fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Money(value = value, colorize = true, size = 15, weight = FontWeight.ExtraBold, compact = true)
+    }
+}
+
+/** v1.6.26 — THE ONE ACTION-BUTTON STYLE for the whole ledger page (primary
+ *  row AND secondary row share it — user report: "why is the + expense and
+ *  more tabs different from its friends in the contact detail page").
+ *  Brand-soft pill, brand hairline, plus/action glyph, bold tiny label. */
+@Composable
+private fun ActionPill(icon: String, label: String, modifier: Modifier = Modifier, onPress: () -> Unit) {
+    val C: ThemeColors = C()
+    Row(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(C.brandSoft)
+            .border(1.dp, C.brand, RoundedCornerShape(12.dp))
+            .clickable { onPress() }
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MdiIcon(icon, 14, C.brand)
+        Text(" $label", fontSize = F.tiny.sp, color = C.brand, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

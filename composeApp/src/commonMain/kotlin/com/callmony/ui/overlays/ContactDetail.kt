@@ -177,21 +177,21 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
         numPicker = action
     }
 
-    val quickActions = listOf(
+    // v1.6.26 — THE FIRST ICON ROW, REBUILT (user reports: "make the first
+    // icons row scrollable and remove the ledger icon from the first row,
+    // but its last icon should be a More icon that doesn't scroll with the
+    // others"). The row is now: a SIDE-SCROLLING strip of the communication
+    // actions (Call · SMS · WhatsApp · Telegram · Email) with a FIXED More
+    // tile pinned at the end that never scrolls away. The old 6×2 grid and
+    // its Ledger/Bank/Lists/Notes/Reminders/Info tiles are GONE — those
+    // destinations live in the segmented tabs right below (which now carry
+    // their own icons), and the full action set lives in the More grid.
+    val scrollActions = listOf(
         Triple("phone", t("act.call")) { runAction("call") },
         Triple("message-text-outline", t("act.sms")) { runAction("sms") },
         Triple("whatsapp", t("act.whatsapp")) { runAction("whatsapp") },
         Triple("send", t("act.telegram")) { tgPicker = true },
         Triple("email-outline", t("act.email")) { emailPicker = true },
-        Triple("book-outline", t("tab.ledger")) { seg = "ledger" },
-        Triple("bank-outline", t("tab.bank")) { seg = "bank" },
-        Triple("format-list-checks", t("tab.lists")) { seg = "lists" },
-        Triple("note-text-outline", t("tab.notes")) { seg = "notes" },
-        Triple("bell-outline", t("tab.reminders")) { seg = "reminders" },
-        Triple("information-outline", t("tab.info")) { seg = "info" },
-        // v1.6.18 — was “＋ Add to contact”; the add-to options now live INSIDE
-        // the More sheet together with everything else (user request).
-        Triple("dots-horizontal-circle-outline", t("cd.more")) { moreOpen = true },
     )
 
     fun toggleFav() {
@@ -290,38 +290,72 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
                     Pill(t("cd.blocked"), "red")
                 }
             }
-            // quick actions — 6×2 grid — v1.6.25 compact: 7dp tile padding,
-            // 20dp icons, 2dp gaps (4dp spacing system); every original
-            // label preserved (truncating exactly as before on narrow cells).
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-                for (row in 0..1) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        quickActions.subList(row * 6, row * 6 + 6).forEach { (icon, label, run) ->
-                            Column(
-                                Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable { run() }
-                                    .padding(vertical = 7.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
-                            ) {
-                                MdiIcon(icon, 20, C.brand)
-                                Text(
-                                    label,
-                                    fontSize = F.tiny.sp,
-                                    color = C.sub,
-                                    fontWeight = FontWeight.Bold,
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
+            // first action row — v1.6.26: side-scrolling communication strip
+            // + a FIXED More tile at the end (never scrolls away).
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                // the scrollable part
+                Box(Modifier.weight(1f)) {
+                    ScrollRow {
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            scrollActions.forEach { (icon, label, run) ->
+                                Column(
+                                    Modifier
+                                        .width(64.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable { run() }
+                                        .padding(vertical = 7.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    MdiIcon(icon, 20, C.brand)
+                                    Text(
+                                        label,
+                                        fontSize = F.tiny.sp,
+                                        color = C.sub,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
                             }
                         }
                     }
                 }
+                // the FIXED More tile — stays put while the strip scrolls
+                Column(
+                    Modifier
+                        .padding(start = 4.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(C.brandSoft)
+                        .border(1.dp, C.brand, RoundedCornerShape(10.dp))
+                        .clickable { moreOpen = true }
+                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    MdiIcon("dots-horizontal-circle-outline", 20, C.brand)
+                    Text(
+                        t("cd.more"),
+                        fontSize = F.tiny.sp,
+                        color = C.brand,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-            // segmented tabs
+            // segmented tabs — v1.6.26: EVERY TAB CARRIES ITS ICON and the
+            // BANK tab gets its own colour (user report: "make the tabs below
+            // it with icons and give the bank different color"). The second
+            // icon row is gone — these tabs ARE the navigation now.
             Segmented(
                 listOf(
                     Triple("ledger", t("tab.ledger"), null),
@@ -332,6 +366,17 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
                     Triple("info", t("tab.info"), null),
                 ),
                 seg,
+                iconOf = { key ->
+                    when (key) {
+                        "ledger" -> "book-outline"
+                        "lists" -> "format-list-checks"
+                        "notes" -> "note-text-outline"
+                        "bank" -> "bank-outline"
+                        "reminders" -> "bell-outline"
+                        else -> "information-outline"
+                    }
+                },
+                tintOf = { key -> if (key == "bank") C.blue else null },
             ) { seg = it }
             // v1.6.18 — SECTION SEPARATION; v1.6.25 compact (4dp system):
             // 6dp to the hairline, 8dp to the tab body card, 16dp card
@@ -389,6 +434,9 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
                 numPicker = null
                 UiStore.open(Overlay.ContactEdit(recordID))
             },
+            // v1.6.26 — favourite-number stars in the chooser
+            recordID = recordID,
+            favouriteNumber = primaryPhone(contact),
         )
     }
 
@@ -416,38 +464,54 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
     // ＋ add-to-contact chooser — v1.6.18: GONE; everything lives in the
     // More sheet now (see below).
 
-    // more sheet — v1.6.18 REBUILD: social strip that scrolls sideways with
-    // labeled icons (every number’s WhatsApp/Telegram + saved socials), the
-    // add-to options, the general actions, and Block / Unblock.
-    // v1.6.25 — THE "app closes when I tap More / the navbar three dots"
-    // CRASH FIX: this content used to wrap itself in its own
-    // verticalScroll Column, but BottomSheet ALREADY scrolls its content —
-    // a scrollable measured inside another scrollable gets an INFINITE max
-    // height and Compose throws IllegalStateException at measure time, so
-    // tapping More (quick action) or ⋮ (navbar) killed the app instantly.
+    // more sheet — v1.6.26 REBUILD AS A GRID (user report: "when it is
+    // clicked it should show all in a grid: the social media icons + what
+    // is in the first row icons + add new social media/link + an edit
+    // button; social media or links should have labels when created").
+    // Layout: [Quick actions grid — the first-row icons] → [Social grid —
+    // every saved social WITH ITS LABEL + per-number WhatsApp/Telegram]
+    // containing the ＋ Add tile and the Edit tile → the Add-to rows →
+    // general actions → Block/Unblock (kept from v1.6.18 — nothing lost).
+    // v1.6.25 crash-safety note: NO inner verticalScroll — BottomSheet
+    // already scrolls (the nested-scrollable measure crash fix).
     if (moreOpen) {
         val blockedNow = phone != null && Calls.isBlocked(phone)
         BottomSheet(title = displayName(contact), onClose = { moreOpen = false }) {
             Column {
-                // social strip (horizontal, scrolls if it overflows)
-                Text(t("cd.moreSocial"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 8.dp))
-                ScrollRow {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // quick actions grid — the first-row icons
+                Text(t("cd.quickActions"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 8.dp))
+                MoreGrid(
+                    buildList {
+                        add(MoreTileSpec("phone", t("act.call"), C.brand) { moreOpen = false; runAction("call") })
+                        add(MoreTileSpec("message-text-outline", t("act.sms"), C.brand) { moreOpen = false; runAction("sms") })
+                        add(MoreTileSpec("whatsapp", t("act.whatsapp"), Color(0xFF1faa53)) { moreOpen = false; runAction("whatsapp") })
+                        add(MoreTileSpec("send", t("act.telegram"), C.blue) { moreOpen = false; tgPicker = true })
+                        add(MoreTileSpec("email-outline", t("act.email"), C.amber) { moreOpen = false; emailPicker = true })
+                    },
+                )
+                Divider()
+                // social grid — saved socials (with their labels) + every
+                // number's WhatsApp/Telegram + the Add and Edit tiles
+                Text(t("cd.socialLinks"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 8.dp))
+                MoreGrid(
+                    buildList {
                         dedupePhones().forEach { p ->
                             val digits = normalizePhone(p.number, countryCode).replace(Regex("\\D"), "")
                             if (digits.length >= 7) {
-                                MoreSocialItem("whatsapp", "WhatsApp", Color(0xFF1faa53)) { Messengers.waLink(p.number) }
-                                MoreSocialItem("send", "Telegram", C.blue) { Messengers.tgLink(digits) }
+                                add(MoreTileSpec("whatsapp", "WhatsApp", Color(0xFF1faa53)) { Messengers.waLink(p.number) })
+                                add(MoreTileSpec("send", "Telegram", C.blue) { Messengers.tgLink(digits) })
                             }
                         }
                         socials.forEach { s ->
-                            MoreSocialItem(socialIcon(s.app), SOCIAL_APPS.find { it.first == s.app }?.second ?: s.app, C.sub) {
+                            val label = s.label.ifEmpty { SOCIAL_APPS.find { it.first == s.app }?.second ?: s.app }
+                            add(MoreTileSpec(socialIcon(s.app), label, C.sub) {
                                 Platform.share.openUrl(socialUrl(s))
-                            }
+                            })
                         }
-                        MoreSocialItem("plus", t("ce.addSocial"), C.brand) { moreOpen = false; socialSheet = "telegram" }
-                    }
-                }
+                        add(MoreTileSpec("plus", t("ce.addSocial"), C.brand) { moreOpen = false; socialSheet = "telegram" })
+                        add(MoreTileSpec("pencil-outline", t("cd.editContact"), C.brand) { moreOpen = false; UiStore.open(Overlay.ContactEdit(recordID)) })
+                    },
+                )
                 Divider()
                 // add-to group
                 Text(t("cd.addTo"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 2.dp))
@@ -509,8 +573,11 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
             phoneNumber = phone,
             countryCode = countryCode,
             onClose = { socialSheet = null },
-            onSave = { a, handle ->
-                AppStore.addSocial(recordID, a, handle)
+            // v1.6.26 — socials get a LABEL when created (user report:
+            // "social media or links should have labels when created") —
+            // shown on the More-grid tile and the Info tab.
+            onSave = { a, handle, label ->
+                AppStore.addSocial(recordID, a, handle, label)
                 Toasts.toast("${t("ce.addSocial")} ✓")
             },
         )
@@ -651,7 +718,16 @@ fun ContactInfo(
             socials.forEach { s ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     MdiIcon(socialIcon(s.app), 16, C.sub)
-                    Text("${SOCIAL_APPS.find { it.first == s.app }?.second ?: s.app} · ${s.handle}", fontSize = F.small.sp, color = C.ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // v1.6.26 — the user-given label leads when present
+                    // ("Work Telegram · @handle"), else the plain app name
+                    Text(
+                        "${s.label.ifEmpty { SOCIAL_APPS.find { it.first == s.app }?.second ?: s.app }} · ${s.handle}",
+                        fontSize = F.small.sp,
+                        color = C.ink,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     IconBtn("open-in-new", { Platform.share.openUrl(socialUrl(s)) }, size = 28)
                     IconBtn("trash-can-outline", { onRemoveSocial(s.id) }, size = 28, danger = true)
                 }
@@ -726,22 +802,48 @@ private fun InfoBlock(title: String, children: @Composable () -> Unit) {
     }
 }
 
-/** v1.6.18 — one labeled social tile in the More sheet’s sideways strip. */
+/** v1.6.26 — the More-sheet GRID (user report: "show all in a grid").
+ *  Tiles wrap into equal-width rows of 4; a short last row keeps the same
+ *  tile width via invisible spacers. */
+private data class MoreTileSpec(val icon: String, val label: String, val tint: Color, val onPress: () -> Unit)
+
 @Composable
-private fun MoreSocialItem(icon: String, label: String, tint: Color, onPress: () -> Unit) {
+private fun MoreGrid(tiles: List<MoreTileSpec>) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        tiles.chunked(4).forEach { rowTiles ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                rowTiles.forEach { spec ->
+                    MoreGridTile(spec, Modifier.weight(1f))
+                }
+                repeat(4 - rowTiles.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/** One labeled tile of the More grid. */
+@Composable
+private fun MoreGridTile(spec: MoreTileSpec, modifier: Modifier = Modifier) {
     val C = C()
     Column(
-        Modifier
-            .width(64.dp)
+        modifier
             .clip(RoundedCornerShape(14.dp))
             .background(C.chip)
-            .clickable { onPress() }
-            .padding(vertical = 8.dp),
+            .clickable { spec.onPress() }
+            .padding(horizontal = 4.dp, vertical = 9.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        MdiIcon(icon, 20, tint)
-        Text(label, fontSize = F.tiny.sp, color = C.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        MdiIcon(spec.icon, 22, spec.tint)
+        Text(
+            spec.label,
+            fontSize = F.tiny.sp,
+            color = C.sub,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -755,15 +857,36 @@ fun NumberPickerSheet(
     onClose: () -> Unit,
     onAddEdit: () -> Unit,
     actionIcon: String = "phone",
+    /** v1.6.26 — when set, every row carries a STAR that marks that number
+     *  as the contact's FAVOURITE number (user report: "add icon to make it
+     *  favourite in the choose a number"). The favourite is what the app
+     *  dials first everywhere (Recents card, keypad, detail navbar). */
+    recordID: String? = null,
+    favouriteNumber: String? = null,
 ) {
     val C = C()
     BottomSheet(title = t("cd.chooseNumber"), onClose = onClose) {
         Column {
             phones.forEach { p ->
+                val isFav = recordID != null && favouriteNumber != null &&
+                    p.number.replace(Regex("\\D"), "") == favouriteNumber.replace(Regex("\\D"), "")
                 PressableRow(onClick = { onPick(p.number) }, onLongClick = { Platform.share.copyText(p.number); Toasts.toast(t("act.copied")) }) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Pill(p.label, "brand")
                         Text(prettyPhone(p.number, countryCode), fontSize = F.body.sp, color = C.ink, modifier = Modifier.weight(1f))
+                        // v1.6.26 — the favourite star (sets the primary
+                        // number; filled amber when already the favourite)
+                        if (recordID != null) {
+                            IconBtn(
+                                if (isFav) "star" else "star-outline",
+                                {
+                                    AppStore.setPrimaryPhone(recordID, p.number)
+                                    Toasts.toast(t("cd.favNumberSet"))
+                                },
+                                size = 30,
+                                color = if (isFav) Color(0xFFb97d10) else C.faint,
+                            )
+                        }
                         // v1.6.18 — every row carries the ACTION icon (call /
                         // message) so the list reads like a list of dial buttons.
                         IconBtn(actionIcon, { onPick(p.number) }, size = 30)
@@ -869,7 +992,7 @@ fun AddSocialSheet(
     phoneNumber: String?,
     countryCode: String,
     onClose: () -> Unit,
-    onSave: (String, String) -> Unit,
+    onSave: (String, String, String) -> Unit,
 ) {
     val C = C()
     var app by remember { mutableStateOf(initialApp) }
@@ -880,13 +1003,17 @@ fun AddSocialSheet(
             else ""
         )
     }
+    // v1.6.26 — the LABEL the tile shows ("Work", "Family"…); optional —
+    // the app name is the fallback (user report: "social media or links
+    // should have labels when created").
+    var label by remember(initialApp) { mutableStateOf("") }
 
     BottomSheet(title = t("ce.addSocial"), onClose = onClose) {
         Column {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 12.dp)) {
                 ScrollRow {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        SOCIAL_APPS.forEach { (key, label, icon) ->
+                        SOCIAL_APPS.forEach { (key, lbl, icon) ->
                             Box(
                                 Modifier
                                     .clip(RoundedCornerShape(12.dp))
@@ -896,13 +1023,19 @@ fun AddSocialSheet(
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     MdiIcon(icon, 16, if (app == key) C.brand else C.sub)
-                                    Text(label, fontSize = F.small.sp, color = if (app == key) C.brand else C.sub, fontWeight = FontWeight.Bold)
+                                    Text(lbl, fontSize = F.small.sp, color = if (app == key) C.brand else C.sub, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
                     }
                 }
             }
+            Field(
+                label = t("ce.socialLabel"),
+                value = label,
+                onChangeText = { label = it },
+                placeholder = t("ce.socialLabelPh"),
+            )
             Field(
                 label = t("ce.socialPlaceholder"),
                 value = handle,
@@ -911,7 +1044,7 @@ fun AddSocialSheet(
             )
             Btn(label = t("act.save"), onPress = {
                 if (handle.isNotBlank()) {
-                    onSave(app, handle.trim())
+                    onSave(app, handle.trim(), label.trim())
                     onClose()
                 }
             })

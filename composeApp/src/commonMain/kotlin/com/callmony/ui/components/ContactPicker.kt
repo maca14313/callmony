@@ -139,7 +139,7 @@ fun ContactPicker(
                     hint = if (query.isBlank()) t("cd.noContactsHint") else query,
                 )
             } else {
-                LazyColumn(Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 12.dp)) {
+                LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) { // v1.6.26: inset handled by the app nav below
                     items(results, key = { it.recordID }) { c ->
                         PressableRow(
                             onClick = { onPick(c) },

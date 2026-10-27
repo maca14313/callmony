@@ -60,12 +60,16 @@ data class DeviceContact(
     val hasPhoto: Boolean = false,
 )
 
-/** A social-media handle attached app-side to a device contact. */
+/** A social-media handle attached app-side to a device contact.
+ *  v1.6.26 — `label`: the user-given name shown under the icon ("Work",
+ *  "Family Telegram"…). Optional; older rows simply fall back to the app
+ *  name everywhere they render (More grid, Info tab, pickers). */
 @Serializable
 data class SocialLink(
     val id: String,
     val app: String, // telegram | whatsapp | signal | viber | instagram | x | other
     val handle: String, // username, phone or URL
+    val label: String = "", // v1.6.26: user-given caption for the tile
 )
 
 /** App-local extensions layered on top of a device contact. */

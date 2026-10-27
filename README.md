@@ -104,9 +104,39 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.25 (versionCode 36)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.26 (versionCode 37)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.26** — the always-visible nav + data-safety round: (1) **RECENTS SHOWS
+  NAMES FROM THE FIRST FRAME** — the cached call log published at boot but the
+  cached CONTACT BOOK did not, so every saved contact's card flashed its raw
+  phone number for the seconds the real fetch takes; the cached book now
+  publishes in the same batched main hop; (2) **LONG-PRESS THE CALL ICON** on
+  a recent card picks WHICH number to call when the contact has several (and
+  the card dials the FAVOURITE number first everywhere); (3) **THE BOTTOM NAV
+  IS ALWAYS VISIBLE** — every overlay (contact detail, search, settings,
+  calculator, keypad, sheets, toasts) moved INSIDE the content area between
+  the header and the nav, so the nav is present everywhere and nothing can
+  render under it; (4) **THE CALCULATOR REBUILT 55/45** — keypad 55% of the
+  body, display 45%, display borderless with a 40sp main line, and every key
+  colourful (operators brand green, AC red, backspace amber, % blue, =
+  solid ink, digits cycling a soft five-hue tint); (5) **SEARCH: the kind
+  tabs now list CONTACTS too** (Credit shows exactly the people you
+  credited, inside the active date window) and a **CUSTOM DATE RANGE**
+  (from/to via the native calendar, open ends allowed); (6) **NO DATA LOSS
+  ON REINSTALL** — Android Auto Backup rules pinned for both backup engines
+  (cloud + device-transfer), Export backup now shares a REAL .json FILE
+  (save it to Downloads/Drive — it survives an uninstall), and
+  Restore-from-file picks that file back from anywhere on the phone;
+  (7) **CONTACT DETAIL REBUILT** — the first icon row is a side-scrolling
+  Call/SMS/WhatsApp/Telegram/Email strip with a FIXED More tile at the end,
+  the 6x2 grid is gone, the tabs carry icons with the BANK tab in its own
+  blue, and the More sheet is a GRID (quick actions + every saved social
+  WITH ITS LABEL + per-number WhatsApp/Telegram + add-social + edit);
+  socials get a LABEL field when created; the ledger's "+ Expense" row now
+  matches its sibling buttons exactly; (8) **favourite-number star** in the
+  choose-a-number picker. 62/62 tests green; APK 1.6.26 vc37, same release
+  key as always (installs over anything, data intact).
 - **1.6.25** — the v1.6.24 follow-up round, crash-first: (1) **THE MORE-SHEET
   CRASH FIXED** — tapping More (quick action) or the navbar three dots in a
   contact's page killed the app: the sheet wrapped its content in a

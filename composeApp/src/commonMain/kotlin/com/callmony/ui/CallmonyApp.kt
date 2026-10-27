@@ -345,6 +345,15 @@ private fun CallmonyAppContent() {
     ) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Header()
+            // v1.6.26 — THE BOTTOM NAV IS ALWAYS VISIBLE (user report: "the
+            // bottom navigation should be there always in any places but it
+            // should not be any component overlapped or covered by it").
+            // Every overlay used to render in a full-screen Box AFTER this
+            // Column, hiding the nav under contact detail / search / settings
+            // / calculator / keypad / sheets. All of them now compose INSIDE
+            // the content area between the header and the nav — sheets anchor
+            // on top of the nav, and because the content Box ends where the
+            // nav begins, NOTHING can ever render under it either.
             Box(Modifier.weight(1f)) {
                 when (UiStore.tab) {
                     "general" -> GeneralScreen()
@@ -352,38 +361,37 @@ private fun CallmonyAppContent() {
                     "trash" -> TrashScreen()
                     else -> RecentsScreen()
                 }
+
+                // overlay stack (renders above the tab screens, below the nav)
+                OverlayHost()
+
+                // keypad half-modal — above the nav now too
+                if (UiStore.keypadOpen) {
+                    SheetScrim(onDismiss = { UiStore.keypadOpen = false }) { KeypadSheet() }
+                }
+
+                // More sheet (BottomSheet carries its own scrim since v1.6.17)
+                if (UiStore.moreOpen) {
+                    MoreSheet()
+                }
+
+                // alarm dialog
+                if (UiStore.alarmQueue.isNotEmpty()) AlarmDialog()
+
+                // global toaster + confirm + v1.6.18 host sheets — pinned to
+                // the CONTENT area bottom (just above the nav), never under it
+                Toaster()
+                ConfirmHost()
+                com.callmony.ui.kit.HostSheetsHost()
             }
             BottomNav()
         }
 
-        // onboarding
+        // onboarding stays full-screen — it is a blocking first-run wizard
         if (!AppStore.state.settings.onboarded) {
             BootTrace.mark("ui.onboarding")
             Box(Modifier.fillMaxSize().background(C.canvas)) { OnboardingSheet() }
         }
-
-        // keypad half-modal over everything
-        if (UiStore.keypadOpen) {
-            SheetScrim(onDismiss = { UiStore.keypadOpen = false }) { KeypadSheet() }
-        }
-
-        // More sheet (BottomSheet carries its own scrim since v1.6.17)
-        if (UiStore.moreOpen) {
-            MoreSheet()
-        }
-
-        // overlay stack
-        OverlayHost()
-
-        // alarm dialog
-        if (UiStore.alarmQueue.isNotEmpty()) AlarmDialog()
-
-        // global toaster + confirm + v1.6.18 host sheets
-        // (root-level modal slot: sheets opened from deep inside scrollables
-        // still pin bottom-center on the full screen — "modals at the top")
-        Toaster()
-        ConfirmHost()
-        com.callmony.ui.kit.HostSheetsHost()
     }
 
     // touch anywhere refreshes the autolock timer (see pointerInput above)
