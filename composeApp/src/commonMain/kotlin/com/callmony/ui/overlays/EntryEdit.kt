@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -102,11 +103,14 @@ fun EntryEditOverlay(
     var editingItem by remember { mutableStateOf<EntryItem?>(null) }
     // v1.6.18 — attachments: lists / notes / reminders ride on entry.refs
     var refs by remember { mutableStateOf(existing?.refs ?: listOf<com.callmony.model.LinkRef>()) }
-    // v1.6.18 — editing an EXISTING entry showed TWO save-looking buttons
-    // (the always-open item form + the footer Save) — the user saved twice.
-    // For an existing entry without items the form now starts COLLAPSED
-    // behind a “＋ Add items” row; new entries keep it open (RN parity).
-    var showItemForm by remember { mutableStateOf(existing == null || existing.items.isNotEmpty()) }
+    // v1.6.34 — the ADD-MODE tabs state (Just amount / Items / Quick
+    // item / Recent). An entry that already carries items opens on the
+    // ITEMS tab; everything else opens on Just amount (the classic hero
+    // field). The v1.6.18 showItemForm collapse is superseded: the tabs
+    // ARE the add flow, and only the active tab renders an input form.
+    var amountMode by remember { mutableStateOf(if (items.isNotEmpty()) "items" else "amount") }
+    var quickLabel by remember { mutableStateOf("") }
+    var quickPrice by remember { mutableStateOf("") }
     var catManager by remember { mutableStateOf(false) }
     var showOwnerPicker by remember { mutableStateOf(false) }
 
@@ -159,6 +163,26 @@ fun EntryEditOverlay(
         pop()
     }
 
+    /* v1.6.34 — the QUICK-ITEM tab's ＋ (the v1.6.27/29 ledger row, now
+       inside the add-item flow): label + price → a single qty-1 line item
+       on THIS entry. The user can keep adding or hit Save — the entry
+       amount follows the item total, exactly like the ledger row did. */
+    fun addQuickItem() {
+        val label = quickLabel.trim()
+        val price = quickPrice.toDoubleOrNull()
+        if (label.isEmpty()) {
+            Toasts.toast(t("lg.quickItemNeedLabel"), "error")
+            return
+        }
+        if (price == null || price <= 0) {
+            Toasts.toast(t("lg.amountGreaterThanZero"), "error")
+            return
+        }
+        items = items + EntryItem(id = uid(), name = label, qty = 1.0, price = price)
+        quickLabel = ""
+        quickPrice = ""
+    }
+
     Sheet(
         title = if (existing == null) t("lg.newEntry") else t("lg.editEntry"),
         subtitle = ownerNameOf(ownerId),
@@ -192,23 +216,44 @@ fun EntryEditOverlay(
                     }
                 }
             }
-            // hero amount — a REAL decimal-pad input (v1.6.13 fix: was a
-            // display-only Text, so no amount could ever be typed and Save
-            // stayed disabled — "the ledger doesn't work"). Comma tolerated,
-            // exactly like the RN edition's hero field.
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 4.dp)
-                    // v1.6.29 — INPUT PRESS FEEDBACK on the hero amount too
-                    .pressVeil(corner = 18.dp)
-                    // v1.6.31 — ring colour while the amount field is active
-                    .focusRing(corner = 18.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(C.brand.copy(alpha = 0.08f))
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            // v1.6.34 — THE ADD-MODE TABS (user report: the quick item —
+            // label + price — should be inside ADD ITEM, as horizontally
+            // scrolling tabs: Items (qty × price) / Quick item / Just
+            // amount / other useful types). The amount + items block is
+            // now ONE flow behind a side-scrolling tab strip: pick HOW you
+            // add — a plain number, full line items, a one-line label +
+            // price, or a one-tap REUSE of an item booked before. Whatever
+            // lands is the same EntryItem list (the entry amount follows
+            // its total), so Save/effAmount logic is untouched. The
+            // v1.6.27/29 quick row from the ledger view moved HERE (its
+            // kind follows this editor's own kind chips).
+            Row(Modifier.padding(bottom = 8.dp)) {
+                ScrollRow {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Chip(compact = true, icon = "cash-check", label = t("ee.tabJustAmount"), active = amountMode == "amount", onPress = { amountMode = "amount" })
+                        Chip(compact = true, icon = "format-list-bulleted", label = t("ee.tabItems"), active = amountMode == "items", onPress = { amountMode = "items" })
+                        Chip(compact = true, icon = "clock-fast", label = t("ee.tabQuick"), active = amountMode == "quick", onPress = { amountMode = "quick" })
+                        Chip(compact = true, icon = "history", label = t("ee.tabRecent"), active = amountMode == "recent", onPress = { amountMode = "recent" })
+                    }
+                }
+            }
+            when (amountMode) {
+                // JUST AMOUNT — the hero amount exactly as it always was
+                // (v1.6.13 real decimal-pad fix; v1.6.29 press veil; v1.6.31
+                // active ring; comma tolerated like the RN hero field).
+                "amount" -> Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp)
+                        // v1.6.29 — INPUT PRESS FEEDBACK on the hero amount too
+                        .pressVeil(corner = 18.dp)
+                        // v1.6.31 — ring colour while the amount field is active
+                        .focusRing(corner = 18.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(C.brand.copy(alpha = 0.08f))
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                 Column(Modifier.weight(1f)) {
                     Text(t("lg.amount"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
                     androidx.compose.foundation.text.BasicTextField(
@@ -253,12 +298,91 @@ fun EntryEditOverlay(
                         Text(money(amountNum), fontSize = F.tiny.sp, color = C.faint)
                     }
                 }
-                if (items.isEmpty()) {
-                    IconBtn("calculator-variant", { UiStore.openCalculator { v -> amount = trimNum(v) } }, size = 40)
+                    if (items.isEmpty()) {
+                        IconBtn("calculator-variant", { UiStore.openCalculator { v -> amount = trimNum(v) } }, size = 40)
+                    }
+                }
+                // ITEMS — the full line-item editor (name · qty × price);
+                // tapping an existing row below switches here for editing
+                "items" -> ItemEditor(
+                    onAdd = { item -> items = items + item },
+                    onUpdate = { item -> items = items.map { if (it.id == item.id) item else it } },
+                    editing = editingItem,
+                    onEditDone = { editingItem = null },
+                )
+                // QUICK ITEM — label + price, one ＋ (v1.6.27's row, now
+                // inside the add flow exactly as the user asked)
+                "quick" -> Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Box(Modifier.weight(1f)) {
+                        Field(
+                            value = quickLabel,
+                            onChangeText = { quickLabel = it },
+                            placeholder = t("lg.quickItemLabel"),
+                            onSubmit = { addQuickItem() },
+                        )
+                    }
+                    Box(Modifier.width(110.dp)) {
+                        Field(
+                            value = quickPrice,
+                            onChangeText = { raw ->
+                                quickPrice = raw.replace(',', '.')
+                                    .filter { it.isDigit() || it == '.' }
+                                    .let { s ->
+                                        val firstDot = s.indexOf('.')
+                                        if (firstDot >= 0) s.substring(0, firstDot + 1) + s.substring(firstDot + 1).replace(".", "") else s
+                                    }
+                                    .take(12)
+                            },
+                            placeholder = t("lg.quickItemPrice"),
+                            keyboardType = "decimal-pad",
+                            onSubmit = { addQuickItem() },
+                        )
+                    }
+                    Box(
+                        Modifier
+                            .size(46.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(C.brand)
+                            .clickable { addQuickItem() },
+                        contentAlignment = Alignment.Center,
+                    ) { MdiIcon("plus", 22, C.onBrand) }
+                }
+                // RECENT — one-tap reuse of items booked before (the
+                // "other useful type": repeat bookings never re-typed)
+                "recent" -> {
+                    val recents = remember(AppStore.state.entries) { recentItems(AppStore.state.entries) }
+                    if (recents.isEmpty()) {
+                        Text(t("ee.noRecent"), fontSize = F.small.sp, color = C.faint, modifier = Modifier.padding(bottom = 10.dp))
+                    } else {
+                        Row(Modifier.padding(bottom = 10.dp)) {
+                            ScrollRow {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    recents.forEach { (name, price) ->
+                                        Chip(
+                                            compact = true,
+                                            label = if (price > 0) "$name · ${trimNum(price)}" else name,
+                                            onPress = {
+                                                items = items + EntryItem(id = uid(), name = name, qty = 1.0, price = price)
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            // line items
-            Text(t("lg.itemsTitle"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
+            // line items — always visible no matter the tab, so whatever
+            // the input method, the booked list + its total stay in view
+            if (items.isNotEmpty()) {
+                Text(t("lg.itemsTitle"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
+            }
             items.forEach { it ->
                 Row(
                     Modifier
@@ -266,7 +390,7 @@ fun EntryEditOverlay(
                         .padding(bottom = 6.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(C.card)
-                        .clickable { editingItem = it }
+                        .clickable { editingItem = it; amountMode = "items" }
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -277,29 +401,10 @@ fun EntryEditOverlay(
                     IconBtn("close", { items = items.filter { x -> x.id != it.id } }, size = 28, danger = true)
                 }
             }
-            if (showItemForm) {
-                ItemEditor(
-                    onAdd = { item -> items = items + item },
-                    onUpdate = { item -> items = items.map { if (it.id == item.id) item else it } },
-                    editing = editingItem,
-                    onEditDone = { editingItem = null },
-                )
-            } else {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 10.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(C.brand.copy(alpha = 0.06f))
-                        .clickable { showItemForm = true }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    MdiIcon("plus", 16, C.brand)
-                    Text(t("lg.addItems"), fontSize = F.small.sp, color = C.brand, fontWeight = FontWeight.Bold)
-                }
-            }
+            // v1.6.34 — the old collapsed “＋ Add items” row is GONE: the
+            // tab strip above IS the add flow now (an existing entry
+            // starts on the amount tab, so the v1.6.18 double-save-looking
+            // forms can never stack).
             if (items.isNotEmpty()) {
                 Row(
                     Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 10.dp),
@@ -498,6 +603,25 @@ fun EntryEditOverlay(
 
 private fun trimNum(v: Double): String =
     if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
+
+/* v1.6.34 — the RECENT tab's pool: distinct item labels (with the last
+   price they were booked at) across every entry, newest entry first —
+   the one-tap repeat-booking list. Pure function, harness-testable. */
+internal fun recentItems(entries: List<com.callmony.model.LedgerEntry>): List<Pair<String, Double>> {
+    val seen = HashSet<String>()
+    val out = mutableListOf<Pair<String, Double>>()
+    entries
+        .sortedByDescending { it.updatedAt }
+        .forEach { e ->
+            e.items.forEach { item ->
+                val name = item.name.trim()
+                if (name.isNotEmpty() && seen.add(name.lowercase())) {
+                    out.add(name to item.price)
+                }
+            }
+        }
+    return out.take(14)
+}
 
 /* line item add/edit form */
 @Composable

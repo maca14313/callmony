@@ -151,6 +151,19 @@ internal fun sanitizePastedExpr(raw: String): String {
     return out
 }
 
+/** v1.6.34 — live mapping of whatever lands in the calculator DISPLAY
+ *  through the native text menu (paste / cut / selection edits): ASCII
+ *  operator spellings and the comma decimal become the display glyphs,
+ *  anything the calculator cannot evaluate is dropped, and the length is
+ *  capped so the autosizing font stays readable. */
+internal fun mapDisplayExpr(raw: String): String =
+    raw.replace(',', '.')
+        .replace('-', '−')
+        .replace("*", "×")
+        .replace("/", "÷")
+        .filter { it.isDigit() || it == '.' || it in "+−×÷" }
+        .take(80)
+
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun CalculatorSheet() {
@@ -308,6 +321,28 @@ fun CalculatorSheet() {
         Toasts.toast(t("act.copied"))
     }
 
+    /* v1.6.34 — the display is a REAL editable field now (the keypad's
+       NoImeNumberField: fully editable, IME suppressed). Long-pressing any
+       part of it opens the NATIVE text menu — Copy · Cut · Paste · Select
+       all, with selection handles — exactly like a normal input (user
+       report: "PASTE should be what someone can do in a normal input or
+       text area, like press long on some part of word and native options
+       shows up like copy, paste, cut and others"). Whatever the native
+       menu lands in the field is mapped to a valid expression fragment;
+       editing a shown result starts a fresh expression from it. */
+    fun onDisplayEdited(raw: String) {
+        val mapped = mapDisplayExpr(raw)
+        if (justEvaluated) {
+            if (mapped != (result ?: "")) {
+                justEvaluated = false
+                result = null
+                expr = mapped
+            }
+        } else if (mapped != expr) {
+            expr = mapped
+        }
+    }
+
     // v1.6.30 — PASTE into the display, the mirror of copyResult (user
     // report: "copy and paste in the display just like other calculators
     // and normal inputs"). The clipboard text is sanitized to a valid
@@ -439,18 +474,16 @@ fun CalculatorSheet() {
                 // tone, no frame of any kind (user report: "the display
                 // should not have visible border") — the numbers sit directly
                 // on the canvas and autosize for very long values.
-                // v1.6.30 — LONG-PRESS THE DISPLAY COPIES the current value
-                // ("copy and paste in the display just like other
-                // calculators and normal inputs"); the paste chip in the
-                // header pastes back in.
+                // v1.6.34 — a REAL editable field (NoImeNumberField): the
+                // native long-press menu (Copy · Cut · Paste · Select all +
+                // handles) works on any part of the display text, exactly
+                // like a normal input; the app keypad stays the typing
+                // method (IME suppressed). The old custom long-press copy is
+                // gone — the native menu replaces it.
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .weight(1f)
-                        .combinedClickable(
-                            onClick = {},
-                            onLongClick = { copyResult() },
-                        ),
+                        .weight(1f),
                     contentAlignment = Alignment.BottomEnd,
                 ) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 12.dp)) {
@@ -464,16 +497,33 @@ fun CalculatorSheet() {
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Text(
-                            displayMain,
-                            fontSize = mainFontSize(displayMain).sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = C.ink,
-                            textAlign = TextAlign.End,
-                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp)
+                                .heightIn(min = 46.dp),
+                        ) {
+                            NoImeNumberField(
+                                value = if (justEvaluated && result != null) result!! else expr,
+                                onValueChange = { raw -> onDisplayEdited(raw) },
+                                fontSizeSp = mainFontSize(if (justEvaluated && result != null) result!! else expr.ifEmpty { "0" }),
+                                textColor = C.ink,
+                                cursorColor = C.brand,
+                                modifier = Modifier.fillMaxWidth(),
+                                alignEnd = true,
+                                maxLines = 3,
+                            )
+                            if (!(justEvaluated && result != null) && expr.isEmpty()) {
+                                Text(
+                                    "0",
+                                    fontSize = 40.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = C.faint,
+                                    textAlign = TextAlign.End,
+                                    modifier = Modifier.align(Alignment.BottomEnd),
+                                )
+                            }
+                        }
                     }
                 }
                 // v1.6.27 — the memory row ONLY inside the ADVANCED panel

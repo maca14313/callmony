@@ -15,7 +15,14 @@ import androidx.compose.ui.unit.sp
 
    expect/actual because "editable but no IME" is a native trick:
      - Android: a real EditText with setShowSoftInputOnFocus(false)
-     - iOS:     a plain editable field (UIKit suppresses via inputView) */
+     - iOS:     a plain editable field (UIKit suppresses via inputView)
+
+   v1.6.34 — the CALCULATOR display reuses this field for its native
+   copy/paste/cut behaviour (user report: "PASTE should be what someone can
+   do in a normal input — press long on some part and native options show
+   up like copy, paste, cut"), so the signature grows two defaulted params:
+   alignEnd (the calculator display right-aligns) and maxLines (long
+   expressions wrap to 3). The keypad call-site is unchanged. */
 
 @Composable
 expect fun NoImeNumberField(
@@ -25,4 +32,6 @@ expect fun NoImeNumberField(
     textColor: Color,
     cursorColor: Color,
     modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
+    alignEnd: Boolean = false,
+    maxLines: Int = 1,
 )

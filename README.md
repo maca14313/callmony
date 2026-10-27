@@ -104,6 +104,28 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
+**1.6.34 (versionCode 45)** — see `react-native/docs/CHANGELOG.md` for the
+feature history.
+
+- **1.6.34** — the "lighter cards" read as TRANSPARENT so they're solid
+  again (opaque surface + hairline + 14dp corners, light metrics kept); the
+  owe tabs open the filter axis they were always meant to have — Date
+  (incl. a custom range) / Amount / Name sheets instead of call-direction
+  rows; the calculator display is a real editable field (the NATIVE
+  long-press copy/paste/cut menu + selection handles); the quick item
+  moves into ADD ITEM as a horizontal tab strip (Just amount / Items ·
+  qty × price / Quick item / Recent one-tap reuse); the PIN sheet drops
+  the forgot link and the 4th dot now paints before submit (the v1.6.25
+  fix only covered the lock screen); a UI-layer perf pass (the recents +
+  general headline sums and slices are remember-keyed); and THE
+  NO-DATA-LOSS LAYER — an auto-backup of the full store to
+  Downloads/Callmony on every app close + boot safety net, with a
+  one-tap restore offer on any fresh install (the storage audit was
+  clean: update-installs never lost data; the killer is the
+  uninstall/reinstall path, which the public backup now survives). 16 + 9
+  + 5 new i18n keys ×5 languages; 96/96 tests (19 new); both iOS targets
+  compile.
+
 **1.6.33 (versionCode 44)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 

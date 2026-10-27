@@ -46,15 +46,19 @@ import com.callmony.lib.Calls
 import com.callmony.lib.Messengers
 import com.callmony.lib.Overlay
 import com.callmony.lib.UiStore
+import com.callmony.lib.dateOf
 import com.callmony.lib.dayGroup
 import com.callmony.lib.displayName
 import com.callmony.lib.durationStr
 import com.callmony.lib.entrySignedRemaining
 import com.callmony.lib.ft
+import com.callmony.lib.compactMoney
 import com.callmony.lib.listTotals
+import com.callmony.lib.now
 import com.callmony.lib.prettyPhone
 import com.callmony.lib.primaryPhone
 import com.callmony.lib.relTime
+import com.callmony.platform.NativeDateTime
 import com.callmony.model.DeviceContact
 import com.callmony.model.DevicePhone
 import com.callmony.platform.PermState
@@ -71,6 +75,7 @@ import com.callmony.ui.kit.Chip
 import com.callmony.ui.kit.EmptyState
 import com.callmony.ui.kit.MdiIcon
 import com.callmony.ui.kit.Money
+import com.callmony.ui.kit.PickerField
 import com.callmony.ui.kit.Pill
 import com.callmony.ui.kit.IconBtn
 import com.callmony.ui.kit.Spinner
@@ -119,6 +124,22 @@ fun RecentsScreen() {
     // overlay's stacked filter rows).
     var oweTab by remember { mutableStateOf("all") }
     var filter by remember { mutableStateOf("all") }
+    // v1.6.34 — THE OWE-TAB SUB-FILTERS (user report: "what i wanted was
+    // when one of the Filter Buttons (They owe you / You owe them) are
+    // clicked to be different kind of tabs that help filter like custom
+    // date, by amount, by name, other useful filters"). The v1.6.30/33
+    // attempt stacked the CALL-DIRECTION chips (All/Missed/Incoming/…)
+    // under the owe buttons — wrong axis. Now an active owe tab opens a
+    // row of three FILTER TABS — Date / Amount / Name — each opening its
+    // own sheet (date window incl. a CUSTOM RANGE, a minimum |balance|,
+    // and the ordering). The classic direction chips stay where they
+    // always lived: the sticky day header, in the "all" view.
+    var oweDays by remember { mutableStateOf(0) } // 0 any · 1 today · 7 · 30 · -1 custom
+    var oweFromMs by remember { mutableStateOf(0L) } // custom range start
+    var oweToMs by remember { mutableStateOf(0L) } // custom range end
+    var oweMinAmount by remember { mutableStateOf(0.0) }
+    var oweNameSort by remember { mutableStateOf("default") } // default | az | za
+    var oweMenu by remember { mutableStateOf<String?>(null) } // "date" | "amount" | "name" sheet
     var sheetRow by remember { mutableStateOf<CallRow?>(null) }
     // v1.6.26 — the long-press call-icon "which number?" picker (held HERE,
     // not inside the card: a BottomSheet composed inside a LazyColumn item
@@ -129,16 +150,22 @@ fun RecentsScreen() {
     var contactsAskedOnce by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
-    LaunchedEffect(filter, oweTab) { page = 1 }
+    LaunchedEffect(filter, oweTab, oweDays, oweFromMs, oweToMs, oweMinAmount, oweNameSort) { page = 1 }
 
     /* v1.6.30 — tapping the Recents nav button resets the whole view to the
-       nothing-clicked state: owe tab "all", direction filter "all", back to
-       the top of the list. The tick starts at 0, so the first composition
-       (before any nav tap) never resets anything. */
+       nothing-clicked state: owe tab "all", direction filter "all", every
+       v1.6.34 sub-filter back to default, back to the top of the list. The
+       tick starts at 0, so the first composition (before any nav tap) never
+       resets anything. */
     LaunchedEffect(UiStore.recentsResetTick) {
         if (UiStore.recentsResetTick > 0) {
             oweTab = "all"
             filter = "all"
+            oweDays = 0
+            oweFromMs = 0
+            oweToMs = 0
+            oweMinAmount = 0.0
+            oweNameSort = "default"
             page = 1
             listState.scrollToItem(0)
         }
@@ -167,10 +194,18 @@ fun RecentsScreen() {
         map
     }
 
-    val owedToYou = entries.filter { it.deletedAt == null && it.ownerId.startsWith("c:") && it.type == "credit" }
-        .sumOf { it.amount - it.payments.sumOf { p -> p.amount } }
-    val youOwe = entries.filter { it.deletedAt == null && it.ownerId.startsWith("c:") && it.type == "debit" }
-        .sumOf { it.amount - it.payments.sumOf { p -> p.amount } }
+    /* v1.6.34 — the two headline sums are REMEMBERED on `entries` (they
+       used to rescan the whole entries list twice on EVERY recomposition —
+       any state flip on this screen re-summed the ledger; with a busy book
+       that is real work per frame — "make the app the fastest app ever"). */
+    val owedToYou = remember(entries) {
+        entries.filter { it.deletedAt == null && it.ownerId.startsWith("c:") && it.type == "credit" }
+            .sumOf { it.amount - it.payments.sumOf { p -> p.amount } }
+    }
+    val youOwe = remember(entries) {
+        entries.filter { it.deletedAt == null && it.ownerId.startsWith("c:") && it.type == "debit" }
+            .sumOf { it.amount - it.payments.sumOf { p -> p.amount } }
+    }
 
     /* unified rows from the system call log.
        v1.6.14 FIX: `contacts` is a key (RN parity — its useMemo deps are
@@ -222,43 +257,38 @@ fun RecentsScreen() {
     }
 
     val favSet = remember(contactX) { contactX.filter { it.favorite }.map { it.recordID }.toSet() }
-    // v1.6.30 — the owe tab AND the direction filter now compose: the owe
-    // tab narrows to the contacts with a non-zero balance, the direction
-    // chips (All/Missed/Incoming/Outgoing/Favorites — the same chips the
-    // sticky day header carries) refine WITHIN that view.
-    val filtered = remember(rows, filter, oweTab, balances, favSet) {
-        val byOwe = when (oweTab) {
-            "theyOwe" -> rows.filter { r ->
-                r.contact != null && (balances[r.contact!!.recordID] ?: 0.0) > 0.005
-            }
-            "youOwe" -> rows.filter { r ->
-                r.contact != null && (balances[r.contact!!.recordID] ?: 0.0) < -0.005
-            }
-            else -> rows
-        }
-        when (filter) {
-            "favorites" -> byOwe.filter { it.contact != null && favSet.contains(it.contact!!.recordID) }
-            "all" -> byOwe
-            else -> byOwe.filter { it.direction == filter }
-        }
+    // v1.6.34 — the owe tab AND the direction filter compose (v1.6.30), and
+    // the three SUB-FILTERS refine within it: the date window, the minimum
+    // |balance|, and the name ordering. The whole pipeline lives in
+    // applyOweFilters() so the harness can drive it directly.
+    val oweFilters = OweFilters(oweDays, oweFromMs, oweToMs, oweMinAmount, oweNameSort)
+    val filtered = remember(rows, filter, oweTab, balances, favSet, oweFilters) {
+        applyOweFilters(rows, oweTab, balances, favSet, filter, oweFilters, now())
     }
-    val missedCount = rows.count { it.direction == "missed" }
+    val missedCount = remember(rows) { rows.count { it.direction == "missed" } }
 
-    /* flattened items + day headers */
-    val items = remember(filtered, balances) {
+    /* flattened items + day headers — v1.6.34: a NAME-sorted owe view goes
+       FLAT (grouping by day fights an alphabetical list); every other view
+       keeps the day headers exactly as before. */
+    val flatSort = oweTab != "all" && oweNameSort != "default"
+    val items = remember(filtered, flatSort) {
         val out = mutableListOf<Any>()
-        var current = ""
-        filtered.forEach { r ->
-            val label = dayGroup(r.at)
-            if (label != current) {
-                current = label
-                out.add(label)
+        if (flatSort) {
+            out.addAll(filtered)
+        } else {
+            var current = ""
+            filtered.forEach { r ->
+                val label = dayGroup(r.at)
+                if (label != current) {
+                    current = label
+                    out.add(label)
+                }
+                out.add(r)
             }
-            out.add(r)
         }
         out
     }
-    val pagedItems = items.take(page * PAGE)
+    val pagedItems = remember(items, page) { items.take(page * PAGE) }
     val hasMore = pagedItems.size < items.size
 
     /* infinite scroll trigger */
@@ -409,21 +439,50 @@ fun RecentsScreen() {
             Chip(compact = true, icon = "arrow-bottom-left", label = t("cd.theyOweYou"), active = oweTab == "theyOwe", onPress = { oweTab = if (oweTab == "theyOwe") "all" else "theyOwe" })
             Chip(compact = true, icon = "arrow-top-right", label = t("cd.youOweThem"), active = oweTab == "youOwe", onPress = { oweTab = if (oweTab == "youOwe") "all" else "youOwe" })
         }
-        // v1.6.30 — after one of the two tabs is clicked, ITS filter tabs
-        // appear right under it (the same All/Missed/Incoming/Outgoing/
-        // Favorites chips the sticky day header carries — "filter tabs to
-        // help filter just like in search"). Both rows drive the same
-        // `filter` state, so they always agree.
+        // v1.6.34 — THE OWE-TAB FILTER TABS. The v1.6.30/33 row of
+        // call-direction chips under the owe buttons is GONE (user report:
+        // "dont do that — when one of the Filter Buttons is clicked [it
+        // should] be different kind of tabs that help filter like custom
+        // date, by amount, by name"). An active owe tab now opens THREE
+        // filter tabs — Date / Amount / Name — each a chip that shows its
+        // current selection and opens a sheet: the date window (incl. a
+        // CUSTOM RANGE), the minimum |balance|, and the ordering (a
+        // name-sorted view goes flat, no day headers). The chips sit in a
+        // side-scroll row so the set can grow.
         if (oweTab != "all") {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                DayFilters(filter, { filter = it }, missedCount)
+            ScrollRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Chip(
+                        compact = true, icon = "calendar-blank-outline",
+                        label = when (oweDays) {
+                            1 -> t("cd.oweToday"); 7 -> t("cd.oweLast7"); 30 -> t("cd.oweLast30")
+                            -1 -> t("cd.oweCustom"); else -> t("cd.oweDate")
+                        },
+                        active = oweDays != 0,
+                        onPress = { oweMenu = "date" },
+                    )
+                    Chip(
+                        compact = true, icon = "cash-check",
+                        label = if (oweMinAmount > 0) t("cd.oweAbove", mapOf("n" to compactMoney(oweMinAmount))) else t("cd.oweAmount"),
+                        active = oweMinAmount > 0,
+                        onPress = { oweMenu = "amount" },
+                    )
+                    Chip(
+                        compact = true, icon = "account-circle-outline",
+                        label = when (oweNameSort) {
+                            "az" -> t("cd.oweAZ"); "za" -> t("cd.oweZA"); else -> t("cd.oweName")
+                        },
+                        active = oweNameSort != "default",
+                        onPress = { oweMenu = "name" },
+                    )
+                }
             }
         }
-        // fallback filter row when the list is empty
-        if (items.isEmpty()) {
+        // fallback filter row when the list is empty — v1.6.34: only in
+        // the "all" view (inside an owe tab the sub-filter chips own the
+        // row above; stacking the direction chips again is the exact
+        // report)
+        if (items.isEmpty() && oweTab == "all") {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -484,6 +543,10 @@ fun RecentsScreen() {
                     filter = filter,
                     missedCount = missedCount,
                     onFilter = { filter = it },
+                    // v1.6.34 — inside an owe tab the sticky header drops
+                    // its direction chips (the sub-filter chips own filtering
+                    // there; stacking both rows was the user report)
+                    showHeaderFilters = oweTab == "all",
                     listState = listState,
                     onTap = ::onTap,
                     onLongPress = { sheetRow = it },
@@ -580,6 +643,119 @@ fun RecentsScreen() {
             }
         }
     }
+
+    // v1.6.34 — the three OWE-TAB FILTER SHEETS (Date / Amount / Name),
+    // each opened from its chip under the owe tabs. Presets apply + close;
+    // the date sheet's CUSTOM RANGE stays open for the From/To pickers.
+    oweMenu?.let { menu ->
+        when (menu) {
+            "date" -> BottomSheet(title = t("cd.oweDate"), onClose = { oweMenu = null }) {
+                Column {
+                    listOf(
+                        0 to t("cd.oweAnyTime"),
+                        1 to t("cd.oweToday"),
+                        7 to t("cd.oweLast7"),
+                        30 to t("cd.oweLast30"),
+                    ).forEach { (days, label) ->
+                        OweFilterRow(label, selected = oweDays == days) {
+                            oweDays = days
+                            oweMenu = null
+                        }
+                    }
+                    OweFilterRow(t("cd.oweCustom"), selected = oweDays == -1) {
+                        if (oweDays != -1) {
+                            oweDays = -1
+                            if (oweFromMs == 0L || oweToMs == 0L) {
+                                oweFromMs = localMidnight(now())
+                                oweToMs = now()
+                            }
+                        }
+                        // keep the sheet open — the From/To pickers render below
+                    }
+                    if (oweDays == -1) {
+                        Column(Modifier.padding(top = 6.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Box(Modifier.weight(1f)) {
+                                    PickerField(
+                                        label = t("cd.oweFrom"),
+                                        value = fdOfEpoch(oweFromMs),
+                                        icon = "calendar-blank-outline",
+                                        onPress = {
+                                            NativeDateTime.pickDate(
+                                                epochMillis = if (oweFromMs > 0) oweFromMs else now(),
+                                                onPick = { ms -> oweFromMs = localMidnight(ms) },
+                                            )
+                                        },
+                                    )
+                                }
+                                Box(Modifier.weight(1f)) {
+                                    PickerField(
+                                        label = t("cd.oweTo"),
+                                        value = fdOfEpoch(oweToMs),
+                                        icon = "calendar-blank-outline",
+                                        onPress = {
+                                            NativeDateTime.pickDate(
+                                                epochMillis = if (oweToMs > 0) oweToMs else now(),
+                                                onPick = { ms -> oweToMs = localMidnight(ms) + 86_399_999L },
+                                            )
+                                        },
+                                    )
+                                }
+                            }
+                            Row(Modifier.padding(top = 10.dp)) {
+                                Btn(
+                                    label = t("cd.oweApply"),
+                                    onPress = {
+                                        // swap a reversed window; ignore empty halves
+                                        if (oweFromMs > 0 && oweToMs > 0 && oweFromMs > oweToMs) {
+                                            val f = oweFromMs
+                                            oweFromMs = oweToMs
+                                            oweToMs = f
+                                        }
+                                        oweMenu = null
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            "amount" -> BottomSheet(title = t("cd.oweAmount"), onClose = { oweMenu = null }) {
+                Column {
+                    OweFilterRow(t("cd.oweAnyAmount"), selected = oweMinAmount <= 0) {
+                        oweMinAmount = 0.0
+                        oweMenu = null
+                    }
+                    listOf(100.0, 500.0, 1000.0, 5000.0).forEach { min ->
+                        OweFilterRow(
+                            t("cd.oweAbove", mapOf("n" to oweAmountLabel(min))),
+                            selected = oweMinAmount == min,
+                        ) {
+                            oweMinAmount = min
+                            oweMenu = null
+                        }
+                    }
+                }
+            }
+            "name" -> BottomSheet(title = t("cd.oweName"), onClose = { oweMenu = null }) {
+                Column {
+                    OweFilterRow(t("cd.oweNewest"), selected = oweNameSort == "default") {
+                        oweNameSort = "default"
+                        oweMenu = null
+                    }
+                    OweFilterRow(t("cd.oweAZ"), selected = oweNameSort == "az") {
+                        oweNameSort = "az"
+                        oweMenu = null
+                    }
+                    OweFilterRow(t("cd.oweZA"), selected = oweNameSort == "za") {
+                        oweNameSort = "za"
+                        oweMenu = null
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -610,6 +786,107 @@ private fun DayFilters(filter: String, onSet: (String) -> Unit, missedCount: Int
     }
 }
 
+/* v1.6.34 — one selectable row inside an owe-filter sheet (tap = pick). */
+@Composable
+private fun OweFilterRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    val C = C()
+    PressableRow(onClick = onClick) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                label,
+                fontSize = 16.sp,
+                color = if (selected) C.brand else C.ink,
+                fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Normal,
+                modifier = Modifier.weight(1f),
+            )
+            if (selected) MdiIcon("check", 20, C.brand)
+        }
+    }
+    Box(Modifier.fillMaxWidth().height(0.5.dp).background(C.line))
+}
+
+/* v1.6.34 — THE OWE-TAB SUB-FILTER PIPELINE (pure, harness-testable).
+   oweTab narrows to contacts with a balance in the chosen direction
+   (v1.6.30), the classic direction filter composes within it, then the
+   three sub-filters refine: the date window (present + custom range),
+   the minimum |balance|, and the name ordering (a flat alphabetical
+   list — the caller drops the day headers when a name sort is active). */
+data class OweFilters(
+    val days: Int = 0,                // 0 any · 1 today · 7 · 30 · -1 custom window
+    val fromMs: Long = 0,             // custom window start (local midnight)
+    val toMs: Long = 0,               // custom window end (end of day)
+    val minAmount: Double = 0.0,      // minimum |balance| of the row's contact
+    val nameSort: String = "default", // default (log order) | az | za
+)
+
+internal fun applyOweFilters(
+    rows: List<CallRow>,
+    oweTab: String,
+    balances: Map<String, Double>,
+    favSet: Set<String>,
+    direction: String,
+    f: OweFilters,
+    nowMs: Long,
+): List<CallRow> {
+    val byOwe = when (oweTab) {
+        "theyOwe" -> rows.filter { r ->
+            r.contact != null && (balances[r.contact!!.recordID] ?: 0.0) > 0.005
+        }
+        "youOwe" -> rows.filter { r ->
+            r.contact != null && (balances[r.contact!!.recordID] ?: 0.0) < -0.005
+        }
+        else -> rows
+    }
+    val byDirection = when (direction) {
+        "favorites" -> byOwe.filter { it.contact != null && favSet.contains(it.contact!!.recordID) }
+        "all" -> byOwe
+        else -> byOwe.filter { it.direction == direction }
+    }
+    val byAmount = if (f.minAmount > 0.0) {
+        byDirection.filter { r ->
+            r.contact != null && kotlin.math.abs(balances[r.contact!!.recordID] ?: 0.0) >= f.minAmount - 0.005
+        }
+    } else byDirection
+    val window: LongRange? = when {
+        f.days == 1 -> localMidnight(nowMs)..Long.MAX_VALUE
+        f.days > 1 -> (nowMs - f.days * 86_400_000L)..Long.MAX_VALUE
+        f.days == -1 && f.fromMs > 0 && f.toMs > 0 -> f.fromMs..f.toMs
+        else -> null
+    }
+    val byDate = if (window != null) byAmount.filter { it.at in window } else byAmount
+    return when (f.nameSort) {
+        "az" -> byDate.sortedBy { oweRowName(it).lowercase() }
+        "za" -> byDate.sortedByDescending { oweRowName(it).lowercase() }
+        else -> byDate
+    }
+}
+
+private fun oweRowName(r: CallRow): String =
+    r.contact?.let { displayName(it) } ?: r.name ?: r.phone
+
+/** Local-time midnight of the given epoch millis. */
+private fun localMidnight(ms: Long): Long {
+    val d = dateOf(ms)
+    return com.callmony.lib.KmpDate(d.year, d.month0, d.day, 0, 0, 0).time()
+}
+
+/** yyyy-MM-dd for a picker row (— when unset). */
+private fun fdOfEpoch(ms: Long): String {
+    if (ms <= 0) return "—"
+    val d = dateOf(ms)
+    return "${d.year}-${(d.month0 + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
+}
+
+/** Plain thousands-separated integer for the amount presets ("1,000"). */
+private fun oweAmountLabel(n: Double): String {
+    val i = n.toLong().toString()
+    return i.reversed().chunked(3).joinToString(",").reversed()
+}
+
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun CallList(
@@ -619,6 +896,7 @@ private fun CallList(
     filter: String,
     missedCount: Int,
     onFilter: (String) -> Unit,
+    showHeaderFilters: Boolean,
     listState: LazyListState,
     onTap: (CallRow) -> Unit,
     onLongPress: (CallRow) -> Unit,
@@ -648,7 +926,7 @@ private fun CallList(
                 // chips while the call cards scroll — RN parity
                 // (FlatList stickyHeaderIndices).
                 is String -> stickyHeader(key = "D-$item") {
-                    DayHeader(item, filter, onFilter, missedCount)
+                    DayHeader(item, filter, onFilter, missedCount, showHeaderFilters)
                 }
                 is CallRow -> item(key = item.key) {
                     CallCard(
@@ -673,7 +951,7 @@ private fun CallList(
 }
 
 @Composable
-private fun DayHeader(label: String, filter: String, onFilter: (String) -> Unit, missedCount: Int) {
+private fun DayHeader(label: String, filter: String, onFilter: (String) -> Unit, missedCount: Int, showFilters: Boolean = true) {
     val C = C()
     Row(
         Modifier
@@ -690,7 +968,7 @@ private fun DayHeader(label: String, filter: String, onFilter: (String) -> Unit,
             contentAlignment = Alignment.Center,
         ) { MdiIcon("account-plus", 16, C.brand) }
         Spacer(Modifier.weight(1f))
-        DayFilters(filter, onFilter, missedCount)
+        if (showFilters) DayFilters(filter, onFilter, missedCount)
     }
 }
 
@@ -762,13 +1040,15 @@ fun CallCard(
         )
     } else emptyList()
 
-    // v1.6.30 — THE LIGHTER CARD (user report: "the call cards are little
-    // bit heavy … its ui should be lighter, now it is heavy on the eye").
-    // The per-row chrome is gone: no filled card, no border, no corner — a
-    // FLAT row on the canvas separated by an inset hairline (Material-list
-    // style), with a smaller avatar ring, lighter type weights/sizes and a
-    // soft brand-tinted call disc instead of the grey box + heavy border.
-    Column {
+    // v1.6.34 — THE LIGHT *CARD* (user report: "you did say Lighter call
+    // cards but you did make it transparent why"). v1.6.30/33 stripped the
+    // per-row chrome entirely — a fully TRANSPARENT flat row + hairline —
+    // which read as "transparent", not "light". The card is a REAL surface
+    // again: a SOLID C.card fill (opaque, clearly lifted off the canvas in
+    // both themes) with a hairline border and 14dp corners, but keeps every
+    // lighter metric from the flat pass (44dp avatar ring, 15sp title,
+    // 12sp meta, compact padding) so it stays easy on the eye.
+    Column(Modifier.padding(bottom = 6.dp)) {
         SwipeRow(
             key = row.key,
             left = leftActions,
@@ -779,7 +1059,10 @@ fun CallCard(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 7.dp),
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(C.card)
+                    .border(1.dp, C.line, RoundedCornerShape(14.dp))
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -864,16 +1147,8 @@ fun CallCard(
                 }
             }
         }
-        // the flat separator that replaced the card chrome — an INSET
-        // hairline that starts after the avatar column, like the stock
-        // Material call list
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = 62.dp)
-                .height(0.5.dp)
-                .background(C.line)
-        )
+        // (v1.6.34 — the transparent-row inset hairline is GONE with the
+        // flat design; the solid card + 6dp rhythm separates rows again.)
     }
 }
 

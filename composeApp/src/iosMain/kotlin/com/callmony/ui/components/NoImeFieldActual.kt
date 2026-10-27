@@ -11,7 +11,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 
 /** iOS actual: an editable field (UIKit's keyboard is suppressed by the
- *  SwiftUI shell when embedded; the 12-key grid remains the dialer input). */
+ *  SwiftUI shell when embedded; the 12-key grid remains the dialer input).
+ *  v1.6.34: alignEnd + maxLines serve the calculator display. */
 @Composable
 actual fun NoImeNumberField(
     value: String,
@@ -20,17 +21,20 @@ actual fun NoImeNumberField(
     textColor: Color,
     cursorColor: Color,
     modifier: Modifier,
+    alignEnd: Boolean,
+    maxLines: Int,
 ) {
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
-        singleLine = true,
+        singleLine = maxLines <= 1,
+        maxLines = if (maxLines <= 1) 1 else maxLines,
         textStyle = TextStyle(
             fontSize = fontSizeSp.sp,
             fontWeight = FontWeight.Medium,
             letterSpacing = 1.2.sp,
             color = textColor,
-            textAlign = TextAlign.Center,
+            textAlign = if (alignEnd) TextAlign.End else TextAlign.Center,
         ),
         cursorBrush = SolidColor(cursorColor),
         modifier = modifier,

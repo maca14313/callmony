@@ -135,6 +135,11 @@ object Db {
             }
             // PIN file
             Platform.kv.deleteFile("pin.json")
+            // v1.6.34 — the DANGER ZONE must remove the auto-backup file
+            // too (Downloads/Callmony), otherwise a wiped app resurrects
+            // itself from the public copy on the next fresh boot.
+            com.callmony.platform.AutoBackupFiles.delete()
+            Platform.kv.remove("callmony.autoBackup.at")
         }
     }
 
@@ -195,6 +200,16 @@ object Backup {
     /** Parse a backup JSON into PersistedData (null when not valid). */
     fun parse(text: String): PersistedData? = try {
         json.decodeFromString(PersistedDataDto.serializer(), text).toData()
+    } catch (_: Exception) {
+        null
+    }
+
+    /** Parse a backup JSON into its DTO — exportedAt included (v1.6.34:
+     *  the auto-restore offer shows WHEN the found backup was taken).
+     *  Same lenient settings as parse, so future backup shapes with new
+     *  fields keep loading on this build. Null when not valid. */
+    fun parseDto(text: String): PersistedDataDto? = try {
+        json.decodeFromString(PersistedDataDto.serializer(), text)
     } catch (_: Exception) {
         null
     }

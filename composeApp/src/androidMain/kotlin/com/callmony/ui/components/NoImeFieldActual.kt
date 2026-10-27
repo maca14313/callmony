@@ -19,7 +19,8 @@ import androidx.compose.ui.viewinterop.AndroidView
  *  Paste / Select-all menu + selection handles) but the software keyboard
  *  never opens (setShowSoftInputOnFocus(false), exactly the RN edition's
  *  TextInput behavior). Programmatic setText is guarded so state round-trips
- *  never re-fire the watcher or fight the cursor. */
+ *  never re-fire the watcher or fight the cursor. v1.6.34: alignEnd +
+ *  maxLines serve the calculator display (right-aligned, wraps to 3). */
 @Composable
 actual fun NoImeNumberField(
     value: String,
@@ -28,6 +29,8 @@ actual fun NoImeNumberField(
     textColor: Color,
     cursorColor: Color,
     modifier: Modifier,
+    alignEnd: Boolean,
+    maxLines: Int,
 ) {
     val density = LocalDensity.current
     val textSizePx = with(density) { fontSizeSp.sp.toPx() }
@@ -44,9 +47,11 @@ actual fun NoImeNumberField(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                 )
                 setShowSoftInputOnFocus(false) // the 12-key grid is the input method
-                isSingleLine = true
+                isSingleLine = maxLines <= 1
+                setMaxLines(maxLines)
                 imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_ACTION_NONE
-                gravity = Gravity.CENTER_VERTICAL or Gravity.CENTER_HORIZONTAL
+                gravity = if (alignEnd) Gravity.END or Gravity.BOTTOM
+                else Gravity.CENTER_VERTICAL or Gravity.CENTER_HORIZONTAL
                 background = null
                 setPadding(0, 0, 0, 0)
                 setTextColor(textColorArgb)

@@ -61,14 +61,18 @@ android {
         applicationId = "com.callmony"
         minSdk = 23
         targetSdk = 34
-        // v1.6.33 — the v1.6.30 feature set re-applied one port at a time on
-        // the stable v1.6.29/v1.6.32 base (splash KEPT): recents filter tabs
-        // + nav reset, calculator copy/paste, full-number strip, detail-page
-        // icon, lighter cards, and the post-call refresh rebuilt LAUNCH-SAFE
-        // (observer arms on first onResume on a background thread — never
-        // in the onCreate window).
-        versionCode = 44
-        versionName = "1.6.33"
+        // v1.6.34 — solid call cards (v1.6.33's "lighter" was read as
+        // TRANSPARENT — the row is a real surface again, light metrics
+        // kept), the owe tabs open DATE/AMOUNT/NAME filter tabs (not
+        // call-direction rows), the calculator display is a real editable
+        // field (native long-press copy/paste/cut + handles), the PIN
+        // sheet drops the forgot link + the 4th dot paints before submit,
+        // the quick item moves into the ADD-ITEM flow as horizontal tabs
+        // (Just amount / Items / Quick / Recent), a whole-app perf pass,
+        // and the NO-DATA-LOSS layer: auto-backup to Downloads/Callmony on
+        // every close + one-tap restore offer on a fresh install.
+        versionCode = 45
+        versionName = "1.6.34"
     }
 
     signingConfigs {

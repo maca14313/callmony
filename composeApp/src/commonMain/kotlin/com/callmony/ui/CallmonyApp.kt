@@ -176,6 +176,49 @@ private fun CallmonyAppContent() {
     LaunchedEffect(AppStore.state.hydrated) {
         if (!AppStore.state.hydrated) return@LaunchedEffect
         BootTrace.mark("ui.main")
+
+        // v1.6.34 — THE AUTO-RESTORE OFFER (user report: "every time I
+        // install the app the data is all gone"). A fresh install / wiped
+        // store boots EMPTY + un-onboarded; if the v1.6.34 auto-backup
+        // file survived on public storage (Downloads/Callmony), it is
+        // offered back with one tap BEFORE onboarding can even start —
+        // Restore brings the whole store (settings.onboarded included)
+        // and the phone continues exactly where it left off. This is a
+        // pure UI offer on top of hydrated state: nothing here runs in
+        // the launch window, nothing can block or crash boot, and the
+        // file read + JSON parse run on the background pool.
+        val s = AppStore.state
+        if (!s.settings.onboarded && s.entries.isEmpty() && s.notes.isEmpty() &&
+            s.lists.isEmpty() && s.reminders.isEmpty() && s.banks.isEmpty()
+        ) {
+            val offer = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                com.callmony.lib.AutoBackup.parseForOffer(com.callmony.lib.AutoBackup.readBackupText())
+            }
+            if (offer != null) {
+                val (dto, data) = offer
+                val when_ = com.callmony.lib.fdEpoch(dto.exportedAt)
+                com.callmony.ui.kit.Confirm.ask(
+                    com.callmony.i18n.t("bkp.autoFoundTitle"),
+                    com.callmony.i18n.t("bkp.autoFoundMsg", mapOf("date" to when_)),
+                    com.callmony.i18n.t("bkp.autoLocal"),
+                ) { ok ->
+                    if (ok) {
+                        AppStore.restoreBackup(data, "replace")
+                        com.callmony.ui.kit.Toasts.toast(com.callmony.i18n.t("bkp.autoRestoreDone"))
+                    }
+                }
+            }
+        }
+
+        // v1.6.34 — the boot-time AUTO-BACKUP safety net: even if the
+        // process is killed before an onStop export ever fires, every
+        // launch still lands a backup of the store it just hydrated
+        // (throttled to once per 10 min; the empty-store guard inside
+        // makes an empty boot a no-op).
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            com.callmony.lib.AutoBackup.exportIfDue()
+        }
+
         // permissions + system calls (Android asks once, dialer-style)
         AppStore.loadSystemCalls()
         // +4 s contacts refresh

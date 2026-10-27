@@ -248,6 +248,40 @@ fun SettingsOverlay() {
                 settings.lastBackupAt?.let {
                     Text("${t("bkp.lastBackup")}: ${com.callmony.lib.fdEpoch(it)}", fontSize = F.tiny.sp, color = C.faint)
                 }
+                // v1.6.34 — the AUTO-BACKUP status card (the no-data-loss
+                // layer): every app close mirrors the full store to
+                // Downloads/Callmony, and a reinstall offers it back with
+                // one tap. The row shows when the local copy last landed
+                // so the safety net is visible, not magic.
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(C.card)
+                        .border(1.dp, C.line, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    MdiIcon("check-circle-outline", 20, C.brand)
+                    Column(Modifier.weight(1f)) {
+                        Text(t("bkp.autoLocal"), fontSize = F.small.sp, fontWeight = FontWeight.Bold, color = C.ink)
+                        Text(
+                            t("bkp.autoLocalNote"),
+                            fontSize = F.tiny.sp,
+                            color = C.sub,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                        val autoAt = com.callmony.lib.AutoBackup.lastExportAt()
+                        Text(
+                            if (autoAt > 0) t("bkp.autoLocalLast", mapOf("date" to com.callmony.lib.fdEpoch(autoAt)))
+                            else t("bkp.autoLocalNever"),
+                            fontSize = F.tiny.sp,
+                            color = C.faint,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
             }
             /* ---- Import & export ---- */
             SectionLabel(t("ie.importExport"))
@@ -412,9 +446,26 @@ fun PinFlowSheet(mode: String, onClose: () -> Unit) {
             PinPad(onKey = { d ->
                 if (entered.length < 4) {
                     entered += d
-                    if (entered.length == 4) submit(entered)
+                    // v1.6.34 — THE 4TH-DOT FIX, PART 2 (user report: "the PIN
+                    // 4th dot gets coloured every time but not on the
+                    // fourth" — on THIS surface, the set/change/remove PIN
+                    // sheet). The v1.6.25 fix only covered the LockScreen;
+                    // here submit() still ran in the same frame the 4th digit
+                    // landed AND every submit path ends with entered = "" —
+                    // so the dots recomposed straight back to EMPTY and the
+                    // 4th dot never painted filled. The submit now runs from
+                    // the LaunchedEffect below, one beat after the dot paints.
                 }
             }, onBack = { if (entered.isNotEmpty()) entered = entered.dropLast(1) })
+
+            // v1.6.34 — submit one beat after the 4th digit paints (same
+            // pattern the LockScreen has carried since v1.6.25)
+            if (entered.length == 4) {
+                LaunchedEffect(entered) {
+                    kotlinx.coroutines.delay(160)
+                    submit(entered)
+                }
+            }
         }
     }
 }
@@ -532,22 +583,9 @@ fun LockScreen() {
                 submit(entered)
             }
         }
-        Text(
-            t("st.forgotPin"),
-            fontSize = F.small.sp,
-            color = C.brand,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier
-                .padding(top = 18.dp)
-                .clickable {
-                    Confirm.ask(t("st.resetPinConfirm"), t("st.removePinMsg"), t("act.confirm")) { ok ->
-                        if (ok) {
-                            AppStore.setPin(null)
-                            UiStore.locked = false
-                        }
-                    }
-                },
-        )
+        // v1.6.34 — the "Forgot PIN?" link is REMOVED (user report: "the
+        // forgot password [is] not needed for now"). The PIN stays a pure
+        // lock — the in-app Backup → Restore flow remains the data path.
         Spacer(Modifier.weight(1f))
     }
 }

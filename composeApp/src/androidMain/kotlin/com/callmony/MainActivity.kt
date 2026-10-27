@@ -179,6 +179,21 @@ class MainActivity : ComponentActivity() {
         com.callmony.lib.UiStore.appInForeground = false
     }
 
+    // v1.6.34 — THE AUTO-BACKUP SAVE-ON-CLOSE (user report: "every time I
+    // install the app the data is all gone"): the moment the app leaves
+    // the screen, the full store is mirrored to public storage
+    // (Downloads/Callmony/callmony-backup.json) so an uninstall/reinstall
+    // can offer it back. Strictly POST-launch lifecycle — onStop can never
+    // run inside the onCreate/setContent window — and the export runs on
+    // the Persist IO queue, never the main thread. The empty-store guard
+    // in AutoBackup makes a not-yet-hydrated or empty session a no-op.
+    override fun onStop() {
+        com.callmony.lib.Persist.post {
+            com.callmony.lib.AutoBackup.exportIfDue()
+        }
+        super.onStop()
+    }
+
     override fun onDestroy() {
         // v1.6.33 — release the observer + its thread cleanly (the observer
         // intentionally STAYS armed across onPause: the ended call is

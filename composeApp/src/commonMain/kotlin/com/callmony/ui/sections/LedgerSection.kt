@@ -125,15 +125,12 @@ fun LedgerSection(ownerId: String) {
     var renameTitle by remember { mutableStateOf("") }
     var shareSheet by remember { mutableStateOf(false) }
     var groupMenuFor by remember { mutableStateOf<LedgerGroup?>(null) }
-    // v1.6.27 — the QUICK ITEM (user report: "in the ledger there could be
-    // an item that just have label and price"): label + price + ＋ creates
-    // an entry instantly — no editor detour. v1.6.29: the row renders ONLY
-    // inside a KIND tab (Credit/Debit on a contact, Income/Expense in the
-    // general ledger — user report: "should be in the credit, debit,
-    // expenses and income, not in the outer ledger"), and the kind follows
-    // the active tab exactly — no more guessing a default kind.
-    var quickLabel by remember { mutableStateOf("") }
-    var quickPrice by remember { mutableStateOf("") }
+    // v1.6.34 — the QUICK ITEM moved into the ADD-ITEM flow (user report:
+    // "the quick item — label + price — should be inside ADD ITEM as
+    // horizontally scrolling tabs: Items (qty × price) / Quick item / Just
+    // amount"). The ledger view keeps NO quick row of its own anymore —
+    // the entry editor's tab strip carries it (plus a Recent-items reuse
+    // tab). The kind follows the editor's own kind chips.
 
     val ownerPhone = if (ownerId.startsWith("c:"))
         contacts.find { "c:${it.recordID}" == ownerId }?.phones?.firstOrNull()?.number
@@ -167,40 +164,6 @@ fun LedgerSection(ownerId: String) {
                 Toasts.toast(t("lg.settledDone"))
             }
         }
-    }
-
-    /* v1.6.27 — one tap: label + price → a priced entry on the books. The
-       kind follows the active filter tab (Credit tab → credit, Debit tab →
-       debit/expense…). v1.6.29: the quick row only EXISTS on a kind tab,
-       so this mapping is now exact — the else branch is unreachable but
-       kept as a safe default. The label rides as the entry's single line
-       item, so the card shows it as its title (see EntryCard). */
-    fun addQuickItem() {
-        val label = quickLabel.trim()
-        val price = quickPrice.replace(",", ".").toDoubleOrNull()
-        if (label.isEmpty()) {
-            Toasts.toast(t("lg.quickItemNeedLabel"), "error")
-            return
-        }
-        if (price == null || price <= 0) {
-            Toasts.toast(t("lg.amountGreaterThanZero"), "error")
-            return
-        }
-        val (ty, kd) = when (groupFilter) {
-            "credit" -> if (isGeneral) "credit" to "income" else "credit" to "credit"
-            "debit" -> if (isGeneral) "debit" to "expense" else "debit" to "debit"
-            else -> if (isGeneral) "debit" to "expense" else "credit" to "credit"
-        }
-        AppStore.saveEntry(
-            LedgerEntry(
-                id = uid(), ownerId = ownerId, type = ty, kind = kd, amount = price,
-                items = listOf(EntryItem(id = uid(), name = label, qty = 1.0, price = price)),
-                date = todayStr(), createdAt = now(), updatedAt = now(),
-            )
-        )
-        quickLabel = ""
-        quickPrice = ""
-        Toasts.toast(t("act.saved"))
     }
 
     Column {
@@ -375,47 +338,8 @@ fun LedgerSection(ownerId: String) {
                     Chip(label = t("lg.filterOverdue"), active = groupFilter == "overdue", onPress = { groupFilter = "overdue" }, compact = true)
                 }
             }
-            // v1.6.29 — THE QUICK ITEM MOVED INTO THE KIND TABS (user
-            // report: "the Ledger quick item — a label + price — should be
-            // in the credit, debit, expenses and income, not in the outer
-            // ledger"). The [Item label][Price][＋] row now renders ONLY
-            // while a KIND tab is active — Credit/Debit on a contact
-            // ledger, Income/Expense on the general ledger — and books the
-            // entry AS that kind. The outer/neutral view (All / Unpaid /
-            // Overdue) stays clean, exactly as the user asked.
-            if (groupFilter == "credit" || groupFilter == "debit") {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(top = 2.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    QuickItemInput(
-                        value = quickLabel,
-                        onValueChange = { quickLabel = it },
-                        placeholder = t("lg.quickItemLabel"),
-                        modifier = Modifier.weight(1f),
-                        onSubmit = { addQuickItem() },
-                    )
-                    QuickItemInput(
-                        value = quickPrice,
-                        onValueChange = { quickPrice = it },
-                        placeholder = t("lg.quickItemPrice"),
-                        modifier = Modifier.width(104.dp),
-                        keyboardType = "decimal-pad",
-                        onSubmit = { addQuickItem() },
-                    )
-                    Box(
-                        Modifier
-                            .size(46.dp, 46.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(C.brand)
-                            .clickable { addQuickItem() },
-                        contentAlignment = Alignment.Center,
-                    ) { MdiIcon("plus", 22, C.onBrand) }
-                }
-            }
+            // v1.6.34 — the quick-item row is GONE from the ledger view (it
+            // lives in the add-item tab strip now — see EntryEdit).
             if (ungrouped.isEmpty()) {
                 EmptyState(
                     icon = "book-outline",
@@ -833,55 +757,6 @@ fun openPaymentSheet(entryId: String) {
     }
 }
 
-/** v1.6.27 — the compact inline input of the QUICK ITEM row (label /
- *  price): a boxed 46dp text field with a placeholder, no label line. */
-@Composable
-private fun QuickItemInput(
-    value: String,
-    onValueChange: (String) -> Unit,
-    placeholder: String,
-    modifier: Modifier = Modifier,
-    keyboardType: String? = null,
-    onSubmit: (() -> Unit)? = null,
-) {
-    val C: ThemeColors = C()
-    Row(
-        modifier
-            // v1.6.29 — INPUT PRESS FEEDBACK (same veil as every Field)
-            .pressVeil()
-            // v1.6.31 — ring colour while the quick item input is active
-            .focusRing()
-            .clip(RoundedCornerShape(14.dp))
-            .border(1.dp, C.line, RoundedCornerShape(14.dp))
-            .background(C.inputBg, RoundedCornerShape(14.dp))
-            .padding(horizontal = 12.dp)
-            .heightIn(min = 46.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            singleLine = true,
-            textStyle = TextStyle(fontSize = F.body.sp, color = C.ink),
-            keyboardOptions = KeyboardOptions(
-                keyboardType = when (keyboardType) {
-                    "decimal-pad" -> KeyboardType.Decimal
-                    "numeric" -> KeyboardType.Number
-                    else -> KeyboardType.Text
-                },
-                imeAction = if (onSubmit != null) androidx.compose.ui.text.input.ImeAction.Done else androidx.compose.ui.text.input.ImeAction.Next,
-            ),
-            keyboardActions = KeyboardActions(onDone = { onSubmit?.invoke() }),
-            cursorBrush = SolidColor(C.brand),
-            modifier = Modifier.fillMaxWidth(),
-            decorationBox = { inner ->
-                if (value.isEmpty()) {
-                    Text(placeholder, fontSize = F.body.sp, color = C.faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                } else inner()
-            },
-        )
-    }
-}
 
 /** "500.0" → "500"; keeps "12.5" — nicer Fill-remaining button behavior. */
 private fun trimNumCompat(v: Double): String =

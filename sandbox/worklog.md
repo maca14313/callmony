@@ -528,3 +528,23 @@ Work Log:
 
 Stage Summary:
 - v1.6.33 = the stable v1.6.32 base + the full v1.6.30 feature set re-applied as audited ports, with the one launch-path feature (post-call observer) rebuilt to the safe design. If the app opens fine on v1.6.32 it should open fine here — the launch window is byte-identical except the observer now arms AFTER it, on a background thread. The user's device is the final judge; the recents.observerRefresh BootTrace mark gives the next diagnostic round a hook if anything misbehaves.
+
+---
+Task ID: 26
+Agent: main agent (Z.ai)
+Task: v1.6.34 — the eight user reports on the tested v1.6.33 build: solid (not transparent) call cards, "fastest app ever" perf, PIN forgot-link removal, the owe tabs' Date/Amount/Name filter axis (not call-direction rows), the calculator's NATIVE text menu, the quick item inside ADD ITEM as horizontal tabs, the every-install data loss, and the PIN 4th dot.
+
+Work Log:
+- IN-FLIGHT INHERIT: the lost-context session had already landed 5 files of v1.6.34 work in the tree (owe filter tabs + solid cards + calculator NoImeNumberField display + RecentsScreen remember-pass) — verified via git diff, kept, completed (16 missing cd.owe* i18n keys ×5 languages + compactMoney import).
+- CARDS SOLID AGAIN (report 1): C.card fill + hairline + 14dp corners, light metrics kept; the transparent-row inset hairline removed.
+- PERF (report 2): remember-keyed owe sums / missed count / paged slice on Recents + hero sums on General. Launch structure untouched.
+- PIN (reports 3+8): forgot link removed; the 4th-dot 160ms submit delay extended from the LockScreen to the set/change/remove PIN sheet (its submit always ended entered="" in the same frame — the dot recomposed empty).
+- OWE FILTER AXIS (report 4): three sub-filter chips (Date incl. custom range via native pickers / Amount presets on |balance| / Name ordering, flat when sorted) + three sheets; direction chips back to the sticky day header only; nav reset clears all; pure applyOweFilters + OweFiltersTest (6 cases).
+- CALCULATOR (report 5): display = real NoImeNumberField (alignEnd + maxLines added; Android/iOS actuals), native long-press menu with handles; mapDisplayExpr maps native edits; V1634CalcDisplayTest (4 cases).
+- QUICK ITEM → ADD ITEM (report 6): LedgerSection row + QuickItemInput removed; EntryEdit gets the Just amount / Items / Quick item / Recent tab strip (recentItems pure fn; RecentItemsTest 3 cases); collapsed add-items row gone; EntryEditAddTabsTest (2 harness cases) replaces QuickItemKindTabsTest.
+- DATA LOSS (report 7): audit clean (loader never writes back; saves only on mutation; same signing key since v1.6.13 → update-installs safe). Root cause = the uninstall/reinstall install path. NEW LAYER: AutoBackupFiles (expect/actual; Android = MediaStore.Downloads → Downloads/Callmony/callmony-backup.json, update-in-place, owner-package match readable after reinstall; iOS no-op) + lib/AutoBackup (10-min throttle, empty-store + unhydrated guards, parseForOffer via Backup.parseDto) + onStop trigger in MainActivity (post-launch lifecycle) + boot-time safety-net export + the one-tap restore offer in the shell's post-hydrate effect (background-pool read/parse; restoreBackup replace incl. onboarded) + Settings status card + danger-zone wipe removes the file. AutoBackupOfferTest (4 cases).
+- TESTS: 96/96 green across 23 suites (19 new v1.6.34 tests); both iOS targets compile.
+- BUILD: aapt com.callmony 1.6.34 versionCode 45 minSdk 23 targetSdk 34; apksigner SHA-256 2f6d65be...869ad identical to every prior release. APK committed at releases/callmony-1.6.34-release.apk + copied to /home/z/my-project/download/callmony-1.6.34-kmp-release.apk. Docs: README Versioning v1.6.34 entry; CHANGELOG full entry; sandbox/chat-logs/2026-10-27-v1.6.34-user-reports.md.
+
+Stage Summary:
+- v1.6.34 = 8/8 reports fixed + the no-data-loss layer. The install-path data killer is covered on Android 10+ (the user's Tecno/Infinix class) by the public Downloads mirror + one-tap restore offer; update-installs were never the problem (same key). The launch path is byte-untouched (onStop + post-hydrate triggers only). If the user still loses data on a reinstall, the next diagnostic step is checking Downloads/Callmony in their Files app.

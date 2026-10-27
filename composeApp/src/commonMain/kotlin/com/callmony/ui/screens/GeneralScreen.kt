@@ -97,8 +97,10 @@ fun GeneralScreen() {
             .filter { kotlin.math.abs(it.second) > 0.005 }
             .sortedByDescending { kotlin.math.abs(it.second) }
     }
-    val owedToYou = people.filter { it.second > 0 }.sumOf { it.second }
-    val youOwe = people.filter { it.second < 0 }.sumOf { -it.second }
+    // v1.6.34 — perf: the two headline sums are remembered on `people`
+    // (they rescanned the pair list on every recomposition of this screen)
+    val owedToYou = remember(people) { people.filter { it.second > 0 }.sumOf { it.second } }
+    val youOwe = remember(people) { people.filter { it.second < 0 }.sumOf { -it.second } }
 
     Column(
         Modifier
