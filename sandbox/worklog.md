@@ -392,3 +392,27 @@ Work Log:
 
 Stage Summary:
 - v1.6.26 ships all 8 reports + the always-visible-nav restructure without touching the freeze-fix invariants: no new gesture observers (the long-press rides combinedClickable's framework detector), no state writes off-main (hydrate's cached-contacts publish rides the existing batched main hop; the file-picker callback is delivered on main), no nested fetches. Live: https://github.com/maca14313/callmony/releases/tag/v1.6.26
+
+---
+Task ID: 19
+Agent: main agent (Z.ai)
+Task: Callmony v1.6.27 — fix the 9 user reports (slower boot, keypad pushed under navbar, picker favourite star + copy, calculator overlap/advanced/borderless display, press feedback incl. ledger, search kind tabs not listing contacts, contact-detail history icon placement, ledger label+price item, push with APK) and deliver APK + GitHub release + sandbox/chat-log commit.
+
+Work Log:
+- Recon: repo at v1.6.26 (eecc876). Decoded all 9 reports against the tree; found the search browse-mode render bug (result sections only in the query branch), the keypad panel-overflow cause (heightIn(250) list pushing the fixed tail under the nav), the boot sum-of-loads regression (v1.6.26 contacts cache loaded sequentially), and the aspectRatio(1f) calculator key overlap.
+- BOOT SPEED (Store.kt): hydrate now runs Db.loadAll / loadCachedCalls / loadCachedContacts / readPinFile CONCURRENTLY (async inside coroutineScope, typed via a private HydrateLoads data class) — first frame waits the MAX of the loads, not the SUM; same single batched main hop, names still on frame one.
+- KEYPAD ANCHOR (KeypadSheet.kt): live-match LazyColumn heightIn(max=250) -> weight(1f, fill=false); the fixed keypad + action row can never be pushed under the always-visible nav again. Dialer keys got a pressed-state tile swap (pointerInput bypasses LocalIndication). Match rows + speed dial now dial primaryPhone().
+- PICKER (RecentsScreen.kt + ContactDetail.kt): both choose-a-number sheets share one row design [label][number][copy][star][call] with long-press copy; NEW Store.clearPrimaryPhone — the filled star UNSETS; live favourite read from state.contactX so the star flips instantly. Favourite-first dialing extended to the call row sheet and the speed-dial grid.
+- CALCULATOR (Calculator.kt): keys fillMaxHeight (was aspectRatio(1f) — the overlap); 8dp gaps; M+/M−/MR/MC behind a Σ ADVANCED toggle BESIDE the history icon; display fully borderless (no card tone) with autosizing font 40→16sp by length, 3 lines, operand cap 12→15; backspace key lights up while held.
+- PRESS VEIL (Kit.kt): 10% -> 16% black (clearly visible on the near-white canvas, both themes).
+- SEARCH (MiscOverlays.kt): result sections render in query AND browse mode (the actual 'Credit tab lists nothing' bug — sections lived in the query-only else branch); empty states only when their branch is truly empty.
+- CONTACT DETAIL (ContactDetail.kt): history icon rides FIRST in the total/settled-up row; tap jumps to the Info tab (call history block).
+- LEDGER QUICK ITEM (LedgerSection.kt): [Item label][Price][＋] row above Single entries; addQuickItem() creates the entry with the label as its single line item, kind following the active tab (contact defaults Credit, general Expense); EntryCard shows a single item's LABEL as the card title; QuickItemInput composable (boxed 46dp BasicTextField, IME Done submits).
+- Store: clearPrimaryPhone added (upsertContactX primaryPhone=null).
+- i18n: 4 new keys x5 (cd.favNumberUnset, lg.quickItemLabel/quickItemPrice/quickItemNeedLabel) — 1065/1065 parity verified by script.
+- Version 1.6.27 / versionCode 38. Android compile clean; both iOS targets compile (one benign always-true warning in the new picker code). Tests: 55-test pure battery + NEW V1627Test (4 cases: favourite set/unset/stale-fallback, quick-item round-trip, the exact search-kind predicate incl. deleted-entry exclusion) + BootDiagTest + UpgradeBootDiagTest through the concurrent hydrate path — ALL GREEN (61).
+- Release: assembleRelease clean; aapt com.callmony 1.6.27 vc38 minSdk 23 targetSdk 34; apksigner SHA-256 2f6d65be...869ad identical to every prior release (installs over anything, data intact); APK SHA-256 d0e3969c18ab5b77212a3ae58358b9cca2f408e0ca064b17c290d7245819e11e.
+- Delivery: commit f732ce8 pushed (eecc876..f732ce8, ls-remote verified) with the APK at releases/callmony-1.6.27-release.apk; GitHub Release v1.6.27 published (id 425080276, asset 201); copy at /home/z/my-project/download/callmony-1.6.27-kmp-release.apk; README Versioning + CHANGELOG entries; sandbox/chat-logs/2026-10-27-v1.6.27-user-reports.md; this worklog sync.
+
+Stage Summary:
+- v1.6.27 ships all 9 reports on the freeze-free foundation (no new gesture observers, no off-main state writes — hydrate still publishes in one batched main hop; the concurrent loads only parallelize the file reads that precede it). Live: https://github.com/maca14313/callmony/releases/tag/v1.6.27
