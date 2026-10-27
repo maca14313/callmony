@@ -56,6 +56,7 @@ import com.callmony.lib.nationalDigits
 import com.callmony.lib.normalizePhone
 import com.callmony.lib.ownerBalances
 import com.callmony.lib.prettyPhone
+import com.callmony.lib.primaryPhone
 import com.callmony.platform.Platform
 import com.callmony.ui.kit.Avatar
 import com.callmony.ui.kit.C
@@ -93,6 +94,12 @@ fun KeypadSheet() {
     val scope = rememberCoroutineScope()
     var clearJob by remember { mutableStateOf<Job?>(null) }
     var longFired by remember { mutableStateOf(false) }
+    // v1.6.27 — pressed-state for the 12 keys: they use pointerInput +
+    // detectTapGestures (long-press needs it), which BYPASSES the app-root
+    // press veil (LocalIndication only reaches clickable/combinedClickable)
+    // — the keypad keys never visibly reacted (user report: every input
+    // should react when tapped). The pressed key now swaps its tile tone.
+    var pressedKey by remember { mutableStateOf<String?>(null) }
 
     val contacts = AppStore.state.deviceContacts
     val countryCode = AppStore.state.settings.countryCode
@@ -167,7 +174,9 @@ fun KeypadSheet() {
             val recordID = AppStore.state.contactX.find { it.speedDial == d }?.recordID
                 ?: AppStore.state.settings.speedDial[d]
             val target = recordID?.let { rid -> contacts.find { it.recordID == rid } }
-            val phone = target?.phones?.firstOrNull()?.number
+            // v1.6.27 — speed dial calls the FAVOURITE number first, like
+            // every other dial surface in the app.
+            val phone = primaryPhone(target)
             if (target != null && phone != null) {
                 Toasts.toast("${t("act.call")} · ${displayName(target)}", "info")
                 Calls.placeCall(phone)
@@ -306,12 +315,21 @@ fun KeypadSheet() {
             )
             IconBtn("close", close, size = 36)
         }
-        // live matches (max 24% of the screen)
+        // live matches — v1.6.27 — THE "KEYPAD PUSHED UNDER THE NAVBAR" FIX.
+        // The list used heightIn(max=250): with matches + exact pill + number
+        // display + the 12-key grid + the action row the panel exceeded the
+        // content area, and a bottom-anchored Column CLIPS ITS TAIL — the
+        // bottom rows of the keypad ended up UNDER the always-visible nav.
+        // The list is now a WEIGHTED child (fill=false): it takes whatever
+        // space is LEFT above the fixed keypad portion, scrolls inside it,
+        // and the keypad grid + action row stay anchored above the nav no
+        // matter how many matches there are (contacts at the top, keypad
+        // exactly where it was — the user's expected behavior).
         if (matches.isNotEmpty()) {
             LazyColumn(
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 250.dp)
+                    .weight(1f, fill = false)
                     .padding(horizontal = 10.dp),
             ) {
                 itemsIndexed(matches, key = { i, c -> "$i-${c.recordID}" }) { _, c ->
@@ -321,7 +339,9 @@ fun KeypadSheet() {
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
                             .clickable {
-                                val phone = c.phones.firstOrNull()?.number
+                                // v1.6.27 — the FAVOURITE number dials first
+                                // (ContactX.primaryPhone → first phone).
+                                val phone = primaryPhone(c)
                                 if (phone != null) {
                                     close()
                                     Calls.placeCallWithToast(phone)
@@ -342,7 +362,8 @@ fun KeypadSheet() {
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                c.phones.firstOrNull()?.let { prettyPhone(it.number, countryCode) } ?: t("cd.noPhone"),
+                                // show the favourite number first (v1.6.27)
+                                primaryPhone(c)?.let { prettyPhone(it, countryCode) } ?: t("cd.noPhone"),
                                 fontSize = 13.sp,
                                 color = C.faint,
                                 maxLines = 1,
@@ -425,12 +446,16 @@ fun KeypadSheet() {
                                 .weight(1f)
                                 .heightIn(min = 48.dp, max = 62.dp)
                                 .clip(RoundedCornerShape(20.dp))
-                                .background(C.card)
+                                // v1.6.27 — pressed-state feedback (the keys
+                                // bypass LocalIndication, see pressedKey above)
+                                .background(if (pressedKey == k.d) C.brandSoft else C.card)
                                 .pointerInput(k.d) {
                                     detectTapGestures(
                                         onPress = {
+                                            pressedKey = k.d
                                             pressKey(k.d)
                                             tryAwaitRelease()
+                                            pressedKey = null
                                         },
                                         onLongPress = { longPressKey(k.d) },
                                     )

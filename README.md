@@ -104,7 +104,36 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.26 (versionCode 37)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.27 (versionCode 38)** — see `react-native/docs/CHANGELOG.md` for the
+feature history.
+
+- **1.6.27** — the speed + picker + calculator round: (1) **BOOT IS FAST
+  AGAIN** — v1.6.26's names-from-first-frame fix loaded the cached contact
+  book AFTER the store and call log (the SUM of three big reads); all boot
+  loads now run CONCURRENTLY (the MAX); (2) **THE KEYPAD STAYS ANCHORED** —
+  the live-match list used to grow the panel past the content area, pushing
+  the key grid under the always-visible nav; the list now takes only the
+  space LEFT above the fixed keypad; (3) **CHOOSE-A-NUMBER PICKER** (long-
+  press a recent card's call icon): every row gained a copy icon, long-press
+  copy, and the FAVOURITE star (set/UNSET) directly before the call icon —
+  and the favourite number now dials first EVERYWHERE (cards, keypad
+  matches, speed dial, detail pickers); (4) **THE CALCULATOR** — keys can
+  never overlap again (they fill the row height instead of a square
+  aspect), M+/M−/MR moved into an ADVANCED panel behind a Σ toggle beside
+  the history icon, the display is fully borderless and AUTOSIZES to show
+  very long numbers (15-digit operands); (5) **PRESS FEEDBACK** — the veil
+  is clearly visible now (16% alpha) and the pointer-based keys (dialer
+  keys, calculator backspace) light up too; (6) **SEARCH KIND TABS** —
+  clicking Credit/Debit/Income/Expense with no query showed NOTHING (the
+  result sections only rendered in query mode); browse mode now lists the
+  CONTACTS that have those entries; (7) **CONTACT DETAIL** — the history
+  icon rides IN the total/settled-up row, before it; (8) **LEDGER QUICK
+  ITEM** — a label + price row creates a priced entry in one tap (kind
+  follows the active tab); single-item cards show the item's label as their
+  title. 61 tests green (59 pure + the 2 boot harnesses); 4 new i18n keys x5 (1065/1065 parity); same
+  signing key as always — installs over anything, data intact.
+
+**1.6.26 (versionCode 37 — previous)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
 - **1.6.26** — the always-visible nav + data-safety round: (1) **RECENTS SHOWS

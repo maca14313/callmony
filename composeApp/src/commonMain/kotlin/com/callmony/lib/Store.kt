@@ -27,6 +27,8 @@ import com.callmony.platform.Platform
 import com.callmony.platform.PermState
 import com.callmony.platform.ReminderForAlarm
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
@@ -74,6 +76,15 @@ class AppState {
     var settings by mutableStateOf(Db.DEFAULT_SETTINGS)
     var lastUndo by mutableStateOf<LastUndo?>(null)
 }
+
+/* v1.6.27 — the four independent boot loads, destructured in hydrate() so
+   they can run concurrently (async) while keeping typed results. */
+private data class HydrateLoads(
+    val data: PersistedData,
+    val callsCache: Pair<Long, List<DeviceCall>>,
+    val contactsCache: List<DeviceContact>,
+    val storedPin: PinHashResult?,
+)
 
 object AppStore {
     val state = AppState()
@@ -174,8 +185,23 @@ object AppStore {
     fun hydrate() {
         scope.launch {
             BootTrace.mark("store.read")
-            val data = Db.loadAll()
-            val callsCache = loadCachedCalls()
+            // v1.6.27 — THE "IT OPENS SLOWER NOW" FIX. v1.6.26 added the
+            // cached CONTACT BOOK to the boot path so Recents shows names
+            // from the first frame — but it ran AFTER Db.loadAll() and the
+            // cached call log, so boot waited the SUM of three big file
+            // reads + JSON decodes (the 1239-contact book alone is the
+            // largest blob in the app). All independent loads now run
+            // CONCURRENTLY on the Default pool — the first frame waits the
+            // MAXIMUM of the loads, not their sum, and the names-from-
+            // first-frame behavior is unchanged (everything still lands in
+            // the same single batched main hop below).
+            val (data, callsCache, contactsCache, storedPin) = kotlinx.coroutines.coroutineScope {
+                val dataD = async { Db.loadAll() }
+                val callsD = async { loadCachedCalls() }
+                val contactsD = async { loadCachedContacts() }
+                val pinD = async { Db.readPinFile() }
+                HydrateLoads(dataD.await(), callsD.await(), contactsD.await(), pinD.await())
+            }
             // v1.6.26 — THE "RECENTS SHOWS THE NUMBER, THEN THE NAME" FIX.
             // The cached CALL LOG was published at hydrate, but the cached
             // CONTACT BOOK was not — the Recents cards rendered against an
@@ -184,11 +210,10 @@ object AppStore {
             // showed its RAW PHONE NUMBER as the title until the book landed
             // and the (systemCalls, contacts) recomposition swapped the name
             // in. The cached book (contacts-cache-v2.json, kept fresh by
-            // saveCachedContacts on every fetch/patch) now publishes in the
-            // SAME batched main hop, so the very first Recents frame already
-            // matches names; the fresh fetch replaces it silently later.
-            val contactsCache = loadCachedContacts()
-            val storedPin = Db.readPinFile()
+            // saveCachedContacts on every fetch/patch) is loaded CONCURRENTLY
+            // above and publishes in the SAME batched main hop, so the very
+            // first Recents frame already matches names; the fresh fetch
+            // replaces it silently later.
             // v1.6.21 — ALL state writes (and the t() reads inside the
             // reminder rescheduling below) happen in ONE batched main hop:
             // a single recomposition, and no Default worker ever touches the
@@ -389,6 +414,18 @@ object AppStore {
             recordID,
             { it.copy(primaryPhone = number, updatedAt = now()) },
             { ContactX(recordID = recordID, primaryPhone = number, createdAt = now(), updatedAt = now()) },
+        )
+    }
+
+    /* v1.6.27 — UNSET the favourite number (user report: the star in the
+       choose-a-number sheet should SET *or UNSET*). Tapping the star on the
+       number that is already the favourite clears it — the app then dials
+       the contact's first stored number again (primaryPhone fallback). */
+    fun clearPrimaryPhone(recordID: String) {
+        upsertContactX(
+            recordID,
+            { it.copy(primaryPhone = null, updatedAt = now()) },
+            { ContactX(recordID = recordID, createdAt = now(), updatedAt = now()) },
         )
     }
 

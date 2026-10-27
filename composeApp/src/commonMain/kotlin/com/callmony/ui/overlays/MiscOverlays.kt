@@ -282,21 +282,31 @@ fun SearchOverlay() {
         // v1.6.14: keep the last results above the phone's nav bar
         // v1.6.26 — no navigationBarsPadding: the search renders inside the
         // shell content area, above the always-visible app nav.
+        // v1.6.27 — THE "CREDIT TAB IS NOT LISTING THE CONTACTS" FIX. The
+        // result sections (contacts/entries/lists/…) used to live in the
+        // FINAL else branch — reachable only with a QUERY. In BROWSE mode
+        // (no query, a kind/date/type filter picked) the LazyColumn rendered
+        // NOTHING but the all-empty state: tapping Credit/Debit/Income/
+        // Expense showed a blank screen even though the filters matched
+        // hundreds of contacts. The sections now render in BOTH modes —
+        // the empty states only fire when their branch actually has nothing.
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-            if (browsing) {
-                // v1.6.25 browse mode — the filters themselves list the data;
-                // when a filter matches nothing the empty state shows below
-                if (matchedContacts.isEmpty() && entries.isEmpty() && lists.isEmpty() && notes.isEmpty() && reminders.isEmpty() && banks.isEmpty()) {
-                    item { EmptyState(icon = "magnify", title = t("sr.noResults"), hint = t("sr.tryHint")) }
+            when {
+                browsing -> {
+                    if (matchedContacts.isEmpty() && entries.isEmpty() && lists.isEmpty() && notes.isEmpty() && reminders.isEmpty() && banks.isEmpty()) {
+                        item { EmptyState(icon = "magnify", title = t("sr.noResults"), hint = t("sr.tryHint")) }
+                    }
                 }
-            } else if (debounced.isBlank()) {
-                item {
-                    EmptyState(icon = "magnify", title = t("sr.everythingHint"), hint = t("sr.keepTyping"))
+                debounced.isBlank() -> {
+                    item {
+                        EmptyState(icon = "magnify", title = t("sr.everythingHint"), hint = t("sr.keepTyping"))
+                    }
                 }
-            } else if (matchedContacts.isEmpty() && entries.isEmpty() && lists.isEmpty() && notes.isEmpty() && reminders.isEmpty() && banks.isEmpty()) {
-                item { EmptyState(icon = "magnify", title = t("sr.noResultsFor"), hint = debounced) }
-            } else {
-                if (matchedContacts.isNotEmpty() && showContacts) {
+                matchedContacts.isEmpty() && entries.isEmpty() && lists.isEmpty() && notes.isEmpty() && reminders.isEmpty() && banks.isEmpty() -> {
+                    item { EmptyState(icon = "magnify", title = t("sr.noResultsFor"), hint = debounced) }
+                }
+            }
+            if (matchedContacts.isNotEmpty() && showContacts) {
                     item { GroupLabel(t("misc.contacts")) }
                     items(matchedContacts.take(50), key = { "c-${it.recordID}" }) { c ->
                         val bal = ownerFullBalance(AppStore.state.entries, AppStore.state.lists, "c:${c.recordID}")
@@ -392,7 +402,6 @@ fun SearchOverlay() {
                         }
                     }
                 }
-            }
             item { Spacer(Modifier.height(24.dp)) }
         }
     }
@@ -547,7 +556,8 @@ fun SpeedDialOverlay() {
         BottomSheet(title = "${t("spd.keyOf")} $key · ${displayName(c)}", onClose = { actionFor = null }) {
             Column {
                 listOf(
-                    Triple("phone", t("spd.callNow")) { val ph = c.phones.firstOrNull()?.number; if (ph != null) Calls.placeCallWithToast(ph) },
+                    // v1.6.27 — the FAVOURITE number dials first (like every surface)
+                    Triple("phone", t("spd.callNow")) { val ph = com.callmony.lib.primaryPhone(c); if (ph != null) Calls.placeCallWithToast(ph) },
                     Triple("swap-horizontal", t("spd.replace")) { assignKey = key },
                     Triple("close", t("spd.removeFromKey")) { AppStore.setSpeedDial(key, null); Toasts.toast(t("spd.speedDialCleared")); actionFor = null },
                 ).forEach { (icon, label, run) ->

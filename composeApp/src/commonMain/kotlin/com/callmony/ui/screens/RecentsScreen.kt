@@ -458,6 +458,11 @@ fun RecentsScreen() {
 
     // v1.6.26 — long-press the call icon → every number the contact has
     // (rendered HERE at screen level so the scrim covers the screen)
+    // v1.6.27 — every row now carries: a COPY icon, the FAVOURITE star
+    // (set/UNSET — directly beside and before the call icon, per the user
+    // report) and the call icon; long-pressing the row copies the number.
+    // Setting the star re-routes every dial surface to that number (cards,
+    // keypad, speed dial, detail navbar all dial primaryPhone first).
     callOptsRow?.let { row ->
         val numbers = remember(row) {
             val seen = mutableSetOf<String>()
@@ -466,14 +471,25 @@ fun RecentsScreen() {
                 if (key.isNotEmpty() && seen.add(key)) p else null
             } ?: emptyList()
         }
+        val recordID = row.contact?.recordID
+        // the live favourite — read from state.contactX so the star flips the
+        // moment it is toggled (set/unset recomposes this sheet)
+        val favNumber = recordID?.let { rid ->
+            AppStore.state.contactX.find { it.recordID == rid }?.primaryPhone
+        }
         BottomSheet(title = t("cd.chooseNumber"), onClose = { callOptsRow = null }) {
             Column {
                 numbers.forEach { p ->
-                    PressableRow(onClick = { callOptsRow = null; Calls.placeCall(p.number) }) {
+                    val isFav = favNumber != null && recordID != null &&
+                        p.number.replace(Regex("\\D"), "") == favNumber.replace(Regex("\\D"), "")
+                    PressableRow(
+                        onClick = { callOptsRow = null; Calls.placeCall(p.number) },
+                        onLongClick = { Platform.share.copyText(p.number); Toasts.toast(t("act.copied")) },
+                    ) {
                         Row(
                             Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             Pill(p.label, "brand")
                             Text(
@@ -482,6 +498,26 @@ fun RecentsScreen() {
                                 color = C.ink,
                                 modifier = Modifier.weight(1f),
                             )
+                            // copy icon (also long-press the row)
+                            IconBtn("content-copy", { Platform.share.copyText(p.number); Toasts.toast(t("act.copied")) }, size = 28)
+                            // the FAVOURITE star — BESIDE the call icon, BEFORE
+                            // it; taps toggle set/unset
+                            if (recordID != null) {
+                                IconBtn(
+                                    if (isFav) "star" else "star-outline",
+                                    {
+                                        if (isFav) {
+                                            AppStore.clearPrimaryPhone(recordID)
+                                            Toasts.toast(t("cd.favNumberUnset"))
+                                        } else {
+                                            AppStore.setPrimaryPhone(recordID, p.number)
+                                            Toasts.toast(t("cd.favNumberSet"))
+                                        }
+                                    },
+                                    size = 30,
+                                    color = if (isFav) Color(0xFFb97d10) else C.faint,
+                                )
+                            }
                             IconBtn("phone-outline", { callOptsRow = null; Calls.placeCall(p.number) }, size = 30)
                         }
                     }
@@ -782,7 +818,9 @@ fun CallRowSheet(row: CallRow, onClose: () -> Unit, onDelete: (() -> Unit)?) {
     var addingTo by remember { mutableStateOf<String?>(null) }
     val digits = row.phone.replace(Regex("\\D"), "")
     val hasRealNumber = digits.replaceFirst(Regex("^0+"), "").length >= 3
-    val callNumber = row.contact?.phones?.firstOrNull()?.number ?: row.phone
+    // v1.6.27 — the FAVOURITE number dials first here too (was the raw
+    // first stored phone).
+    val callNumber = primaryPhone(row.contact) ?: row.phone
     val isFav = row.contact != null && AppStore.state.contactX.any { it.recordID == row.contact!!.recordID && it.favorite }
 
     val title = row.contact?.let { displayName(it) }

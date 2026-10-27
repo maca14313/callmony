@@ -238,11 +238,23 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
         ) {
             // balance line — v1.6.25 compact: sits directly beneath the
             // header (redesign spec), tighter 8dp follow space.
+            // v1.6.27 — THE HISTORY ICON rides IN THIS ROW, BEFORE the total
+            // and the settled-up label (user report: "make the history icon
+            // before beside where the total and the settled up shows in the
+            // same row before them") — one tap jumps to the Info tab, whose
+            // first block is this contact's full call history.
             Row(
                 Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Box(
+                    Modifier
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { seg = "info" },
+                    contentAlignment = Alignment.Center,
+                ) { MdiIcon("history", 18, C.brand) }
                 Row(
                     Modifier
                         .clip(RoundedCornerShape(999.dp))
@@ -871,17 +883,27 @@ fun NumberPickerSheet(
                 val isFav = recordID != null && favouriteNumber != null &&
                     p.number.replace(Regex("\\D"), "") == favouriteNumber.replace(Regex("\\D"), "")
                 PressableRow(onClick = { onPick(p.number) }, onLongClick = { Platform.share.copyText(p.number); Toasts.toast(t("act.copied")) }) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Pill(p.label, "brand")
                         Text(prettyPhone(p.number, countryCode), fontSize = F.body.sp, color = C.ink, modifier = Modifier.weight(1f))
+                        // copy icon (also long-press the row) — v1.6.27
+                        IconBtn("content-copy", { Platform.share.copyText(p.number); Toasts.toast(t("act.copied")) }, size = 28)
                         // v1.6.26 — the favourite star (sets the primary
-                        // number; filled amber when already the favourite)
+                        // number; filled amber when already the favourite).
+                        // v1.6.27 — tapping the FILLED star UNSETS it (and it
+                        // sits directly before the action icon, matching the
+                        // recents long-press picker).
                         if (recordID != null) {
                             IconBtn(
                                 if (isFav) "star" else "star-outline",
                                 {
-                                    AppStore.setPrimaryPhone(recordID, p.number)
-                                    Toasts.toast(t("cd.favNumberSet"))
+                                    if (isFav) {
+                                        AppStore.clearPrimaryPhone(recordID)
+                                        Toasts.toast(t("cd.favNumberUnset"))
+                                    } else {
+                                        AppStore.setPrimaryPhone(recordID, p.number)
+                                        Toasts.toast(t("cd.favNumberSet"))
+                                    }
                                 },
                                 size = 30,
                                 color = if (isFav) Color(0xFFb97d10) else C.faint,
@@ -890,7 +912,6 @@ fun NumberPickerSheet(
                         // v1.6.18 — every row carries the ACTION icon (call /
                         // message) so the list reads like a list of dial buttons.
                         IconBtn(actionIcon, { onPick(p.number) }, size = 30)
-                        IconBtn("content-copy", { Platform.share.copyText(p.number); Toasts.toast(t("act.copied")) }, size = 28)
                     }
                 }
             }

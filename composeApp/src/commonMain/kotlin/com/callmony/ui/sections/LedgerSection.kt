@@ -1,5 +1,11 @@
 package com.callmony.ui.sections
 
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -53,6 +60,7 @@ import com.callmony.lib.todayStr
 import com.callmony.lib.uid
 import com.callmony.model.LedgerEntry
 import com.callmony.model.LedgerGroup
+import com.callmony.model.EntryItem
 import com.callmony.model.Payment
 import com.callmony.platform.Platform
 import com.callmony.theme.F
@@ -115,6 +123,13 @@ fun LedgerSection(ownerId: String) {
     var renameTitle by remember { mutableStateOf("") }
     var shareSheet by remember { mutableStateOf(false) }
     var groupMenuFor by remember { mutableStateOf<LedgerGroup?>(null) }
+    // v1.6.27 — the QUICK ITEM (user report: "in the ledger there could be
+    // an item that just have label and price"): label + price + ＋ creates
+    // an entry instantly — no editor detour. The kind follows the active
+    // tab (Credit tab → a credit item…), defaulting to Credit on a contact
+    // and Expense in the general ledger.
+    var quickLabel by remember { mutableStateOf("") }
+    var quickPrice by remember { mutableStateOf("") }
 
     val ownerPhone = if (ownerId.startsWith("c:"))
         contacts.find { "c:${it.recordID}" == ownerId }?.phones?.firstOrNull()?.number
@@ -148,6 +163,39 @@ fun LedgerSection(ownerId: String) {
                 Toasts.toast(t("lg.settledDone"))
             }
         }
+    }
+
+    /* v1.6.27 — one tap: label + price → a priced entry on the books. The
+       kind follows the active filter tab (Credit tab → credit, Debit tab →
+       debit/expense…), defaulting to Credit on a contact and Expense in the
+       general ledger. The label rides as the entry's single line item, so
+       the card shows it as its title (see EntryCard). */
+    fun addQuickItem() {
+        val label = quickLabel.trim()
+        val price = quickPrice.replace(",", ".").toDoubleOrNull()
+        if (label.isEmpty()) {
+            Toasts.toast(t("lg.quickItemNeedLabel"), "error")
+            return
+        }
+        if (price == null || price <= 0) {
+            Toasts.toast(t("lg.amountGreaterThanZero"), "error")
+            return
+        }
+        val (ty, kd) = when (groupFilter) {
+            "credit" -> if (isGeneral) "credit" to "income" else "credit" to "credit"
+            "debit" -> if (isGeneral) "debit" to "expense" else "debit" to "debit"
+            else -> if (isGeneral) "debit" to "expense" else "credit" to "credit"
+        }
+        AppStore.saveEntry(
+            LedgerEntry(
+                id = uid(), ownerId = ownerId, type = ty, kind = kd, amount = price,
+                items = listOf(EntryItem(id = uid(), name = label, qty = 1.0, price = price)),
+                date = todayStr(), createdAt = now(), updatedAt = now(),
+            )
+        )
+        quickLabel = ""
+        quickPrice = ""
+        Toasts.toast(t("act.saved"))
     }
 
     Column {
@@ -310,6 +358,39 @@ fun LedgerSection(ownerId: String) {
             }
         })
         if (!ungroupedCollapsed) {
+            // v1.6.27 — the QUICK ITEM row: [Item label] [Price] [＋] — one
+            // line, one tap, a priced item on the books (see addQuickItem).
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                QuickItemInput(
+                    value = quickLabel,
+                    onValueChange = { quickLabel = it },
+                    placeholder = t("lg.quickItemLabel"),
+                    modifier = Modifier.weight(1f),
+                    onSubmit = { addQuickItem() },
+                )
+                QuickItemInput(
+                    value = quickPrice,
+                    onValueChange = { quickPrice = it },
+                    placeholder = t("lg.quickItemPrice"),
+                    modifier = Modifier.width(104.dp),
+                    keyboardType = "decimal-pad",
+                    onSubmit = { addQuickItem() },
+                )
+                Box(
+                    Modifier
+                        .size(46.dp, 46.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(C.brand)
+                        .clickable { addQuickItem() },
+                    contentAlignment = Alignment.Center,
+                ) { MdiIcon("plus", 22, C.onBrand) }
+            }
             // v1.6.25 — THE TABS/CARDS OVERLAP FIX: the filter strip gets its
             // own vertical padding (2dp top / 6dp bottom) so the chips can
             // never sit flush against the entry cards under them.
@@ -461,7 +542,12 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            t("lg.kind${kind.replaceFirstChar { it.uppercase() }}"),
+                            // v1.6.27 — a QUICK ITEM (single line item) shows
+                            // ITS LABEL as the card title ("an item that just
+                            // has label and price"); multi-item entries keep
+                            // the kind label, as before.
+                            entry.items.singleOrNull()?.name?.takeIf { it.isNotBlank() }
+                                ?: t("lg.kind${kind.replaceFirstChar { it.uppercase() }}"),
                             fontSize = F.body.sp,
                             fontWeight = FontWeight.Bold,
                             color = C.ink,
@@ -731,6 +817,52 @@ fun openPaymentSheet(entryId: String) {
                 }
             }
         }
+    }
+}
+
+/** v1.6.27 — the compact inline input of the QUICK ITEM row (label /
+ *  price): a boxed 46dp text field with a placeholder, no label line. */
+@Composable
+private fun QuickItemInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    keyboardType: String? = null,
+    onSubmit: (() -> Unit)? = null,
+) {
+    val C: ThemeColors = C()
+    Row(
+        modifier
+            .clip(RoundedCornerShape(14.dp))
+            .border(1.dp, C.line, RoundedCornerShape(14.dp))
+            .background(C.inputBg, RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp)
+            .heightIn(min = 46.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            textStyle = TextStyle(fontSize = F.body.sp, color = C.ink),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = when (keyboardType) {
+                    "decimal-pad" -> KeyboardType.Decimal
+                    "numeric" -> KeyboardType.Number
+                    else -> KeyboardType.Text
+                },
+                imeAction = if (onSubmit != null) androidx.compose.ui.text.input.ImeAction.Done else androidx.compose.ui.text.input.ImeAction.Next,
+            ),
+            keyboardActions = KeyboardActions(onDone = { onSubmit?.invoke() }),
+            cursorBrush = SolidColor(C.brand),
+            modifier = Modifier.fillMaxWidth(),
+            decorationBox = { inner ->
+                if (value.isEmpty()) {
+                    Text(placeholder, fontSize = F.body.sp, color = C.faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                } else inner()
+            },
+        )
     }
 }
 

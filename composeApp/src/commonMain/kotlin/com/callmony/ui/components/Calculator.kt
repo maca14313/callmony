@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -130,6 +130,13 @@ fun CalculatorSheet() {
     var memory by remember { mutableStateOf<Double?>(null) }
     var history by remember { mutableStateOf(listOf<HistItem>()) }
     var showHistory by remember { mutableStateOf(false) }
+    // v1.6.27 — the memory keys live in an ADVANCED panel now (user report:
+    // "we don't need the m+ m- mr, make them in advanced, the advanced icon
+    // should be beside the history icon") — toggled by the Σ icon that sits
+    // directly beside the history icon in the header.
+    var showAdvanced by remember { mutableStateOf(false) }
+    // v1.6.27 — pressed-state for the hold-to-repeat backspace key
+    var backHeld by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var repeatJob by remember { mutableStateOf<Job?>(null) }
 
@@ -175,7 +182,9 @@ fun CalculatorSheet() {
         }
         val lastNum = Regex("(\\d+\\.?\\d*|\\.\\d*)$").find(expr)?.value ?: ""
         if (d == "." && lastNum.contains(".")) return
-        if (d != "." && lastNum.replace(".", "").length >= 12) return
+        // v1.6.27 — operand cap 12 → 15 digits: "the display should show very
+        // long numbers" — the display autosizes to fit them.
+        if (d != "." && lastNum.replace(".", "").length >= 15) return
         expr += d
     }
 
@@ -272,6 +281,12 @@ fun CalculatorSheet() {
         scrollable = false,
         headerRight = {
             Row {
+                // v1.6.27 — the ADVANCED toggle (Σ) BESIDE the history icon
+                Box(
+                    Modifier
+                        .padding(6.dp)
+                        .clickable { showAdvanced = !showAdvanced },
+                ) { MdiIcon("sigma", 24, if (showAdvanced) C.brand else C.sub) }
                 Box(
                     Modifier
                         .padding(6.dp)
@@ -295,65 +310,91 @@ fun CalculatorSheet() {
         // now carries its own hue — operators keep the brand green, AC is
         // red, ⌫ amber, % blue, = solid ink, and the digits cycle a soft
         // five-colour tint so the pad reads like a modern calculator.
+        // v1.6.27 display sizing — "the display should show very long
+        // numbers": the font AUTOSIZES down as the expression/result grows
+        // (40sp → 16sp) and wraps to 3 lines, so a 15-digit operand chain
+        // stays fully readable instead of collapsing into an ellipsis.
+        fun mainFontSize(s: String): Int = when {
+            s.length <= 10 -> 40
+            s.length <= 13 -> 34
+            s.length <= 16 -> 28
+            s.length <= 20 -> 23
+            s.length <= 26 -> 19
+            else -> 16
+        }
+        fun subFontSize(s: String): Int = when {
+            s.length <= 14 -> 24
+            s.length <= 20 -> 19
+            else -> 15
+        }
         Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
             // display zone — 45% of the body height
             Column(Modifier.weight(45f)) {
-                // display — NO visible border (v1.6.26)
+                // display — v1.6.27 — FULLY BORDERLESS: no border, no card
+                // tone, no frame of any kind (user report: "the display
+                // should not have visible border") — the numbers sit directly
+                // on the canvas and autosize for very long values.
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .weight(1f)
-                        .clip(RoundedCornerShape(22.dp))
-                        .background(C.card),
+                        .weight(1f),
                     contentAlignment = Alignment.BottomEnd,
                 ) {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 12.dp)) {
                         Text(
                             displaySub ?: "",
-                            fontSize = 24.sp,
+                            fontSize = subFontSize(displaySub ?: "").sp,
                             fontWeight = FontWeight.SemiBold,
                             color = if (displaySub == "Error") C.red else C.sub,
                             textAlign = TextAlign.End,
                             modifier = Modifier.fillMaxWidth(),
-                            maxLines = 1,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             displayMain,
-                            fontSize = 40.sp,
+                            fontSize = mainFontSize(displayMain).sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = C.ink,
                             textAlign = TextAlign.End,
                             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                            maxLines = 2,
+                            maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
-                // memory row
-                Row(
-                    Modifier.padding(top = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    MemBtn("M+", C) { memoryAdd(1) }
-                    MemBtn("M−", C) { memoryAdd(-1) }
-                    MemBtn("MR", C, memory != null) { memoryRecall() }
-                    if (memory != null) MemBtn(t("calc.clearMemory"), C) { memory = null }
-                    if (pickHandler != null) {
-                        Box(
-                            Modifier
-                                .weight(1f),
-                            contentAlignment = Alignment.CenterEnd,
-                        ) {
+                // v1.6.27 — the memory row ONLY inside the ADVANCED panel
+                // (user report: "we don't need the m+ m- mr, make them in
+                // advanced") — the Σ toggle beside the history icon in the
+                // header shows/hides it. The Use-value button stays visible
+                // whenever a value is being picked, advanced or not.
+                if (showAdvanced || pickHandler != null) {
+                    Row(
+                        Modifier.padding(top = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (showAdvanced) {
+                            MemBtn("M+", C) { memoryAdd(1) }
+                            MemBtn("M−", C) { memoryAdd(-1) }
+                            MemBtn("MR", C, memory != null) { memoryRecall() }
+                            if (memory != null) MemBtn(t("calc.clearMemory"), C) { memory = null }
+                        }
+                        if (pickHandler != null) {
                             Box(
                                 Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(C.brand)
-                                    .clickable { useValue() }
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    .weight(1f),
+                                contentAlignment = Alignment.CenterEnd,
                             ) {
-                                Text(t("calc.useValue"), color = C.onBrand, fontWeight = FontWeight.ExtraBold, fontSize = F.small.sp)
+                                Box(
+                                    Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(C.brand)
+                                        .clickable { useValue() }
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                ) {
+                                    Text(t("calc.useValue"), color = C.onBrand, fontWeight = FontWeight.ExtraBold, fontSize = F.small.sp)
+                                }
                             }
                         }
                     }
@@ -398,10 +439,16 @@ fun CalculatorSheet() {
                     }
                 }
             }
-            // keypad zone — 55% of the body height, 4×5 grid
+            // keypad zone — 55% of the body height, 4×5 grid.
+            // v1.6.27 — THE "KEYS ARE OVERLAPPING" FIX: the tiles were
+            // aspectRatio(1f) — the WIDTH forced a height taller than the
+            // row's weighted share, so tiles spilled over their neighbours
+            // on narrow/short screens. Keys now FILL THE ROW HEIGHT
+            // (weight(1f) × fillMaxHeight) with a slightly tighter 8dp gap —
+            // they can never overlap again, at any size.
             Column(
                 Modifier.padding(top = 12.dp).weight(55f),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 // v1.6.26 — the colourful key palette (soft tinted tile +
                 // strong matching glyph). Hues stay inside the app's family
@@ -448,7 +495,7 @@ fun CalculatorSheet() {
                 )
                 var numIdx = 0
                 for (row in rows) {
-                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         for (ck in row) {
                             val (fg, bg) = when (ck.kind) {
                                 CalcKeyKind.EQ -> C.onBrand to C.ink
@@ -462,17 +509,21 @@ fun CalculatorSheet() {
                             Box(
                                 Modifier
                                     .weight(1f)
-                                    .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(22.dp))
-                                    .background(bg)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(18.dp))
+                                    // v1.6.27 — pressed-state on the hold key
+                                    // (pointerInput bypasses LocalIndication)
+                                    .background(if (isHold && backHeld) Color(0x33b97d10) else bg)
                                     .then(
                                         if (isHold) {
                                             Modifier.pointerInput(Unit) {
                                                 detectTapGestures(
                                                     onPress = {
+                                                        backHeld = true
                                                         ck.onPress()
                                                         startBackspaceRepeat()
                                                         tryAwaitRelease()
+                                                        backHeld = false
                                                         stopRepeat()
                                                     },
                                                 )

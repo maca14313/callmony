@@ -120,7 +120,12 @@ private class PressIndicationNode(
         drawContent()
         val p = progress.value
         if (p > 0.01f) {
-            drawRect(Color.Black.copy(alpha = p * 0.10f))
+            // v1.6.27 — 0.16 veil (was 0.10): the v1.6.25 strength was
+            // practically invisible on the near-white canvas — the user
+            // reported inputs STILL didn't visibly react ("even in the
+            // ledger"). 16% black reads clearly on every surface in both
+            // themes without hiding the content underneath.
+            drawRect(Color.Black.copy(alpha = p * 0.16f))
         }
     }
 }

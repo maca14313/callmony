@@ -4,6 +4,98 @@ All notable changes to callmony. Dates follow the git history; the APK for each 
 
 ---
 
+## v1.6.27 — fast boot again; anchored keypad; favourite-number star in the picker; overlap-free calculator with Advanced; visible press feedback; search kind tabs list contacts; ledger quick item (2026-10-27)
+
+User reports (verbatim log: `sandbox/chat-logs/2026-10-27-v1.6.27-user-reports.md`):
+the app opens a little slower now, it shouldn't be; when typing on the keypad
+the keypad gets pushed to the bottom under the navbar when the contacts show
+at the top; long-pressing the call icon on a recent card should offer the
+number options with an icon to set/UNSET the favourite (beside and before the
+call icon), the card should dial the favourite number first everywhere, and
+copy should work via long-press and a copy icon; the calculator keys overlap
+(make them smaller with padding), M+ M− MR belong in an ADVANCED panel whose
+icon sits beside the history icon, and the display should have no visible
+border and show very long numbers; every input should visibly react when
+tapped, even in the ledger; the search Credit/Debit/Income/Expense tabs are
+not listing the CONTACTS that have them; in the contact detail the history
+icon should sit in the same row as the total and settled-up, before them; the
+ledger could have an item that is just a label and a price; check GitHub,
+deliver the APK, push even the APK.
+
+1. **Boot speed** (`Store.hydrate`) — v1.6.26 added the cached CONTACT BOOK
+   to the boot path (the names-from-first-frame fix), but it ran AFTER
+   `Db.loadAll()` and the cached call log, so the first frame waited the SUM
+   of three big file reads + JSON decodes — the 1239-contact book is the
+   largest blob in the app. All four loads (store, calls cache, contacts
+   cache, PIN file) now run CONCURRENTLY on the Default pool and land in the
+   SAME single batched main hop: the first frame waits the MAXIMUM of the
+   loads, not their sum. Names still render from the very first frame.
+
+2. **The keypad stays anchored** (`KeypadSheet`) — the live-match list was
+   `heightIn(max = 250.dp)`: with matches + exact pill + number display +
+   the 12-key grid + the action row the panel EXCEEDED the content area, and
+   a bottom-anchored column clips its TAIL — the bottom key rows and the
+   call button ended up UNDER the always-visible nav. The match list is now
+   a WEIGHTED child (`weight(1f, fill = false)`): it takes whatever space
+   is LEFT above the fixed keypad portion and scrolls inside it — contacts
+   at the top, the keypad exactly where it was, at any match count.
+
+3. **Choose-a-number picker** (`RecentsScreen`) — the long-press call-icon
+   picker's rows gained: a COPY icon, long-press-to-copy, and the FAVOURITE
+   star (set and UNSET — `Store.clearPrimaryPhone` is new; tapping the
+   filled star clears it) sitting directly before the call icon. The
+   contact-detail picker got the same order + unset behavior for
+   consistency. FAVOURITE-FIRST DIALING now truly covers every surface:
+   recent cards, the call row sheet, keypad live matches, keypad speed
+   dial, the speed-dial grid sheet, search hits and the detail navbar all
+   dial `primaryPhone()` (ContactX.primaryPhone → first stored phone).
+
+4. **Calculator** (`Calculator`) — the keys were `aspectRatio(1f)`: the tile
+   width forced a height taller than the row's weighted share, so tiles
+   spilled over their neighbours on short/narrow screens. Keys now FILL THE
+   ROW HEIGHT with an 8dp gap — overlap is structurally impossible. M+ /
+   M− / MR / MC moved out of the base layout into an ADVANCED panel behind
+   a Σ toggle that sits BESIDE the history icon in the header. The display
+   lost its card tone as well as its border (fully flat) and AUTOSIZES its
+   font (40→16sp by length, 3 lines) so very long numbers stay readable;
+   the operand cap rose from 12 to 15 digits.
+
+5. **Press feedback everywhere** (`Kit.PressIndication`) — the v1.6.25 veil
+   at 10% black was practically invisible on the near-white canvas (the
+   user reported inputs STILL didn't react, "even in the ledger"). The veil
+   is 16% now, and the pointer-based tap targets that LocalIndication can
+   never reach — the 12 dialer keys and the calculator's hold-to-repeat
+   backspace — light up their tiles while pressed.
+
+6. **Search kind tabs** (`MiscOverlays.SearchOverlay`) — THE actual bug: the
+   result sections (contacts/entries/lists/notes/reminders/banks) lived in
+   the final `else` branch of the results list, reachable ONLY with a
+   query. In BROWSE mode (a kind/date/type chip picked with an empty query)
+   the list rendered nothing but the all-empty state — clicking Credit
+   showed a blank screen even when hundreds of contacts matched. The
+   sections now render in BOTH modes; empty states fire only when their
+   branch truly has nothing.
+
+7. **Contact detail** (`ContactDetail`) — the history icon rides IN the
+   total/settled-up row, before the balance pill and the status label (one
+   tap jumps to the Info tab, whose first block is the contact's call
+   history).
+
+8. **Ledger quick item** (`LedgerSection`) — a [Item label] [Price] [＋] row
+   at the top of Single entries creates a priced entry in ONE tap: the kind
+   follows the active filter tab (Credit tab → credit, Debit → debit; a
+   contact defaults to Credit, the general ledger to Expense), the label
+   rides as the entry's single line item, and a single-item entry card now
+   shows the ITEM'S LABEL as its title.
+
+**Tests**: 61 green — the 55-test pure battery + V1627Test (favourite
+set/unset/fallback, quick-item round-trip, the exact search kind predicate)
++ BootDiagTest + UpgradeBootDiagTest through the new concurrent hydrate
+path. i18n: 4 new keys x5 languages (1065/1065 parity).
+Android 1.6.27 vc38 built with the same signing key as every prior release
+(installs over anything, data intact); both iOS targets compile.
+
+---
 ## v1.6.26 — always-visible bottom nav; names-first recents; 55/45 calculator; search kind+custom-date; file backup/restore; contact-detail grid More (2026-10-27)
 
 User reports (verbatim log: `sandbox/chat-logs/2026-10-27-v1.6.26-user-reports.md`):
