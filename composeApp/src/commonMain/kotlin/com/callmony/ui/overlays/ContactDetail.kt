@@ -248,13 +248,21 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // v1.6.29 — the history icon is a REAL CHIP now (user
+                // report: "make the history icon more visible"): a 34dp
+                // brand-soft circle with a brand hairline and a 20dp glyph
+                // — the old bare 18dp glyph floated with no background and
+                // read as decoration, not as the button that jumps to the
+                // call-history tab.
                 Box(
                     Modifier
-                        .size(32.dp)
-                        .clip(RoundedCornerShape(16.dp))
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(17.dp))
+                        .background(C.brandSoft)
+                        .border(1.dp, C.brand, RoundedCornerShape(17.dp))
                         .clickable { seg = "info" },
                     contentAlignment = Alignment.Center,
-                ) { MdiIcon("history", 18, C.brand) }
+                ) { MdiIcon("history", 20, C.brand) }
                 Row(
                     Modifier
                         .clip(RoundedCornerShape(999.dp))

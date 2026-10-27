@@ -78,6 +78,7 @@ import com.callmony.ui.kit.Field
 import com.callmony.ui.kit.IconBtn
 import com.callmony.ui.kit.MdiIcon
 import com.callmony.ui.kit.Money
+import com.callmony.ui.kit.pressVeil
 import com.callmony.ui.kit.Pill
 import com.callmony.ui.kit.SectionHeader
 import com.callmony.ui.kit.Segmented
@@ -125,9 +126,11 @@ fun LedgerSection(ownerId: String) {
     var groupMenuFor by remember { mutableStateOf<LedgerGroup?>(null) }
     // v1.6.27 — the QUICK ITEM (user report: "in the ledger there could be
     // an item that just have label and price"): label + price + ＋ creates
-    // an entry instantly — no editor detour. The kind follows the active
-    // tab (Credit tab → a credit item…), defaulting to Credit on a contact
-    // and Expense in the general ledger.
+    // an entry instantly — no editor detour. v1.6.29: the row renders ONLY
+    // inside a KIND tab (Credit/Debit on a contact, Income/Expense in the
+    // general ledger — user report: "should be in the credit, debit,
+    // expenses and income, not in the outer ledger"), and the kind follows
+    // the active tab exactly — no more guessing a default kind.
     var quickLabel by remember { mutableStateOf("") }
     var quickPrice by remember { mutableStateOf("") }
 
@@ -167,9 +170,10 @@ fun LedgerSection(ownerId: String) {
 
     /* v1.6.27 — one tap: label + price → a priced entry on the books. The
        kind follows the active filter tab (Credit tab → credit, Debit tab →
-       debit/expense…), defaulting to Credit on a contact and Expense in the
-       general ledger. The label rides as the entry's single line item, so
-       the card shows it as its title (see EntryCard). */
+       debit/expense…). v1.6.29: the quick row only EXISTS on a kind tab,
+       so this mapping is now exact — the else branch is unreachable but
+       kept as a safe default. The label rides as the entry's single line
+       item, so the card shows it as its title (see EntryCard). */
     fun addQuickItem() {
         val label = quickLabel.trim()
         val price = quickPrice.replace(",", ".").toDoubleOrNull()
@@ -358,39 +362,6 @@ fun LedgerSection(ownerId: String) {
             }
         })
         if (!ungroupedCollapsed) {
-            // v1.6.27 — the QUICK ITEM row: [Item label] [Price] [＋] — one
-            // line, one tap, a priced item on the books (see addQuickItem).
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 2.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                QuickItemInput(
-                    value = quickLabel,
-                    onValueChange = { quickLabel = it },
-                    placeholder = t("lg.quickItemLabel"),
-                    modifier = Modifier.weight(1f),
-                    onSubmit = { addQuickItem() },
-                )
-                QuickItemInput(
-                    value = quickPrice,
-                    onValueChange = { quickPrice = it },
-                    placeholder = t("lg.quickItemPrice"),
-                    modifier = Modifier.width(104.dp),
-                    keyboardType = "decimal-pad",
-                    onSubmit = { addQuickItem() },
-                )
-                Box(
-                    Modifier
-                        .size(46.dp, 46.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(C.brand)
-                        .clickable { addQuickItem() },
-                    contentAlignment = Alignment.Center,
-                ) { MdiIcon("plus", 22, C.onBrand) }
-            }
             // v1.6.25 — THE TABS/CARDS OVERLAP FIX: the filter strip gets its
             // own vertical padding (2dp top / 6dp bottom) so the chips can
             // never sit flush against the entry cards under them.
@@ -401,6 +372,47 @@ fun LedgerSection(ownerId: String) {
                     Chip(label = if (isGeneral) t("lg.expense") else t("lg.debit"), active = groupFilter == "debit", onPress = { groupFilter = "debit" }, compact = true)
                     Chip(label = t("lg.filterUnpaid"), active = groupFilter == "unpaid", onPress = { groupFilter = "unpaid" }, compact = true)
                     Chip(label = t("lg.filterOverdue"), active = groupFilter == "overdue", onPress = { groupFilter = "overdue" }, compact = true)
+                }
+            }
+            // v1.6.29 — THE QUICK ITEM MOVED INTO THE KIND TABS (user
+            // report: "the Ledger quick item — a label + price — should be
+            // in the credit, debit, expenses and income, not in the outer
+            // ledger"). The [Item label][Price][＋] row now renders ONLY
+            // while a KIND tab is active — Credit/Debit on a contact
+            // ledger, Income/Expense on the general ledger — and books the
+            // entry AS that kind. The outer/neutral view (All / Unpaid /
+            // Overdue) stays clean, exactly as the user asked.
+            if (groupFilter == "credit" || groupFilter == "debit") {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    QuickItemInput(
+                        value = quickLabel,
+                        onValueChange = { quickLabel = it },
+                        placeholder = t("lg.quickItemLabel"),
+                        modifier = Modifier.weight(1f),
+                        onSubmit = { addQuickItem() },
+                    )
+                    QuickItemInput(
+                        value = quickPrice,
+                        onValueChange = { quickPrice = it },
+                        placeholder = t("lg.quickItemPrice"),
+                        modifier = Modifier.width(104.dp),
+                        keyboardType = "decimal-pad",
+                        onSubmit = { addQuickItem() },
+                    )
+                    Box(
+                        Modifier
+                            .size(46.dp, 46.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(C.brand)
+                            .clickable { addQuickItem() },
+                        contentAlignment = Alignment.Center,
+                    ) { MdiIcon("plus", 22, C.onBrand) }
                 }
             }
             if (ungrouped.isEmpty()) {
@@ -834,6 +846,8 @@ private fun QuickItemInput(
     val C: ThemeColors = C()
     Row(
         modifier
+            // v1.6.29 — INPUT PRESS FEEDBACK (same veil as every Field)
+            .pressVeil()
             .clip(RoundedCornerShape(14.dp))
             .border(1.dp, C.line, RoundedCornerShape(14.dp))
             .background(C.inputBg, RoundedCornerShape(14.dp))

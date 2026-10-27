@@ -63,6 +63,7 @@ import com.callmony.ui.kit.C
 import com.callmony.ui.kit.IconBtn
 import com.callmony.ui.kit.MdiIcon
 import com.callmony.ui.kit.Money
+import com.callmony.ui.kit.pressVeil
 import com.callmony.ui.kit.Toasts
 import com.callmony.ui.kit.vibrate
 import kotlinx.coroutines.Job
@@ -420,7 +421,12 @@ fun KeypadSheet() {
                 },
                 textColor = C.ink,
                 cursorColor = C.brand,
-                modifier = Modifier.weight(1f).defaultMinSize(minHeight = 44.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .defaultMinSize(minHeight = 44.dp)
+                    // v1.6.29 — INPUT PRESS FEEDBACK: the number display is
+                    // an input too (paste/cut live here) — same veil.
+                    .pressVeil(corner = 10.dp),
             )
             // paste + backspace
             if (number.isEmpty()) {

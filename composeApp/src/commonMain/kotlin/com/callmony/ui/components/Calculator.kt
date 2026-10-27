@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -280,23 +282,57 @@ fun CalculatorSheet() {
         onBack = pop,
         scrollable = false,
         headerRight = {
-            Row {
-                // v1.6.27 — the ADVANCED toggle (Σ) BESIDE the history icon
+            // v1.6.29 — THE HISTORY CONTROL IS A LABELLED BRAND PILL now
+            // (user report: "make the history icon more visible"): the old
+            // bare 22dp sub-toned glyph was easy to miss on the canvas. It
+            // reads as a real button — icon + bold label, brand-tinted, and
+            // solid brand while the panel is open. Σ and copy get visible
+            // chips too (cardAlt + hairline), so nothing in the header is a
+            // naked faint icon anymore.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                // the ADVANCED toggle (Σ) — v1.6.27, kept beside history
                 Box(
                     Modifier
-                        .padding(6.dp)
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (showAdvanced) C.brandSoft else C.cardAlt)
+                        .border(1.dp, if (showAdvanced) C.brand else C.line, RoundedCornerShape(12.dp))
                         .clickable { showAdvanced = !showAdvanced },
-                ) { MdiIcon("sigma", 24, if (showAdvanced) C.brand else C.sub) }
+                    contentAlignment = Alignment.Center,
+                ) { MdiIcon("sigma", 20, if (showAdvanced) C.brand else C.sub) }
+                // HISTORY — the labelled pill, impossible to miss
+                Row(
+                    Modifier
+                        .height(34.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(if (showHistory) C.brand else C.brandSoft)
+                        .border(1.dp, C.brand, RoundedCornerShape(999.dp))
+                        .clickable { showHistory = !showHistory }
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    MdiIcon("history", 18, if (showHistory) C.onBrand else C.brand)
+                    Text(
+                        t("calc.history"),
+                        fontSize = F.tiny.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (showHistory) C.onBrand else C.brand,
+                    )
+                }
+                // copy result
                 Box(
                     Modifier
-                        .padding(6.dp)
-                        .clickable { showHistory = !showHistory },
-                ) { MdiIcon("history", 22, if (showHistory) C.brand else C.sub) }
-                Box(
-                    Modifier
-                        .padding(6.dp)
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(C.cardAlt)
+                        .border(1.dp, C.line, RoundedCornerShape(12.dp))
                         .clickable { copyResult() },
-                ) { MdiIcon("content-copy", 20, C.sub) }
+                    contentAlignment = Alignment.Center,
+                ) { MdiIcon("content-copy", 18, C.sub) }
             }
         },
     ) {

@@ -104,6 +104,27 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
+**1.6.29 (versionCode 40)** — see `react-native/docs/CHANGELOG.md` for the
+feature history.
+
+- **1.6.29** — history icons + quick item + input feedback: (1) **THE
+  HISTORY ICONS ARE REAL BUTTONS** — the calculator's history toggle is a
+  labelled brand pill (icon + bold "History", solid brand while open) with
+  the Σ and copy controls beside it as visible chips, and the contact-detail
+  history button in the balance row is a 34dp brand-soft circular chip with
+  a brand hairline; (2) **THE LEDGER QUICK ITEM moved INTO THE KIND TABS**
+  — the `[Item label][Price][＋]` row now renders only on Credit/Debit
+  (contact) or Income/Expense (general) tabs and books the entry as that
+  kind; the outer ledger (All/Unpaid/Overdue) stays clean; (3) **EVERY
+  INPUT REACTS TO THE TOUCH** — BasicTextField never consults
+  LocalIndication, so text fields showed zero press feedback; the new
+  `Modifier.pressVeil()` observes pointers over the input's own box
+  (never consuming — caret/selection/paste/IME untouched) and paints the
+  same 16% veil, applied to Field (items-ledger qty/unit/price and every
+  editor), the hero amount, the quick item, all search boxes and the
+  keypad display. 71/71 tests green (new: QuickItemKindTabsTest); both
+  iOS targets compile.
+
 **1.6.28 (versionCode 39)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 

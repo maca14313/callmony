@@ -49,6 +49,7 @@ import com.callmony.ui.kit.C
 import com.callmony.ui.kit.EmptyState
 import com.callmony.ui.kit.IconBtn
 import com.callmony.ui.kit.MdiIcon
+import com.callmony.ui.kit.pressVeil
 import com.callmony.ui.kit.Toaster
 import com.callmony.ui.kit.Toasts
 import com.callmony.ui.kit.vibrate
@@ -103,6 +104,8 @@ fun ContactPicker(
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp)
+                // v1.6.29 — INPUT PRESS FEEDBACK (search box reacts to touch)
+                .pressVeil()
                 .clip(RoundedCornerShape(14.dp))
                 .background(C.inputBg)
                 .padding(horizontal = 14.dp, vertical = 12.dp),

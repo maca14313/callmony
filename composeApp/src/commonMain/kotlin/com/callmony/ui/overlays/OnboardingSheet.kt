@@ -46,6 +46,7 @@ import com.callmony.ui.kit.C
 import com.callmony.ui.kit.Chip
 import com.callmony.ui.kit.Field
 import com.callmony.ui.kit.MdiIcon
+import com.callmony.ui.kit.pressVeil
 import com.callmony.ui.kit.Toaster
 import com.callmony.ui.components.ScrollRow
 
@@ -111,6 +112,8 @@ fun OnboardingSheet() {
         Row(
             Modifier
                 .fillMaxWidth()
+                // v1.6.29 — INPUT PRESS FEEDBACK (country search box)
+                .pressVeil()
                 .clip(RoundedCornerShape(14.dp))
                 .background(C.inputBg)
                 .border(1.dp, C.line, RoundedCornerShape(14.dp))

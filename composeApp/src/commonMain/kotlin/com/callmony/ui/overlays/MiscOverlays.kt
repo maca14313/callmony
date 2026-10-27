@@ -85,6 +85,7 @@ import com.callmony.ui.kit.EmptyState
 import com.callmony.ui.kit.IconBtn
 import com.callmony.ui.kit.MdiIcon
 import com.callmony.ui.kit.Money
+import com.callmony.ui.kit.pressVeil
 import com.callmony.ui.kit.Pill
 import com.callmony.ui.kit.Toasts
 import kotlinx.coroutines.delay
@@ -225,6 +226,8 @@ fun SearchOverlay() {
                 Modifier
                     .weight(1f)
                     .padding(vertical = 6.dp)
+                    // v1.6.29 — INPUT PRESS FEEDBACK (search box reacts to touch)
+                    .pressVeil()
                     .clip(RoundedCornerShape(14.dp))
                     .background(C.inputBg)
                     .padding(horizontal = 12.dp, vertical = 10.dp),

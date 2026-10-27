@@ -4,6 +4,54 @@ All notable changes to callmony. Dates follow the git history; the APK for each 
 
 ---
 
+## v1.6.29 — the history icons are real buttons now; the ledger quick item lives inside the credit/debit/income/expense kind tabs; every text input visibly reacts to the touch (2026-10-27)
+
+User reports (verbatim log: `sandbox/chat-logs/2026-10-27-v1.6.29-user-reports.md`):
+"make the history icon more visible"; "the Ledger quick item — a label +
+price — is should be in the credit, debit, expenses and incom not in the
+outer ledger"; "Press feedback is not there for the input. like when i inter
+a qountity in the items ledger or in other places there is no Press
+feedback. all the inputs should have .check github, give me apk and push
+even the apk".
+
+- **The history icons are real buttons.** Two history controls existed and
+  both were easy to miss. In the CALCULATOR, the history toggle was a bare
+  22dp sub-toned glyph floating beside the Σ and copy icons — it is now a
+  LABELLED brand pill (icon + bold "History", brand-soft fill + brand
+  hairline, solid brand while the panel is open), and Σ/copy got visible
+  34dp chips so nothing in the header is a naked faint icon. In CONTACT
+  DETAIL, the history button in the total/settled row was a bare 18dp glyph
+  in a transparent box — it is now a 34dp brand-soft circular chip with a
+  brand hairline and a 20dp glyph.
+- **The quick item moved into the kind tabs.** The v1.6.27
+  `[Item label][Price][＋]` row rendered in the OUTER ledger and guessed a
+  kind when no kind tab was active. It now renders ONLY while a KIND tab is
+  active — Credit/Debit on a contact ledger, Income/Expense on the general
+  ledger — placed after the filter strip, and the ＋ books the entry AS the
+  kind being viewed. The outer view (All/Unpaid/Overdue) stays clean.
+  Locked with `QuickItemKindTabsTest` (absent on All → present on the kind
+  tab → absent again on All).
+- **Every input visibly reacts to the touch.** The v1.6.25 press indication
+  rides `LocalIndication`, which BasicTextField never consults — tapping
+  ANY text field showed zero reaction. New `Modifier.pressVeil(corner)` is
+  a self-contained pointer OBSERVER (never consumes — caret, long-press
+  selection, paste and IME gestures are untouched) that paints the same
+  16% veil over the input's own box while a finger is down. Applied to
+  `Field` (covers the items-ledger quantity/unit/price inputs and every
+  editor), the entry hero amount, the quick-item inputs, the contact-picker
+  search, the dominant search screen, the onboarding country search and
+  the keypad number display. Freeze-lesson compliant: every await suspends
+  on a real event and the pressed flag is written once per gesture boundary.
+- **Delivery per the standing request** ("give me apk and push even the
+  apk"): APK 1.6.29 (versionCode 40, same release key as every release —
+  installs as a direct update, data intact) committed under `releases/`,
+  pushed, published as GitHub Release v1.6.29 with the APK attached, copy
+  at `/home/z/my-project/download/callmony-1.6.29-kmp-release.apk`. Full
+  battery 71/71 (16 classes, new: QuickItemKindTabsTest); both iOS targets
+  compile.
+
+---
+
 ## v1.6.28 — no-flash boot (appearance seeded before frame 1, hydrate overlapped with first-frame init, splash fades out); the long-press call-card sheet gains a horizontally-scrolling phone-numbers strip (2026-10-27)
 
 User reports (verbatim log: `sandbox/chat-logs/2026-10-27-v1.6.28-user-reports.md`):

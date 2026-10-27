@@ -56,6 +56,7 @@ import com.callmony.ui.kit.Confirm
 import com.callmony.ui.kit.Field
 import com.callmony.ui.kit.IconBtn
 import com.callmony.ui.kit.MdiIcon
+import com.callmony.ui.kit.pressVeil
 import com.callmony.ui.kit.Toasts
 import com.callmony.ui.components.ScrollRow
 import com.callmony.ui.kit.Segmented
@@ -198,6 +199,8 @@ fun EntryEditOverlay(
                 Modifier
                     .fillMaxWidth()
                     .padding(bottom = 4.dp)
+                    // v1.6.29 — INPUT PRESS FEEDBACK on the hero amount too
+                    .pressVeil(corner = 18.dp)
                     .clip(RoundedCornerShape(18.dp))
                     .background(C.brand.copy(alpha = 0.08f))
                     .padding(horizontal = 16.dp, vertical = 12.dp),
