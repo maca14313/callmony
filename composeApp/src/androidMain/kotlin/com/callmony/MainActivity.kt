@@ -2,6 +2,8 @@ package com.callmony
 
 import android.content.res.Configuration
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -9,6 +11,32 @@ import com.callmony.lib.AppStore
 import com.callmony.ui.CallmonyApp
 
 class MainActivity : ComponentActivity() {
+
+    /* v1.6.30 — THE POST-CALL REFRESH (user report: "in recents call cards i
+       make a call from one of the call cards then after the call ends it is
+       not putting that call card fast enough at the top"). onResume's
+       incremental sync only runs once the user is BACK in the app — the
+       card then landed a beat late. A ContentObserver on the system call
+       log fires the moment the provider writes the ended call (while the
+       user is still on the in-call screen), and a debounced 1.2s refresh
+       (the provider notifies several times per call: insert, duration
+       update…) has the card already at the top of Recents when they return.
+       Requires no new permission — the app already holds READ_CALL_LOG for
+       the log itself; without it the observer simply never fires. */
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val callLogRefresh = Runnable {
+        // AppStore.loadSystemCalls is permission-gated, incremental
+        // (loadSince) and publishes on the main dispatcher — safe from here.
+        if (AppStore.state.hydrated) AppStore.loadSystemCalls()
+    }
+    private val callLogObserver = object : android.database.ContentObserver(mainHandler) {
+        override fun onChange(selfChange: Boolean) {
+            // debounce: collapse the provider's burst of notifications into
+            // ONE refresh, ~1.2s after the last write
+            mainHandler.removeCallbacks(callLogRefresh)
+            mainHandler.postDelayed(callLogRefresh, 1200L)
+        }
+    }
 
     /* v1.6.16 — the launch window + Android-12+ system splash must carry the
        APP theme's canvas, not the SYSTEM day/night mode (the old behavior:
@@ -74,6 +102,13 @@ class MainActivity : ComponentActivity() {
         )
         com.callmony.lib.AppStore.hydrate()
         com.callmony.lib.BootTrace.mark("activity.content")
+        // v1.6.30 — watch the system call log so an ended call reaches the
+        // top of Recents BEFORE the user returns (see callLogObserver)
+        contentResolver.registerContentObserver(
+            android.provider.CallLog.Calls.CONTENT_URI,
+            true,
+            callLogObserver,
+        )
         setContent {
             CallmonyApp()
         }
@@ -98,6 +133,12 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         com.callmony.lib.UiStore.appInForeground = false
+    }
+
+    override fun onDestroy() {
+        contentResolver.unregisterContentObserver(callLogObserver)
+        mainHandler.removeCallbacks(callLogRefresh)
+        super.onDestroy()
     }
 
     override fun onRequestPermissionsResult(

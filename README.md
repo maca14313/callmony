@@ -104,6 +104,39 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
+**1.6.30 (versionCode 41)** — see `react-native/docs/CHANGELOG.md` for the
+feature history.
+
+- **1.6.30** — no splash + the lighter recents: (1) **THE SPLASH IS GONE**
+  ("if you can't make it not show the splash screen slower, just remove
+  it") — the app composes the real shell from frame one; the pre-setContent
+  appearance seed keeps theme + language correct on frame 1 (no flash), the
+  content area stays a plain canvas until the batched hydrate hop publishes
+  (no "no calls yet" flash), and the onboarding wizard is gated on hydrate
+  so returning users never see it blink; (2) **THE NUMBERS STRIP SHOWS THE
+  FULL NUMBER** — the long-press sheet's number tiles grow to the width of
+  the whole pretty-printed number instead of ellipsizing at a fixed 196dp;
+  (3) **A CONTACT-DETAIL ICON sits right after the name** at the top of the
+  long-press sheet (saved contacts only) and opens the detail page; (4)
+  **CALCULATOR COPY + PASTE** — long-press the display copies the value, and
+  a paste chip beside the copy chip reads the clipboard, sanitizes it to a
+  valid expression (ASCII `- * /` and `,` mapped, operator runs collapsed,
+  non-evaluating text falls back to the first number) and lands it like a
+  memory recall; (5) **THE RECENTS TWO TABS got their filter tabs** — the
+  They-owe-you / You-owe-them chips no longer collide with the direction
+  chips (they shared ONE state, so picking Missed silently dropped the owe
+  view); an owe tab now reveals the All/Missed/Incoming/Outgoing/Favorites
+  row beneath it, both compose, and tapping the Recents nav button snaps the
+  whole view back to the nothing-clicked state (new `recentsResetTick`);
+  (6) **A JUST-ENDED CALL REACHES THE TOP FASTER** — a debounced
+  ContentObserver on the system call log refreshes Recents ~1.2 s after the
+  provider writes the call, BEFORE the user returns to the app (no new
+  permission — READ_CALL_LOG already held); (7) **THE CALL CARDS ARE
+  LIGHTER** — the per-row card chrome (fill + border + 16dp corner) is
+  replaced by flat canvas rows with an inset hairline, a 44dp avatar ring,
+  lighter type (15sp SemiBold titles, 12sp meta) and a soft brand call
+  disc. 76/76 tests green (new: V1630Test); both iOS targets compile.
+
 **1.6.29 (versionCode 40)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 

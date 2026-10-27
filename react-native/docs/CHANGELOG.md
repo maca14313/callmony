@@ -4,6 +4,94 @@ All notable changes to callmony. Dates follow the git history; the APK for each 
 
 ---
 
+## v1.6.30 — the splash is gone; the call cards went flat-and-light; the long-press sheet shows full numbers and a detail-page icon; the calculator copies AND pastes; the recents tabs got filter tabs and a nav-button reset; a just-ended call reaches the top before you return (2026-10-27)
+
+User reports (verbatim log: `sandbox/chat-logs/2026-10-27-v1.6.30-user-reports.md`):
+"when it opens it takes long time in the splash screen, if you cant make to
+not show the splash screen slower, just remove it"; "THE NUMBERS STRIP:
+long-pressing a call CARD should show the full number not ..."; "in the
+long-pressing a call CARD after the name of the person end at the top put an
+icon that goes and indecet to go it's detail contact page"; "in the caluleter
+i should copy and pest in the display just like other calculetersand normal
+inputs"; "in the recent after clicking one of the two tabs it should have
+filter tabs to help filter just like in search. and if the recent btn at the
+bottom navigation is clicked it should go back to the recent as the tabs was
+not clicked"; "lets say in recents call cards i make a call from one of the
+call card then after the call ends it is not putting that call card fast enf
+at the top"; "the call cards are little bit havey it its ui should be
+lighter, now it is heavy on the iye"; "check github + give me apk + commit,
+even the apk".
+
+- **The splash is gone.** v1.6.28 made the boot fast and flash-free, but the
+  splash pane still waited for the FULL hydrate before handing over — the
+  user still watched a splash. Per the explicit instruction ("just remove
+  it"), the splash pane, its exit fade and the process flags are DELETED:
+  the real shell (header + nav + recents chrome) composes from frame one.
+  The v1.6.28 appearance seed still runs before `setContent`, so frame 1 is
+  already the user's theme + language (no flash); the recents content area
+  stays a plain canvas until the single batched hydrate hop publishes the
+  cached calls + contacts (no "no calls yet" empty-state blink); and the
+  onboarding wizard is gated on hydrate so the DEFAULT settings can never
+  flash the first-run wizard at returning users.
+- **The numbers strip shows the FULL number.** The long-press call-card
+  sheet's number tiles were clamped to a fixed 196dp with an ellipsis — a
+  long international number read "+251 911 223…". The tile now GROWS to the
+  width of the whole pretty-printed number (`widthIn(min=186)` + single
+  unwrapped line), so nothing is ever cut off; label pill, favourite star,
+  copy, call and long-press-copy all behave exactly as before.
+- **A contact-detail icon right after the name.** The long-press sheet's
+  header (the person's name) now carries an account-circle icon immediately
+  after it — one tap closes the sheet and opens that contact's DETAIL PAGE
+  (saved contacts only; the close X keeps its place after the icon).
+- **Calculator copy AND paste.** The display already had a copy chip; now
+  LONG-PRESSING the display copies the current value (like other
+  calculators), and a PASTE chip sits beside the copy chip. It reads the
+  clipboard and sanitizes it into a valid display expression — digits, `.`,
+  `+ − × ÷`, with ASCII `- * /` and the `,` decimal mapped to the display
+  glyphs, operator runs collapsed, dangling operators trimmed, and
+  non-evaluating text (a copied phone number, prose, a price with currency)
+  falling back to the first plain number. The result lands exactly like a
+  memory recall: it replaces a finished result, appends after an operator,
+  or takes over the entry. Two new i18n keys ×5 languages
+  (`calc.pasted`, `calc.nothingToPaste`).
+- **The recents two tabs got their filter tabs.** "They owe you" / "You owe
+  them" and the All/Missed/Incoming/Outgoing/Favorites chips shared ONE
+  filter state — picking Missed after an owe tab silently REPLACED the owe
+  view (that is why the tabs felt missing). The owe chips are now a toggle
+  TAB state of their own: clicking one reveals the direction filter row
+  right beneath it (the same chips the sticky day header carries — "filter
+  tabs to help filter just like in search"), both filters COMPOSE, and
+  tapping the active owe tab returns to "all". Tapping the RECENTS button in
+  the bottom navigation (even while already on Recents) bumps a new
+  `UiStore.recentsResetTick` that snaps the owe tab, the direction filter,
+  the page counter and the scroll position back to the nothing-clicked
+  state.
+- **A just-ended call reaches the top faster.** The call log only refreshed
+  on onResume — after the user returned — so the card landed a beat late. A
+  ContentObserver on `CallLog.Calls.CONTENT_URI` now fires the moment the
+  provider writes the ended call (while the user is still on the in-call
+  screen); a 1.2 s debounce collapses the provider's burst of notifications
+  (insert + duration update…) into ONE incremental `loadSince` refresh, so
+  the card is already at the top of Recents when the user comes back. No new
+  permission — the app already holds READ_CALL_LOG for the log itself, and
+  without it the observer simply never fires.
+- **The call cards are lighter.** The per-row chrome — filled card, hairline
+  border, 16dp corners, 50dp avatar ring, 40dp grey call disc, 16sp Bold
+  titles — read heavy on the eye. The cards are now FLAT rows on the canvas:
+  no fill, no border, separated by an inset 0.5dp hairline (Material-list
+  style), 44dp avatar ring, 15sp SemiBold titles, 12sp meta/time, a softer
+  balance pill and a 36dp brand-soft call disc. The swipe underlay behind a
+  displaced row is canvas-toned to match, and swipe actions, the
+  missed-call red title, the "(3)" collapsed-run badge and the favourite
+  dialing all behave exactly as before.
+- Tests: 76/76 green (new V1630Test — the paste sanitizer: glyph mapping,
+  comma decimals, operator-run collapse, dangling-operator trim, phone/
+  prose fallback, garbage → empty). Android APK 1.6.30 vc41, same release
+  key as every prior release (installs over anything, data intact); both
+  iOS targets compile.
+
+---
+
 ## v1.6.29 — the history icons are real buttons now; the ledger quick item lives inside the credit/debit/income/expense kind tabs; every text input visibly reacts to the touch (2026-10-27)
 
 User reports (verbatim log: `sandbox/chat-logs/2026-10-27-v1.6.29-user-reports.md`):

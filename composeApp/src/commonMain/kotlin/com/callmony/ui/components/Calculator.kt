@@ -3,6 +3,7 @@ package com.callmony.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -120,6 +121,37 @@ fun fmtResult(n: Double): String {
 
 private data class HistItem(val expr: String, val result: String)
 
+/** v1.6.30 — extract a pasteable calculator expression from arbitrary
+ *  clipboard text (user report: "in the calculator i should copy and paste
+ *  in the display just like other calculators and normal inputs").
+ *  Keeps digits, '.', '+', '−', '×', '÷' — mapping the ASCII spellings
+ *  -, *, / and the ',' decimal to the display glyphs — collapses runs of
+ *  operators and trims dangling ones; if the result still doesn't
+ *  evaluate (a copied phone number, prose, a price with currency), falls
+ *  back to the first plain number in the text. Returns "" when nothing
+ *  usable is on the clipboard. */
+internal fun sanitizePastedExpr(raw: String): String {
+    val mapped = raw
+        .replace(',', '.')
+        .replace('-', '−')
+        .replace('*', '×')
+        .replace('/', '÷')
+    val kept = buildString {
+        for (ch in mapped) when {
+            ch.isDigit() -> append(ch)
+            ch == '.' -> append(ch)
+            ch in "+−×÷" -> append(ch)
+        }
+    }
+    var out = Regex("([+−×÷]){2,}").replace(kept) { it.value.first().toString() }
+        .trim { it in "+−×÷." }
+    if (out.isNotEmpty() && evalExpression(out) == null) {
+        out = Regex("\\d+(\\.\\d+)?").find(out)?.value ?: ""
+    }
+    return out
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun CalculatorSheet() {
     val C = C()
@@ -276,6 +308,31 @@ fun CalculatorSheet() {
         Toasts.toast(t("act.copied"))
     }
 
+    // v1.6.30 — PASTE into the display, the mirror of copyResult (user
+    // report: "copy and paste in the display just like other calculators
+    // and normal inputs"). The clipboard text is sanitized to a valid
+    // expression fragment and lands exactly like a memory recall: after
+    // an evaluation it replaces the display, after an operator it
+    // appends, otherwise it takes over the entry.
+    fun pasteFromClipboard() {
+        val cleaned = sanitizePastedExpr(Platform.share.readClipboard() ?: "")
+        if (cleaned.isEmpty()) {
+            Toasts.toast(t("calc.nothingToPaste"), "error")
+            return
+        }
+        if (justEvaluated) {
+            expr = cleaned
+            result = null
+            justEvaluated = false
+        } else if (expr.isEmpty() || expr.last() in OP_CHARS) {
+            expr += cleaned
+        } else {
+            expr = cleaned
+        }
+        vibrate(longArrayOf(10))
+        Toasts.toast(t("calc.pasted"))
+    }
+
     Sheet(
         title = t("nav.calculator"),
         subtitle = memory?.let { "M = ${fmtResult(it)}" },
@@ -323,6 +380,18 @@ fun CalculatorSheet() {
                         color = if (showHistory) C.onBrand else C.brand,
                     )
                 }
+                // v1.6.30 — PASTE from the clipboard into the display —
+                // the mirror of the copy chip beside it ("copy and paste in
+                // the display just like other calculators")
+                Box(
+                    Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(C.cardAlt)
+                        .border(1.dp, C.line, RoundedCornerShape(12.dp))
+                        .clickable { pasteFromClipboard() },
+                    contentAlignment = Alignment.Center,
+                ) { MdiIcon("content-paste", 18, C.sub) }
                 // copy result
                 Box(
                     Modifier
@@ -370,10 +439,18 @@ fun CalculatorSheet() {
                 // tone, no frame of any kind (user report: "the display
                 // should not have visible border") — the numbers sit directly
                 // on the canvas and autosize for very long values.
+                // v1.6.30 — LONG-PRESS THE DISPLAY COPIES the current value
+                // ("copy and paste in the display just like other
+                // calculators and normal inputs"); the paste chip in the
+                // header pastes back in.
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .weight(1f),
+                        .weight(1f)
+                        .combinedClickable(
+                            onClick = {},
+                            onLongClick = { copyResult() },
+                        ),
                     contentAlignment = Alignment.BottomEnd,
                 ) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 12.dp)) {

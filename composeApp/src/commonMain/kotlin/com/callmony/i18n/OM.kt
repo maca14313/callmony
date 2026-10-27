@@ -224,6 +224,8 @@ internal val OM: Map<String, String> = mapOf(
     "calc.useValue" to "Gatii kana fayyadami",
     "calc.history" to "Seenaa",
     "calc.noCalculations" to "Herregni hin jiru",
+    "calc.pasted" to "Walitti qabame",
+    "calc.nothingToPaste" to "Walitti qabamu hin jiru",
     "calc.copyResult" to "Bu'aa baafadhu",
     "calc.storeMemory" to "Yaadarruu keessatti kaa'i",
     "calc.clearMemory" to "Yaadarruu duwwessi",
