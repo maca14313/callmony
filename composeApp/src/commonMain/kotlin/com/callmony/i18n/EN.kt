@@ -224,6 +224,8 @@ internal val EN: Map<String, String> = mapOf(
     "calc.useValue" to "Use this value",
     "calc.history" to "History",
     "calc.noCalculations" to "No calculations yet",
+    "calc.pasted" to "Pasted",
+    "calc.nothingToPaste" to "Nothing to paste",
     "calc.copyResult" to "Copy result",
     "calc.storeMemory" to "Store in memory",
     "calc.clearMemory" to "Clear memory",

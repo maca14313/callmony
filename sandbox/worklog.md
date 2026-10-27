@@ -511,3 +511,20 @@ Work Log:
 
 Stage Summary:
 - v1.6.32 = the v1.6.29 app, byte-for-byte on every launch-path file, + only the focus ring and the left-anchored history button. If this still crashes at open on the device, the cause is outside the v1.6.30/31 diff entirely (device state, an update-vs-clean-install difference, or a crash older than v1.6.29 that only now manifests) and the next step must be a real logcat/Play-console stack, not another theory. The v1.6.30 feature set is reverted and can be re-added one-by-one with per-feature verification.
+
+---
+Task ID: 25
+Agent: main agent (Z.ai)
+Task: v1.6.33 — the user re-sent the v1.6.30 feature list (they never saw it: every v1.6.30/31 build closed on open). Re-apply the features on the stable v1.6.32 base as audited ports, rebuild the post-call observer LAUNCH-SAFE, keep the splash, ship the APK.
+
+Work Log:
+- INTERPRETATION: 5 features (post-call refresh, recents filter tabs + nav reset, calculator copy/paste, detail-page icon, full-number strip) + the ledger quick item ask (ALREADY shipped in v1.6.29 — the label+price row inside the credit/debit/income/expense kind tabs; verified present in LedgerSection.kt + QuickItemKindTabsTest green; confirmed to the user instead of re-implemented).
+- PORTS (pure UI, zero launch-path contact): RecentsScreen.kt / Calculator.kt / SwipeRow.kt / V1630Test.kt checked out from 601ffbd (v1.6.30); Store.kt from 601ffbd (diff vs v1.6.29 = ONLY the recentsResetTick in-memory field, no v1.6.31 crash guards); 2 paste i18n keys ×5 languages; the Recents nav-button bump hand-applied to CallmonyApp.kt (the only hunk of v1.6.30's CallmonyApp diff worth keeping — the splash-removal rest stays reverted).
+- THE OBSERVER, REBUILT (not copied): v1.6.30 registered it in onCreate BEFORE setContent with onChange on the MAIN handler (launch-window coupling — crash suspect #2). v1.6.33 inverts every leg: registers on the FIRST onResume (after the UI is up; onCreate/setContent untouched), rides a dedicated BACKGROUND HandlerThread (callmony-calllog) so OEM provider notification bursts never touch the main thread, debounced 1.2s refresh on main fully guarded + gated on hydrate, BootTrace mark recents.observerRefresh for diagnostics, unregister + quitSafely in onDestroy. Splash kept as the launch safety buffer.
+- TESTS: new PostCallRefreshTest (ActivityScenario pattern à la BootDiagTest): boot completes → observer armed on CallLog URI → notifyChange flows background-thread onChange → debounced main post → guarded refresh runs (phase lands on recents.observerRefresh, which nothing overwrites — loadSystemCalls marks nothing). Full battery 78/78 green (19 suites, incl. the ported V1630Test 5/5, FocusRingTest, and all five boot/Recents harnesses through the v1.6.29 splash path).
+- BUILD: assembleRelease clean; aapt com.callmony 1.6.33 versionCode 44 minSdk 23 targetSdk 34; apksigner SHA-256 2f6d65be...869ad identical to every prior release; compileKotlinIosArm64 + compileKotlinIosSimulatorArm64 clean.
+- DEX PROOF on the shipped APK: SplashPane + recentsResetTick + sanitizePastedExpr + recents.observerRefresh + callmony-calllog PRESENT; storeCrashGuard + store.hydrateCrash ABSENT (v1.6.31 experiment stays reverted).
+- Release: APK committed at releases/callmony-1.6.33-release.apk + copied to /home/z/my-project/download/callmony-1.6.33-kmp-release.apk. Docs: README Versioning v1.6.33 entry; react-native/docs/CHANGELOG.md full entry; sandbox/chat-logs/2026-10-27-v1.6.33-user-reports.md.
+
+Stage Summary:
+- v1.6.33 = the stable v1.6.32 base + the full v1.6.30 feature set re-applied as audited ports, with the one launch-path feature (post-call observer) rebuilt to the safe design. If the app opens fine on v1.6.32 it should open fine here — the launch window is byte-identical except the observer now arms AFTER it, on a background thread. The user's device is the final judge; the recents.observerRefresh BootTrace mark gives the next diagnostic round a hook if anything misbehaves.

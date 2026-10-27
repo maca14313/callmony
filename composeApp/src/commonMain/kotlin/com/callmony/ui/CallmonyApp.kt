@@ -539,7 +539,14 @@ private fun BottomNav() {
         ) {
             // v1.6.15 (user request): the KEYPAD sits in the MIDDLE slot of
             // the five-tile bar: Recents · Calculator · Keypad · General · More
-            NavSlot("recents", "history", "Recents", Modifier.weight(1f))
+            // v1.6.33 — tapping Recents (even while already on it) resets the
+            // Recents view — owe tab, direction filter and scroll all snap
+            // back to the nothing-clicked state (user report: "if the recent
+            // btn at the bottom navigation is clicked it should go back to
+            // the recent as the tabs was not clicked").
+            NavSlot("recents", "history", "Recents", Modifier.weight(1f)) {
+                UiStore.recentsResetTick++
+            }
             NavSlot("calculator", "calculator-variant", "Calculator", Modifier.weight(1f)) {
                 // RN parity: tap toggles the calculator sheet over the current tab
                 val calcOpen = UiStore.overlayStack.any { it is Overlay.Calculator }

@@ -61,13 +61,14 @@ android {
         applicationId = "com.callmony"
         minSdk = 23
         targetSdk = 34
-        // v1.6.32 — 100% back on the v1.6.29 code base (the v1.6.30/31
-        // splashless shell + call-log observer reverted wholesale) + only
-        // the focus ring and the history-button anchor ported on top.
-        // versionCode must stay ABOVE v1.6.31 (42) so it installs over the
-        // crashed build with the user's data intact.
-        versionCode = 43
-        versionName = "1.6.32"
+        // v1.6.33 — the v1.6.30 feature set re-applied one port at a time on
+        // the stable v1.6.29/v1.6.32 base (splash KEPT): recents filter tabs
+        // + nav reset, calculator copy/paste, full-number strip, detail-page
+        // icon, lighter cards, and the post-call refresh rebuilt LAUNCH-SAFE
+        // (observer arms on first onResume on a background thread — never
+        // in the onCreate window).
+        versionCode = 44
+        versionName = "1.6.33"
     }
 
     signingConfigs {

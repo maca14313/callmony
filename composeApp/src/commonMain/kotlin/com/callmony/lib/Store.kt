@@ -1306,6 +1306,13 @@ object UiStore {
      *  "lock immediately" autolock option (previously a hardcoded `true`). */
     var appInForeground: Boolean = true
 
+    /** v1.6.30 — bumped every time the user taps the RECENTS nav button.
+     *  RecentsScreen watches it and snaps back to the plain, nothing-clicked
+     *  view (owe tab "all", direction filter "all", scroll to top) — user
+     *  report: "if the recent btn at the bottom navigation is clicked it
+     *  should go back to the recent as the tabs was not clicked". */
+    var recentsResetTick by mutableStateOf(0)
+
     fun setTab(t: String) { tabInternal = t; moreOpen = false }
 
     fun open(o: Overlay) { overlayStack.add(o); moreOpen = false }

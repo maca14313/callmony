@@ -104,9 +104,35 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.32 (versionCode 43)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.33 (versionCode 44)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.33** — the v1.6.30 feature set re-applied on the stable v1.6.32 base,
+  one audited port at a time, with the SPLASH KEPT (the launch safety
+  buffer): (1) **THE POST-CALL REFRESH, LAUNCH-SAFE** — a ContentObserver on
+  the system call log fires while the user is still on the in-call screen
+  and a debounced 1.2s incremental refresh has the ended call at the top of
+  Recents before they return; unlike v1.6.30 it registers on the FIRST
+  onResume (never inside the onCreate/setContent launch window) and rides a
+  dedicated background HandlerThread so provider notification bursts never
+  touch the main thread; (2) **THE RECENTS TABS** — picking an owe tab
+  reveals the All/Missed/Incoming/Outgoing/Favorites filter row beneath it
+  (both filters compose, like search), and tapping the Recents nav button
+  resets the whole view to the nothing-clicked state; (3) **THE CALCULATOR
+  COPIES AND PASTES** — long-press the display to copy, a PASTE chip beside
+  the copy chip pastes (sanitized: operator runs collapsed, dangling
+  operators trimmed, a copied phone number falls back to the first plain
+  number); (4) **THE NUMBERS STRIP SHOWS THE FULL NUMBER** — the long-press
+  sheet's tiles grow to the whole pretty-printed number instead of the
+  196dp ellipsis; (5) **A CONTACT-DETAIL ICON sits right after the name** at
+  the top of the long-press sheet and opens the detail page; (6) **THE
+  LIGHTER CALL CARDS** ride the ported Recents screen (flat canvas rows,
+  inset hairline, softer pills). The ledger quick item (label + price inside
+  the credit/debit/income/expense kind tabs of the new entry) already
+  shipped in v1.6.29 and stayed through the rollback. New
+  PostCallRefreshTest locks the launch-safety contract (boot completes →
+  observer armed → a provider write flows the whole refresh chain); 78/78
+  tests green.
 - **1.6.32** — 100% back on the v1.6.29 code base, plus the two pure-UI
   asks: the user confirmed v1.6.31 STILL closes on open ("still the same it
   is not opening, go back 100% to v1.6.29 use it as a base continew from
