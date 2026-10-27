@@ -224,8 +224,6 @@ internal val AR: Map<String, String> = mapOf(
     "calc.useValue" to "استخدم هذه القيمة",
     "calc.history" to "السجل",
     "calc.noCalculations" to "لا حسابات بعد",
-    "calc.pasted" to "تم اللصق",
-    "calc.nothingToPaste" to "لا شيء للصق",
     "calc.copyResult" to "نسخ النتيجة",
     "calc.storeMemory" to "تخزين في الذاكرة",
     "calc.clearMemory" to "مسح الذاكرة",

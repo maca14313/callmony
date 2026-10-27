@@ -88,28 +88,7 @@ private data class HydrateLoads(
 
 object AppStore {
     val state = AppState()
-    /* v1.6.31 — THE "APP WON'T OPEN / CLOSES WHEN I OPEN IT" FIX. Both
-       store scopes ran with NO CoroutineExceptionHandler, so ANY uncaught
-       throwable in ANY background coroutine — an OutOfMemoryError during
-       the 1239-contact JSON decode on a 2 GB device, a cursor Error from
-       the system call-log provider, anything the `catch (Exception)`
-       guards below let through (Errors are NOT Exceptions) — propagated
-       to the default handler and KILLED THE PROCESS at open. The user's
-       report ("the app won't open, it closes when i open it") on a
-       low-RAM device with a large book matches exactly: the v1.6.30
-       no-splash shell composes with the full data at frame one WHILE
-       hydrate's four concurrent decodes + the boot call-log fetch + the
-       new ContentObserver refresh all run in the same window — the peak
-       is at open, every launch. A background refresh that dies must
-       degrade (data stays at the last good state) — NEVER take the app
-       down with it. Logged through BootTrace so a failing path is still
-       visible in diagnostics. */
-    private val storeCrashGuard = kotlinx.coroutines.CoroutineExceptionHandler { _, e ->
-        BootTrace.mark("store.coroutineCrash:${e::class.simpleName}")
-        e.printStackTrace()
-    }
-
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + storeCrashGuard)
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /* v1.6.21 — THE SINGLE-WRITER SNAPSHOT RULE (the v1.6.20 freeze report:
        the main thread blocked ~6 s inside Snapshot.current() on a state
@@ -119,7 +98,7 @@ object AppStore {
        main dispatcher. Background coroutines do the heavy work (JSON, binder,
        cursors) and then publish through ONE batched main hop — a single
        recomposition, zero cross-thread snapshot lock traffic. */
-    private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main + storeCrashGuard)
+    private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     /** Post a state mutation to the main dispatcher from ANY thread or
      *  non-suspend callback (permission callbacks, receivers). */
@@ -136,14 +115,6 @@ object AppStore {
             withContext(Dispatchers.Main) { state.callLogBusy = true }
             try {
                 loadSystemCallsInner(full, forceAsk)
-            } catch (t: Throwable) {
-                // v1.6.31 — Throwable, not Exception: an Error (OOM while
-                // building the merged 400-row list, a provider cursor Error)
-                // must degrade to "log + keep the last good list", never
-                // kill the process. The crash guard above is the belt; this
-                // is the braces.
-                BootTrace.mark("store.callLogCrash:${t::class.simpleName}")
-                t.printStackTrace()
             } finally {
                 withContext(Dispatchers.Main) { state.callLogBusy = false }
             }
@@ -224,8 +195,7 @@ object AppStore {
         if (hydrateStarted) return
         hydrateStarted = true
         scope.launch {
-            try {
-                BootTrace.mark("store.read")
+            BootTrace.mark("store.read")
             // v1.6.27 — THE "IT OPENS SLOWER NOW" FIX. v1.6.26 added the
             // cached CONTACT BOOK to the boot path so Recents shows names
             // from the first frame — but it ran AFTER Db.loadAll() and the
@@ -294,18 +264,6 @@ object AppStore {
                 // (re)schedule reminder notifications after boot
                 for (r in data.reminders.filter { it.deletedAt == null && !it.done }) {
                     scheduleReminderNotification(r)
-                }
-            }
-            } catch (t: Throwable) {
-                // v1.6.31 — a hydrate that dies (OOM mid-decode on a 2 GB
-                // device…) must NOT leave the app blank forever: publish
-                // hydrated with whatever defaults are in place so the shell
-                // renders. All individual loads carry per-blob fallbacks;
-                // this catches the residual Error class.
-                BootTrace.mark("store.hydrateCrash:${t::class.simpleName}")
-                t.printStackTrace()
-                withContext(Dispatchers.Main) {
-                    if (!state.hydrated) state.hydrated = true
                 }
             }
         }
@@ -1347,13 +1305,6 @@ object UiStore {
     /** v1.6.17 — true between MainActivity.onResume and onPause; drives the
      *  "lock immediately" autolock option (previously a hardcoded `true`). */
     var appInForeground: Boolean = true
-
-    /** v1.6.30 — bumped every time the user taps the RECENTS nav button.
-     *  RecentsScreen watches it and snaps back to the plain, nothing-clicked
-     *  view (owe tab "all", direction filter "all", scroll to top) — user
-     *  report: "if the recent btn at the bottom navigation is clicked it
-     *  should go back to the recent as the tabs was not clicked". */
-    var recentsResetTick by mutableStateOf(0)
 
     fun setTab(t: String) { tabInternal = t; moreOpen = false }
 

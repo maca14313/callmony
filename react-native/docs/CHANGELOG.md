@@ -4,6 +4,20 @@ All notable changes to callmony. Dates follow the git history; the APK for each 
 
 ---
 
+## v1.6.32 — 100% back on the v1.6.29 code base: the v1.6.30/31 launch rework reverted wholesale; the active-input ring and the left-anchored history button ported on top (2026-10-27)
+
+User report (verbatim log: `sandbox/chat-logs/2026-10-27-v1.6.32-user-reports.md`): "still the same it is not opening, go back 100% to v1.6.29 use it as a base continew from there and i think it is the splash screen thing is the problem."
+
+**THE ROLLBACK ("go back 100% to v1.6.29 use it as a base continew from there").** v1.6.31's belt-and-braces hardening did NOT stop the crash on the real device — the user confirmed the app still closes on open — so the diagnosis shifts from "a throwable escaping a guard" to "the v1.6.30 launch structure itself". What v1.6.30 changed on the launch path, all at once: the splash pane was deleted so the real shell composes from frame one, and a ContentObserver on the system call log was registered in `MainActivity.onCreate`. On a low-RAM phone that stacks the entire peak — first-frame shell composition, hydrate's concurrent JSON decodes, the boot call-log fetch and the observer's refresh — into one window at open; the v1.6.29 splash was, structurally, the safety buffer: frame one was a trivial canvas + logo, and the real shell composed only after hydrate finished. The v1.6.31 guards could only cover background coroutines — a main-thread composition failure was never in their reach. Per the user's explicit instruction the ENTIRE v1.6.30/31 launch-path rework is reverted: `MainActivity.kt` (the ContentObserver is gone), `Store.kt`, `CallmonyApp.kt` (splash pane + exit fade back exactly as v1.6.29 shipped them), `RecentsScreen.kt`, `Calculator.kt`, `SwipeRow.kt`, the i18n additions and both v1.6.30/31 test harnesses — byte-identical to v1.6.29, the last version that opened on the device. The v1.6.30 feature set (full-number strip, detail icon, calculator paste, owe-tab filters, post-call auto-refresh, flat-light cards) goes with it and can be re-added one-by-one on this stable base.
+
+**WHAT STAYS (the two pure-UI asks, ported from v1.6.31 onto the v1.6.29 base).** (1) **THE RING COLOUR ON ACTIVE INPUTS** — `Modifier.focusRing()`, a pure focus observer (`onFocusChanged`) that fades a brand-coloured 2dp ring in around an input's own corner radius while it (or any input inside the box) holds focus, out on blur; applied to `Field`, the entry-editor hero amount, the dominant search, the onboarding country search, the contact-picker search, the ledger quick item and the keypad number display; `FocusRingTest` drives the real app's auto-focused search field. (2) **THE CONTACT-DETAIL HISTORY BUTTON** left-anchored — the balance row goes `Arrangement.spacedBy(8.dp, Alignment.Start)` so the chip anchors the left edge with a fixed 8dp gap to the balance pill. **Purity proof: the app code differs from v1.6.29 in exactly those 8 UI files + the test — no launch-path file is touched.**
+
+Data-safety (verified before shipping): v1.6.30/31 introduced NO persisted-schema changes (the only Store.kt additions were an in-memory UI tick and non-persisted crash guards), so the v1.6.29 code loads data written by v1.6.30/31 cleanly; versionCode 43 installs directly over the crashed v1.6.31 (42) with data intact — no uninstall, nothing lost.
+
+Build: APK `1.6.32` vc43, same release key as every prior release (apksigner SHA-256 `2f6d65be…869ad`); both iOS targets compile.
+
+---
+
 ## v1.6.31 — the "closes when I open it" launch-crash hardening; a ring colour on every active input; the contact-detail history button left-anchored with breathing room (2026-10-27)
 
 User reports (verbatim log: `sandbox/chat-logs/2026-10-27-v1.6.31-user-reports.md`): "you did something bad, the app won't open, it closes when i open it" · "CONTACT DETAIL's history button should have some sapce between his neeber, it should be at the start of the left side" · "need a ring colour on the inputs when they are active. check github + apk + commit. this version has a bug".

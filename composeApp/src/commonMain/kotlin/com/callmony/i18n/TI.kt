@@ -224,8 +224,6 @@ internal val TI: Map<String, String> = mapOf(
     "calc.useValue" to "እዚ መጠን ተጠቐምዎ",
     "calc.history" to "ታሪኽ",
     "calc.noCalculations" to "ገና ምሕሳባት የብሉን",
-    "calc.pasted" to "ተለጠፈ",
-    "calc.nothingToPaste" to "ክልጠፍ ዘሎ ነገር የብሉን",
     "calc.copyResult" to "ውጽንታ ቐዳሕ",
     "calc.storeMemory" to "ኣብ መኽዘን ሓብር",
     "calc.clearMemory" to "መኽዘን ኣጥፍእ",

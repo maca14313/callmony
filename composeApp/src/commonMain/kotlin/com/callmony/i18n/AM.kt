@@ -224,8 +224,6 @@ internal val AM: Map<String, String> = mapOf(
     "calc.useValue" to "ይህንን እሴት ተጠቀም",
     "calc.history" to "ታሪክ",
     "calc.noCalculations" to "እስካሁን ስሌቶች የሉም",
-    "calc.pasted" to "ተለጥፏል",
-    "calc.nothingToPaste" to "የሚለጠፍ ነገር የለም",
     "calc.copyResult" to "ውጤት ቅዳ",
     "calc.storeMemory" to "በማስታወሻ ውስጥ አስቀምጥ",
     "calc.clearMemory" to "ማስታወሻ አጽዳ",

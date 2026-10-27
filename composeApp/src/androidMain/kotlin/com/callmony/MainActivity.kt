@@ -2,8 +2,6 @@ package com.callmony
 
 import android.content.res.Configuration
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -11,42 +9,6 @@ import com.callmony.lib.AppStore
 import com.callmony.ui.CallmonyApp
 
 class MainActivity : ComponentActivity() {
-
-    /* v1.6.30 — THE POST-CALL REFRESH (user report: "in recents call cards i
-       make a call from one of the call cards then after the call ends it is
-       not putting that call card fast enough at the top"). onResume's
-       incremental sync only runs once the user is BACK in the app — the
-       card then landed a beat late. A ContentObserver on the system call
-       log fires the moment the provider writes the ended call (while the
-       user is still on the in-call screen), and a debounced 1.2s refresh
-       (the provider notifies several times per call: insert, duration
-       update…) has the card already at the top of Recents when they return.
-       Requires no new permission — the app already holds READ_CALL_LOG for
-       the log itself; without it the observer simply never fires. */
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private val callLogRefresh = Runnable {
-        // v1.6.31 — THE "CLOSES WHEN I OPEN IT" HARDENING: this Runnable is
-        // triggered EXTERNALLY (the call-log provider can notify at any
-        // moment — some OEM providers fire right after registration). Any
-        // throwable escaping here would kill the process from a binder
-        // callback; guard it so a refresh failure degrades to a no-op.
-        try {
-            // AppStore.loadSystemCalls is permission-gated, incremental
-            // (loadSince), catches Throwable internally (v1.6.31) and
-            // publishes on the main dispatcher — safe from here.
-            if (AppStore.state.hydrated) AppStore.loadSystemCalls()
-        } catch (_: Throwable) {}
-    }
-    private val callLogObserver = object : android.database.ContentObserver(mainHandler) {
-        override fun onChange(selfChange: Boolean) {
-            try {
-                // debounce: collapse the provider's burst of notifications into
-                // ONE refresh, ~1.2s after the last write
-                mainHandler.removeCallbacks(callLogRefresh)
-                mainHandler.postDelayed(callLogRefresh, 1200L)
-            } catch (_: Throwable) {}
-        }
-    }
 
     /* v1.6.16 — the launch window + Android-12+ system splash must carry the
        APP theme's canvas, not the SYSTEM day/night mode (the old behavior:
@@ -115,18 +77,6 @@ class MainActivity : ComponentActivity() {
         setContent {
             CallmonyApp()
         }
-        // v1.6.31 — THE "CLOSES WHEN I OPEN IT" HARDENING, part 2: the
-        // observer used to register BEFORE setContent, adding an
-        // externally-triggered call-log refresh into the exact window where
-        // first-frame composition + hydrate's concurrent JSON decodes peak
-        // the heap on low-RAM devices. Registering AFTER setContent keeps
-        // the same behaviour (the observer only matters minutes later, after
-        // a call ends) while keeping the boot window single-purpose.
-        contentResolver.registerContentObserver(
-            android.provider.CallLog.Calls.CONTENT_URI,
-            true,
-            callLogObserver,
-        )
     }
 
     override fun onResume() {
@@ -148,12 +98,6 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         com.callmony.lib.UiStore.appInForeground = false
-    }
-
-    override fun onDestroy() {
-        contentResolver.unregisterContentObserver(callLogObserver)
-        mainHandler.removeCallbacks(callLogRefresh)
-        super.onDestroy()
     }
 
     override fun onRequestPermissionsResult(

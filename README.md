@@ -104,9 +104,27 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.31 (versionCode 42)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.32 (versionCode 43)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.32** — 100% back on the v1.6.29 code base, plus the two pure-UI
+  asks: the user confirmed v1.6.31 STILL closes on open ("still the same it
+  is not opening, go back 100% to v1.6.29 use it as a base continew from
+  there and i think it is the splash screen thing is the problem"), so the
+  entire v1.6.30/31 launch-path rework is REVERTED wholesale — the splash
+  pane + exit fade are back exactly as v1.6.29 shipped them, the shell
+  composes only after hydrate (the splash was the low-RAM launch safety
+  buffer), and the call-log ContentObserver is gone from MainActivity.
+  Purity proof: the app code differs from v1.6.29 in ONLY 8 UI files (the
+  focus ring + the history-button anchor, ported from v1.6.31 — neither
+  touches any launch path); MainActivity / Store / CallmonyApp /
+  RecentsScreen / Calculator / i18n are byte-identical to v1.6.29, the last
+  version that opened on the device. The v1.6.30 feature set (full-number
+  strip, detail icon, calculator paste, owe-tab filters, post-call
+  auto-refresh, flat-light cards) is reverted with it and can be re-added
+  one-by-one on this stable base. Data-safe: v1.6.30/31 added no persisted
+  fields, and versionCode 43 installs directly over the crashed v1.6.31
+  (42) with data intact.
 - **1.6.31** — the "closes when I open it" hardening + the active-input ring:
   (1) **THE LAUNCH-CRASH FIX** — both store coroutine scopes ran with NO
   exception handler, so any uncaught throwable in a background coroutine at

@@ -138,7 +138,7 @@ class AndroidCallLog : CallLogService {
                 }
             }
             out
-        } catch (_: Throwable) { emptyList() } // v1.6.31 — Throwable: an Error (OOM mid-cursor on low-RAM devices) must not kill the app
+        } catch (_: Exception) { emptyList() }
     }
 
     override fun loadSince(since: Long): List<DeviceCall> {
@@ -167,7 +167,7 @@ class AndroidCallLog : CallLogService {
                 }
             }
             out
-        } catch (_: Throwable) { emptyList() } // v1.6.31 — Throwable, same reason as fetchAll
+        } catch (_: Exception) { emptyList() }
     }
 }
 

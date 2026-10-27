@@ -99,11 +99,7 @@ fun SwipeRow(
                     }
                 }
             }
-            // v1.6.30 — canvas, not card: the call cards are FLAT rows now
-            // (no fill, no border — see the lighter-card work in
-            // RecentsScreen), so the underlay behind a displaced row must
-            // read as the page itself, not as a grey card sliding out.
-            Box(Modifier.weight(1f).fillMaxHeight().background(C.canvas))
+            Box(Modifier.weight(1f).fillMaxHeight().background(C.card))
             if (right.isNotEmpty()) {
                 Row(Modifier.fillMaxHeight()) {
                     right.forEach { a ->

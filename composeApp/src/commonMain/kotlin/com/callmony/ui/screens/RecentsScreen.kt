@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -109,15 +108,6 @@ fun RecentsScreen() {
     val contactsPerm = AppStore.state.contactsPerm
     val contactX = AppStore.state.contactX
 
-    // v1.6.30 — THE TWO TABS split from the direction filter. The two owe
-    // chips ("They owe you" / "You owe them") used to SHARE one `filter` var
-    // with the All/Missed/Incoming/Outgoing chips in the sticky day header,
-    // so picking Missed after an owe tab silently DROPPED the owe tab (user
-    // report: "in the recent after clicking one of the two tabs it should
-    // have filter tabs to help filter just like in search"). oweTab owns the
-    // balance view; filter keeps refining WITHIN it (exactly like the search
-    // overlay's stacked filter rows).
-    var oweTab by remember { mutableStateOf("all") }
     var filter by remember { mutableStateOf("all") }
     var sheetRow by remember { mutableStateOf<CallRow?>(null) }
     // v1.6.26 — the long-press call-icon "which number?" picker (held HERE,
@@ -129,20 +119,7 @@ fun RecentsScreen() {
     var contactsAskedOnce by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
-    LaunchedEffect(filter, oweTab) { page = 1 }
-
-    /* v1.6.30 — tapping the Recents nav button resets the whole view to the
-       nothing-clicked state: owe tab "all", direction filter "all", back to
-       the top of the list. The tick starts at 0, so the first composition
-       (before any nav tap) never resets anything. */
-    LaunchedEffect(UiStore.recentsResetTick) {
-        if (UiStore.recentsResetTick > 0) {
-            oweTab = "all"
-            filter = "all"
-            page = 1
-            listState.scrollToItem(0)
-        }
-    }
+    LaunchedEffect(filter) { page = 1 }
 
     /* silent background refresh when permission state is unknown */
     LaunchedEffect(callLogPerm) {
@@ -222,24 +199,17 @@ fun RecentsScreen() {
     }
 
     val favSet = remember(contactX) { contactX.filter { it.favorite }.map { it.recordID }.toSet() }
-    // v1.6.30 — the owe tab AND the direction filter now compose: the owe
-    // tab narrows to the contacts with a non-zero balance, the direction
-    // chips (All/Missed/Incoming/Outgoing/Favorites — the same chips the
-    // sticky day header carries) refine WITHIN that view.
-    val filtered = remember(rows, filter, oweTab, balances, favSet) {
-        val byOwe = when (oweTab) {
-            "theyOwe" -> rows.filter { r ->
-                r.contact != null && (balances[r.contact!!.recordID] ?: 0.0) > 0.005
-            }
-            "youOwe" -> rows.filter { r ->
-                r.contact != null && (balances[r.contact!!.recordID] ?: 0.0) < -0.005
-            }
-            else -> rows
-        }
+    val filtered = remember(rows, filter, balances, favSet) {
         when (filter) {
-            "favorites" -> byOwe.filter { it.contact != null && favSet.contains(it.contact!!.recordID) }
-            "all" -> byOwe
-            else -> byOwe.filter { it.direction == filter }
+            "theyOwe", "youOwe" -> rows.filter { r ->
+                r.contact != null && run {
+                    val b = balances[r.contact!!.recordID] ?: 0.0
+                    if (filter == "theyOwe") b > 0.005 else b < -0.005
+                }
+            }
+            "favorites" -> rows.filter { it.contact != null && favSet.contains(it.contact!!.recordID) }
+            "all" -> rows
+            else -> rows.filter { it.direction == filter }
         }
     }
     val missedCount = rows.count { it.direction == "missed" }
@@ -399,28 +369,13 @@ fun RecentsScreen() {
                 }
             }
         }
-        // owe chips row — THE TWO TABS (v1.6.30: toggleable — tapping the
-        // active one returns to "all"; they no longer collide with the
-        // direction filter chips)
+        // owe chips row
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Chip(compact = true, icon = "arrow-bottom-left", label = t("cd.theyOweYou"), active = oweTab == "theyOwe", onPress = { oweTab = if (oweTab == "theyOwe") "all" else "theyOwe" })
-            Chip(compact = true, icon = "arrow-top-right", label = t("cd.youOweThem"), active = oweTab == "youOwe", onPress = { oweTab = if (oweTab == "youOwe") "all" else "youOwe" })
-        }
-        // v1.6.30 — after one of the two tabs is clicked, ITS filter tabs
-        // appear right under it (the same All/Missed/Incoming/Outgoing/
-        // Favorites chips the sticky day header carries — "filter tabs to
-        // help filter just like in search"). Both rows drive the same
-        // `filter` state, so they always agree.
-        if (oweTab != "all") {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                DayFilters(filter, { filter = it }, missedCount)
-            }
+            Chip(compact = true, icon = "arrow-bottom-left", label = t("cd.theyOweYou"), active = filter == "theyOwe", onPress = { filter = "theyOwe" })
+            Chip(compact = true, icon = "arrow-top-right", label = t("cd.youOweThem"), active = filter == "youOwe", onPress = { filter = "youOwe" })
         }
         // fallback filter row when the list is empty
         if (items.isEmpty()) {
@@ -451,15 +406,7 @@ fun RecentsScreen() {
             // fetch is genuinely in flight AND the screen is actually
             // visible (onboarding done). An unresolved UNKNOWN state falls
             // through to the no-calls EmptyState — which never animates.
-            //
-            // v1.6.30 — THE NO-SPLASH RULE: with the splash gone, this area
-            // composes from frame one — keep it a PLAIN CANVAS (no spinner,
-            // no "no calls yet" empty-state) until the batched hydrate hop
-            // publishes the cached calls + contacts, so a warm boot never
-            // flashes a false empty state at the user.
-            if (!AppStore.state.hydrated) {
-                // blank canvas — the data lands in one frame
-            } else if (callLogPerm == PermState.UNKNOWN && systemCalls.isEmpty() &&
+            if (callLogPerm == PermState.UNKNOWN && systemCalls.isEmpty() &&
                 AppStore.state.settings.onboarded && AppStore.state.callLogBusy
             ) {
                 Column(
@@ -470,11 +417,10 @@ fun RecentsScreen() {
                     Text(t("cd.loadingCalls"), fontSize = 14.sp, color = C.sub, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
                 }
             } else if (pagedItems.isEmpty()) {
-                val narrowed = filter != "all" || oweTab != "all"
                 EmptyState(
                     icon = "history",
-                    title = if (narrowed) t("cd.noMatchingContacts") else t("cd.noCallsYet"),
-                    hint = if (narrowed) t("cd.tryAnotherFilter") else t("cd.noCallsHint"),
+                    title = if (filter != "all") t("cd.noMatchingContacts") else t("cd.noCallsYet"),
+                    hint = if (filter != "all") t("cd.tryAnotherFilter") else t("cd.noCallsHint"),
                 )
             } else {
                 CallList(
@@ -762,13 +708,7 @@ fun CallCard(
         )
     } else emptyList()
 
-    // v1.6.30 — THE LIGHTER CARD (user report: "the call cards are little
-    // bit heavy … its ui should be lighter, now it is heavy on the eye").
-    // The per-row chrome is gone: no filled card, no border, no corner — a
-    // FLAT row on the canvas separated by an inset hairline (Material-list
-    // style), with a smaller avatar ring, lighter type weights/sizes and a
-    // soft brand-tinted call disc instead of the grey box + heavy border.
-    Column {
+    Column(Modifier.padding(bottom = 6.dp)) {
         SwipeRow(
             key = row.key,
             left = leftActions,
@@ -779,36 +719,39 @@ fun CallCard(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 7.dp),
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(C.card)
+                    .border(1.dp, C.line, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 10.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Box(Modifier.size(44.dp).clip(CircleShape).border(1.5.dp, C.brandSoft, CircleShape).padding(2.dp)) {
-                    Avatar(row.contact, size = 38)
+                Box(Modifier.size(50.dp).clip(CircleShape).border(2.dp, C.brandSoft, CircleShape).padding(3.dp)) {
+                    Avatar(row.contact, size = 44)
                 }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         title,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
                         color = if (row.direction == "missed") C.red else C.ink,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        MdiIcon(meta.first, 13, meta.second)
+                        MdiIcon(meta.first, 14, meta.second)
                         // v1.6.15: "(3)" badge for back-to-back missed-call runs
                         if (row.count > 1) {
                             Text(
                                 "(${row.count})",
-                                fontSize = 12.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = C.red,
                             )
                         }
                         Text(
                             ft(row.at) + if (row.duration > 0) " · ${durationStr(row.duration)}" else "",
-                            fontSize = 12.sp,
+                            fontSize = 13.sp,
                             color = C.sub,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -819,15 +762,15 @@ fun CallCard(
                             Modifier
                                 .clip(RoundedCornerShape(999.dp))
                                 .background(if (balance > 0) Color(0x2116a085) else Color(0x1dd64545))
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                                .padding(horizontal = 7.dp, vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(3.dp),
                         ) {
-                            MdiIcon(if (balance > 0) "arrow-bottom-left" else "arrow-top-right", 10, if (balance > 0) C.green else C.red)
-                            Money(value = balance, colorize = true, signed = true, size = 11, compact = true)
+                            MdiIcon(if (balance > 0) "arrow-bottom-left" else "arrow-top-right", 11, if (balance > 0) C.green else C.red)
+                            Money(value = balance, colorize = true, signed = true, size = 12, compact = true)
                             Text(
                                 "· ${if (balance > 0) t("cd.theyOweYou") else t("cd.youOweThem")}",
-                                fontSize = 10.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (balance > 0) C.green else C.red,
                                 maxLines = 1,
@@ -835,17 +778,17 @@ fun CallCard(
                             )
                         }
                     } else if (hasRealNumber) {
-                        Text(prettyPhone(row.phone, countryCode), fontSize = 12.sp, color = C.faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(prettyPhone(row.phone, countryCode), fontSize = 13.sp, color = C.faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(relTime(row.at), fontSize = 12.sp, color = C.faint)
+                    Text(relTime(row.at), fontSize = 13.sp, color = C.faint)
                     if (hasRealNumber) {
                         Box(
                             Modifier
-                                .size(36.dp)
+                                .size(40.dp)
                                 .clip(CircleShape)
-                                .background(C.brandSoft)
+                                .background(C.cardAlt)
                                 .combinedClickable(
                                     onClick = { onCall(callNumber) },
                                     onLongClick = {
@@ -859,33 +802,18 @@ fun CallCard(
                                     },
                                 ),
                             contentAlignment = Alignment.Center,
-                        ) { MdiIcon("phone-outline", 18, C.brand) }
+                        ) { MdiIcon("phone-outline", 19, C.brand) }
                     }
                 }
             }
         }
-        // the flat separator that replaced the card chrome — an INSET
-        // hairline that starts after the avatar column, like the stock
-        // Material call list
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = 62.dp)
-                .height(0.5.dp)
-                .background(C.line)
-        )
     }
 }
 
 /* v1.6.28 — one tile of the long-press sheet's NUMBERS STRIP:
    [label pill ………… ★]  over  [number ⧉ ✆]. Tap = call, long-press =
    copy; star / copy / call behave exactly like the choose-a-number
-   picker rows (same icons, same favourite set/unset, same copy toast).
-   v1.6.30 — THE FULL NUMBER (user report: "long-pressing a call CARD
-   should show the full number not ..."): the tile no longer clamps to a
-   fixed 196dp with an ellipsis — it GROWS to the width of the whole
-   pretty-printed number (widthIn(min), softWrap off), so nothing is ever
-   cut off. */
+   picker rows (same icons, same favourite set/unset, same copy toast). */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun NumberTile(
@@ -899,7 +827,7 @@ private fun NumberTile(
     val C = C()
     Column(
         Modifier
-            .widthIn(min = 186.dp)
+            .width(196.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(C.cardAlt)
             .border(1.dp, C.line, RoundedCornerShape(14.dp))
@@ -922,7 +850,9 @@ private fun NumberTile(
                 prettyPhone(phone.number, countryCode),
                 fontSize = F.small.sp,
                 color = C.ink,
-                softWrap = false,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
             IconBtn("content-copy", onCopy, size = 26)
             IconBtn("phone-outline", onCall, size = 28, color = C.brand)
@@ -978,31 +908,7 @@ fun CallRowSheet(row: CallRow, onClose: () -> Unit, onDelete: (() -> Unit)?) {
         return
     }
 
-    BottomSheet(
-        title = title,
-        onClose = onClose,
-        // v1.6.30 — right AFTER the name at the top: an icon that leads
-        // straight to the contact's DETAIL PAGE (user report: "after the
-        // name of the person end at the top put an icon that goes and
-        // indecet to go it's detail contact page"). Renders only for saved
-        // contacts; the close X keeps its place after it.
-        headerRight = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (row.contact != null) {
-                    IconBtn(
-                        "account-circle-outline",
-                        {
-                            onClose()
-                            UiStore.open(Overlay.Contact(row.contact!!.recordID))
-                        },
-                        size = 36,
-                        color = C.brand,
-                    )
-                }
-                IconBtn("close", onClose, size = 36)
-            }
-        },
-    ) {
+    BottomSheet(title = title, onClose = onClose) {
         Column {
             if (addingTo != null) {
                 Row(Modifier.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
