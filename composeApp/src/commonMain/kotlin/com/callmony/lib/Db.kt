@@ -51,6 +51,11 @@ object Db {
         return kv.read(mirrorKey(key))
     }
 
+    /** v1.6.28 — raw settings row for the PRE-FRAME boot seed (theme +
+     *  language scan in AppStore.seedBootAppearance). The settings blob is
+     *  tiny; this runs once, before the first composition. */
+    fun readSettingsRawForBoot(): String? = readRaw(K.settings)
+
     fun loadAll(): PersistedData {
         val settingsRaw = readRaw(K.settings)
         val settings: Settings = try {

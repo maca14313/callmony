@@ -31,12 +31,48 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /* v1.6.28 — same cheap scan for the LANGUAGE (the splash tagline used to
+       flash English for am/om/ar/ti users until hydrate landed). */
+    private fun persistedLanguage(): String? {
+        return try {
+            val prefs = getSharedPreferences("callmony-store", MODE_PRIVATE)
+            val raw = prefs.getString("callmony.settings", null)
+                ?: prefs.getString("callmony.settings~m", null)
+            Regex("\"language\"\\s*:\\s*\"(en|am|om|ar|ti)\"").find(raw ?: "")?.groupValues?.get(1)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         com.callmony.lib.BootTrace.mark("activity.create")
-        if (persistedThemeIsDark()) setTheme(R.style.Theme_Callmony_Dark)
+        val bootThemeDark = persistedThemeIsDark()
+        if (bootThemeDark) setTheme(R.style.Theme_Callmony_Dark)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         AndroidPlatform.init(applicationContext)
+        // v1.6.28 — THE "FLASH WHEN IT OPENS" + "STILL OPENS SLOW" FIX, at
+        // the source. Both run BEFORE the first Compose frame:
+        //   1. seedBootAppearance — the store's in-memory settings are the
+        //      DEFAULTS (theme "auto", language "en") until hydrate
+        //      publishes, and the SPLASH renders from them: a dark-theme
+        //      user saw dark system splash → LIGHT Compose splash (the
+        //      flash) → dark UI; an am/om/ar/ti user saw the tagline flash
+        //      English-first. Seeding theme + language + osDark here makes
+        //      frame 1 of the splash correct. (Guarded inside: a no-op once
+        //      hydrated, so activity recreation can never clobber settings.)
+        //   2. hydrate() — kicked before setContent so the boot file reads
+        //      (settings, caches, PIN) OVERLAP first-frame Compose init
+        //      instead of starting only after it (hydrate is idempotent; the
+        //      CallmonyApp LaunchedEffect call is a guarded no-op now).
+        val sysDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        com.callmony.lib.AppStore.seedBootAppearance(
+            sysDark = sysDark,
+            themeDark = bootThemeDark,
+            lang = persistedLanguage(),
+        )
+        com.callmony.lib.AppStore.hydrate()
         com.callmony.lib.BootTrace.mark("activity.content")
         setContent {
             CallmonyApp()

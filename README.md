@@ -104,6 +104,27 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
+**1.6.28 (versionCode 39)** — see `react-native/docs/CHANGELOG.md` for the
+feature history.
+
+- **1.6.28** — the no-flash boot + the numbers strip: (1) **THE OPEN FLASH
+  FIXED** — the splash used to render from DEFAULT settings (theme "auto",
+  language "en") until hydrate published, so a dark-theme user saw dark
+  system splash → LIGHT Compose splash (the flash) → dark UI, and am/om/ar/ti
+  users saw the tagline flash English-first; the platform entry points now
+  seed the persisted theme + language + OS dark flag BEFORE the first frame
+  (`AppStore.seedBootAppearance`, guarded so it can never clobber hydrated
+  settings), and the splash→UI swap is a one-shot 220 ms fade instead of a
+  hard cut; (2) **OPEN IS FASTER** — hydrate is kicked BEFORE `setContent`
+  (idempotent single-shot latch), so the boot file reads overlap first-frame
+  Compose init instead of starting after it, and on a fast warm boot the
+  splash can be skipped entirely; (3) **THE LONG-PRESS CALL-CARD SHEET**
+  carries the contact's numbers as ONE horizontally-scrolling row of tiles
+  at the top — each tile has the label pill, the favourite star (set/UNSET,
+  live), the copy icon and the call icon (same controls as the
+  choose-a-number picker), tap calls, LONG-PRESS copies. 70/70 tests green
+  (new: V1628Test, CallRowSheetStripTest); both iOS targets compile.
+
 **1.6.27 (versionCode 38)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 

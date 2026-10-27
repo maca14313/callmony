@@ -182,7 +182,18 @@ object AppStore {
 
     /* ---------------- hydrate ---------------- */
 
+    // v1.6.28 — hydrate is now kicked from the platform entry point
+    // (MainActivity BEFORE setContent / MainViewController BEFORE the first
+    // composition) so the boot file reads OVERLAP first-frame Compose init
+    // instead of starting only after it — and it must never run twice.
+    // internal: V1628Test asserts the single-shot latch. (common code:
+    // kotlin.concurrent.Volatile — kotlin.jvm.Volatile doesn't exist here.)
+    @kotlin.concurrent.Volatile
+    internal var hydrateStarted = false
+
     fun hydrate() {
+        if (hydrateStarted) return
+        hydrateStarted = true
         scope.launch {
             BootTrace.mark("store.read")
             // v1.6.27 — THE "IT OPENS SLOWER NOW" FIX. v1.6.26 added the
@@ -256,6 +267,43 @@ object AppStore {
                 }
             }
         }
+    }
+
+    /** v1.6.28 — THE "FLASH WHEN IT OPENS" FIX. Until hydrate publishes the
+     *  persisted settings, the store's in-memory settings are the defaults
+     *  (theme="auto", language="en") — and the boot SPLASH renders from
+     *  them, so a dark-theme user saw: dark system splash → LIGHT Compose
+     *  splash (the flash) → dark main UI, and an am/om/ar/ti user saw the
+     *  splash tagline flash English-first. The platform entry points call
+     *  this BEFORE the first frame with a cheap scan of the persisted
+     *  settings blob, so frame 1 of the splash already carries the user's
+     *  theme and language. Guarded: once hydrated (real settings published)
+     *  the seed can never clobber them — and a re-seed on activity recreate
+     *  is a no-op.
+     *
+     *  Snapshot-safety: called on the MAIN thread before any composition
+     *  exists (or post-hydrate, where the guard makes it inert) — the
+     *  single-writer rule holds. */
+    fun seedBootAppearance(sysDark: Boolean, themeDark: Boolean, lang: String?) {
+        if (state.hydrated) return
+        com.callmony.theme.osDark.value = sysDark
+        state.settings = state.settings.copy(
+            theme = if (themeDark) "dark" else "light",
+            language = com.callmony.i18n.normalizeLang(lang),
+        )
+    }
+
+    /** v1.6.28 — scan the persisted settings blob for the boot-relevant
+     *  fields (theme, language). Shared by the entry points that don't
+     *  already read the raw string (iOS); Android's MainActivity reads the
+     *  same SharedPreferences row for its pre-super.onCreate setTheme()
+     *  decision and passes the values explicitly. Returns null when the
+     *  settings row doesn't exist yet (fresh install → defaults are right). */
+    fun scanPersistedBootPrefs(): Pair<String?, String?> {
+        val raw = runCatching { Db.readSettingsRawForBoot() }.getOrNull() ?: return null to null
+        val theme = Regex("\"theme\"\\s*:\\s*\"(light|dark|auto)\"").find(raw)?.groupValues?.get(1)
+        val lang = Regex("\"language\"\\s*:\\s*\"(en|am|om|ar|ti)\"").find(raw)?.groupValues?.get(1)
+        return theme to lang
     }
 
     /* ---------------- undo ---------------- */

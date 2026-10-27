@@ -1,5 +1,7 @@
 package com.callmony.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -37,6 +39,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -262,53 +266,17 @@ private fun CallmonyAppContent() {
     if (!AppStore.state.hydrated) {
         // splash
         BootTrace.mark("ui.splash")
-        Box(Modifier.fillMaxSize().background(C.canvas), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                val bmp = logoBmp
-                if (bmp != null) {
-                    Image(
-                        bitmap = bmp,
-                        contentDescription = "callmony",
-                        modifier = Modifier
-                            .size(88.dp)
-                            .clip(RoundedCornerShape(24.dp)),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    // v1.6.15: brand tile + wordmark initial — NEVER the old
-                    // phone-in-talk glyph (the eager decode in Application
-                    // makes this branch effectively unreachable).
-                    Box(
-                        Modifier
-                            .size(88.dp)
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(C.brand),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "c",
-                            fontSize = 44.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = C.onBrand,
-                        )
-                    }
-                }
-                Text(
-                    buildString { append("call"); append("mony") },
-                    fontSize = F.title.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = C.ink,
-                    modifier = Modifier.padding(top = 12.dp),
-                )
-                Text(t("hdr.tagline"), fontSize = F.small.sp, color = C.sub)
-            }
-        }
+        SplashPane(logoBmp)
+        splashSeenThisProcess = true
         return
     }
 
     // lock screen while locked
     if (UiStore.locked) {
-        LockScreen()
+        Box(Modifier.fillMaxSize()) {
+            LockScreen()
+            SplashExitFade(logoBmp)
+        }
         return
     }
 
@@ -394,9 +362,97 @@ private fun CallmonyAppContent() {
         }
     }
 
+    // v1.6.28 — the one-shot splash exit fade rides ON TOP of whatever the
+    // hydrated frame rendered (later sibling = higher z), so the splash →
+    // UI swap reads as a 220 ms fade instead of an abrupt flash.
+    SplashExitFade(logoBmp)
+
     // touch anywhere refreshes the autolock timer (see pointerInput above)
     DisposableEffect(Unit) {
         onDispose { }
+    }
+}
+
+/* ---------------- splash (v1.6.28: shared pane + one-shot exit fade) ---------------- */
+
+/* v1.6.28 — the "some flash when it opens" fix, part 2. Two plain
+   process-lifetime flags (main-thread only, zero snapshot traffic):
+   - splashSeenThisProcess: the splash actually rendered this process (with
+     the pre-setContent hydrate of v1.6.28, a fast warm boot can finish the
+     loads BEFORE the first frame — then the splash never shows at all and
+     there is nothing to fade);
+   - splashFadeDone: the exit fade ran once; activity recreation (rotation)
+     must not replay it over the live UI.
+   The fade is a TERMINATING one-shot tween (220 ms) that removes itself —
+   nothing infinite (the v1.6.19 freeze lesson was an INFINITE spinner; a
+   bounded single animation is the same class as every chip/tap animation). */
+private var splashSeenThisProcess = false
+private var splashFadeDone = false
+
+/** The full-screen splash visual (canvas + logo tile + wordmark + tagline). */
+@Composable
+private fun SplashPane(logoBmp: ImageBitmap?) {
+    val C = C()
+    Box(Modifier.fillMaxSize().background(C.canvas), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            val bmp = logoBmp
+            if (bmp != null) {
+                Image(
+                    bitmap = bmp,
+                    contentDescription = "callmony",
+                    modifier = Modifier
+                        .size(88.dp)
+                        .clip(RoundedCornerShape(24.dp)),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                // v1.6.15: brand tile + wordmark initial — NEVER the old
+                // phone-in-talk glyph (the eager decode in Application
+                // makes this branch effectively unreachable).
+                Box(
+                    Modifier
+                        .size(88.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(C.brand),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "c",
+                        fontSize = 44.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = C.onBrand,
+                    )
+                }
+            }
+            Text(
+                buildString { append("call"); append("mony") },
+                fontSize = F.title.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = C.ink,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+            Text(t("hdr.tagline"), fontSize = F.small.sp, color = C.sub)
+        }
+    }
+}
+
+/** One-shot 220 ms fade-out of the splash over the frame that replaced it. */
+@Composable
+private fun SplashExitFade(logoBmp: ImageBitmap?) {
+    if (!splashSeenThisProcess || splashFadeDone) return
+    // named `fade`, NOT `alpha`: GraphicsLayerScope already has an `alpha`
+    // property — the receiver would shadow an Animatable of that name.
+    val fade = remember { Animatable(1f) }
+    var gone by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        fade.animateTo(0f, animationSpec = tween(220, easing = FastOutSlowInEasing))
+        splashFadeDone = true
+        gone = true
+    }
+    if (!gone) {
+        Box(Modifier.fillMaxSize().graphicsLayer { this.alpha = fade.value }) {
+            SplashPane(logoBmp)
+        }
     }
 }
 

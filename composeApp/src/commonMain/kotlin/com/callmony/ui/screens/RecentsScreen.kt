@@ -55,6 +55,7 @@ import com.callmony.lib.prettyPhone
 import com.callmony.lib.primaryPhone
 import com.callmony.lib.relTime
 import com.callmony.model.DeviceContact
+import com.callmony.model.DevicePhone
 import com.callmony.platform.PermState
 import com.callmony.theme.F
 import com.callmony.platform.Platform
@@ -809,6 +810,56 @@ fun CallCard(
     }
 }
 
+/* v1.6.28 — one tile of the long-press sheet's NUMBERS STRIP:
+   [label pill ………… ★]  over  [number ⧉ ✆]. Tap = call, long-press =
+   copy; star / copy / call behave exactly like the choose-a-number
+   picker rows (same icons, same favourite set/unset, same copy toast). */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun NumberTile(
+    phone: DevicePhone,
+    isFav: Boolean,
+    countryCode: String,
+    onCall: () -> Unit,
+    onCopy: () -> Unit,
+    onToggleFav: () -> Unit,
+) {
+    val C = C()
+    Column(
+        Modifier
+            .width(196.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(C.cardAlt)
+            .border(1.dp, C.line, RoundedCornerShape(14.dp))
+            .combinedClickable(onClick = onCall, onLongClick = onCopy)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Pill(phone.label, "brand")
+            Spacer(Modifier.weight(1f))
+            IconBtn(
+                if (isFav) "star" else "star-outline",
+                onToggleFav,
+                size = 26,
+                color = if (isFav) Color(0xFFb97d10) else C.faint,
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                prettyPhone(phone.number, countryCode),
+                fontSize = F.small.sp,
+                color = C.ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            IconBtn("content-copy", onCopy, size = 26)
+            IconBtn("phone-outline", onCall, size = 28, color = C.brand)
+        }
+    }
+}
+
 /* per-row action sheet — full Contacts parity (long-press or unknown tap) */
 @Composable
 fun CallRowSheet(row: CallRow, onClose: () -> Unit, onDelete: (() -> Unit)?) {
@@ -863,6 +914,61 @@ fun CallRowSheet(row: CallRow, onClose: () -> Unit, onDelete: (() -> Unit)?) {
                 Row(Modifier.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Spinner(18)
                     Text(t("cd.savingContact"), fontSize = 14.sp, color = C.sub)
+                }
+            }
+            // v1.6.28 — THE NUMBERS STRIP (user request: "in LONG-PRESS the
+            // call card it should also show the phone numbers options in one
+            // row at the top that scrolls to side with icons that are in
+            // other place and to copy even by long press"). Every number of
+            // the contact renders as ONE horizontally-scrolling row of tiles
+            // at the top of the long-press sheet — each tile carries the
+            // SAME controls as the choose-a-number picker (favourite star
+            // set/unset, copy icon, call icon), tapping the tile calls, and
+            // LONG-PRESSING the tile copies. (Horizontal scroll inside the
+            // sheet's vertical scroll is a different axis — safe.)
+            row.contact?.let { contact ->
+                val numbers = remember(contact, countryCode) {
+                    val seen = mutableSetOf<String>()
+                    contact.phones.mapNotNull { p ->
+                        val key = com.callmony.lib.normalizePhone(p.number, countryCode)
+                            .replace(Regex("\\D"), "")
+                            .ifEmpty { p.number.replace(Regex("\\D"), "") }
+                        if (key.isNotEmpty() && seen.add(key)) p else null
+                    }
+                }
+                if (numbers.isNotEmpty()) {
+                    val rid = contact.recordID
+                    // live favourite — read from state.contactX so the star
+                    // flips the moment it is toggled (same as the picker)
+                    val favNumber = AppStore.state.contactX.find { it.recordID == rid }?.primaryPhone
+                    ScrollRow(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp)) {
+                        numbers.forEach { p ->
+                            val isFav = favNumber != null &&
+                                p.number.replace(Regex("\\D"), "") == favNumber.replace(Regex("\\D"), "")
+                            Box(Modifier.padding(end = 8.dp)) {
+                                NumberTile(
+                                    phone = p,
+                                    isFav = isFav,
+                                    countryCode = countryCode,
+                                    onCall = { onClose(); Calls.placeCall(p.number) },
+                                    onCopy = {
+                                        Platform.share.copyText(p.number)
+                                        Toasts.toast(t("cd.numberCopied"))
+                                    },
+                                    onToggleFav = {
+                                        if (isFav) {
+                                            AppStore.clearPrimaryPhone(rid)
+                                            Toasts.toast(t("cd.favNumberUnset"))
+                                        } else {
+                                            AppStore.setPrimaryPhone(rid, p.number)
+                                            Toasts.toast(t("cd.favNumberSet"))
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    Box(Modifier.fillMaxWidth().height(0.5.dp).background(C.line))
                 }
             }
             val actions = buildList {

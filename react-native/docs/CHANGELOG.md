@@ -4,6 +4,62 @@ All notable changes to callmony. Dates follow the git history; the APK for each 
 
 ---
 
+## v1.6.28 — no-flash boot (appearance seeded before frame 1, hydrate overlapped with first-frame init, splash fades out); the long-press call-card sheet gains a horizontally-scrolling phone-numbers strip (2026-10-27)
+
+User reports (verbatim log: `sandbox/chat-logs/2026-10-27-v1.6.28-user-reports.md`):
+"still opens slow and there is some flash when its open"; "in LONG-PRESS the
+call card it should also show the phone numbers options in one row at the top
+that scrolla to side with icons that are in other place and to copy even by
+long press".
+
+- **The open flash, decoded.** Until hydrate published the persisted
+  settings, the store's in-memory settings were the DEFAULTS (theme "auto",
+  language "en") — and the splash renders from them. A dark-theme user saw
+  the dark system splash → a LIGHT Compose splash (the flash) → the dark
+  main UI; an am/om/ar/ti user saw the splash tagline flash English-first.
+  `AppStore.seedBootAppearance(sysDark, themeDark, lang)` is new: called by
+  MainActivity BEFORE `setContent` (and by the iOS `MainViewController` via
+  the shared `scanPersistedBootPrefs()` scan) it installs the persisted
+  theme + language + OS dark flag BEFORE the first Compose frame, so frame 1
+  of the splash already carries the user's appearance. It is guarded — a
+  no-op once hydrated — so an activity recreate can never clobber real
+  settings.
+- **The splash exit is a fade, not a cut.** The hydrated frame used to
+  hard-swap the splash for the main UI. A one-shot 220 ms `SplashExitFade`
+  now rides on top of whatever rendered (later sibling = higher z):
+  terminating animation (nothing infinite — the v1.6.19 lesson), once per
+  process, never replayed on rotation, and skipped entirely if the boot
+  loads finished before the first frame (fast warm boots skip the splash
+  altogether).
+- **The open is faster.** v1.6.27 parallelized the four boot loads but
+  hydrate still only STARTED from a LaunchedEffect — after the first frame
+  was composed and applied. Hydrate is now kicked from the platform entry
+  point BEFORE `setContent`, so the boot file reads (settings, call-log
+  cache, contacts cache, PIN) overlap first-frame Compose init.
+  `AppStore.hydrate` is idempotent (`kotlin.concurrent.Volatile` single-shot
+  latch); the CallmonyApp LaunchedEffect call remains as the guarded no-op.
+  The single-writer publish path, the splash bail-out and the boot harnesses
+  are unchanged.
+- **The long-press call-card sheet carries the numbers now.** Long-pressing
+  a call CARD opens the per-row action sheet; above the action rows a
+  horizontally-scrolling strip shows one tile per DISTINCT number of the
+  saved contact (same dedupe key as the choose-a-number picker): the label
+  pill + the FAVOURITE star (set/UNSET, live from `state.contactX`) on the
+  top row, the pretty number + the COPY icon + the CALL icon on the bottom
+  row — the same icons in the same roles as the picker. Tap calls, long-
+  press copies (same toasts). A horizontal scrollable inside the sheet's
+  vertical scrollable is different axes — safe (the v1.6.25 More-sheet crash
+  was vertical-inside-vertical).
+- Tests: `V1628Test` (seed installs theme+language+osDark, normalizes
+  unknown languages, inert once hydrated) and `CallRowSheetStripTest`
+  (Robolectric: long-press a real call card → sheet opens → both distinct
+  numbers render as tiles → reaching the assertions is the measure-crash
+  guard; also asserts boot ran through the new entry-point hydrate latch).
+  Full battery 70/70 green; both iOS targets compile; APK 1.6.28 vc39,
+  same release key as every prior release.
+
+---
+
 ## v1.6.27 — fast boot again; anchored keypad; favourite-number star in the picker; overlap-free calculator with Advanced; visible press feedback; search kind tabs list contacts; ledger quick item (2026-10-27)
 
 User reports (verbatim log: `sandbox/chat-logs/2026-10-27-v1.6.27-user-reports.md`):
