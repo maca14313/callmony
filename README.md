@@ -104,9 +104,27 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.36 (versionCode 47)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.37 (versionCode 48)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.37** — THE ANNOTATED CALCULATOR AS INK ON PAPER per the UX
+  blueprint ("look, feel, and flow naturally like handwritten math on
+  paper"): the equation is ONE inline flow — labels, numbers and operators
+  share size/weight/baseline, no pills, no label-trigger icons on
+  + − × ÷ = — every number carries a single tiny tag badge at the top-left
+  corner of its first digit whose popover is anchored AT the number (text
+  field + Before/After position toggle on the system QWERTY, styled Done —
+  the old button literally rendered the missing key "ee.calcDone"); a NEXT
+  LINE key on the keypad commits the expression into a STACKED LEDGER
+  above (per-line ✕, tap to pull back for re-editing) finished by a
+  running TOTAL bar (committed + active, so it never jumps); multi-line
+  notes persist "
+"-separated in the same free-text grammar. THE SUM
+  REBUILT: the amount field is the BASE and the saved entry amount = base
+  + every item + the calculator's ledger — the user's exact flow (type
+  100, add ball 1 pc × 200 → 100 + 200 = 300) now works for every input
+  mode (Items / Quick item / Recent / Calculator), with a live TOTAL row
+  ("100 + 200") and the derived base (100) preserved on reopen.
 - **1.6.36** — THE ANNOTATED CALCULATOR, REBUILT AS CHIPS per the updated
   spec: every number is an interactive chip with a [＋ Text] toggle before
   and after it, operators sit between the numbers (tap to cycle

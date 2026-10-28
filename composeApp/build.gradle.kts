@@ -71,8 +71,13 @@ android {
         // (Just amount / Items / Quick / Recent), a whole-app perf pass,
         // and the NO-DATA-LOSS layer: auto-backup to Downloads/Callmony on
         // every close + one-tap restore offer on a fresh install.
-        versionCode = 47
-        versionName = "1.6.36"
+        // v1.6.37 — the annotated calculator rebuilt as ink-on-paper (one
+        // inline flow, one tiny tag badge per number, an anchored label
+        // popover, a stacked multi-line ledger with a running total) and
+        // the entry amount = typed base + items + calculator (100 + 200
+        // = 300, for every input mode).
+        versionCode = 48
+        versionName = "1.6.37"
     }
 
     signingConfigs {

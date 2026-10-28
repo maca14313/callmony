@@ -692,3 +692,34 @@ fun calcSteps(tokens: List<CalcToken>): List<CalcStep> {
     }
     return steps
 }
+
+/* ---------------- Annotated calculator v3 — the stacked ledger (v1.6.37) ---------------- */
+
+/** v1.6.37 — the paper-look rework's multi-line grammar: a saved note is
+ * one CalcNote PER LINE, "\n"-separated. Each line is a completed
+ * calculation of the stacked ledger (its full token list rides along,
+ * labels included); old single-line notes parse as a one-line ledger. */
+fun parseCalcLedger(raw: String): List<CalcNote> =
+    raw.split('\n')
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .map { parseCalcNote(it) }
+
+/** v1.6.37 — the ledger back to the note: every line serialized in the
+ * same free-text grammar, joined by "\n". Blank lines (an emptied
+ * chain) drop out, so the round trip is stable. */
+fun serializeCalcLedger(lines: List<CalcNote>): String =
+    lines.map { serializeCalcNote(it) }
+        .filter { it.isNotBlank() }
+        .joinToString("\n")
+
+/** v1.6.37 — the ledger's total: every line's live total summed. Null
+ * when no line computes anything (the running-total bar's value). */
+fun calcLedgerTotal(lines: List<CalcNote>): Double? {
+    var sum = 0.0
+    var any = false
+    for (line in lines) {
+        evalCalcTokens(line.tokens)?.let { sum += it; any = true }
+    }
+    return if (any) r2(sum) else null
+}

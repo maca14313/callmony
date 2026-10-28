@@ -2,9 +2,12 @@ package com.callmony
 
 import com.callmony.lib.CalcNote
 import com.callmony.lib.CalcToken
+import com.callmony.lib.calcLedgerTotal
 import com.callmony.lib.calcSteps
 import com.callmony.lib.evalCalcTokens
+import com.callmony.lib.parseCalcLedger
 import com.callmony.lib.parseCalcNote
+import com.callmony.lib.serializeCalcLedger
 import com.callmony.lib.serializeCalcNote
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -175,5 +178,45 @@ class CalcNoteTest {
         assertEquals("price in birr", n.tokens[1].after)
         assertEquals("transport cost", n.tokens[2].after)
         assertEquals("ball 100 × 2 price in birr + 300 transport cost", serializeCalcNote(n))
+    }
+
+    /* ---------------- v1.6.37 — the stacked ledger ---------------- */
+
+    @Test
+    fun ledger_parses_multi_line_notes_into_lines() {
+        val lines = parseCalcLedger("ball 100 × 2\n50 + 25\n")
+        assertEquals(2, lines.size)
+        assertEquals("ball", lines[0].tokens[0].before)
+        assertEquals(200.0, evalCalcTokens(lines[0].tokens)!!, 0.0)
+        assertEquals(75.0, evalCalcTokens(lines[1].tokens)!!, 0.0)
+        // a legacy single-line note is a one-line ledger
+        assertEquals(1, parseCalcLedger("ball 100 × 2 price + 300 transport").size)
+        // blank input is an empty ledger
+        assertTrue(parseCalcLedger("").isEmpty())
+        assertTrue(parseCalcLedger(" \n  ").isEmpty())
+    }
+
+    @Test
+    fun ledger_round_trips_through_the_save() {
+        // what the editor serializes on Save: committed lines + the active
+        // line, "\n"-separated, each in the same free-text grammar
+        val lines = listOf(
+            parseCalcNote("ball 100 × 2"),
+            parseCalcNote("50 + 25"),
+        )
+        assertEquals("ball 100 × 2\n50 + 25", serializeCalcLedger(lines))
+        // the round trip is stable
+        assertEquals(lines, parseCalcLedger(serializeCalcLedger(lines)))
+        // a line whose chain was emptied drops out entirely
+        assertEquals("50 + 25", serializeCalcLedger(listOf(CalcNote(), parseCalcNote("50 + 25"))))
+    }
+
+    @Test
+    fun ledger_total_sums_every_line() {
+        val lines = parseCalcLedger("ball 1 × 200\n2 × 150\n25")
+        assertEquals(525.0, calcLedgerTotal(lines)!!, 0.0)
+        // nothing that computes → null (no bar)
+        assertNull(calcLedgerTotal(emptyList()))
+        assertNull(calcLedgerTotal(listOf(CalcNote())))
     }
 }

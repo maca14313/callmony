@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TEST-ONLY (debug builds): a bare ComponentActivity the Robolectric
+     compose rule can launch without driving the whole app (release
+     builds never merge this). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name="androidx.activity.ComponentActivity" android:exported="true" />
+    </application>
+</manifest>

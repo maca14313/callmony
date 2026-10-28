@@ -1,5 +1,6 @@
 package com.callmony
 
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasAnySibling
 import androidx.compose.ui.test.hasClickAction
@@ -8,10 +9,11 @@ import androidx.compose.ui.test.hasParent
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.callmony.i18n.t
 import com.callmony.lib.AppStore
@@ -174,17 +176,16 @@ class EntryEditAddTabsTest {
         }
     }
 
-    /* v1.6.35 — THE AMOUNT IS ITS OWN (user spec: "the amount also be
-       just like Items (qty × price) and Quick item by its own, not the
-       auto calculated from {n} items"):
-         1. a quick item MIRRORS its total into the amount field (25) as a
-            plain editable value — the old "auto from items" live override
-            is gone
-         2. once the user TYPES an amount (30), adding more items (Tea 10)
-            NEVER touches it again — the saved entry carries amount 30
-            with 2 items totalling 35: proof the items never override */
+    /* v1.6.37 — THE SUM (user report: "i click just amount and type 100,
+       then the items… so the result should be 100 + 200 = 300… it should
+       be like this for the others too") — the v1.6.35 "amount is its own"
+       rule is superseded: the field holds the user's BASE and every item
+       ADDS onto it for the saved entry amount:
+         1. a quick item alone still saves as its own total (25)
+         2. a typed base (30) + Coffee 25 + Tea 10 → the entry saves 65
+            (30 + 35), and the TOTAL row shows the live sum before Save */
     @Test
-    fun amountIsItsOwnOnceTyped() {
+    fun typedBasePlusItemsSumIntoTheEntryAmount() {
         ready()
 
         rule.runOnUiThread { UiStore.open(Overlay.EntryEdit(null, "u:me")) }
@@ -219,18 +220,20 @@ class EntryEditAddTabsTest {
         rule.onAllNodes(quickPlus)[0].performClick()
         rule.waitForIdle()
 
-        // JUST AMOUNT tab: the mirror put a PLAIN 25 in the field
+        // JUST AMOUNT tab: the field stays EMPTY (the base is the user's;
+        // items no longer mirror into it — they ADD onto it instead)
         rule.onAllNodes(hasText(t("ee.tabJustAmount")) and hasClickAction())[0].performClick()
         rule.waitForIdle()
-        val heroField = hasSetTextAction() and hasText("25")
+        val heroField = hasSetTextAction() and hasText("0")
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodes(heroField).fetchSemanticsNodes().isNotEmpty()
         }
-        // the user types their OWN amount — ownership transfers to them
-        rule.onAllNodes(heroField)[0].performTextReplacement("30")
+        // the user types their BASE
+        rule.onAllNodes(heroField)[0].performClick()
+        rule.onAllNodes(heroField)[0].performTextInput("30")
         rule.waitForIdle()
 
-        // QUICK tab again: book Tea 10 — the amount must STAY 30
+        // QUICK tab again: book Tea 10 — it ADDS onto the base for the total
         val quickChip2 = rule.onAllNodes(hasText(t("ee.tabQuick")) and hasClickAction())[0]
         quickChip2.performScrollTo()
         rule.waitForIdle()
@@ -251,15 +254,19 @@ class EntryEditAddTabsTest {
         rule.onAllNodes(quickPlus)[0].performClick()
         rule.waitForIdle()
 
-        // Save: amount 30 (the user's own) with 2 items totalling 35
+        // Save: base 30 + items 35 = 65 — the parts ADD (v1.6.37 sum model)
+        rule.waitUntil(timeoutMillis = 15000) {
+            rule.onAllNodesWithTag("entryTotal").fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithTag("entryTotal").assertTextContains("65", substring = true)
         rule.onAllNodes(hasText(t("act.save")) and hasClickAction())[0].performClick()
         rule.waitForIdle()
         val persisted = rule.runOnUiThread {
             AppStore.state.entries.any { e ->
-                e.items.size == 2 && e.amount == 30.0 &&
+                e.items.size == 2 && e.amount == 65.0 &&
                     e.items.sumOf { it.qty * it.price } == 35.0
             }
         }
-        check(persisted) { "typed amount was overridden by the items total — amount must be its own" }
+        check(persisted) { "typed base + items did not ADD — amount must be the sum (65)" }
     }
 }
