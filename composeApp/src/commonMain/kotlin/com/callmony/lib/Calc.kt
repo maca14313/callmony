@@ -422,3 +422,273 @@ fun parseExprNote(raw: String): ExprNoteResult {
  *  trailing ".0" ("100", not "100.0"), decimals as typed. */
 private fun fmtTerm(d: Double): String =
     if (d == d.toLong().toDouble() && abs(d) < 1e15) d.toLong().toString() else d.toString()
+
+/* ---------------- Annotated calculator v2 (v1.6.36) ---------------- */
+
+/** v1.6.36 — ONE annotated number of the interlocking chip row, exactly as
+ *  the user's updated spec draws it: a label slot BEFORE the number, the
+ *  editable number itself, a label slot AFTER it, and the operator that
+ *  follows this number (null on the chain's last number). */
+data class CalcToken(
+    val before: String = "",  // "ball"
+    val number: String,       // "100" (editable text; comma normalized to dot)
+    val after: String = "",   // "price in birr"
+    val op: String? = null,   // "+", "-", "×", "÷" — the op AFTER this number
+)
+
+/** v1.6.36 — the whole annotated calculation as structured data: the number
+ *  chain + the label slots around the RESULT chip. This is the editor's
+ *  source of truth; it serializes back to the SAME free-text grammar the
+ *  v1.6.35 parser already speaks, so old notes open as chips and new chips
+ *  stay plain readable text on the saved entry. */
+data class CalcNote(
+    val tokens: List<CalcToken> = emptyList(),
+    val resultBefore: String = "",  // label before the total ("total")
+    val resultAfter: String = "",   // label after the total ("birr")
+)
+
+/** v1.6.36 — one live intermediate result for the step-by-step card
+ *  ("100 × 2" → 200, then "200 + 300" → 500). */
+data class CalcStep(val expr: String, val value: Double)
+
+private fun latinizeDigits(s: String): String {
+    val sb = StringBuilder(s.length)
+    for (ch in s) {
+        val c = ch.code
+        sb.append(
+            when (c) {
+                in 0x0660..0x0669 -> ('0' + (c - 0x0660))
+                in 0x06F0..0x06F9 -> ('0' + (c - 0x06F0))
+                else -> ch
+            }
+        )
+    }
+    return sb.toString()
+}
+
+/** v1.6.36 — parse a free-text annotated note (v1.6.35 grammar) into the
+ *  structured chip model. Labels before/after every number stick to their
+ *  number; glued operators split between digits; everything after the
+ *  first '=' is the result zone — its words become the result labels
+ *  around the written total (never part of the math). Deterministic and
+ *  pure: the same text always yields the same chips. */
+fun parseCalcNote(raw: String): CalcNote {
+    if (raw.isBlank()) return CalcNote()
+
+    val body = raw.substringBefore('=')
+    val tail = if (raw.contains('=')) raw.substringAfter('=').trim() else ""
+
+    // split glued operators between digits ("2x2", "100+300") after
+    // normalizing Arabic-Indic / Eastern digits — same rules as parseExprNote
+    val spaced = latinizeDigits(body)
+        .replace(Regex("(?<=\\d)\\s*[xX×*]\\s*(?=\\d)"), " × ")
+        .replace(Regex("(?<=\\d)\\s*[÷/]\\s*(?=\\d)"), " ÷ ")
+        .replace(Regex("(?<=\\d)\\s*[-−]\\s*(?=\\d)"), " - ")
+        .replace(Regex("(?<=\\d)\\s*\\+\\s*(?=\\d)"), " + ")
+
+    val tokens = mutableListOf<CalcToken>()
+    var before = mutableListOf<String>()  // words waiting for their number
+    var after = mutableListOf<String>()   // words collected after a number
+    var curNum: String? = null            // the number being annotated
+    var curOp: String? = null             // op already set for it
+
+    fun flush() {
+        val n = curNum ?: return
+        tokens.add(
+            CalcToken(
+                before = before.joinToString(" "),
+                number = n,
+                after = after.joinToString(" "),
+                op = curOp,
+            )
+        )
+        before = mutableListOf()
+        after = mutableListOf()
+        curNum = null
+        curOp = null
+    }
+
+    for (tok in spaced.split(Regex("\\s+"))) {
+        if (tok.isEmpty()) continue
+        when (tok) {
+            "+", "-", "−", "×", "*", "x", "X", "÷", "/" -> {
+                val op = when (tok) {
+                    "+", "-" -> tok
+                    "−" -> "-"
+                    "×", "*", "x", "X" -> "×"
+                    else -> "÷"
+                }
+                if (curNum != null) {
+                    // an operator BETWEEN two numbers terminates the token
+                    curOp = op
+                    flush()
+                }
+                // a dangling/leading operator is ignored (old rule)
+            }
+            else -> {
+                val n = latinizeDigits(tok).replace(',', '.').toDoubleOrNull()
+                if (n != null && n.isFinite()) {
+                    if (curNum != null) {
+                        // adjacent numbers: the fold shows an explicit "+"
+                        curOp = "+"
+                        flush()
+                    }
+                    curNum = latinizeDigits(tok).replace(',', '.')
+                } else if (curNum != null) {
+                    after.add(tok)
+                } else {
+                    before.add(tok)
+                }
+            }
+        }
+    }
+    flush()
+
+    // the result zone: "= total 500 birr" → before="total", after="birr".
+    // No number in the tail → all the words become the trailing label.
+    var resBefore = ""
+    var resAfter = ""
+    if (tail.isNotEmpty()) {
+        val words = tail.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        var seenNumber = false
+        val pre = mutableListOf<String>()
+        val post = mutableListOf<String>()
+        for (w in words) {
+            val n = latinizeDigits(w).replace(',', '.').toDoubleOrNull()
+            if (!seenNumber && n != null && n.isFinite()) seenNumber = true
+            else if (!seenNumber) pre.add(w) else post.add(w)
+        }
+        resBefore = pre.joinToString(" ")
+        resAfter = post.joinToString(" ")
+    }
+
+    return CalcNote(tokens, resBefore, resAfter)
+}
+
+/** v1.6.36 — chips → the free-text grammar. Byte-stable round-trip for
+ *  anything the chip editor can produce ("ball 100 × 2 price + 300
+ *  transport = total 500 birr"); the result zone is only written when the
+ *  user annotated the total (labels exist), never by default. */
+fun serializeCalcNote(n: CalcNote): String {
+    val sb = StringBuilder()
+    n.tokens.forEachIndexed { i, tk ->
+        if (i > 0) sb.append(' ')
+        if (tk.before.isNotBlank()) sb.append(tk.before.trim()).append(' ')
+        sb.append(tk.number)
+        if (tk.after.isNotBlank()) sb.append(' ').append(tk.after.trim())
+        tk.op?.let { sb.append(' ').append(it) }
+    }
+    if (n.tokens.isNotEmpty() && (n.resultBefore.isNotBlank() || n.resultAfter.isNotBlank())) {
+        val total = evalCalcTokens(n.tokens) ?: 0.0
+        sb.append(" = ")
+        if (n.resultBefore.isNotBlank()) sb.append(n.resultBefore.trim()).append(' ')
+        sb.append(fmtTerm(total))
+        if (n.resultAfter.isNotBlank()) sb.append(' ').append(n.resultAfter.trim())
+    }
+    return sb.toString().trim()
+}
+
+/** v1.6.36 — the live total of the chip chain. Same semantics as
+ *  parseExprNote: × ÷ bind tighter than + − (folded left to right), a
+ *  dangling trailing op is ignored, ÷0 drops the operator, and a missing
+ *  op between numbers folds as an explicit "+". Null when nothing
+ *  computes. */
+fun evalCalcTokens(tokens: List<CalcToken>): Double? {
+    val nums = ArrayList<Double>()
+    val ops = ArrayList<Char>()
+    var lastValidIdx = -1
+    tokens.forEachIndexed { i, tk ->
+        val v = tk.number.replace(',', '.').toDoubleOrNull() ?: return@forEachIndexed
+        if (lastValidIdx >= 0) {
+            // the op that separated the previous valid number from this one
+            val prevOp = tokens.getOrNull(lastValidIdx)?.op
+            ops.add(prevOp?.get(0) ?: '+')
+        }
+        nums.add(v)
+        lastValidIdx = i
+    }
+    return evalChain(nums, ops)
+}
+
+private fun evalChain(nums: List<Double>, ops: List<Char>): Double? {
+    if (nums.isEmpty()) return null
+    val vs = nums.toMutableList()
+    val os = ops.toMutableList()
+    // fold × ÷ first (left to right); ÷0 drops the operator
+    var i = 0
+    while (i < os.size) {
+        val op = os[i]
+        if ((op == '×' || op == '÷') && i < vs.size - 1) {
+            val a = vs[i]
+            val b = vs[i + 1]
+            if (op == '÷' && b == 0.0) {
+                os.removeAt(i)
+                continue
+            }
+            vs[i] = r2(if (op == '×') a * b else a / b)
+            vs.removeAt(i + 1)
+            os.removeAt(i)
+        } else i++
+    }
+    // fold + − left to right (adjacent numbers fold as +)
+    var acc = vs[0]
+    for (j in os.indices) {
+        val b = vs[j + 1]
+        acc = if (os[j] == '-') r2(acc - b) else r2(acc + b)
+    }
+    return acc
+}
+
+/** v1.6.36 — the STEP-BY-STEP intermediate results the user's spec draws:
+ *  every × ÷ fold is one step ("100 × 2" → 200), then every + − fold is
+ *  one ("200 + 300" → 500) — the running display of the user's own
+ *  example. Empty for a single bare number (nothing intermediate). */
+fun calcSteps(tokens: List<CalcToken>): List<CalcStep> {
+    val nums = ArrayList<Double>()
+    val ops = ArrayList<Char>()
+    var lastValidIdx = -1
+    tokens.forEachIndexed { i, tk ->
+        val v = tk.number.replace(',', '.').toDoubleOrNull() ?: return@forEachIndexed
+        if (lastValidIdx >= 0) {
+            val prevOp = tokens.getOrNull(lastValidIdx)?.op
+            ops.add(prevOp?.get(0) ?: '+')
+        }
+        nums.add(v)
+        lastValidIdx = i
+    }
+    if (nums.size <= 1) return emptyList()
+
+    val steps = mutableListOf<CalcStep>()
+    val vs = nums.toMutableList()
+    val os = ops.toMutableList()
+    // pass 1 — the × ÷ folds
+    var i = 0
+    while (i < os.size) {
+        val op = os[i]
+        if ((op == '×' || op == '÷') && i < vs.size - 1) {
+            val a = vs[i]
+            val b = vs[i + 1]
+            if (op == '÷' && b == 0.0) {
+                steps.add(CalcStep("${fmtTerm(a)} ÷ 0", a))
+                os.removeAt(i)
+                continue
+            }
+            val r = r2(if (op == '×') a * b else a / b)
+            steps.add(CalcStep("${fmtTerm(a)} ${if (op == '×') "×" else "÷"} ${fmtTerm(b)}", r))
+            vs[i] = r
+            vs.removeAt(i + 1)
+            os.removeAt(i)
+        } else i++
+    }
+    // pass 2 — the + − folds on the running total
+    if (vs.size > 1) {
+        var acc = vs[0]
+        for (j in os.indices) {
+            val b = vs[j + 1]
+            val r = if (os[j] == '-') r2(acc - b) else r2(acc + b)
+            steps.add(CalcStep("${fmtTerm(acc)} ${if (os[j] == '-') "−" else "+"} ${fmtTerm(b)}", r))
+            acc = r
+        }
+    }
+    return steps
+}

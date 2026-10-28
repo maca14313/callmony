@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -23,12 +24,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.findRootCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -46,6 +55,38 @@ import com.callmony.ui.kit.vibrate
 /* Sheet & BottomSheet — the overlay containers used by every modal in the
    app (port of src/components/kit.tsx Sheet + BottomSheet). */
 
+/* v1.6.36 — POSITION-AWARE IME LIFT (user report on the v1.6.35 fix: "now
+   the save button and its container goes up higher, that it covers the
+   input and other components"). Every sheet renders INSIDE the app's
+   content area, which already ends one BOTTOM-NAV above the window
+   bottom — a plain imePadding() lifts by the FULL keyboard height, so the
+   footer band floated a whole nav higher than the keyboard top, squeezing
+   the form under it (and some Samsung/OneUI builds double-apply the inset,
+   floating it even higher). This modifier measures the real distance from
+   the composable's bottom edge to the WINDOW bottom (the nav, exactly),
+   consumes that much of the IME inset, and only then applies imePadding —
+   the footer comes to rest EXACTLY on the keyboard's top edge, giving the
+   form back the nav-height of dead space. Keyboard closed → IME inset is
+   0 → no padding at all, byte-identical to before. */
+fun Modifier.imeLiftPadding(): Modifier =
+    composed {
+        var belowPx by remember { mutableIntStateOf(0) }
+        val density = LocalDensity.current
+        this
+            .onGloballyPositioned { c ->
+                val root = c.findRootCoordinates()
+                val bottom =
+                    (root.size.height - (c.positionInWindow().y + c.size.height)).toInt().coerceAtLeast(0)
+                if (belowPx != bottom) belowPx = bottom
+            }
+            .consumeWindowInsets(
+                androidx.compose.foundation.layout.PaddingValues(
+                    bottom = with(density) { belowPx.toDp() },
+                )
+            )
+            .imePadding()
+    }
+
 /** Full-screen sheet — cheap fade animation (v1.6.10 perf fix). */
 @Composable
 fun Sheet(
@@ -55,8 +96,13 @@ fun Sheet(
     onLongPressSubtitle: (() -> Unit)? = null,
     /** v1.6.18 — tapping the subtitle (e.g. the phone number in the contact
      *  navbar) performs this action (place the call); long-press still copies
-     *  (onLongPressSubtitle). A small call icon rides beside the text. */
+     *  (onLongPressSubtitle). A small call icon rides beside the text.
+     *  v1.6.36 — the icon can carry its OWN action (onSubtitleIconTap):
+     *  the contact navbar's number text now opens the phone-number options
+     *  (user report) while the little icon keeps dialing — old features
+     *  intact, one tap apart. */
     onSubtitleTap: (() -> Unit)? = null,
+    onSubtitleIconTap: (() -> Unit)? = null,
     avatar: (@Composable () -> Unit)? = null,
     headerRight: (@Composable () -> Unit)? = null,
     footer: (@Composable () -> Unit)? = null,
@@ -73,15 +119,17 @@ fun Sheet(
     // nav below owns the gesture-bar inset. (Previously each sheet was a
     // full-screen surface and had to handle both insets itself.)
     // v1.6.35 — IME LIFT (user report: "when keyboard is open then if
-    // some modal opens up, the keyboard is covering it"): imePadding
-    // raises the whole sheet above the keyboard so the footer and the
-    // bottom fields are never covered, and the scrollable body brings
-    // the focused field into view on its own.
+    // some modal opens up, the keyboard is covering it"): typing inside a
+    // modal lifts it above the keyboard so the footer and the bottom
+    // fields are never covered.
+    // v1.6.36 — the lift is POSITION-AWARE (imeLiftPadding above): the
+    // footer now rests exactly on the keyboard top — never a nav-band
+    // higher (which squeezed the form under the save bar).
     Column(
         Modifier
             .fillMaxSize()
             .background(C.canvas)
-            .imePadding()
+            .imeLiftPadding()
     ) {
         // header: back chevron · avatar · title (auto-shrink) · actions
         // v1.6.25 — compact (redesign spec): 48dp header band, 2dp band
@@ -115,8 +163,10 @@ fun Sheet(
                             onTap = onSubtitleTap,
                             modifier = Modifier.weight(1f, fill = false),
                         )
-                        // v1.6.18 — the call icon: tapping the navbar number
-                        // dials it; long-press on the text copies it (as before).
+                        // v1.6.18 — the call icon: its OWN action when set
+                        // (v1.6.36 — the contact navbar: the icon dials while
+                        // the number text beside it opens the options);
+                        // long-press on the text copies it (as before).
                         if (onSubtitleTap != null) {
                             Box(
                                 Modifier
@@ -126,7 +176,7 @@ fun Sheet(
                                     .clickable(
                                         interactionSource = remember { MutableInteractionSource() },
                                         indication = null,
-                                    ) { onSubtitleTap() },
+                                    ) { (onSubtitleIconTap ?: onSubtitleTap)() },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 com.callmony.ui.kit.MdiIcon("phone", 15, C.brand)
@@ -258,7 +308,9 @@ fun BottomSheet(
                 // v1.6.35 — IME LIFT: a bottom sheet carrying a text input
                 // (custom category, quick add…) rises above the keyboard
                 // instead of being covered by it.
-                .imePadding(),
+                // v1.6.36 — POSITION-AWARE (see imeLiftPadding): it rests
+                // exactly on the keyboard top, never a nav-band higher.
+                .imeLiftPadding(),
                 // v1.6.26: no navigationBarsPadding — BottomSheets anchor on
                 // top of the always-visible app nav inside the content area;
                 // the nav owns the system gesture-bar inset.

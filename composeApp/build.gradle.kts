@@ -71,8 +71,8 @@ android {
         // (Just amount / Items / Quick / Recent), a whole-app perf pass,
         // and the NO-DATA-LOSS layer: auto-backup to Downloads/Callmony on
         // every close + one-tap restore offer on a fresh install.
-        versionCode = 46
-        versionName = "1.6.35"
+        versionCode = 47
+        versionName = "1.6.36"
     }
 
     signingConfigs {

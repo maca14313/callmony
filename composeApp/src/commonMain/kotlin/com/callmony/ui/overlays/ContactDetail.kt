@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -211,8 +212,17 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
         subtitle = phone?.let { prettyPhone(it, countryCode) } ?: contact.company ?: t("cd.noPhone"),
         onBack = pop,
         onLongPressSubtitle = { copyNumber() },
-        // v1.6.18 — tapping the navbar number DIALS it; long-press still copies.
-        onSubtitleTap = if (phone != null) ({ Calls.placeCall(phone) }) else null,
+        // v1.6.36 (user report: "when the phone number under the contact
+        // name is clicked it should show the options of the phone numbers
+        // … just like the call btn icon bellow, and don't remove it old
+        // features") — tapping the NUMBER TEXT now opens the same
+        // choose-a-number sheet the Call button below opens (with its
+        // star/copy rows — even when the contact has just one number,
+        // matching the call button). The OLD features stay: the small call
+        // icon beside the number still DIALS directly (v1.6.18), and
+        // long-pressing the number still COPIES it.
+        onSubtitleTap = if (phone != null) ({ runAction("call") }) else null,
+        onSubtitleIconTap = if (phone != null) ({ Calls.placeCall(phone) }) else null,
         avatar = { Avatar(contact, size = 34) },
         headerRight = {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -238,40 +248,27 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
         ) {
             // balance line — v1.6.25 compact: sits directly beneath the
             // header (redesign spec), tighter 8dp follow space.
-            // v1.6.27 — THE HISTORY ICON rides IN THIS ROW, BEFORE the total
-            // and the settled-up label (user report: "make the history icon
-            // before beside where the total and the settled up shows in the
-            // same row before them") — one tap jumps to the Info tab, whose
-            // first block is this contact's full call history.
-            // v1.6.31 — LEFT-ANCHORED WITH BREATHING ROOM (user report:
-            // "CONTACT DETAIL's history button should have some space between
-            // his neighbor, it should be at the start of the left side"):
-            // the row was CENTER-arranged with the chip flush against the
-            // balance pill — now the row starts at the LEFT edge like every
-            // other content row on the page, and a fixed 8dp gap separates
-            // the history chip from the pill beside it.
-            Row(
-                Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.Start),
-                verticalAlignment = Alignment.CenterVertically,
+            // v1.6.27 — THE HISTORY ICON rides IN THIS ROW (user report:
+            // "make the history icon before beside where the total and the
+            // settled up shows in the same row before them") — one tap
+            // jumps to the Info tab, whose first block is this contact's
+            // full call history.
+            // v1.6.31 — LEFT-ANCHORED WITH BREATHING ROOM.
+            // v1.6.36 (user report: "under it there is the history btn,
+            // where the amount shows and the settled up — remove the
+            // settled up and move the where the amount shows to the middle
+            // horizontaly"): the they-owe/settled-up TEXT label is GONE;
+            // the amount pill now sits truly CENTERED in the row (the
+            // history chip keeps the left edge, open-lists/badges keep the
+            // right), so the eye lands on the number itself.
+            Box(
+                Modifier.fillMaxWidth().padding(bottom = 8.dp).heightIn(min = 34.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                // v1.6.29 — the history icon is a REAL CHIP now (user
-                // report: "make the history icon more visible"): a 34dp
-                // brand-soft circle with a brand hairline and a 20dp glyph
-                // — the old bare 18dp glyph floated with no background and
-                // read as decoration, not as the button that jumps to the
-                // call-history tab.
-                Box(
-                    Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(17.dp))
-                        .background(C.brandSoft)
-                        .border(1.dp, C.brand, RoundedCornerShape(17.dp))
-                        .clickable { seg = "info" },
-                    contentAlignment = Alignment.Center,
-                ) { MdiIcon("history", 20, C.brand) }
+                // the amount — dead center, whatever sits beside it
                 Row(
                     Modifier
+                        .padding(horizontal = 46.dp)
                         .clip(RoundedCornerShape(999.dp))
                         .background(
                             when {
@@ -300,21 +297,35 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
                     )
                     Money(balance, signed = true, colorize = true, size = 15, weight = FontWeight.ExtraBold, compact = true)
                 }
-                Text(
-                    if (balance > 0.005) t("cd.theyOweYou") else if (balance < -0.005) t("cd.youOweThem") else t("cd.settledUp"),
-                    fontSize = F.small.sp,
-                    color = C.sub,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = 6.dp),
-                )
-                if (pendingLists > 0.005) {
-                    Text("(${t("lg.openLists")}: ", fontSize = 11.sp, color = C.faint)
-                    Money(pendingLists, signed = true, size = 11, weight = FontWeight.SemiBold, compact = true)
-                    Text(")", fontSize = 11.sp, color = C.faint)
+                // the history chip — left edge, as since v1.6.31
+                Box(Modifier.align(Alignment.CenterStart)) {
+                    Box(
+                        Modifier
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(17.dp))
+                            .background(C.brandSoft)
+                            .border(1.dp, C.brand, RoundedCornerShape(17.dp))
+                            .clickable { seg = "info" },
+                        contentAlignment = Alignment.Center,
+                    ) { MdiIcon("history", 20, C.brand) }
                 }
-                // v1.6.18 — blocked contacts carry a red badge on the navbar row
-                if (phone != null && Calls.isBlocked(phone)) {
-                    Pill(t("cd.blocked"), "red")
+                // open-lists note + blocked badge — right edge
+                Row(
+                    Modifier.align(Alignment.CenterEnd),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (pendingLists > 0.005) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("(${t("lg.openLists")}: ", fontSize = 11.sp, color = C.faint)
+                            Money(pendingLists, signed = true, size = 11, weight = FontWeight.SemiBold, compact = true)
+                            Text(")", fontSize = 11.sp, color = C.faint)
+                        }
+                    }
+                    // v1.6.18 — blocked contacts carry a red badge on the navbar row
+                    if (phone != null && Calls.isBlocked(phone)) {
+                        Pill(t("cd.blocked"), "red")
+                    }
                 }
             }
             // first action row — v1.6.26: side-scrolling communication strip

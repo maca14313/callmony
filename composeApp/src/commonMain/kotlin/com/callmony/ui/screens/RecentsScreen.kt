@@ -216,7 +216,14 @@ fun RecentsScreen() {
        instead of the contact detail.
        v1.6.15 (user request): consecutive BACK-TO-BACK missed calls from the
        SAME number collapse into a single card carrying how many times it
-       was missed (stock-dialer behavior) — one glance shows “(3) missed”. */
+       was missed (stock-dialer behavior) — one glance shows “(3) missed”.
+       v1.6.36 (user request): the collapse now covers EVERY consecutive
+       run from the same number — “when the same person have conversation
+       consecutively make it in one call card just like the missed call if
+       it is the same number for that person”. A run of [outgoing, incoming,
+       missed] from one number renders as ONE card headed by the NEWEST
+       call's direction with the same “(3)” count badge the missed runs
+       always had. */
     val rows: List<CallRow> = remember(systemCalls, contacts) {
         val raw = systemCalls.map { c ->
             CallRow(
@@ -233,17 +240,19 @@ fun RecentsScreen() {
                 duration = c.duration,
             )
         }
-        // collapse runs of consecutive missed calls from the same number
-        // (the log is newest-first; “back to back” = adjacent in the log)
+        // collapse runs of consecutive calls from the same number — ANY
+        // mix of directions (the log is newest-first; “back to back” =
+        // adjacent in the log). The run's card keeps the NEWEST call (the
+        // first row) and its direction; the count badge shows the run size.
         val out = mutableListOf<CallRow>()
         var i = 0
         while (i < raw.size) {
             val r = raw[i]
-            if (r.direction == "missed" && r.phone.replace(Regex("\\D"), "").length >= 3) {
+            val key = r.phone.replace(Regex("\\D"), "")
+            if (key.length >= 3) {
                 var j = i + 1
                 while (j < raw.size &&
-                    raw[j].direction == "missed" &&
-                    raw[j].phone.replace(Regex("\\D"), "") == r.phone.replace(Regex("\\D"), "")
+                    raw[j].phone.replace(Regex("\\D"), "") == key
                 ) j++
                 val run = j - i
                 out.add(if (run > 1) r.copy(key = r.key + "-x$run", count = run) else r)
@@ -401,12 +410,19 @@ fun RecentsScreen() {
             }
         }
         // favorites strip
-        Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp)) {
+        // v1.6.36 (user report: “the container needs a little bit padding
+        // in x direction and there is too much margin in x direction
+        // between the cercle favourite contacts”): the strip gets a real
+        // horizontal inset (it used to start flush at the screen edge) and
+        // the circles tighten from an 18dp visual gap (14dp spacing + the
+        // 62dp column's slack) to a clean 8dp — the strip reads as one row
+        // of close friends, not scattered bubbles.
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp).padding(top = 8.dp)) {
             ScrollRow {
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     favContacts.forEach { c ->
                         Column(
-                            Modifier.width(62.dp).clickable { UiStore.open(Overlay.Contact(c.recordID)) },
+                            Modifier.width(58.dp).clickable { UiStore.open(Overlay.Contact(c.recordID)) },
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Box(
@@ -489,12 +505,15 @@ fun RecentsScreen() {
             ) {
                 DayFilters(filter, { filter = it }, missedCount)
                 Spacer(Modifier.weight(1f))
-                Box(
-                    Modifier
-                        .size(24.dp)
-                        .clickable { UiStore.open(Overlay.ContactNew()) },
-                    contentAlignment = Alignment.Center,
-                ) { MdiIcon("account-plus", 16, C.brand) }
+                // v1.6.36 — the add-contact icon styled like its chip
+                // neighbours (see DayHeader)
+                Chip(
+                    iconOnly = true,
+                    icon = "account-plus",
+                    label = t("cd.createContact"),
+                    tint = C.brand,
+                    onPress = { UiStore.open(Overlay.ContactNew()) },
+                )
             }
         }
         // the list
@@ -961,12 +980,21 @@ private fun DayHeader(label: String, filter: String, onFilter: (String) -> Unit,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, fontSize = 13.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
-        Box(
-            Modifier
-                .size(24.dp)
-                .clickable { UiStore.open(Overlay.ContactNew()) },
-            contentAlignment = Alignment.Center,
-        ) { MdiIcon("account-plus", 16, C.brand) }
+        // v1.6.36 (user report: “make the add contact icon that is in the
+        // recents beside the date just like it friends in the right side
+        // but it should remain in the left side like it is now”) — the ＋
+        // keeps its LEFT slot beside the date, but is now a REAL icon-chip
+        // with the same soft pill background its right-side neighbours
+        // (the DayFilters chips) carry, instead of a naked floating glyph.
+        Box(Modifier.padding(start = 6.dp)) {
+            Chip(
+                iconOnly = true,
+                icon = "account-plus",
+                label = t("cd.createContact"),
+                tint = C.brand,
+                onPress = { UiStore.open(Overlay.ContactNew()) },
+            )
+        }
         Spacer(Modifier.weight(1f))
         if (showFilters) DayFilters(filter, onFilter, missedCount)
     }
@@ -1080,13 +1108,15 @@ fun CallCard(
                     )
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         MdiIcon(meta.first, 13, meta.second)
-                        // v1.6.15: "(3)" badge for back-to-back missed-call runs
+                        // v1.6.15: "(3)" badge for back-to-back runs from one
+                        // number; v1.6.36: every direction collapse carries it,
+                        // tinted by the headline call's direction colour
                         if (row.count > 1) {
                             Text(
                                 "(${row.count})",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = C.red,
+                                color = meta.second,
                             )
                         }
                         Text(

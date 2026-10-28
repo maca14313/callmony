@@ -104,6 +104,33 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
+**1.6.36 (versionCode 47)** — see `react-native/docs/CHANGELOG.md` for the
+feature history.
+
+- **1.6.36** — THE ANNOTATED CALCULATOR, REBUILT AS CHIPS per the updated
+  spec: every number is an interactive chip with a [＋ Text] toggle before
+  and after it, operators sit between the numbers (tap to cycle
+  + − × ÷), the result carries its own text toggles, a custom NUMERIC
+  KEYPAD is pinned at the bottom of the editor, tapping a text slot swaps
+  it for a standard field on the system QWERTY keyboard, and the LIVE
+  STEP-BY-STEP card shows every intermediate fold ("Step 1: 100 × 2 =
+  200 Br · Step 2: 200 + 300 = 500 Br · TOTAL: 500 Br"); the chips
+  serialize to the same free-text grammar, so saved notes reopen as chips
+  and the round trip is lossless; the single-entry amount now SUMS
+  everything (calculator + Items + Quick item + Recent reuse — the
+  user's "why is it not adding" report) until the user types their own.
+  THE KEYBOARD LIFT IS POSITION-AWARE (the v1.6.35 imePadding floated the
+  Save bar a whole nav higher than the keyboard, squeezing the form under
+  it — the footer now rests exactly on the keyboard's top edge).
+  Recents: consecutive calls from ONE number collapse into one card
+  whatever the direction mix (the missed-only rule), with the "(n)" badge;
+  the add-contact icon beside the date is a real chip like its right-side
+  neighbours; the favourites strip gets its x-padding and tight 8dp
+  circles. Contact detail: tapping the number under the name opens the
+  phone-number options (same sheet as the Call button; the little call
+  icon still dials, long-press still copies); the balance row drops the
+  "Settled up" label and centers the amount pill.
+
 **1.6.35 (versionCode 46)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
