@@ -262,3 +262,163 @@ fun dueStatus(dueAt: Long, done: Boolean = false): String {
     if (sameDay(d, nowD)) return "today"
     return "upcoming"
 }
+
+/* ---------------- Annotated expressions (v1.6.35) ---------------- */
+
+/** v1.6.35 — what parseExprNote found in a free-form annotated
+ *  calculation. `expr` is the canonical extraction ("100 × 2 + 300"),
+ *  `value` the live total. Pure + deterministic: same text, same result,
+ *  harness-testable with zero Compose. */
+data class ExprNoteResult(
+    val terms: Int,      // how many numbers participate
+    val expr: String,    // canonical extraction; "" when nothing found
+    val value: Double?,  // the live total; null when nothing computable
+) {
+    val ok: Boolean get() = value != null && terms > 0 && value.isFinite()
+}
+
+/** v1.6.35 — the EXPRESSION-NOTE parser (the "annotated calculator"):
+ *  the user writes math in plain sentences, labels before or after every
+ *  number — "ball 100 x 2 price + 300 transport = total 500" — and this
+ *  picks out just the arithmetic, live, while they type.
+ *
+ *  Rules (forgiving by design, deterministic, pure):
+ *   - everything after the first '=' is the user's own written result and
+ *     is NEVER parsed (so "= total 500" cannot double the total)
+ *   - Arabic-Indic (٠-٩) and Eastern (۰-۹) digits are normalized to Latin
+ *     first, so Arabic-keyboard users type numbers natively
+ *   - GLUED operators split only BETWEEN digits ("2x2", "100+300", "10/2",
+ *     "100−50"); lookarounds keep the digits, so chains like "5-3-1" work
+ *     and words like "taxi" or "no-cost" never match
+ *   - a standalone token of + − - × x X * ÷ / is an operator only when it
+ *     sits BETWEEN two numbers; anything else is label text, skipped
+ *   - any other token that parses as a number participates — comma counts
+ *     as the decimal separator, exactly like every amount field in the app
+ *   - two numbers with no operator between them fold as an implicit "+"
+ *     (the extracted expression SHOWS it — nothing is ever a surprise)
+ *   - precedence: × ÷ bind tighter than + −, folded left to right
+ *   - dangling operators while typing ("100 +") are simply ignored — the
+ *     total is always the best complete parse of what's there
+ *   - ÷ by 0 drops the operator instead of exploding (100 ÷ 0 → 100 + 0) */
+fun parseExprNote(raw: String): ExprNoteResult {
+    if (raw.isBlank()) return ExprNoteResult(0, "", null)
+
+    // 1 — the user's own stated total (after the first '=') is not math
+    val body = raw.substringBefore('=')
+
+    // 2 — Arabic-Indic / Eastern digits → Latin (AR keyboards)
+    val latin = StringBuilder(body.length)
+    for (ch in body) {
+        val c = ch.code
+        latin.append(
+            when (c) {
+                in 0x0660..0x0669 -> ('0' + (c - 0x0660))
+                in 0x06F0..0x06F9 -> ('0' + (c - 0x06F0))
+                else -> ch
+            }
+        )
+    }
+
+    // 3 — split glued operators, but only between digits (lookarounds
+    //     keep the digits so "5-3-1" becomes "5 - 3 - 1", not "5 - 3-1")
+    val spaced = latin.toString()
+        .replace(Regex("(?<=\\d)\\s*[xX×*]\\s*(?=\\d)"), " × ")
+        .replace(Regex("(?<=\\d)\\s*[÷/]\\s*(?=\\d)"), " ÷ ")
+        .replace(Regex("(?<=\\d)\\s*[-−]\\s*(?=\\d)"), " - ")
+        .replace(Regex("(?<=\\d)\\s*\\+\\s*(?=\\d)"), " + ")
+
+    // 4 — tokenize: numbers and standalone operators participate, every
+    //     other token is a label and is skipped
+    val seq = ArrayList<Any>(16)
+    for (tok in spaced.split(Regex("\\s+"))) {
+        if (tok.isEmpty()) continue
+        when (tok) {
+            "+" -> seq.add('+')
+            "-", "−" -> seq.add('-')
+            "×", "*", "x", "X" -> seq.add('×')
+            "÷", "/" -> seq.add('÷')
+            else -> {
+                val n = tok.replace(',', '.').toDoubleOrNull()
+                if (n != null && n.isFinite()) seq.add(n)
+            }
+        }
+    }
+
+    // 5 — an operator only counts BETWEEN two numbers (a dangling "+" —
+    //     mid-typing — or a leading one is just text)
+    val cleaned = ArrayList<Any>(seq.size)
+    for (i in seq.indices) {
+        val el = seq[i]
+        if (el is Double) { cleaned.add(el); continue }
+        val prevOk = i > 0 && seq[i - 1] is Double
+        val nextOk = i + 1 < seq.size && seq[i + 1] is Double
+        if (prevOk && nextOk) cleaned.add(el)
+    }
+    if (cleaned.isEmpty()) return ExprNoteResult(0, "", null)
+
+    // 6 — fold × ÷ first (left to right); ÷0 drops the op, never explodes
+    val folded = ArrayList<Any>(cleaned.size)
+    var i = 0
+    while (i < cleaned.size) {
+        val el = cleaned[i]
+        if (el is Char && (el == '×' || el == '÷') &&
+            folded.isNotEmpty() && folded.last() is Double &&
+            i + 1 < cleaned.size && cleaned[i + 1] is Double
+        ) {
+            val a = folded.removeAt(folded.size - 1) as Double
+            val b = cleaned[i + 1] as Double
+            if (el == '÷' && b == 0.0) {
+                folded.add(a); folded.add(b) // ÷0 → the op is dropped
+            } else {
+                folded.add(r2(if (el == '×') a * b else a / b))
+            }
+            i += 2
+        } else { folded.add(el); i += 1 }
+    }
+
+    // 7 — fold + − left to right; adjacent numbers fold as an implicit +
+    var acc: Double? = null
+    var op: Char? = null
+    for (el in folded) {
+        if (el is Double) {
+            val cur = acc
+            acc = when {
+                cur == null -> el
+                op == '-' -> r2(cur - el)
+                else -> r2(cur + el) // '+' or implicit + between numbers
+            }
+            op = null
+        } else if (el is Char && acc != null) {
+            op = el
+        }
+    }
+
+    // 8 — the display extraction keeps the user's own terms and glyphs
+    //     ("100 × 2 + 300"), synthesizing the "+" of an implicit fold;
+    //     terms are counted from the VALIDATED sequence, so "100 × 2" is
+    //     still two user terms even though the fold collapsed them
+    val terms = cleaned.count { it is Double }
+    val parts = ArrayList<String>(cleaned.size)
+    var prevNum = false
+    for (el in cleaned) {
+        when (el) {
+            is Double -> {
+                if (prevNum) parts.add("+")
+                parts.add(fmtTerm(el))
+                prevNum = true
+            }
+            else -> {
+                parts.add(if (el == '-') "−" else el.toString())
+                prevNum = false
+            }
+        }
+    }
+
+    val total = acc
+    return ExprNoteResult(terms, parts.joinToString(" "), total)
+}
+
+/** Term formatter for the extracted expression — whole numbers without a
+ *  trailing ".0" ("100", not "100.0"), decimals as typed. */
+private fun fmtTerm(d: Double): String =
+    if (d == d.toLong().toDouble() && abs(d) < 1e15) d.toLong().toString() else d.toString()

@@ -424,6 +424,11 @@ internal val AM: Map<String, String> = mapOf(
     "lg.paymentDue" to "የሚከፈል ክፍያ",
     "ee.links" to "አገናኞች",
     // v1.6.34 — የእቃ መጨመሪያ የሁነታ ትሮች
+    "ee.tabCalc" to "ካልኩሌተር",
+    "ee.calcLabel" to "የተመለከተ ስሌት",
+    "ee.calcPlaceholder" to "ኳስ 100 x 2 ዋጋ + 300 ትራንስፖርት = 500",
+    "ee.calcEmpty" to "ድምሩ እዚህ ይታያል",
+    "ee.calcHint" to "ቃላት እንደ መለያ ይቀራሉ — ቁጥሮች ወዲያውኑ ይደመራሉ። + − × ÷ በቁጥሮች መካከል ይሰራሉ",
     "ee.tabJustAmount" to "ብቻ መጠን",
     "ee.tabItems" to "እቃዎች · ብዛት × ዋጋ",
     "ee.tabQuick" to "ፈጣን እቃ",

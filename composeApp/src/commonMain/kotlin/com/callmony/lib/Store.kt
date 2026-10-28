@@ -495,6 +495,11 @@ object AppStore {
                 category = e.category,
                 method = e.method ?: existing.method,
                 note = e.note ?: existing.note,
+                // v1.6.35 — the annotated calculation round-trips: the
+                // editor is the only writer, so the new value always wins
+                // (clearing the calc text clears the stored note; the old
+                // merge kept the first-ever text forever)
+                exprNote = e.exprNote,
                 listId = e.listId ?: existing.listId,
                 groupId = e.groupId,
                 refs = if (e.refs.isNotEmpty()) e.refs else existing.refs,

@@ -130,6 +130,13 @@ data class LedgerEntry(
     val listId: String? = null,
     val groupId: String? = null,
     val refs: List<LinkRef> = emptyList(),
+    // v1.6.35 — the annotated calculator's raw text ("ball 100 x 2 price +
+    // 300 transport = 500"), round-tripped through the editor's CALCULATOR
+    // tab so the annotations stay editable after saving. Optional with a
+    // default: old rows decode without it, old code ignores it
+    // (Db.kt ignoreUnknownKeys), and the v1.6.34 Downloads backup layer
+    // mirrors it for free.
+    val exprNote: String? = null,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
     val deletedAt: Long? = null,

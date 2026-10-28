@@ -104,6 +104,24 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
+**1.6.35 (versionCode 46)** — see `react-native/docs/CHANGELOG.md` for the
+feature history.
+
+- **1.6.35** — THE ANNOTATED CALCULATOR: a Calculator / Expression-note tab
+  at the FAR LEFT of the entry editor's add-mode strip — write math as a
+  sentence with labels before or after every number ("ball 100 x 2 price +
+  300 transport = 500"), the arithmetic is extracted and totaled LIVE, and
+  the raw note round-trips on the entry (reopen = editable again); the
+  AMOUNT is its own (a new entry mirrors the items total into the plain
+  amount field until the user types their own — items never override it);
+  the kind chips + add tabs are PINNED at the top of the editor and
+  compact, so they never scroll away with the form; THE KEYBOARD NO LONGER
+  COVERS MODALS (any overlay/host-sheet opening clears focus + hides the
+  IME, sheets imePad above the keyboard, and Search keeps its auto-raise);
+  and the toast pill no longer EATS TAPS over the Save button (the empty
+  click-swallow is gone — a real "tap save, nothing happens" bug within the
+  3s toast window).
+
 **1.6.34 (versionCode 45)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 

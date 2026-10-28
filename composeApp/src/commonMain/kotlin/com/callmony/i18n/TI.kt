@@ -442,6 +442,11 @@ internal val TI: Map<String, String> = mapOf(
     "lg.noItemsYet" to "ገና ኣንቀሳባሕቲ የብሉን — ከም “3 ኳሳት × 100” መስመራት ወስኪ።",
     "ee.links" to "ትራኽታት",
     // v1.6.34 — ናይ እቃ መውሳኺ ትራብ ሁነታታት
+    "ee.tabCalc" to "መቁጠሪ",
+    "ee.calcLabel" to "ስሌት ምስ ማስታወሻ",
+    "ee.calcPlaceholder" to "ኳስ 100 x 2 ዋጋ + 300 ትራንስፖርት = 500",
+    "ee.calcEmpty" to "ድምር ኣብዚ ይርኣይ",
+    "ee.calcHint" to "ቃላት ከም ምልልይ ይጸንሑ — ቁጽርታት ብቅጽበት ይቑጠሩ። + − × ÷ ኣብ መንጎ ቁጽርታት ይሰርሑ",
     "ee.tabJustAmount" to "መጠን ጥራይ",
     "ee.tabItems" to "እቃታት · ብዛዕባ × ዋጋ",
     "ee.tabQuick" to "ብቕድሚ እቃ",

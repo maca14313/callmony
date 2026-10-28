@@ -373,6 +373,11 @@ internal val EN: Map<String, String> = mapOf(
     "ee.owner" to "Owner",
     // v1.6.34 — the ADD-ITEM mode tabs (Just amount / Items / Quick item /
     // Recent) in the entry editor
+    "ee.tabCalc" to "Calculator",
+    "ee.calcLabel" to "Annotated calculation",
+    "ee.calcPlaceholder" to "ball 100 x 2 price + 300 transport = 500",
+    "ee.calcEmpty" to "The total appears here",
+    "ee.calcHint" to "Words stay as labels — the numbers are totaled live. + − × ÷ work between numbers",
     "ee.tabJustAmount" to "Just amount",
     "ee.tabItems" to "Items · qty × price",
     "ee.tabQuick" to "Quick item",

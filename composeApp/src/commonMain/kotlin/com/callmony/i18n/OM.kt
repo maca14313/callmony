@@ -371,6 +371,11 @@ internal val OM: Map<String, String> = mapOf(
     "gv.overview" to "Ilaalcha waliigalaa",
     "ee.links" to "Hidhannoo",
     // v1.6.34 — tabs qabiyyee dabalataa
+    "ee.tabCalc" to "Herrega",
+    "ee.calcLabel" to "Herrega ibsaa",
+    "ee.calcPlaceholder" to "Kubbaa 100 x 2 gatii + 300 geejjiba = 500",
+    "ee.calcEmpty" to "Waldagarri asitti mul'ata",
+    "ee.calcHint" to "Jechootoonni akkuma mallatteetti hafa — lakkoofsi saffisaan walitti qabama. + − × ÷ gidduu lakkoofsota hojjeta",
     "ee.tabJustAmount" to "Gatii qofa",
     "ee.tabItems" to "Meeresa · baay'ee × gatii",
     "ee.tabQuick" to "Meeresa affisaa",

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -71,7 +72,17 @@ fun Sheet(
     // the system bars themselves — the shell already did it above, and the
     // nav below owns the gesture-bar inset. (Previously each sheet was a
     // full-screen surface and had to handle both insets itself.)
-    Column(Modifier.fillMaxSize().background(C.canvas)) {
+    // v1.6.35 — IME LIFT (user report: "when keyboard is open then if
+    // some modal opens up, the keyboard is covering it"): imePadding
+    // raises the whole sheet above the keyboard so the footer and the
+    // bottom fields are never covered, and the scrollable body brings
+    // the focused field into view on its own.
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(C.canvas)
+            .imePadding()
+    ) {
         // header: back chevron · avatar · title (auto-shrink) · actions
         // v1.6.25 — compact (redesign spec): 48dp header band, 2dp band
         // padding — every control preserved, just less air.
@@ -243,7 +254,11 @@ fun BottomSheet(
                 // sheet floats over the scrim without a heavy shadow.
                 .shadow(6.dp, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .background(C.card),
+                .background(C.card)
+                // v1.6.35 — IME LIFT: a bottom sheet carrying a text input
+                // (custom category, quick add…) rises above the keyboard
+                // instead of being covered by it.
+                .imePadding(),
                 // v1.6.26: no navigationBarsPadding — BottomSheets anchor on
                 // top of the always-visible app nav inside the content area;
                 // the nav owns the system gesture-bar inset.

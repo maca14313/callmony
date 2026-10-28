@@ -31,6 +31,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -827,6 +829,25 @@ private fun MoreTile(icon: String, label: String, modifier: Modifier = Modifier,
 
 @Composable
 private fun OverlayHost() {
+    // v1.6.35 — a stale keyboard no longer covers a freshly opened modal
+    // (user report: "when keyboard is open then if some modal opens up,
+    // the keyboard is covering it"). Typing in a field leaves the IME
+    // up; the moment ANY overlay opens on top of it, focus clears and
+    // the keyboard hides — the modal starts clean, and the IME comes
+    // back for THAT modal when the user taps one of its fields. Sheets
+    // additionally imePad (Sheet.kt) so the keyboard can never cover
+    // them from below. SearchOverlay is EXEMPT: it deliberately raises
+    // the keyboard on its own (v1.6.15 user request) — never fight it.
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focus = LocalFocusManager.current
+    LaunchedEffect(UiStore.overlayStack.size) {
+        if (UiStore.overlayStack.isNotEmpty() &&
+            UiStore.overlayStack.lastOrNull() !is Overlay.Search
+        ) {
+            focus.clearFocus()
+            keyboard?.hide()
+        }
+    }
     UiStore.overlayStack.lastOrNull()?.let { overlay ->
         Box(Modifier.fillMaxSize().background(com.callmony.ui.kit.C().canvas)) {
             when (overlay) {

@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -306,10 +307,14 @@ fun Toaster() {
                 .widthIn(max = 380.dp)
                 .clip(RoundedCornerShape(14.dp))
                 .background(if (C.mode == "dark") Color(0xFF243230) else Color(0xFF1f2f2c))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) {}
+                // v1.6.35 — THE TOAST NO LONGER EATS TAPS. The pill used to
+                // carry an EMPTY clickable — it swallowed every touch (the
+                // Toaster floats bottom-center, exactly over sheet footers)
+                // and did nothing with it, so tapping Save/Use-value within
+                // the 3s toast window silently did NOTHING. The pill is now
+                // click-through (no pointer modifier = hit-test skips it);
+                // only an action's own label (Undo) stays tappable, and the
+                // auto-dismiss (3s/5s) is unchanged.
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -432,6 +437,19 @@ object HostSheets {
 
 @Composable
 fun HostSheetsHost() {
+    // v1.6.35 — the same stale-keyboard rule as OverlayHost: a host sheet
+    // (attach picker, group menus, record payment…) opening on top of a
+    // field with the IME up clears focus and hides the keyboard, so the
+    // sheet is never covered by it (user report). No exemptions — none
+    // of these autofocus a field.
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    LaunchedEffect(HostSheets.stack.size) {
+        if (HostSheets.stack.isNotEmpty()) {
+            focus.clearFocus()
+            keyboard?.hide()
+        }
+    }
     val snapshot = HostSheets.stack.toList()
     for (s in snapshot) {
         androidx.compose.runtime.key(s.id) {

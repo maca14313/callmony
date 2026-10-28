@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -41,6 +42,7 @@ import com.callmony.lib.UiStore
 import com.callmony.lib.dateOf
 import com.callmony.lib.money
 import com.callmony.lib.now
+import com.callmony.lib.parseExprNote
 import com.callmony.lib.ownerNameOf
 import com.callmony.lib.todayStr
 import com.callmony.lib.uid
@@ -108,15 +110,41 @@ fun EntryEditOverlay(
     // ITEMS tab; everything else opens on Just amount (the classic hero
     // field). The v1.6.18 showItemForm collapse is superseded: the tabs
     // ARE the add flow, and only the active tab renders an input form.
-    var amountMode by remember { mutableStateOf(if (items.isNotEmpty()) "items" else "amount") }
+    // v1.6.35 — an entry saved from the annotated calculator reopens on
+    // the CALCULATOR tab so its expression note is right there to edit.
+    var amountMode by remember {
+        mutableStateOf(
+            if (existing?.exprNote != null) "calc"
+            else if (items.isNotEmpty()) "items"
+            else "amount"
+        )
+    }
     var quickLabel by remember { mutableStateOf("") }
     var quickPrice by remember { mutableStateOf("") }
+    // v1.6.35 — the EXPRESSION-NOTE tab (the annotated calculator): the
+    // raw text round-trips on entry.exprNote — prefilled when the entry
+    // already carries one — and every keystroke re-applies the parsed
+    // total to the amount state, so what the live preview shows is
+    // exactly what Save writes.
+    var calcText by remember { mutableStateOf(existing?.exprNote ?: "") }
+    // v1.6.35 — amount ownership: false until the USER types an amount
+    // (the hero field or the calc tab); items then stop mirroring into
+    // the amount. Existing entries start true — their saved amount is
+    // final from the first frame.
+    var amountTouched by remember { mutableStateOf(existing != null) }
     var catManager by remember { mutableStateOf(false) }
     var showOwnerPicker by remember { mutableStateOf(false) }
 
     val itemsSum = items.sumOf { it.qty * it.price }
     val amountNum = amount.replace(",", ".").toDoubleOrNull()
-    val effAmount = if (items.isNotEmpty()) itemsSum else amountNum ?: 0.0
+    // v1.6.35 — THE AMOUNT IS ITS OWN (user spec: "the amount also be
+    // just like Items (qty × price) and Quick item by its own, not the
+    // auto calculated from {n} items"). The hero amount IS the entry
+    // amount; items are a breakdown that never overrides it. On a NEW
+    // entry the amount field still MIRRORS the items total as a plain
+    // editable convenience until the user types their own value — after
+    // that it is 100% the user's.
+    val effAmount = amountNum ?: 0.0
 
     fun save() {
         if (effAmount <= 0) {
@@ -136,6 +164,9 @@ fun EntryEditOverlay(
             category = category.ifEmpty { null },
             method = method,
             note = note.ifEmpty { null },
+            // v1.6.35 — the annotated calculation rides along, editable
+            // on reopen (the CALCULATOR tab prefills from it)
+            exprNote = calcText.trim().ifEmpty { null },
             groupId = groupSel,
             refs = refs,
             createdAt = existing?.createdAt ?: now(),
@@ -163,6 +194,16 @@ fun EntryEditOverlay(
         pop()
     }
 
+    /* v1.6.35 — the amount field mirrors the items total ONLY while the
+       user hasn't typed their own amount (new entries). One plain value
+       sitting in the field — editable, overridable, never a live
+       override from the {n} items. Declared before its callers (Kotlin
+       local functions resolve top-down). */
+    fun mirrorAmount(newItems: List<EntryItem>) {
+        if (amountTouched) return
+        amount = if (newItems.isEmpty()) "" else trimNum(newItems.sumOf { it.qty * it.price })
+    }
+
     /* v1.6.34 — the QUICK-ITEM tab's ＋ (the v1.6.27/29 ledger row, now
        inside the add-item flow): label + price → a single qty-1 line item
        on THIS entry. The user can keep adding or hit Save — the entry
@@ -178,7 +219,9 @@ fun EntryEditOverlay(
             Toasts.toast(t("lg.amountGreaterThanZero"), "error")
             return
         }
-        items = items + EntryItem(id = uid(), name = label, qty = 1.0, price = price)
+        val n = items + EntryItem(id = uid(), name = label, qty = 1.0, price = price)
+        items = n
+        mirrorAmount(n)
         quickLabel = ""
         quickPrice = ""
     }
@@ -187,6 +230,11 @@ fun EntryEditOverlay(
         title = if (existing == null) t("lg.newEntry") else t("lg.editEntry"),
         subtitle = ownerNameOf(ownerId),
         onBack = pop,
+        // v1.6.35 — PINNED TABS (user spec): the Sheet's own scroll is OFF;
+        // the kind chips + the add-mode tabs render once, pinned at the
+        // top, and ONLY the form below carries a verticalScroll (never a
+        // scrollable inside a scrollable — the v1.6.25 More-sheet lesson).
+        scrollable = false,
         footer = {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (existing != null) {
@@ -204,14 +252,19 @@ fun EntryEditOverlay(
             }
         },
     ) {
-        Column {
-            // kind chips
-            Row(Modifier.padding(bottom = 12.dp)) {
+        Column(Modifier.fillMaxSize()) {
+            // v1.6.35 — THE PINNED BAND: kind chips + add-mode tabs. These
+            // rows NEVER scroll with the form below them (user spec), and
+            // both are COMPACT — especially the kind row.
+            Column(Modifier.padding(horizontal = 18.dp)) {
+            // kind chips — compact (v1.6.35: "make them compact, especially
+            // the above one")
+            Row(Modifier.padding(top = 6.dp, bottom = 6.dp)) {
                 ScrollRow {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         KINDS.forEach { (ty, kd, icon) ->
                             val label = t("lg.kind${kd.replaceFirstChar { it.uppercase() }}")
-                            Chip(label = label, icon = icon, active = kindSel == kd, onPress = { kindSel = kd; type = ty })
+                            Chip(label = label, icon = icon, active = kindSel == kd, compact = true, onPress = { kindSel = kd; type = ty })
                         }
                     }
                 }
@@ -230,6 +283,10 @@ fun EntryEditOverlay(
             Row(Modifier.padding(bottom = 8.dp)) {
                 ScrollRow {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // v1.6.35 — CALCULATOR / EXPRESSION NOTE tab chip, FIRST in the
+            // strip (user spec: "add a new tab chip at the far left, before
+            // Just amount") — the annotated calculator.
+                        Chip(compact = true, icon = "calculator-variant", label = t("ee.tabCalc"), active = amountMode == "calc", onPress = { amountMode = "calc" })
                         Chip(compact = true, icon = "cash-check", label = t("ee.tabJustAmount"), active = amountMode == "amount", onPress = { amountMode = "amount" })
                         Chip(compact = true, icon = "format-list-bulleted", label = t("ee.tabItems"), active = amountMode == "items", onPress = { amountMode = "items" })
                         Chip(compact = true, icon = "clock-fast", label = t("ee.tabQuick"), active = amountMode == "quick", onPress = { amountMode = "quick" })
@@ -237,7 +294,113 @@ fun EntryEditOverlay(
                     }
                 }
             }
+            } // end of the pinned band — the rows above stay fixed while
+              // everything below scrolls (user spec)
+            // v1.6.35 — THE FORM: the sheet's only scrollable. Same 18dp
+            // gutters as before, so nothing visibly moves.
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 18.dp)
+                    .padding(top = 2.dp, bottom = 24.dp),
+            ) {
             when (amountMode) {
+                // CALCULATOR / EXPRESSION NOTE (v1.6.35, the annotated
+                // calculator) — free-form smart text area: the user writes
+                // the math as a sentence with labels before or after every
+                // number ("ball 100 x 2 price + 300 transport = 500"), the
+                // parser picks out the arithmetic live, and the result card
+                // shows exactly what it found ("100 × 2 + 300" = 500 Br).
+                // A REAL editable field, so native copy/paste/cut work —
+                // and every keystroke re-applies the parsed total to the
+                // amount state, so what the preview shows is what saves.
+                "calc" -> {
+                    val parsed = remember(calcText) { parseExprNote(calcText) }
+                    Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                // v1.6.29 input press feedback + v1.6.31 active ring
+                                .pressVeil(corner = 18.dp)
+                                .focusRing(corner = 18.dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(C.brand.copy(alpha = 0.08f))
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                        ) {
+                            Text(t("ee.calcLabel"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
+                            androidx.compose.foundation.text.BasicTextField(
+                                value = calcText,
+                                onValueChange = { raw ->
+                                    calcText = raw.take(400)
+                                    val p = parseExprNote(calcText)
+                                    // the calc tab OWNS the amount while it is
+                                    // being edited: what the preview shows is
+                                    // exactly what Save writes
+                                    amount = if (p.ok) trimNum(p.value ?: 0.0) else ""
+                                    // v1.6.35 — the calc total is a typed
+                                    // value: items never overwrite it
+                                    amountTouched = true
+                                },
+                                textStyle = androidx.compose.ui.text.TextStyle(
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = C.ink,
+                                ),
+                                cursorBrush = androidx.compose.ui.graphics.SolidColor(C.brand),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 6.dp)
+                                    .heightIn(min = 76.dp),
+                                decorationBox = { inner ->
+                                    if (calcText.isEmpty()) {
+                                        androidx.compose.foundation.layout.Row {
+                                            Text(t("ee.calcPlaceholder"), fontSize = 15.sp, color = C.faint)
+                                        }
+                                        androidx.compose.foundation.layout.Box {}
+                                    } else inner()
+                                },
+                            )
+                        }
+                        // the live extraction — the math it found + the running
+                        // total, so a wrong guess is visible the moment it happens
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(C.card)
+                                .border(1.dp, C.line, RoundedCornerShape(14.dp))
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    if (parsed.ok) parsed.expr else t("ee.calcEmpty"),
+                                    fontSize = F.small.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (parsed.ok) C.sub else C.faint,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    t("ee.calcHint"),
+                                    fontSize = F.tiny.sp,
+                                    color = C.faint,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Text(
+                                if (parsed.ok) money(parsed.value ?: 0.0) else "—",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = C.brand,
+                            )
+                        }
+                    }
+                }
                 // JUST AMOUNT — the hero amount exactly as it always was
                 // (v1.6.13 real decimal-pad fix; v1.6.29 press veil; v1.6.31
                 // active ring; comma tolerated like the RN hero field).
@@ -269,6 +432,9 @@ fun EntryEditOverlay(
                                 }
                                 .take(14)
                             amount = cleaned
+                            // v1.6.35 — a typed amount is THE amount; items
+                            // stop mirroring into the field from here on
+                            amountTouched = true
                         },
                         textStyle = androidx.compose.ui.text.TextStyle(
                             fontSize = 30.sp,
@@ -292,9 +458,7 @@ fun EntryEditOverlay(
                             } else inner()
                         },
                     )
-                    if (items.isNotEmpty()) {
-                        Text(t("lg.autoFromItems"), fontSize = F.tiny.sp, color = C.brand)
-                    } else if (amountNum != null) {
+                    if (amountNum != null) {
                         Text(money(amountNum), fontSize = F.tiny.sp, color = C.faint)
                     }
                 }
@@ -305,8 +469,8 @@ fun EntryEditOverlay(
                 // ITEMS — the full line-item editor (name · qty × price);
                 // tapping an existing row below switches here for editing
                 "items" -> ItemEditor(
-                    onAdd = { item -> items = items + item },
-                    onUpdate = { item -> items = items.map { if (it.id == item.id) item else it } },
+                    onAdd = { item -> val n = items + item; items = n; mirrorAmount(n) },
+                    onUpdate = { item -> val n = items.map { if (it.id == item.id) item else it }; items = n; mirrorAmount(n) },
                     editing = editingItem,
                     onEditDone = { editingItem = null },
                 )
@@ -368,7 +532,9 @@ fun EntryEditOverlay(
                                             compact = true,
                                             label = if (price > 0) "$name · ${trimNum(price)}" else name,
                                             onPress = {
-                                                items = items + EntryItem(id = uid(), name = name, qty = 1.0, price = price)
+                                                val n = items + EntryItem(id = uid(), name = name, qty = 1.0, price = price)
+                                                items = n
+                                                mirrorAmount(n)
                                             },
                                         )
                                     }
@@ -398,7 +564,7 @@ fun EntryEditOverlay(
                         "${it.name} · ${it.qty}${it.unit?.let { u -> " $u" } ?: ""} × ${it.price} = ${it.qty * it.price}",
                         fontSize = F.small.sp, color = C.ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
-                    IconBtn("close", { items = items.filter { x -> x.id != it.id } }, size = 28, danger = true)
+                    IconBtn("close", { val n = items.filter { x -> x.id != it.id }; items = n; mirrorAmount(n) }, size = 28, danger = true)
                 }
             }
             // v1.6.34 — the old collapsed “＋ Add items” row is GONE: the
@@ -563,6 +729,7 @@ fun EntryEditOverlay(
                     }
                 }
             }
+            } // end of the scrolling form (v1.6.35 pinned-tabs split)
         }
     }
 

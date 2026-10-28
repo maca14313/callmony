@@ -371,6 +371,11 @@ internal val AR: Map<String, String> = mapOf(
     "gv.overview" to "نظرة عامة",
     "ee.links" to "روابط",
     // v1.6.34 — تبويبات طرق إضافة البنود
+    "ee.tabCalc" to "الآلة الحاسبة",
+    "ee.calcLabel" to "حساب مع الملاحظات",
+    "ee.calcPlaceholder" to "كرة 100 x 2 سعر + 300 نقل = 500",
+    "ee.calcEmpty" to "يظهر المجموع هنا",
+    "ee.calcHint" to "تبقى الكلمات كتسميات — يتم جمع الأرقام فورًا. تعمل + − × ÷ بين الأرقام",
     "ee.tabJustAmount" to "مبلغ فقط",
     "ee.tabItems" to "بنود · كمية × سعر",
     "ee.tabQuick" to "بند سريع",
