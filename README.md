@@ -104,8 +104,25 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.38 (versionCode 49)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.39 (versionCode 50)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
+
+- **1.6.39** — THE CANVAS CALCULATOR GOES FULL SCREEN over the whole
+  editor, and the active line is ONE unified native-editable field in
+  both modes — the "i type ball then click the number btn, the ball
+  text disappeared" bug died with the split model (typed text carries
+  over untouched; the keypad appends with an auto-space after a word,
+  so "ball" + 2 0 0 → "ball 200"). The icons on the numbers are GONE
+  (tag badges, clickable chips, the label popover — documented in
+  `removed/`); labels are typed. The SMALL Aa / 123 / Next line / Save
+  buttons live ON the canvas, on the line under the active one. The
+  keypad is smaller and compact (178–224dp) and the NATIVE BACK BUTTON
+  closes it — then collapses the canvas, then closes the editor.
+  Long-pressing a locked line UNLOCKS it for editing; every line has a
+  copy icon locked or unlocked; each line's own total long-presses into
+  the same menu as the last total (make a payment of it / copy it).
+  The main call keypad's container is compact with BIGGER keys
+  (56–74dp tiles, 27sp digits). Tests 157/157.
 
 - **1.6.38** — CREATE/EDIT CONTACTS FIXED (the pair-order bug: every
   created contact literally carried the phone number "mobile" and the

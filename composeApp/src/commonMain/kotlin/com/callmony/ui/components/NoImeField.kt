@@ -22,7 +22,9 @@ import androidx.compose.ui.unit.sp
    do in a normal input — press long on some part and native options show
    up like copy, paste, cut"), so the signature grows two defaulted params:
    alignEnd (the calculator display right-aligns) and maxLines (long
-   expressions wrap to 3). The keypad call-site is unchanged. */
+   expressions wrap to 3). The keypad call-site is unchanged.
+   v1.6.39: alignStart serves the canvas calculator's active line — a
+   left-aligned, wrapping free-text sentence. */
 
 @Composable
 expect fun NoImeNumberField(
@@ -33,5 +35,6 @@ expect fun NoImeNumberField(
     cursorColor: Color,
     modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
     alignEnd: Boolean = false,
+    alignStart: Boolean = false,
     maxLines: Int = 1,
 )

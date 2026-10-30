@@ -110,6 +110,14 @@ class EntryEditAddTabsTest {
             rule.onAllNodes(hasText("200 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
 
+        // v1.6.39 — the canvas is FULL SCREEN over the form now: collapse
+        // it to reach the input-mode strip
+        rule.onNodeWithTag("calcCollapse").performClick()
+        rule.waitForIdle()
+        rule.waitUntil(timeoutMillis = 15000) {
+            rule.onAllNodesWithTag("calcCollapsed").fetchSemanticsNodes().isNotEmpty()
+        }
+
         // RECENT: switch to the tab, then one tap books Tea · 35 again
         val recentTab = rule.onAllNodes(hasText(t("ee.tabRecent")) and hasClickAction())
         rule.waitUntil(timeoutMillis = 15000) { recentTab.fetchSemanticsNodes().isNotEmpty() }
@@ -163,6 +171,17 @@ class EntryEditAddTabsTest {
         rule.waitForIdle()
         rule.runOnUiThread { UiStore.open(Overlay.EntryEdit(id, "u:me")) }
         rule.waitForIdle()
+
+        // v1.6.39 — the FULL-SCREEN canvas opens over the whole form:
+        // collapse it to reach the item rows
+        rule.waitUntil(timeoutMillis = 15000) {
+            rule.onAllNodesWithTag("calcCollapse").fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithTag("calcCollapse").performClick()
+        rule.waitForIdle()
+        rule.waitUntil(timeoutMillis = 15000) {
+            rule.onAllNodesWithTag("calcCollapsed").fetchSemanticsNodes().isNotEmpty()
+        }
 
         // tap the Coffee item row → the inline editor's Save item button
         // appears (its name field prefilled)

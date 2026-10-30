@@ -76,8 +76,15 @@ android {
         // popover, a stacked multi-line ledger with a running total) and
         // the entry amount = typed base + items + calculator (100 + 200
         // = 300, for every input mode).
-        versionCode = 49
-        versionName = "1.6.38"
+        // v1.6.39 — the canvas calculator goes FULL SCREEN over the editor
+        // (one unified native-editable active line in both modes — typed
+        // text never disappears on a mode switch; compact keypad that the
+        // native back button closes; small Aa/123/Next-line/Save buttons
+        // on the canvas; long-press unlocks a locked line; per-line copy
+        // icons; per-line totals share the last total's long-press menu)
+        // and the main call keypad's container is compact with BIGGER keys.
+        versionCode = 50
+        versionName = "1.6.39"
     }
 
     signingConfigs {

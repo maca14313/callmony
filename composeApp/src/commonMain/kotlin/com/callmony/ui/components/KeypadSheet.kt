@@ -290,13 +290,13 @@ fun KeypadSheet() {
             // v1.6.26: no navigationBarsPadding — the keypad sheet anchors on
             // top of the always-visible app nav inside the content area.
     ) {
-        // grabber
-        Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+        // grabber — v1.6.39: slimmer (the compact-container spec)
+        Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
             Box(Modifier.width(40.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(C.line))
         }
-        // header: speed-dial grid · Keypad · ✕
+        // header: speed-dial grid · Keypad · ✕ — v1.6.39: 36dp (compact)
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp).height(44.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(36.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -405,11 +405,12 @@ fun KeypadSheet() {
         // showSoftInputOnFocus=false). Long-press gives the full native
         // Copy · Cut · Paste · Select-all menu with selection handles;
         // the 12-key grid stays the only way to type digits.
+        // v1.6.39: a slimmer band (52–68dp) — the compact-container spec.
         Row(
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp)
-                .heightIn(min = 62.dp, max = 84.dp),
+                .heightIn(min = 52.dp, max = 68.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             NoImeNumberField(
@@ -440,21 +441,29 @@ fun KeypadSheet() {
             }
         }
         if (number.isNotEmpty() && exactMatch == null) Spacer(Modifier.height(2.dp))
-        // 3×4 key grid — flat tiles, letters under digits
+        // 3×4 key grid — flat tiles, letters under digits.
+        // v1.6.39 — COMPACT CONTAINER, BIGGER KEYS (the user's spec: "make
+        // the mean call keypad contener compact but make the keypads keys
+        // bigger"): the grid trims its side air (22→14dp) and gaps (9→7dp)
+        // so every tile grows WIDER, and the tiles grow TALLER too
+        // (48–62 → 56–74dp) with bigger digits (24 → 27sp) — while the
+        // panel's chrome around it (grabber, header, number display,
+        // action row) all slimmed down, so the whole container stays
+        // compact while the keys themselves are visibly larger.
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 22.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             for (row in listOf(0, 3, 6, 9)) {
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     for (k in KEYS.subList(row, row + 3)) {
                         Column(
                             Modifier
                                 .weight(1f)
-                                .heightIn(min = 48.dp, max = 62.dp)
+                                .heightIn(min = 56.dp, max = 74.dp)
                                 .clip(RoundedCornerShape(20.dp))
                                 // v1.6.27 — pressed-state feedback (the keys
                                 // bypass LocalIndication, see pressedKey above)
@@ -473,11 +482,11 @@ fun KeypadSheet() {
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
                         ) {
-                            Text(k.d, fontSize = 24.sp, fontWeight = FontWeight.Medium, color = C.ink)
+                            Text(k.d, fontSize = 27.sp, fontWeight = FontWeight.Medium, color = C.ink)
                             if (k.letters != null) {
                                 Text(
                                     k.letters,
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = C.faint,
                                     letterSpacing = 2.sp,
@@ -488,24 +497,24 @@ fun KeypadSheet() {
                 }
             }
         }
-        // action row: video · call · add-contact
+        // action row: video · call · add-contact — v1.6.39: slimmer (compact)
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Box(
                 Modifier
-                    .size(44.dp)
+                    .size(40.dp)
                     .clip(CircleShape)
                     .background(C.card)
                     .clickable { Toasts.toast(t("kp.videoDemo"), "info") },
                 contentAlignment = Alignment.Center,
             ) { MdiIcon("video-outline", 19, C.sub) }
-            // call button
+            // call button — the one control that GREW with the keys
             Box(
                 Modifier
-                    .size(58.dp)
+                    .size(60.dp)
                     .clip(CircleShape)
                     .background(if (number.isNotEmpty()) C.brand else C.faint)
                     .clickable(enabled = number.isNotEmpty()) { call() },
@@ -513,7 +522,7 @@ fun KeypadSheet() {
             ) { MdiIcon("phone", 26, Color.White) }
             Box(
                 Modifier
-                    .size(44.dp)
+                    .size(40.dp)
                     .clip(CircleShape)
                     .background(C.card)
                     .clickable(enabled = number.isNotEmpty()) { addContact() },

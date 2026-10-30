@@ -12,7 +12,8 @@ import androidx.compose.ui.unit.sp
 
 /** iOS actual: an editable field (UIKit's keyboard is suppressed by the
  *  SwiftUI shell when embedded; the 12-key grid remains the dialer input).
- *  v1.6.34: alignEnd + maxLines serve the calculator display. */
+ *  v1.6.34: alignEnd + maxLines serve the calculator display. v1.6.39:
+ *  alignStart serves the canvas calculator's active line. */
 @Composable
 actual fun NoImeNumberField(
     value: String,
@@ -22,6 +23,7 @@ actual fun NoImeNumberField(
     cursorColor: Color,
     modifier: Modifier,
     alignEnd: Boolean,
+    alignStart: Boolean,
     maxLines: Int,
 ) {
     BasicTextField(
@@ -34,7 +36,11 @@ actual fun NoImeNumberField(
             fontWeight = FontWeight.Medium,
             letterSpacing = 1.2.sp,
             color = textColor,
-            textAlign = if (alignEnd) TextAlign.End else TextAlign.Center,
+            textAlign = when {
+                alignEnd -> TextAlign.End
+                alignStart -> TextAlign.Start
+                else -> TextAlign.Center
+            },
         ),
         cursorBrush = SolidColor(cursorColor),
         modifier = modifier,

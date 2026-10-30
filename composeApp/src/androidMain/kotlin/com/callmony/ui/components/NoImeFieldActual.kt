@@ -20,7 +20,8 @@ import androidx.compose.ui.viewinterop.AndroidView
  *  never opens (setShowSoftInputOnFocus(false), exactly the RN edition's
  *  TextInput behavior). Programmatic setText is guarded so state round-trips
  *  never re-fire the watcher or fight the cursor. v1.6.34: alignEnd +
- *  maxLines serve the calculator display (right-aligned, wraps to 3). */
+ *  maxLines serve the calculator display (right-aligned, wraps to 3).
+ *  v1.6.39: alignStart serves the canvas calculator's active line. */
 @Composable
 actual fun NoImeNumberField(
     value: String,
@@ -30,6 +31,7 @@ actual fun NoImeNumberField(
     cursorColor: Color,
     modifier: Modifier,
     alignEnd: Boolean,
+    alignStart: Boolean,
     maxLines: Int,
 ) {
     val density = LocalDensity.current
@@ -50,8 +52,11 @@ actual fun NoImeNumberField(
                 isSingleLine = maxLines <= 1
                 setMaxLines(maxLines)
                 imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_ACTION_NONE
-                gravity = if (alignEnd) Gravity.END or Gravity.BOTTOM
-                else Gravity.CENTER_VERTICAL or Gravity.CENTER_HORIZONTAL
+                gravity = when {
+                    alignEnd -> Gravity.END or Gravity.BOTTOM
+                    alignStart -> Gravity.START or Gravity.TOP
+                    else -> Gravity.CENTER_VERTICAL or Gravity.CENTER_HORIZONTAL
+                }
                 background = null
                 setPadding(0, 0, 0, 0)
                 setTextColor(textColorArgb)

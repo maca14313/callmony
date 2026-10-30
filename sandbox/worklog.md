@@ -611,3 +611,25 @@ Stage Summary:
 
 Stage Summary:
 - v1.6.38 = contacts that actually save (pair order + true-replace edit + company), the canvas calculator exactly per the rework spec (text default, ⌫ operator fix, % ± Σ, result labels, locked next lines, auto-save, make-a-payment totals, compact popover, bigger digits), and the three input tabs removed and documented in removed/ on GitHub. Committed and pushed with the APK per the user's instruction.
+
+---
+Task ID: 19
+Agent: main agent (Z.ai)
+Task: v1.6.39 — the full v1.6.39 user-report batch on the canvas calculator + the main call keypad, "check github and commit even the apk".
+
+Work Log:
+- GitHub first (per instruction): origin/main == b0c3ea5 (v1.6.38 vc49), releases v1.6.36–38 all carry APK assets. Sandbox had reset → Android SDK reinstalled (cmdline-tools → platform-tools/android-34/build-tools 34.0.0).
+- THE "ball" BUG root-caused: v1.6.38 kept the active line in TWO places (calcText + parsed calcNote); Aa←123 re-serialized from the tokens and parseCalcNote("ball") yields no tokens → the text wiped. FIX = the redesign: calcText is the single source (tokens/total/steps derived live); the active line is ONE native editable field in BOTH modes (QWERTY BasicTextField | NoImeNumberField with new alignStart+maxLines params, IME suppressed); the keypad appends as characters with an auto-space after a word ("ball" + 2 0 0 → "ball 200").
+- Icons removed per spec: tag badges, clickable number chips, operator cycling, the label popover, the clipTarget dropdown — all documented in removed/2026-10-30-canvas-tag-badges-label-popover.md. Labels are typed.
+- FULL-SCREEN CANVAS rendered after the Sheet (fillMaxSize, opaque, imeLiftPadding) covering the whole editor: header (collapse chevron + label + Σ), the tappable TOTAL bar, the scrollable ledger, the active line + live result + steps, THE SMALL CONTROLS row (Aa/123 segmented, 30dp Next line, 30dp Save), the Σ advanced row, the compact keypad (num only). ✕/back collapses it to a compact band in the form that raises it again. The bottom nav stays visible (standing v1.6.26 rule).
+- NATIVE BACK CHAIN: keypad up → closeKeypad (text mode, no auto-focus, IME hidden); canvas up → collapseCanvas; canvas down → the Sheet's own back pops the editor. (The canvas's AppBackHandler composes after the Sheet's → wins while up.)
+- LOCKED LINES: long-press UNLOCKS (the line comes down into the active field; in-progress text commits first); every line carries CopyBtn (calcLineCopy:$i / calcActiveCopy); each line's OWN total long-presses into the last total's menu (Make payment · that total / Copy).
+- Keypad compact: 178–224dp band, 5dp gaps, 14dp side padding, digits 24sp; ⏎ moved to the canvas controls, its slot is an = key (opens the "= total 500" result zone).
+- MAIN CALL KEYPAD (KeypadSheet): compact container (grabber 4dp, header 36dp, display 52–68dp, action row 8dp padding, 40dp side buttons) + BIGGER keys (tiles 56–74dp, digits 27sp, letters 11sp, grid padding 14dp, gaps 7dp, call button 60dp).
+- calcKey rewritten for the text model: digits (auto-space after letter/%), operators (replace trailing, trailing space), % (after the ending digit), ± (token surgery: +↔− between numbers, glued − otherwise), ⌫ (trimEnd + dropLast — the v1.6.38 operator fix is inherent), AC, =, MR appends as a new number.
+- TESTS: 157/157 green (was 153; EntryEditCalcTabTest rebuilt as 9: ⌫-operator, the ball survival via saved exprNote "ball 200", %, next-line locks+sums+payment+save, long-press unlock, line-total menu, the back chain, full-screen collapse/raise, legacy seed; EntryEditAddTabsTest: collapse the canvas before the Recent tab / item rows).
+- BUILD: compileDebugKotlinAndroid clean; assembleRelease (one daemon OOM → --stop + 2GB heap retry). APK 1.6.39 vc50, aapt-verified, apksigner SHA-256 2f6d65be…869ad (same key as every release). releases/callmony-1.6.39-release.apk + download/callmony-1.6.39-kmp-release.apk.
+- Docs: README Versioning v1.6.39, CHANGELOG full entry, sandbox/chat-logs/2026-10-30-v1.6.39-fullscreen-canvas-compact-keypads.md, removed/ doc, this worklog.
+
+Stage Summary:
+- v1.6.39 = the full-screen unified canvas calculator (every item of the user's v1.6.39 list) + the compact-container/bigger-keys call keypad, 157/157 tests, committed and pushed with the APK + GitHub Release per the standing instruction.
