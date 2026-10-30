@@ -76,8 +76,8 @@ android {
         // popover, a stacked multi-line ledger with a running total) and
         // the entry amount = typed base + items + calculator (100 + 200
         // = 300, for every input mode).
-        versionCode = 48
-        versionName = "1.6.37"
+        versionCode = 49
+        versionName = "1.6.38"
     }
 
     signingConfigs {

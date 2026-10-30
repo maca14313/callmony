@@ -104,8 +104,30 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.37 (versionCode 48)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.38 (versionCode 49)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
+
+- **1.6.38** — CREATE/EDIT CONTACTS FIXED (the pair-order bug: every
+  created contact literally carried the phone number "mobile" and the
+  email "home", every edit inserted a bogus "mobile" row — the editor
+  passed (label, number) where the platform reads (number, label); the
+  edit is now a TRUE replace — deleted rows really delete, changed
+  numbers replace their row, the company field finally persists) · THE
+  CANVAS CALCULATOR (near-full-screen paper canvas; TEXT is the default
+  input at line start on the system QWERTY with native selection and
+  copy/cut/paste, Aa/123 switches input, long-press the flow for a
+  copy/cut/paste menu; the ⌫ FIX — a trailing operator deletes before
+  the digits to its left, "200 × 100" no longer skips the ×); the % and
+  ± keys + Σ advanced panel (M+ M− MR); text on RESULTS ("= total 200"
+  / "= 200 total" via the result's own tag badge); NEXT LINE is a small
+  ⏎ key on the pad and the committed line LOCKS (long-press copies, ✕
+  deletes); AUTO-SAVE on existing entries (debounced + on close); the
+  TOTAL bar taps into a MAKE-PAYMENT menu; the compact label popover
+  with very small buttons; keypad digits 24sp in the same capped band;
+  the footer Save/Delete are small; JUST AMOUNT / ITEMS · QTY × PRICE /
+  QUICK ITEM are REMOVED (documented in removed/) and the calculator is
+  THE amount input (items + Recent still add in; legacy amounts reopen
+  as the first locked line).
 
 - **1.6.37** — THE ANNOTATED CALCULATOR AS INK ON PAPER per the UX
   blueprint ("look, feel, and flow naturally like handwritten math on

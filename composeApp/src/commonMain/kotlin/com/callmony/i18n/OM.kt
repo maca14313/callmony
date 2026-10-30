@@ -21,6 +21,8 @@ internal val OM: Map<String, String> = mapOf(
     "act.edit" to "Gulaali",
     "act.add" to "Dabalisi",
     "act.copy" to "Baafadhu",
+    "act.cut" to "Kunsiisi",
+    "act.paste" to "Maxxansiisi",
     "act.copied" to "Baafame",
     "act.retry" to "Irra deebi'i",
     "act.couldntCopy" to "Baafachuun hin dandeenye",
@@ -383,6 +385,9 @@ internal val OM: Map<String, String> = mapOf(
     "ee.calcPosBefore" to "Dura",
     "ee.calcPosAfter" to "Booda",
     "ee.calcDescribe" to "Lakkoofsa kana ibsi (kubbaa, birr…)",
+    // v1.6.38 — the canvas calculator (total menu / clipboard menu)
+    "ee.calcMakePayment" to "Kaffaltii godhi",
+    "ee.calcCopyTotal" to "Walduraa walitti qabi",
     "ee.tabJustAmount" to "Gatii qofa",
     "ee.tabItems" to "Meeresa · baay'ee × gatii",
     "ee.tabQuick" to "Meeresa affisaa",

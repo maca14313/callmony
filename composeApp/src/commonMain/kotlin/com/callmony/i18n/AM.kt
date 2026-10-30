@@ -21,6 +21,8 @@ internal val AM: Map<String, String> = mapOf(
     "act.edit" to "አርትዕ",
     "act.add" to "ጨምር",
     "act.copy" to "ቅዳ",
+    "act.cut" to "ቆርጽ",
+    "act.paste" to "ለጥፍ",
     "act.copied" to "ተቀድቷል",
     "act.retry" to "እንደገና ሞክር",
     "act.couldntCopy" to "መቅዳት አልተቻለም",
@@ -436,6 +438,9 @@ internal val AM: Map<String, String> = mapOf(
     "ee.calcPosBefore" to "በፊት",
     "ee.calcPosAfter" to "በኋላ",
     "ee.calcDescribe" to "ይህን ቁጥር ይግለጹ (ኳስ፣ ብር…)",
+    // v1.6.38 — the canvas calculator (total menu / clipboard menu)
+    "ee.calcMakePayment" to "ክፍያ አድርግ",
+    "ee.calcCopyTotal" to "ጠቅላላ ቅዳ",
     "ee.tabJustAmount" to "ብቻ መጠን",
     "ee.tabItems" to "እቃዎች · ብዛት × ዋጋ",
     "ee.tabQuick" to "ፈጣን እቃ",

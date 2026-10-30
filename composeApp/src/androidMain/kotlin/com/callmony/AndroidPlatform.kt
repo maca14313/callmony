@@ -503,38 +503,53 @@ class AndroidContacts : ContactsService {
         return try {
             val contactId = recordID.toLongOrNull() ?: return false
             val ops = ArrayList<ContentProviderOperation>()
-            // union-merge phones: keep every existing number we don't already have
-            val wantedNumbers = phones.map { it.first.replace(Regex("[^\\d+]"), "") }.toMutableSet()
+            // v1.6.38 — THE EDIT IS A TRUE REPLACE (user report: "there is
+            // something wrong with create, edit contacts"; the old union
+            // merge kept deleted numbers, doubled changed ones, ignored
+            // removed emails and NEVER wrote the company). The pure merge
+            // planner (lib/ContactMerge.kt) decides deletions / in-place
+            // relabels / inserts; the provider plumbing stays here.
+            // phones — match by normalized number, relabel / delete / insert
+            val existingPhones = mutableListOf<com.callmony.lib.MergeRow>()
             ctx.contentResolver.query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                arrayOf(ContactsContract.CommonDataKinds.Phone._ID, ContactsContract.CommonDataKinds.Phone.NUMBER),
+                arrayOf(
+                    ContactsContract.CommonDataKinds.Phone._ID,
+                    ContactsContract.CommonDataKinds.Phone.NUMBER,
+                    ContactsContract.CommonDataKinds.Phone.TYPE,
+                    ContactsContract.CommonDataKinds.Phone.LABEL,
+                ),
                 "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?",
                 arrayOf(contactId.toString()), null,
             )?.use { c ->
                 while (c.moveToNext()) {
-                    val dataId = c.getLong(0)
-                    val number = (c.getString(1) ?: "").replace(Regex("[^\\d+]"), "")
-                    val idx = phones.indexOfFirst { it.first.replace(Regex("[^\\d+]"), "") == number }
-                    if (idx >= 0) {
-                        // update label in place
-                        ops.add(
-                            ContentProviderOperation.newUpdate(ContactsContract.Data.CONTENT_URI)
-                                .withSelection("${ContactsContract.Data._ID} = ?", arrayOf(dataId.toString()))
-                                .withValue(ContactsContract.CommonDataKinds.Phone.TYPE, phoneTypeOf(phones[idx].second))
-                                .build()
+                    existingPhones.add(
+                        com.callmony.lib.MergeRow(
+                            dataId = c.getLong(0).toString(),
+                            value = c.getString(1) ?: "",
+                            label = phoneLabel(c.getInt(2), c.getString(3)),
                         )
-                        wantedNumbers.remove(number)
-                    } else if (number.isBlank()) {
-                        ops.add(
-                            ContentProviderOperation.newDelete(ContactsContract.Data.CONTENT_URI)
-                                .withSelection("${ContactsContract.Data._ID} = ?", arrayOf(dataId.toString()))
-                                .build()
-                        )
-                    }
-                    // numbers that exist on the device but not in the editor are KEPT (loss-free union)
+                    )
                 }
             }
-            // structured name update on the first raw contact
+            val phonePlan = com.callmony.lib.planPhoneMerge(existingPhones, phones)
+            phonePlan.deleteIds.forEach { dataId ->
+                ops.add(
+                    ContentProviderOperation.newDelete(ContactsContract.Data.CONTENT_URI)
+                        .withSelection("${ContactsContract.Data._ID} = ?", arrayOf(dataId))
+                        .build()
+                )
+            }
+            phonePlan.relabel.forEach { (dataId, label) ->
+                ops.add(
+                    ContentProviderOperation.newUpdate(ContactsContract.Data.CONTENT_URI)
+                        .withSelection("${ContactsContract.Data._ID} = ?", arrayOf(dataId))
+                        .withValue(ContactsContract.CommonDataKinds.Phone.TYPE, phoneTypeOf(label))
+                        .withValue(ContactsContract.CommonDataKinds.Phone.LABEL, null)
+                        .build()
+                )
+            }
+            // structured name on the first raw contact
             val rawIds = rawIdsOf(contactId)
             if (rawIds.isNotEmpty()) {
                 ops.add(
@@ -552,38 +567,101 @@ class AndroidContacts : ContactsService {
                         )
                         .build()
                 )
-                // insert the numbers that are genuinely new
-                for ((number, label) in phones) {
-                    val norm = number.replace(Regex("[^\\d+]"), "")
-                    if (norm in wantedNumbers) {
+                // the numbers that are genuinely new
+                phonePlan.inserts.forEach { (number, label) ->
+                    ops.add(
+                        ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                            .withValue(ContactsContract.Data.RAW_CONTACT_ID, rawIds.first())
+                            .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
+                            .withValue(ContactsContract.CommonDataKinds.Phone.NUMBER, number)
+                            .withValue(ContactsContract.CommonDataKinds.Phone.TYPE, phoneTypeOf(label))
+                            .build()
+                    )
+                }
+                // v1.6.38 — the COMPANY finally persists: upsert the
+                // Organization row on the first raw contact (blank deletes it)
+                val orgQuery = ctx.contentResolver.query(
+                    ContactsContract.Data.CONTENT_URI,
+                    arrayOf(ContactsContract.Data._ID),
+                    "${ContactsContract.Data.RAW_CONTACT_ID} = ? AND ${ContactsContract.Data.MIMETYPE} = ?",
+                    arrayOf(rawIds.first().toString(), ContactsContract.CommonDataKinds.Organization.CONTENT_ITEM_TYPE),
+                    null,
+                )
+                val orgId = orgQuery?.use { c -> if (c.moveToFirst()) c.getLong(0).toString() else null }
+                when {
+                    orgId != null && company.isNullOrBlank() ->
+                        ops.add(
+                            ContentProviderOperation.newDelete(ContactsContract.Data.CONTENT_URI)
+                                .withSelection("${ContactsContract.Data._ID} = ?", arrayOf(orgId))
+                                .build()
+                        )
+                    orgId != null ->
+                        ops.add(
+                            ContentProviderOperation.newUpdate(ContactsContract.Data.CONTENT_URI)
+                                .withSelection("${ContactsContract.Data._ID} = ?", arrayOf(orgId))
+                                .withValue(ContactsContract.CommonDataKinds.Organization.COMPANY, company)
+                                .withValue(ContactsContract.CommonDataKinds.Organization.TYPE, ContactsContract.CommonDataKinds.Organization.TYPE_WORK)
+                                .build()
+                        )
+                    !company.isNullOrBlank() ->
                         ops.add(
                             ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
                                 .withValue(ContactsContract.Data.RAW_CONTACT_ID, rawIds.first())
-                                .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
-                                .withValue(ContactsContract.CommonDataKinds.Phone.NUMBER, number)
-                                .withValue(ContactsContract.CommonDataKinds.Phone.TYPE, phoneTypeOf(label))
+                                .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Organization.CONTENT_ITEM_TYPE)
+                                .withValue(ContactsContract.CommonDataKinds.Organization.COMPANY, company)
+                                .withValue(ContactsContract.CommonDataKinds.Organization.TYPE, ContactsContract.CommonDataKinds.Organization.TYPE_WORK)
                                 .build()
+                        )
+                }
+                // emails — same replace plan, matched by address
+                val existingEmails = mutableListOf<com.callmony.lib.MergeRow>()
+                ctx.contentResolver.query(
+                    ContactsContract.CommonDataKinds.Email.CONTENT_URI,
+                    arrayOf(
+                        ContactsContract.CommonDataKinds.Email._ID,
+                        ContactsContract.CommonDataKinds.Email.ADDRESS,
+                        ContactsContract.CommonDataKinds.Email.TYPE,
+                        ContactsContract.CommonDataKinds.Email.LABEL,
+                    ),
+                    "${ContactsContract.CommonDataKinds.Email.CONTACT_ID} = ?",
+                    arrayOf(contactId.toString()), null,
+                )?.use { c ->
+                    while (c.moveToNext()) {
+                        existingEmails.add(
+                            com.callmony.lib.MergeRow(
+                                dataId = c.getLong(0).toString(),
+                                value = c.getString(1) ?: "",
+                                label = emailLabel(c.getInt(2), c.getString(3)),
+                            )
                         )
                     }
                 }
-                // emails union
-                for ((address, label) in emails) {
-                    val exists = ctx.contentResolver.query(
-                        ContactsContract.CommonDataKinds.Email.CONTENT_URI,
-                        arrayOf(ContactsContract.CommonDataKinds.Email._ID),
-                        "${ContactsContract.CommonDataKinds.Email.CONTACT_ID} = ? AND ${ContactsContract.CommonDataKinds.Email.ADDRESS} = ?",
-                        arrayOf(contactId.toString(), address), null,
-                    )?.use { it.count > 0 } ?: false
-                    if (!exists) {
-                        ops.add(
-                            ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
-                                .withValue(ContactsContract.Data.RAW_CONTACT_ID, rawIds.first())
-                                .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Email.CONTENT_ITEM_TYPE)
-                                .withValue(ContactsContract.CommonDataKinds.Email.ADDRESS, address)
-                                .withValue(ContactsContract.CommonDataKinds.Email.TYPE, emailTypeOf(label))
-                                .build()
-                        )
-                    }
+                val emailPlan = com.callmony.lib.planEmailMerge(existingEmails, emails)
+                emailPlan.deleteIds.forEach { dataId ->
+                    ops.add(
+                        ContentProviderOperation.newDelete(ContactsContract.Data.CONTENT_URI)
+                            .withSelection("${ContactsContract.Data._ID} = ?", arrayOf(dataId))
+                            .build()
+                    )
+                }
+                emailPlan.relabel.forEach { (dataId, label) ->
+                    ops.add(
+                        ContentProviderOperation.newUpdate(ContactsContract.Data.CONTENT_URI)
+                            .withSelection("${ContactsContract.Data._ID} = ?", arrayOf(dataId))
+                            .withValue(ContactsContract.CommonDataKinds.Email.TYPE, emailTypeOf(label))
+                            .withValue(ContactsContract.CommonDataKinds.Email.LABEL, null)
+                            .build()
+                    )
+                }
+                emailPlan.inserts.forEach { (address, label) ->
+                    ops.add(
+                        ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                            .withValue(ContactsContract.Data.RAW_CONTACT_ID, rawIds.first())
+                            .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Email.CONTENT_ITEM_TYPE)
+                            .withValue(ContactsContract.CommonDataKinds.Email.ADDRESS, address)
+                            .withValue(ContactsContract.CommonDataKinds.Email.TYPE, emailTypeOf(label))
+                            .build()
+                    )
                 }
             }
             if (ops.isNotEmpty()) ctx.contentResolver.applyBatch(ContactsContract.AUTHORITY, ops)

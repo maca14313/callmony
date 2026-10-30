@@ -63,9 +63,17 @@ interface ContactsService {
     fun hasWritePermission(): Boolean = false
     /** Ask for WRITE_CONTACTS — fires immediately when already granted. */
     fun requestWritePermission(onResult: (Boolean) -> Unit) { onResult(false) }
-    /** Safe in-app create — single applyBatch; returns the created recordID. */
+    /** Safe in-app create — single applyBatch; returns the created recordID.
+     *  v1.6.38 — the Pair order is EXPLICITLY (number, label) for phones
+     *  and (address, label) for emails (the v1.6.13–37 call-site swap
+     *  wrote the label into the number slot: saved contacts carried the
+     *  phone number "mobile" and the email "home"). */
     fun createContact(given: String, middle: String?, family: String?, company: String?, phones: List<Pair<String, String>>, emails: List<Pair<String, String>>): String?
-    /** Safe in-app edit — loss-free union merge of phones/emails. */
+    /** Safe in-app edit — a TRUE replace of what the editor shows: matched
+     *  rows relabel in place, rows the editor dropped are deleted, new
+     *  rows inserted, and the company/organization row is written (the
+     *  v1.6.13–37 union merge resurrected deleted numbers on refresh and
+     *  never persisted company edits). Pair order as above. */
     fun updateContact(recordID: String, given: String, middle: String?, family: String?, company: String?, phones: List<Pair<String, String>>, emails: List<Pair<String, String>>): Boolean
     /** Add one phone number to an existing contact (dup detection). */
     fun addPhoneToContact(recordID: String, label: String, number: String): Boolean

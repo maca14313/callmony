@@ -155,11 +155,20 @@ fun ContactEditorOverlay(recordID: String) {
                                 Toasts.toast(t("cd.saveFailed"), "error")
                                 return@requestWritePermission
                             }
+                            // v1.6.38 FIX — THE PAIR-ORDER BUG (user
+                            // report: "there is something wrong with
+                            // create,edit contacts"): this call passed
+                            // (label, number) while every platform
+                            // implementation destructures (number, label) —
+                            // saved contacts literally carried the phone
+                            // number "mobile" and the email "home". The
+                            // pairs are now (number, label) / (address,
+                            // label), matching the interface contract.
                             val ok = Platform.contacts.updateContact(
                                 recordID,
                                 given.trim(), middle.trim().ifEmpty { null }, family.trim(), company.trim().ifEmpty { null },
-                                valid.map { it.label to it.number },
-                                emails.filter { it.address.isNotBlank() }.map { it.label to it.address },
+                                valid.map { it.number to it.label },
+                                emails.filter { it.address.isNotBlank() }.map { it.address to it.label },
                             )
                             saving = false
                             if (ok) {
@@ -169,8 +178,10 @@ fun ContactEditorOverlay(recordID: String) {
                                         middleName = middle.trim().ifEmpty { null },
                                         familyName = family.trim(),
                                         company = company.trim().ifEmpty { null },
-                                        phones = valid.map { DevicePhone(it.number, it.label, it.number) },
-                                        emails = emails.filter { it.address.isNotBlank() }.map { DeviceEmail(it.address, it.label, it.address) },
+                                        // v1.6.38 — real row ids (uid), not the
+                                        // phone number in the id slot
+                                        phones = valid.map { DevicePhone(uid(), it.label, it.number) },
+                                        emails = emails.filter { it.address.isNotBlank() }.map { DeviceEmail(uid(), it.label, it.address) },
                                     )
                                 }
                                 Toasts.toast(t("ce.contactUpdated"))
@@ -291,10 +302,13 @@ fun ContactCreatorOverlay(prefillPhone: String?, prefillName: String?) {
                             Toasts.toast(t("cd.saveFailed"), "error")
                             return@requestWritePermission
                         }
+                        // v1.6.38 FIX — same pair-order bug as the editor
+                        // above: (number, label) / (address, label), the
+                        // contract every platform implementation reads.
                         val id = Platform.contacts.createContact(
                             given.trim(), middle.trim().ifEmpty { null }, family.trim(), company.trim().ifEmpty { null },
-                            valid.map { it.label to it.number },
-                            emails.filter { it.address.isNotBlank() }.map { it.label to it.address },
+                            valid.map { it.number to it.label },
+                            emails.filter { it.address.isNotBlank() }.map { it.address to it.label },
                         )
                         saving = false
                         if (id != null) {
@@ -306,8 +320,8 @@ fun ContactCreatorOverlay(prefillPhone: String?, prefillName: String?) {
                                     middleName = middle.trim().ifEmpty { null },
                                     familyName = family.trim(),
                                     company = company.trim().ifEmpty { null },
-                                    phones = valid.map { DevicePhone(it.number, it.label, it.number) },
-                                    emails = emails.filter { it.address.isNotBlank() }.map { DeviceEmail(it.address, it.label, it.address) },
+                                    phones = valid.map { DevicePhone(uid(), it.label, it.number) },
+                                    emails = emails.filter { it.address.isNotBlank() }.map { DeviceEmail(uid(), it.label, it.address) },
                                 )
                             )
                             Toasts.toast(t("ce.contactSaved"))

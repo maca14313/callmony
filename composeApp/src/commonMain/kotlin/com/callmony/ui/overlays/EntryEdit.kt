@@ -1,8 +1,10 @@
 package com.callmony.ui.overlays
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,18 +17,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,11 +44,13 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -61,12 +68,15 @@ import com.callmony.lib.evalCalcTokens
 import com.callmony.lib.money
 import com.callmony.lib.now
 import com.callmony.lib.parseCalcLedger
+import com.callmony.lib.parseCalcNote
 import com.callmony.lib.r2
 import com.callmony.lib.serializeCalcLedger
+import com.callmony.lib.serializeCalcNote
 import com.callmony.lib.ownerNameOf
 import com.callmony.lib.todayStr
 import com.callmony.lib.uid
 import com.callmony.platform.NativeDateTime
+import com.callmony.platform.Platform
 import com.callmony.model.ENTRY_CATEGORIES as CATS
 import com.callmony.model.EntryItem
 import com.callmony.model.LedgerEntry
@@ -79,16 +89,21 @@ import com.callmony.ui.kit.Confirm
 import com.callmony.ui.kit.Field
 import com.callmony.ui.kit.IconBtn
 import com.callmony.ui.kit.MdiIcon
+import com.callmony.ui.kit.Toasts
 import com.callmony.ui.kit.focusRing
 import com.callmony.ui.kit.pressVeil
-import com.callmony.ui.kit.Toasts
 import com.callmony.ui.kit.vibrate
 import com.callmony.ui.components.ScrollRow
-import com.callmony.ui.kit.Segmented
+import com.callmony.ui.sections.openPaymentSheet
 
-/* EntryEdit — the ledger entry editor: kind chips, hero amount, line items
-   with math, date/method, categories (+custom), due date (auto reminder),
-   note, owner, groups. Port of src/overlays/EntryEdit.tsx. */
+/* EntryEdit — the ledger entry editor. v1.6.38: the ANNOTATED CALCULATOR
+   IS the entry's amount input (Just amount / Items · qty × price / Quick
+   item are REMOVED — documented in removed/ at the repo root): a
+   near-full-screen paper canvas with a text-default active line, a
+   locked multi-line ledger, % + ± + M+/M−/MR advanced keys, a small
+   Next-line key, auto-save, and a tappable total that can become a
+   payment. Kind chips, date/method, categories, due date, note,
+   attachments, owner and groups are unchanged. */
 
 private val KINDS = listOf(
     Triple("credit", "credit", "hand-coin-outline"),
@@ -98,7 +113,7 @@ private val KINDS = listOf(
 )
 private val QUICK_UNITS = listOf("pic", "kg", "pcs", "bag", "box", "l")
 
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun EntryEditOverlay(
     entryId: String?,
@@ -114,23 +129,20 @@ fun EntryEditOverlay(
 
     var type by remember { mutableStateOf(existing?.type ?: entryType ?: "credit") }
     var kindSel by remember { mutableStateOf(existing?.kind ?: kind ?: "credit") }
-    // v1.6.37 — THE SUM MODEL (user report: "i click just amount and type
-    // 100, then the items… ball 1 pc * 200 = 200, so the result should be
-    // 100 + 200 = 300 but it is not doing this, but it should be like this
-    // for the others too"): the amount field holds the user's BASE; the
-    // entry's final amount is base + every line item + the calculator's
-    // ledger total (Items, Quick item, Recent and the annotated calculator
-    // all land in the same sum). On reopen the base is DERIVED back out of
-    // the saved amount, so the field shows exactly what the user typed.
+    // v1.6.38 — THE SUM MODEL, simplified with the removed tabs: the
+    // entry's amount = its line items + the calculator's whole ledger
+    // (committed lines + the active line). There is no typed base any
+    // more — the calculator IS the input. A LEGACY entry (amount, no
+    // ledger, no items) reopens with its amount seeded as its first
+    // locked line, so nothing is ever lost.
     val existingLedger = remember { parseCalcLedger(existing?.exprNote ?: "") }
-    var amount by remember {
+    var calcLines by remember {
         mutableStateOf(
-            existing?.let { e ->
-                val parts = e.items.sumOf { it.qty * it.price } +
-                    (calcLedgerTotal(existingLedger) ?: 0.0)
-                val base = r2(e.amount - parts)
-                if (base > 0.004) trimNum(base) else ""
-            } ?: ""
+            existingLedger.ifEmpty {
+                if (existing != null && existing.items.isEmpty() && existing.amount > 0.0) {
+                    listOf(CalcNote(tokens = listOf(CalcToken(number = trimNum(existing.amount)))))
+                } else emptyList()
+            }
         )
     }
     var date by remember { mutableStateOf(existing?.date ?: todayStr()) }
@@ -145,99 +157,77 @@ fun EntryEditOverlay(
     var editingItem by remember { mutableStateOf<EntryItem?>(null) }
     // v1.6.18 — attachments: lists / notes / reminders ride on entry.refs
     var refs by remember { mutableStateOf(existing?.refs ?: listOf<com.callmony.model.LinkRef>()) }
-    // v1.6.34 — the ADD-MODE tabs state (Just amount / Items / Quick
-    // item / Recent). An entry that already carries items opens on the
-    // ITEMS tab; everything else opens on Just amount (the classic hero
-    // field). The v1.6.18 showItemForm collapse is superseded: the tabs
-    // ARE the add flow, and only the active tab renders an input form.
-    // v1.6.35 — an entry saved from the annotated calculator reopens on
-    // the CALCULATOR tab so its expression note is right there to edit.
-    var amountMode by remember {
-        mutableStateOf(
-            if (existing?.exprNote != null) "calc"
-            else if (items.isNotEmpty()) "items"
-            else "amount"
-        )
-    }
-    var quickLabel by remember { mutableStateOf("") }
-    var quickPrice by remember { mutableStateOf("") }
-    // v1.6.37 — the PAPER annotated calculator (the user's UX blueprint):
-    // the equation renders as ONE inline text flow — no pills around
-    // numbers or operators, no label-trigger icons beside + − × ÷ = —
-    // every number carries a single tiny tag badge (12dp) at the
-    // top-left corner of its first digit, tapping it opens a focused
-    // popover anchored AT that number (text field + a Before/After
-    // position toggle on the SYSTEM keyboard), and a NEXT LINE key on
-    // the keypad commits the active expression into a stacked LEDGER
-    // above, finished by a prominent running-total bar. Completed lines
-    // keep their whole token list, so reopening an entry rebuilds the
-    // ledger and the labels (same free-text grammar, now "\n"-separated
-    // for multi-line ledgers — see parseCalcLedger in lib/Calc.kt).
-    var calcLines by remember { mutableStateOf(existingLedger) }
+    // v1.6.38 — the input-mode strip is down to Calculator + Recent (the
+    // Just amount / Items / Quick item tabs are removed; Recent keeps the
+    // one-tap repeat booking). Everything opens on the CALCULATOR.
+    var amountMode by remember { mutableStateOf("calc") }
+    // v1.6.38 — THE CANVAS CALCULATOR (the user's rework spec):
+    //   calcMode "text" (DEFAULT — fresh lines start as text on the
+    //     system QWERTY, giving native selection + copy/cut/paste) or
+    //     "num" (the custom keypad aims at calcActive). Tapping a number
+    //     in the flow switches to num; the Aa/123 row switches either way.
+    //   calcText mirrors the active line while in text mode (live-parsed
+    //     into tokens — the SAME free-text grammar).
+    //   Locked ledger lines (Next line) show above; the total bar can
+    //     MAKE A PAYMENT of itself. % ± keys + Σ (M+ M− MR) advanced.
     var calcNote by remember { mutableStateOf(CalcNote()) } // the ACTIVE line
-    // which number the keypad is typing into (-1 = none active)
-    var calcActive by remember { mutableStateOf(-1) }
-    // the popover's target: "t<i>" = number i's label, "rb"/"ra" = the
-    // result's labels (legacy notes) — null = no popover, keypad is up
+    var calcActive by remember { mutableStateOf(-1) }       // keypad target
+    var calcMode by remember { mutableStateOf("text") }     // "text" | "num"
+    var calcText by remember { mutableStateOf("") }         // text-mode source
+    // the compact popover's target: "t<i>" = number i's label, "res" =
+    // the result's label (before/after) — null = no popover
     var calcLabelTarget by remember { mutableStateOf<String?>(null) }
     var calcLabelText by remember { mutableStateOf("") }
-    // which SIDE of the number the label sits on ("before"/"after")
     var calcLabelPos by remember { mutableStateOf("before") }
+    var calcAdvanced by remember { mutableStateOf(false) }  // Σ panel
+    var calcMemory by remember { mutableStateOf<Double?>(null) }
+    var totalMenu by remember { mutableStateOf(false) }     // the total's menu
+    var clipTarget by remember { mutableStateOf<String?>(null) } // long-press clipboard menu
     var catManager by remember { mutableStateOf(false) }
     var showOwnerPicker by remember { mutableStateOf(false) }
 
-    // v1.6.37 — THE SUM, live on every keystroke: base + items + the
-    // calculator's whole contribution (committed ledger lines + the
-    // active line). The TOTAL row and Save both read this.
+    // v1.6.38 — THE SUM, live: items + the calculator's whole contribution
+    // (committed ledger lines + the active line).
     val itemsSum = items.sumOf { it.qty * it.price }
-    val baseNum = amount.replace(",", ".").toDoubleOrNull()
-    // the active line's live total + its fold steps
     val calcTotal = remember(calcNote) { evalCalcTokens(calcNote.tokens) }
     val calcStepList = remember(calcNote) { calcSteps(calcNote.tokens) }
-    // the committed ledger lines' total, then everything the calculator adds
     val calcLedgerSum = remember(calcLines) { calcLedgerTotal(calcLines) }
     val calcPartsTotal = r2((calcLedgerSum ?: 0.0) + (calcTotal ?: 0.0))
-    val partsSum = r2(itemsSum + calcPartsTotal)
-    // THE ENTRY AMOUNT: the typed base + every part (100 + 200 = 300)
-    val effAmount = r2((baseNum ?: 0.0) + partsSum)
+    // THE ENTRY AMOUNT: every line item + the whole calculator
+    val effAmount = r2(itemsSum + calcPartsTotal)
 
-    fun save() {
-        if (effAmount <= 0) {
-            Toasts.toast(t("lg.amountGreaterThanZero"), "error")
-            return
-        }
-        val e = LedgerEntry(
-            id = existing?.id ?: uid(),
-            ownerId = owner,
-            type = type,
-            kind = kindSel,
-            amount = effAmount,
-            items = items,
-            payments = existing?.payments ?: listOf(),
-            date = date.ifEmpty { todayStr() },
-            dueDate = dueOn.takeIf { it }?.let { dueDate.ifEmpty { null } },
-            category = category.ifEmpty { null },
-            method = method,
-            note = note.ifEmpty { null },
-            // v1.6.37 — the whole calculator state rides along: every
-            // committed ledger line + the still-active line (if any),
-            // "\n"-separated in the same free-text grammar
-            exprNote = serializeCalcLedger(
-                calcLines + if (calcNote.tokens.isNotEmpty()) listOf(calcNote) else emptyList()
-            ).ifEmpty { null },
-            groupId = groupSel,
-            refs = refs,
-            createdAt = existing?.createdAt ?: now(),
-            updatedAt = now(),
-        )
-        AppStore.saveEntry(e)
+    /* the entry object exactly as Save/autosave/make-payment write it */
+    fun buildEntry(id: String): LedgerEntry = LedgerEntry(
+        id = id,
+        ownerId = owner,
+        type = type,
+        kind = kindSel,
+        amount = effAmount,
+        items = items,
+        payments = existing?.payments ?: listOf(),
+        date = date.ifEmpty { todayStr() },
+        dueDate = dueOn.takeIf { it }?.let { dueDate.ifEmpty { null } },
+        category = category.ifEmpty { null },
+        method = method,
+        note = note.ifEmpty { null },
+        // the whole calculator state rides along: every committed ledger
+        // line + the still-active line (if any), "\n"-separated
+        exprNote = serializeCalcLedger(
+            calcLines + if (calcNote.tokens.isNotEmpty()) listOf(calcNote) else emptyList()
+        ).ifEmpty { null },
+        groupId = groupSel,
+        refs = refs,
+        createdAt = existing?.createdAt ?: now(),
+        updatedAt = now(),
+    )
+
+    fun maybeDueReminder(id: String) {
         // auto payment-reminder at 09:00 on the due date (new entries only)
         if (existing == null && dueOn && dueDate.length >= 8) {
-            val d = com.callmony.lib.dateOf(now())
             val parts = dueDate.split("-")
             val at = try {
                 com.callmony.lib.KmpDate(parts[0].toInt(), parts[1].toInt() - 1, parts[2].toInt(), 9, 0, 0).time()
-            } catch (_: Exception) { d.time() }
+            } catch (_: Exception) { dateOf(now()).time() }
             if (at > now()) {
                 AppStore.saveReminder(
                     com.callmony.model.Reminder(
@@ -248,25 +238,90 @@ fun EntryEditOverlay(
                 )
             }
         }
-        Toasts.toast(t("act.saved"))
-        pop()
     }
 
-    /* v1.6.37 — open the LABEL POPOVER for a target: "t<i>" = number
-       i's label (its tiny tag badge or the label text itself), "rb"/
-       "ra" = the result's before/after labels (legacy notes). For a
-       number the field starts on the side that already carries text,
-       and the Before/After toggle swaps sides — the label MOVES on
-       commit, exactly the user's position-based labeling spec
-       ("ball 200" vs "200 Birr"). */
+    fun save(silent: Boolean = false) {
+        if (effAmount <= 0) {
+            if (!silent) Toasts.toast(t("lg.amountGreaterThanZero"), "error")
+            return
+        }
+        val e = buildEntry(existing?.id ?: uid())
+        AppStore.saveEntry(e)
+        maybeDueReminder(e.id)
+        if (!silent) {
+            Toasts.toast(t("act.saved"))
+            pop()
+        }
+    }
+
+    /* v1.6.38 — AUTO-SAVE (user spec: "it should have auto save"): every
+       change to an EXISTING entry persists ~600ms after the last
+       keystroke and again on close — no Save needed, nothing is ever
+       lost by backing out. New entries still Save explicitly (an
+       unconfirmed draft must not appear in the book). Invalid totals
+       (<= 0) never overwrite a good entry. */
+    // v1.6.38 — the DELETE guard: the dispose-time auto-save must never
+    // resurrect an entry the user just deleted
+    var deleted by remember { mutableStateOf(false) }
+    val autoKey = remember { mutableStateOf<String?>(null) }
+    val currentKey = listOf(
+        effAmount, serializeCalcLedger(calcLines + if (calcNote.tokens.isNotEmpty()) listOf(calcNote) else emptyList()),
+        items.map { "${it.id}:${it.qty}:${it.price}" }, date, dueOn, dueDate, category, method, note, owner, groupSel,
+        refs.map { "${it.type}:${it.id}" }, type, kindSel,
+    ).toString()
+    if (autoKey.value == null) autoKey.value = currentKey
+    val initialKey = autoKey.value ?: currentKey
+    if (existing != null) {
+        LaunchedEffect(currentKey) {
+            if (!deleted && currentKey != initialKey && effAmount > 0) {
+                kotlinx.coroutines.delay(600)
+                if (!deleted && currentKey != initialKey && effAmount > 0) save(silent = true)
+            }
+        }
+        DisposableEffect(Unit) {
+            onDispose {
+                if (!deleted && currentKey != initialKey && effAmount > 0) {
+                    // persist whatever changed but never got debounced
+                    AppStore.saveEntry(buildEntry(existing.id))
+                }
+            }
+        }
+    }
+
+    /* v1.6.38 — "when clicking the total results it should have also the
+       option to make payment of it": the total bar's menu can record a
+       payment of the full total against this entry (saving it first
+       when it is brand new). */
+    fun makePaymentOf(total: Double) {
+        if (total <= 0) return
+        val id = existing?.id ?: uid()
+        if (effAmount > 0) {
+            AppStore.saveEntry(buildEntry(id))
+            maybeDueReminder(id)
+        }
+        totalMenu = false
+        if (existing == null) pop()
+        openPaymentSheet(id, total)
+    }
+
+    /* open the COMPACT label popover for a target: "t<i>" = number i's
+       label, "res" = the result's label ("= total 200" / "= 200 total").
+       The field starts on the side that already carries text; a fresh
+       label defaults to BEFORE ("ball 200"). */
     fun openCalcLabel(target: String) {
         when {
-            target == "rb" -> { calcLabelText = calcNote.resultBefore; calcLabelPos = "before" }
-            target == "ra" -> { calcLabelText = calcNote.resultAfter; calcLabelPos = "after" }
+            target == "res" -> {
+                val beforeFirst = calcNote.resultBefore.isNotBlank()
+                val afterOnly = calcNote.resultBefore.isBlank() && calcNote.resultAfter.isNotBlank()
+                calcLabelText = when {
+                    beforeFirst -> calcNote.resultBefore
+                    afterOnly -> calcNote.resultAfter
+                    else -> ""
+                }
+                calcLabelPos = if (afterOnly) "after" else "before"
+            }
             else -> {
                 val tk = calcNote.tokens.getOrNull(target.drop(1).toIntOrNull() ?: -1)
-                // start on the side that already carries text; a FRESH
-                // label defaults to BEFORE (the blueprint's "ball 200")
                 val beforeFirst = tk != null && tk.before.isNotBlank()
                 val afterOnly = tk != null && tk.before.isBlank() && tk.after.isNotBlank()
                 calcLabelText = when {
@@ -280,16 +335,14 @@ fun EntryEditOverlay(
         calcLabelTarget = target
     }
 
-    /* the Before/After toggle inside the popover: swap the field to the
-       other side's stored label when it has one (legacy both-side notes);
-       otherwise KEEP the typed text — flipping the position must never
-       lose what was just typed */
+    /* the Before/After toggle: swap to the other side's stored label when
+       it has one; otherwise KEEP the typed text — flipping never loses
+       what was just typed */
     fun toggleCalcLabelPos(pos: String) {
         if (pos == calcLabelPos) return
         val target = calcLabelTarget ?: return
         val other = when {
-            target == "rb" -> calcNote.resultBefore
-            target == "ra" -> calcNote.resultAfter
+            target == "res" -> if (pos == "before") calcNote.resultBefore else calcNote.resultAfter
             else -> {
                 val tk = calcNote.tokens.getOrNull(target.drop(1).toIntOrNull() ?: -1)
                 (if (pos == "before") tk?.before else tk?.after) ?: ""
@@ -300,16 +353,18 @@ fun EntryEditOverlay(
     }
 
     /* commit the popover: non-empty text lands on the CHOSEN side (the
-       other side is cleared — ONE label, ONE position, the spec's
-       "ball 200" / "200 Birr"), and an EMPTY submit deletes the label
-       (the v1.6.36 re-edit rule, kept). */
+       other side clears — ONE label, ONE position), an EMPTY submit
+       deletes the label. */
     fun commitCalcLabel() {
         val target = calcLabelTarget ?: return
         val text = calcLabelText.trim()
         val toks = calcNote.tokens.toMutableList()
         when {
-            target == "rb" -> calcNote = calcNote.copy(resultBefore = text)
-            target == "ra" -> calcNote = calcNote.copy(resultAfter = text)
+            target == "res" -> calcNote = when {
+                text.isEmpty() -> calcNote.copy(resultBefore = "", resultAfter = "")
+                calcLabelPos == "before" -> calcNote.copy(resultBefore = text, resultAfter = "")
+                else -> calcNote.copy(resultAfter = text, resultBefore = "")
+            }
             else -> {
                 val idx = target.drop(1).toIntOrNull() ?: -1
                 if (idx in toks.indices) {
@@ -331,35 +386,41 @@ fun EntryEditOverlay(
         calcLabelText = ""
     }
 
-    /* v1.6.37 — NEXT LINE (the keypad's Enter): commit the active
-       expression into the stacked ledger and start a fresh line under
-       it; tapping a committed line pulls it back down for re-editing
-       (its whole token list — labels included — comes with it). */
+    /* v1.6.38 — NEXT LINE (the small ⏎ key): commit the active expression
+       into the ledger — the old line LOCKS (read-only; long-press copies)
+       — and the fresh line starts in TEXT mode (the spec's default). */
     fun commitCalcLine() {
         if (calcNote.tokens.isEmpty()) return
         calcLines = calcLines + calcNote
         calcNote = CalcNote()
+        calcText = ""
         calcActive = -1
+        calcMode = "text"
     }
 
-    fun pullCalcLine(i: Int) {
+    fun deleteCalcLine(i: Int) {
         if (i !in calcLines.indices) return
-        calcNote = calcLines[i]
         calcLines = calcLines.filterIndexed { j, _ -> j != i }
-        calcActive = -1
     }
 
-    /* v1.6.36/37 — the keypad logic on the ACTIVE line's token chain:
-       digits type into the ACTIVE number (or continue/start one), an
-       operator key terminates the number, ⌫ edits it (an emptied number
-       is removed with its labels), AC clears the ACTIVE line only (the
-       committed ledger lines each carry their own ✕). The entry total
-       (effAmount) recomputes live from the state — no mirroring. */
+    fun copyLineText(text: String) {
+        Platform.share.copyText(text)
+        Toasts.toast(t("act.copied"))
+    }
+
+    /* v1.6.38 — the keypad on the ACTIVE line's token chain. The ⌫ FIX
+       (user report: "if i write 200 * 100 and i click the x delete btn
+       it delete the 0,0,1 then it should delete the * but skips it and
+       delete 0,0,2"): a TRAILING OPERATOR deletes FIRST — the × between
+       the numbers goes before the digits to its left. % toggles the
+       active number's percent (phone-calculator semantics in Calc.kt),
+       ± flips its sign, AC clears the ACTIVE line only. */
     fun calcKey(k: String) {
         val toks = calcNote.tokens.toMutableList()
         when (k) {
             "AC" -> {
                 calcNote = CalcNote()
+                calcText = ""
                 calcActive = -1
                 return
             }
@@ -372,9 +433,26 @@ fun EntryEditOverlay(
                     } else toks[calcActive] = toks[calcActive].copy(number = n)
                 } else if (toks.isNotEmpty()) {
                     val last = toks.last()
-                    val n = last.number.dropLast(1)
-                    if (n.isEmpty()) toks.removeAt(toks.lastIndex)
-                    else toks[toks.lastIndex] = last.copy(number = n)
+                    when {
+                        // THE FIX — the operator goes first
+                        last.op != null -> toks[toks.lastIndex] = last.copy(op = null)
+                        else -> {
+                            val n = last.number.dropLast(1)
+                            if (n.isEmpty()) toks.removeAt(toks.lastIndex)
+                            else toks[toks.lastIndex] = last.copy(number = n)
+                        }
+                    }
+                }
+            }
+            "%", "±" -> {
+                val idx = if (calcActive in toks.indices) calcActive else toks.indexOfLast { it.number.isNotBlank() }
+                if (idx in toks.indices) {
+                    toks[idx] = if (k == "%") {
+                        toks[idx].copy(pct = !toks[idx].pct)
+                    } else {
+                        val n = toks[idx].number
+                        toks[idx].copy(number = if (n.startsWith("-")) n.drop(1) else "-$n")
+                    }
                 }
             }
             ".", in "0".."9" -> {
@@ -407,99 +485,83 @@ fun EntryEditOverlay(
         calcNote = calcNote.copy(tokens = toks)
     }
 
-    /* v1.6.34 — the QUICK-ITEM tab's ＋ (the v1.6.27/29 ledger row, now
-       inside the add-item flow): label + price → a single qty-1 line item
-       on THIS entry. The user can keep adding or hit Save — the entry
-       amount follows the item total, exactly like the ledger row did. */
-    fun addQuickItem() {
-        val label = quickLabel.trim()
-        val price = quickPrice.toDoubleOrNull()
-        if (label.isEmpty()) {
-            Toasts.toast(t("lg.quickItemNeedLabel"), "error")
-            return
+    /* v1.6.38 — mode switching: text↔number. Entering TEXT seeds the
+       field with the serialized active line and takes focus (system
+       QWERTY, native selection/clipboard); entering NUM hides the IME
+       and aims the keypad at the last number. */
+    val calcFieldFocus = remember { FocusRequester() }
+    val ime = LocalSoftwareKeyboardController.current
+    val focusMgr = LocalFocusManager.current
+    fun enterTextMode() {
+        if (calcMode != "text") {
+            calcText = serializeCalcNote(calcNote)
+            calcMode = "text"
+            calcActive = -1
         }
-        if (price == null || price <= 0) {
-            Toasts.toast(t("lg.amountGreaterThanZero"), "error")
-            return
+    }
+    fun enterNumMode(aim: Int = -1) {
+        if (calcMode != "num") {
+            calcMode = "num"
+            focusMgr.clearFocus()
+            ime?.hide()
         }
-        val n = items + EntryItem(id = uid(), name = label, qty = 1.0, price = price)
-        items = n
-        quickLabel = ""
-        quickPrice = ""
+        calcActive = if (aim >= 0) aim else calcNote.tokens.indexOfLast { it.number.isNotBlank() }
+    }
+    LaunchedEffect(calcMode) {
+        if (calcMode == "text") {
+            try { calcFieldFocus.requestFocus() } catch (_: Exception) {}
+        }
     }
 
     Sheet(
         title = if (existing == null) t("lg.newEntry") else t("lg.editEntry"),
         subtitle = ownerNameOf(ownerId),
         onBack = pop,
-        // v1.6.35 — PINNED TABS (user spec): the Sheet's own scroll is OFF;
-        // the kind chips + the add-mode tabs render once, pinned at the
-        // top, and ONLY the form below carries a verticalScroll (never a
-        // scrollable inside a scrollable — the v1.6.25 More-sheet lesson).
         scrollable = false,
+        // v1.6.38 — the footer buttons are SMALL (the rework spec: "the
+        // next line and save btn should be very small")
         footer = {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (existing != null) {
                     Btn(
-                        label = t("act.delete"), variant = "danger",
+                        label = t("act.delete"), variant = "danger", small = true,
                         onPress = {
                             Confirm.ask(t("lg.deleteEntryTitle"), t("lg.deleteEntryMsg"), t("act.delete"), danger = true) { ok ->
-                                if (ok) { AppStore.deleteEntry(existing.id); Toasts.toastUndo(); pop() }
+                                if (ok) { deleted = true; AppStore.deleteEntry(existing.id); Toasts.toastUndo(); pop() }
                             }
                         },
                         modifier = Modifier.weight(1f),
                     )
                 }
-                Btn(label = t("act.save"), onPress = { save() }, modifier = Modifier.weight(1f), disabled = effAmount <= 0)
+                Btn(label = t("act.save"), small = true, onPress = { save() }, modifier = Modifier.weight(1f), disabled = effAmount <= 0)
             }
         },
     ) {
         Column(Modifier.fillMaxSize()) {
-            // v1.6.35 — THE PINNED BAND: kind chips + add-mode tabs. These
-            // rows NEVER scroll with the form below them (user spec), and
-            // both are COMPACT — especially the kind row.
+            // THE PINNED BAND: kind chips + the input-mode strip
             Column(Modifier.padding(horizontal = 18.dp)) {
-            // kind chips — compact (v1.6.35: "make them compact, especially
-            // the above one")
-            Row(Modifier.padding(top = 6.dp, bottom = 6.dp)) {
-                ScrollRow {
-                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        KINDS.forEach { (ty, kd, icon) ->
-                            val label = t("lg.kind${kd.replaceFirstChar { it.uppercase() }}")
-                            Chip(label = label, icon = icon, active = kindSel == kd, compact = true, onPress = { kindSel = kd; type = ty })
+                Row(Modifier.padding(top = 6.dp, bottom = 6.dp)) {
+                    ScrollRow {
+                        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            KINDS.forEach { (ty, kd, icon) ->
+                                val label = t("lg.kind${kd.replaceFirstChar { it.uppercase() }}")
+                                Chip(label = label, icon = icon, active = kindSel == kd, compact = true, onPress = { kindSel = kd; type = ty })
+                            }
                         }
                     }
                 }
-            }
-            // v1.6.34 — THE ADD-MODE TABS (user report: the quick item —
-            // label + price — should be inside ADD ITEM, as horizontally
-            // scrolling tabs: Items (qty × price) / Quick item / Just
-            // amount / other useful types). The amount + items block is
-            // now ONE flow behind a side-scrolling tab strip: pick HOW you
-            // add — a plain number, full line items, a one-line label +
-            // price, or a one-tap REUSE of an item booked before. Whatever
-            // lands is the same EntryItem list (the entry amount follows
-            // its total), so Save/effAmount logic is untouched. The
-            // v1.6.27/29 quick row from the ledger view moved HERE (its
-            // kind follows this editor's own kind chips).
-            Row(Modifier.padding(bottom = 8.dp)) {
-                ScrollRow {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            // v1.6.35 — CALCULATOR / EXPRESSION NOTE tab chip, FIRST in the
-            // strip (user spec: "add a new tab chip at the far left, before
-            // Just amount") — the annotated calculator.
-                        Chip(compact = true, icon = "calculator-variant", label = t("ee.tabCalc"), active = amountMode == "calc", onPress = { amountMode = "calc" })
-                        Chip(compact = true, icon = "cash-check", label = t("ee.tabJustAmount"), active = amountMode == "amount", onPress = { amountMode = "amount" })
-                        Chip(compact = true, icon = "format-list-bulleted", label = t("ee.tabItems"), active = amountMode == "items", onPress = { amountMode = "items" })
-                        Chip(compact = true, icon = "clock-fast", label = t("ee.tabQuick"), active = amountMode == "quick", onPress = { amountMode = "quick" })
-                        Chip(compact = true, icon = "history", label = t("ee.tabRecent"), active = amountMode == "recent", onPress = { amountMode = "recent" })
+                // v1.6.38 — Just amount / Items / Quick item are REMOVED
+                // (user spec; documented in removed/). Calculator + Recent.
+                Row(Modifier.padding(bottom = 8.dp)) {
+                    ScrollRow {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Chip(compact = true, icon = "calculator-variant", label = t("ee.tabCalc"), active = amountMode == "calc", onPress = { amountMode = "calc" })
+                            Chip(compact = true, icon = "history", label = t("ee.tabRecent"), active = amountMode == "recent", onPress = { amountMode = "recent" })
+                        }
                     }
                 }
-            }
-            } // end of the pinned band — the rows above stay fixed while
-              // everything below scrolls (user spec)
-            // v1.6.35 — THE FORM: the sheet's only scrollable. Same 18dp
-            // gutters as before, so nothing visibly moves.
+            } // end of the pinned band
+            // THE FORM: the sheet's only scrollable
             Column(
                 Modifier
                     .weight(1f)
@@ -509,410 +571,367 @@ fun EntryEditOverlay(
                     .padding(top = 2.dp, bottom = 24.dp),
             ) {
             when (amountMode) {
-                // CALCULATOR — v1.6.37, the PAPER annotated calculator (the
-                // user's UX blueprint): the equation is ONE inline ink-on-
-                // paper flow — labels, numbers and operators share size /
-                // weight / baseline, no pill boxes, no label-trigger icons
-                // on + − × ÷ = — every number carries a single tiny tag
-                // badge at the top-left corner of its first digit; tapping
-                // it opens a focused popover anchored AT that number (text
-                // field + Before/After position toggle on the system
-                // keyboard). The STACKED LEDGER above holds the committed
-                // lines (Next Line on the keypad) with a prominent running
-                // total bar; tapping a committed line pulls it back down
-                // for re-editing.
                 "calc" -> {
-                    Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-                        // header: the section label + AC (clears the ACTIVE line)
+                    /* ---------------- THE CANVAS (near-full-screen) ---------------- */
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 10.dp)
+                            .heightIn(min = 320.dp)
+                            .pressVeil(corner = 18.dp)
+                            .focusRing(corner = 18.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(C.brand.copy(alpha = 0.06f))
+                            .border(1.dp, C.line, RoundedCornerShape(18.dp))
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                    ) {
+                        // header: the section label + the Σ advanced toggle
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(t("ee.calcLabel"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                            if (calcNote.tokens.isNotEmpty()) {
-                                Row(
-                                    Modifier
-                                        .clip(RoundedCornerShape(999.dp))
-                                        .background(C.card)
-                                        .border(1.dp, C.red, RoundedCornerShape(999.dp))
-                                        .clickable { calcKey("AC") }
-                                        .testTag("calcKey:AC")
-                                        .padding(horizontal = 10.dp, vertical = 3.dp),
-                                ) { Text("AC", fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.red) }
-                            }
+                            Box(
+                                Modifier
+                                    .size(30.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (calcAdvanced) C.brandSoft else C.card)
+                                    .border(1.dp, if (calcAdvanced) C.brand else C.line, RoundedCornerShape(10.dp))
+                                    .clickable { calcAdvanced = !calcAdvanced }
+                                    .testTag("calcAdvanced"),
+                                contentAlignment = Alignment.Center,
+                            ) { MdiIcon("sigma", 17, if (calcAdvanced) C.brand else C.sub) }
                         }
-                        // THE STACKED LEDGER — committed lines + the running
-                        // total bar (the blueprint's ledger view, above the
-                        // active row; the bar counts the active line too, so
-                        // the number never jumps on commit)
-                        if (calcLines.isNotEmpty()) {
-                            Column(
+                        // THE LOCKED LEDGER — committed lines (read-only;
+                        // long-press copies the line, ✕ deletes it)
+                        calcLines.forEachIndexed { i, line ->
+                            Row(
                                 Modifier
                                     .fillMaxWidth()
-                                    .padding(top = 8.dp)
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(C.card)
-                                    .border(1.dp, C.line, RoundedCornerShape(14.dp))
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
-                            ) {
-                                calcLines.forEachIndexed { i, line ->
-                                    Row(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .clickable { pullCalcLine(i) }
-                                            .testTag("calcLine:$i")
-                                            .padding(horizontal = 4.dp, vertical = 5.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    ) {
-                                        Text(
-                                            line.tokens.joinToString(" ") { tk ->
-                                                listOfNotNull(
-                                                    tk.before.ifBlank { null },
-                                                    tk.number,
-                                                    tk.after.ifBlank { null },
-                                                ).joinToString(" ") + (tk.op?.let { " $it" } ?: "")
-                                            },
-                                            fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.Medium,
-                                            modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                        )
-                                        Text(
-                                            money(evalCalcTokens(line.tokens) ?: 0.0),
-                                            fontSize = F.small.sp, color = C.ink, fontWeight = FontWeight.SemiBold,
-                                        )
-                                        IconBtn("close", { calcLines = calcLines.filterIndexed { j, _ -> j != i } }, size = 24, danger = true)
-                                    }
-                                }
-                                Row(
-                                    Modifier.fillMaxWidth().padding(top = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(t("ee.calcTotal"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub)
-                                    Text(
-                                        money(calcPartsTotal),
-                                        fontSize = F.body.sp, fontWeight = FontWeight.ExtraBold, color = C.brand,
-                                        modifier = Modifier.testTag("calcLedgerTotal"),
+                                    .padding(top = 6.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .combinedClickable(
+                                        onClick = {}, // locked — nothing to pull back
+                                        onLongClick = { vibrate(longArrayOf(20)); copyLineText(serializeCalcNote(line)) },
                                     )
+                                    .testTag("calcLine:$i")
+                                    .padding(horizontal = 4.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                MdiIcon("lock-outline", 13, C.faint)
+                                Text(
+                                    line.tokens.joinToString(" ") { tk ->
+                                        listOfNotNull(
+                                            tk.before.ifBlank { null },
+                                            tk.number + if (tk.pct) "%" else "",
+                                            tk.after.ifBlank { null },
+                                        ).joinToString(" ") + (tk.op?.let { " $it" } ?: "")
+                                    },
+                                    fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    money(evalCalcTokens(line.tokens) ?: 0.0),
+                                    fontSize = F.small.sp, color = C.ink, fontWeight = FontWeight.SemiBold,
+                                )
+                                IconBtn("close", { deleteCalcLine(i) }, size = 24, danger = true)
+                            }
+                        }
+                        // THE TOTAL BAR — everything the calculator adds
+                        // (committed + active); TAP: make a payment of it
+                        Box {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 6.dp, bottom = 2.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(C.card)
+                                    .border(1.dp, C.line, RoundedCornerShape(12.dp))
+                                    .combinedClickable(
+                                        onClick = { if (effAmount > 0) totalMenu = true },
+                                        onLongClick = { copyLineText(money(effAmount)) },
+                                    )
+                                    .testTag("calcLedgerTotal")
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(t("ee.calcTotal"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub)
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    if (itemsSum > 0.0) {
+                                        Text("+ ${money(itemsSum)}", fontSize = F.tiny.sp, color = C.faint)
+                                    }
+                                    Text(money(effAmount), fontSize = F.body.sp, fontWeight = FontWeight.ExtraBold, color = C.brand)
+                                }
+                            }
+                            if (totalMenu) {
+                                androidx.compose.material3.DropdownMenu(
+                                    expanded = true,
+                                    onDismissRequest = { totalMenu = false },
+                                    offset = DpOffset(0.dp, 6.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    containerColor = C.card,
+                                    tonalElevation = 0.dp,
+                                    shadowElevation = 6.dp,
+                                ) {
+                                    DropdownItem(text = "${t("ee.calcMakePayment")} · ${money(effAmount)}", tag = "totalMenuPay") { makePaymentOf(effAmount) }
+                                    DropdownItem(text = t("ee.calcCopyTotal"), tag = "totalMenuCopy") { copyLineText(money(effAmount)); totalMenu = false }
                                 }
                             }
                         }
-                        // THE ACTIVE LINE — one inline ink-on-paper flow: the
-                        // only affordances are each number's tiny tag badge
-                        // (top-left of its first digit) and the live "= total"
-                        // tail, flush in the same flow
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp)
-                                .pressVeil(corner = 18.dp)
-                                .focusRing(corner = 18.dp)
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(C.brand.copy(alpha = 0.08f))
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                        ) {
-                            if (calcNote.tokens.isEmpty()) {
-                                Text(t("ee.calcPlaceholder"), fontSize = 15.sp, color = C.faint)
-                                Text(t("ee.calcHint"), fontSize = F.tiny.sp, color = C.faint, modifier = Modifier.padding(top = 4.dp))
-                            } else {
-                                FlowRow(
-                                    Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                                ) {
-                                    calcNote.tokens.forEachIndexed { i, tk ->
-                                        // the label BEFORE the number (plain text, same metrics)
-                                        if (tk.before.isNotBlank()) {
-                                            Text(
-                                                tk.before,
-                                                fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = C.sub,
-                                                modifier = Modifier
-                                                    .clickable { openCalcLabel("t$i") }
-                                                    .testTag("calcLbl:$i"),
-                                            )
-                                        }
-                                        // the NUMBER + its single tiny tag badge
-                                        Box {
-                                            Text(
-                                                tk.number,
-                                                fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
-                                                color = if (calcActive == i) C.brand else C.ink,
-                                                textDecoration = if (calcActive == i) TextDecoration.Underline else null,
-                                                modifier = Modifier
-                                                    .clickable { calcActive = i }
-                                                    .testTag("calcNum:$i")
-                                                    .padding(top = 2.dp),
-                                            )
-                                            // the 12dp tag badge pinned to the
-                                            // top-left corner of the first digit —
-                                            // the ONLY label affordance (brand
-                                            // while labeled / editing, faint otherwise)
-                                            Box(
-                                                Modifier
-                                                    .align(Alignment.TopStart)
-                                                    .offset(x = (-7).dp, y = (-9).dp)
-                                                    .size(14.dp)
-                                                    .clip(RoundedCornerShape(5.dp))
-                                                    .background(
-                                                        when {
-                                                            calcLabelTarget == "t$i" -> C.brand
-                                                            tk.before.isNotBlank() || tk.after.isNotBlank() -> C.brandSoft
-                                                            else -> C.chip
-                                                        }
-                                                    )
-                                                    .then(
-                                                        if (tk.before.isBlank() && tk.after.isBlank() && calcLabelTarget != "t$i")
-                                                            Modifier.border(1.dp, C.line, RoundedCornerShape(5.dp))
-                                                        else Modifier
-                                                    )
-                                                    .clickable { openCalcLabel("t$i") }
-                                                    .testTag("calcTag:$i"),
-                                                contentAlignment = Alignment.Center,
-                                            ) {
-                                                MdiIcon(
-                                                    "tag", 9,
-                                                    when {
-                                                        calcLabelTarget == "t$i" -> C.onBrand
-                                                        tk.before.isNotBlank() || tk.after.isNotBlank() -> C.brand
-                                                        else -> C.sub
-                                                    },
+                        // THE ACTIVE LINE — text (default) or the token flow
+                        if (calcMode == "text") {
+                            Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                                BasicTextField(
+                                    value = calcText,
+                                    onValueChange = {
+                                        calcText = it
+                                        calcNote = parseCalcNote(it)
+                                    },
+                                    textStyle = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = C.ink),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                                    cursorBrush = SolidColor(C.brand),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("calcTextField")
+                                        .focusRequester(calcFieldFocus),
+                                    decorationBox = { inner ->
+                                        if (calcText.isEmpty()) {
+                                            Column {
+                                                Text(t("ee.calcPlaceholder"), fontSize = 15.sp, color = C.faint)
+                                                Text(t("ee.calcHint"), fontSize = F.tiny.sp, color = C.faint, modifier = Modifier.padding(top = 4.dp))
+                                            }
+                                        } else inner()
+                                    },
+                                )
+                            }
+                        } else {
+                            Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                                if (calcNote.tokens.isEmpty()) {
+                                    Text(t("ee.calcPlaceholder"), fontSize = 15.sp, color = C.faint)
+                                    Text(t("ee.calcHint"), fontSize = F.tiny.sp, color = C.faint, modifier = Modifier.padding(top = 4.dp))
+                                } else {
+                                    FlowRow(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        calcNote.tokens.forEachIndexed { i, tk ->
+                                            if (tk.before.isNotBlank()) {
+                                                Text(
+                                                    tk.before,
+                                                    fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = C.sub,
+                                                    modifier = Modifier
+                                                        .combinedClickable(
+                                                            onClick = { openCalcLabel("t$i") },
+                                                            onLongClick = { clipTarget = "active" },
+                                                        )
+                                                        .testTag("calcLbl:$i"),
                                                 )
                                             }
-                                            // the focused popover, anchored AT
-                                            // this number (not the screen bottom)
-                                            if (calcLabelTarget == "t$i") {
-                                                CalcLabelPopover(
-                                                    text = calcLabelText,
-                                                    onText = { calcLabelText = it },
-                                                    pos = calcLabelPos,
-                                                    onPos = { toggleCalcLabelPos(it) },
-                                                    showToggle = true,
-                                                    onDone = { commitCalcLabel() },
-                                                    onCancel = { cancelCalcLabel() },
-                                                )
-                                            }
-                                        }
-                                        // the label AFTER the number
-                                        if (tk.after.isNotBlank()) {
-                                            Text(
-                                                tk.after,
-                                                fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = C.sub,
-                                                modifier = Modifier
-                                                    .clickable { openCalcLabel("t$i") }
-                                                    .testTag("calcLbl:$i"),
-                                            )
-                                        }
-                                        // the operator AFTER this number — a
-                                        // plain glyph (tap cycles + − × ÷), NO
-                                        // chip, NO label trigger
-                                        tk.op?.let { op ->
-                                            Text(
-                                                op,
-                                                fontSize = 18.sp, fontWeight = FontWeight.Bold, color = C.sub,
-                                                modifier = Modifier
-                                                    .clickable {
-                                                        val toks = calcNote.tokens.toMutableList()
-                                                        if (i in toks.indices) {
-                                                            val next = when (op) { "+" -> "-"; "-" -> "×"; "×" -> "÷"; else -> "+" }
-                                                            toks[i] = toks[i].copy(op = next)
-                                                            calcNote = calcNote.copy(tokens = toks)
-                                                        }
-                                                    }
-                                                    .testTag("calcOp:$i")
-                                                    .padding(horizontal = 2.dp),
-                                            )
-                                        }
-                                    }
-                                    // the live RESULT — flush in the same flow
-                                    // ("ball 200 + 100 cups = 300 Br"); the
-                                    // result's own labels (legacy notes) render
-                                    // as plain text around it, tappable to edit
-                                    if (calcTotal != null) {
-                                        if (calcNote.resultBefore.isNotBlank()) {
                                             Box {
+                                                Text(
+                                                    tk.number + if (tk.pct) "%" else "",
+                                                    fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
+                                                    color = if (calcActive == i) C.brand else C.ink,
+                                                    textDecoration = if (calcActive == i) TextDecoration.Underline else null,
+                                                    modifier = Modifier
+                                                        .combinedClickable(
+                                                            onClick = { enterNumMode(i) },
+                                                            onLongClick = { clipTarget = "active" },
+                                                        )
+                                                        .testTag("calcNum:$i")
+                                                        .padding(top = 2.dp),
+                                                )
+                                                // the tiny tag badge pinned to the
+                                                // top-left corner of the first digit
+                                                Box(
+                                                    Modifier
+                                                        .align(Alignment.TopStart)
+                                                        .offset(x = (-7).dp, y = (-9).dp)
+                                                        .size(14.dp)
+                                                        .clip(RoundedCornerShape(5.dp))
+                                                        .background(
+                                                            when {
+                                                                calcLabelTarget == "t$i" -> C.brand
+                                                                tk.before.isNotBlank() || tk.after.isNotBlank() -> C.brandSoft
+                                                                else -> C.chip
+                                                            }
+                                                        )
+                                                        .then(
+                                                            if (tk.before.isBlank() && tk.after.isBlank() && calcLabelTarget != "t$i")
+                                                                Modifier.border(1.dp, C.line, RoundedCornerShape(5.dp))
+                                                            else Modifier
+                                                        )
+                                                        .clickable { openCalcLabel("t$i") }
+                                                        .testTag("calcTag:$i"),
+                                                    contentAlignment = Alignment.Center,
+                                                ) {
+                                                    MdiIcon(
+                                                        "tag", 9,
+                                                        when {
+                                                            calcLabelTarget == "t$i" -> C.onBrand
+                                                            tk.before.isNotBlank() || tk.after.isNotBlank() -> C.brand
+                                                            else -> C.sub
+                                                        },
+                                                    )
+                                                }
+                                                if (calcLabelTarget == "t$i") {
+                                                    CalcLabelPopover(
+                                                        text = calcLabelText,
+                                                        onText = { calcLabelText = it },
+                                                        pos = calcLabelPos,
+                                                        onPos = { toggleCalcLabelPos(it) },
+                                                        onDone = { commitCalcLabel() },
+                                                        onCancel = { cancelCalcLabel() },
+                                                    )
+                                                }
+                                            }
+                                            if (tk.after.isNotBlank()) {
+                                                Text(
+                                                    tk.after,
+                                                    fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = C.sub,
+                                                    modifier = Modifier
+                                                        .combinedClickable(
+                                                            onClick = { openCalcLabel("t$i") },
+                                                            onLongClick = { clipTarget = "active" },
+                                                        )
+                                                        .testTag("calcLblAfter:$i"),
+                                                )
+                                            }
+                                            // the operator — a plain glyph (tap cycles)
+                                            tk.op?.let { op ->
+                                                Text(
+                                                    op,
+                                                    fontSize = 18.sp, fontWeight = FontWeight.Bold, color = C.sub,
+                                                    modifier = Modifier
+                                                        .clickable {
+                                                            val toks = calcNote.tokens.toMutableList()
+                                                            if (i in toks.indices) {
+                                                                val next = when (op) { "+" -> "-"; "-" -> "×"; "×" -> "÷"; else -> "+" }
+                                                                toks[i] = toks[i].copy(op = next)
+                                                                calcNote = calcNote.copy(tokens = toks)
+                                                            }
+                                                        }
+                                                        .testTag("calcOp:$i")
+                                                        .padding(horizontal = 2.dp),
+                                                )
+                                            }
+                                        }
+                                        // the live RESULT — flush in the same flow,
+                                        // with its own tag badge (text after the =:
+                                        // "= total 200" / "= 200 total")
+                                        if (calcTotal != null) {
+                                            if (calcNote.resultBefore.isNotBlank()) {
                                                 Text(
                                                     calcNote.resultBefore,
                                                     fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = C.sub,
-                                                    modifier = Modifier.clickable { openCalcLabel("rb") },
+                                                    modifier = Modifier.clickable { openCalcLabel("res") },
                                                 )
-                                                if (calcLabelTarget == "rb") {
+                                            }
+                                            Text("=", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = C.sub)
+                                            Box {
+                                                Text(
+                                                    money(calcTotal ?: 0.0),
+                                                    fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, color = C.brand,
+                                                    modifier = Modifier.testTag("calcTotal").padding(horizontal = 2.dp, vertical = 2.dp),
+                                                )
+                                                Box(
+                                                    Modifier
+                                                        .align(Alignment.TopStart)
+                                                        .offset(x = (-7).dp, y = (-9).dp)
+                                                        .size(14.dp)
+                                                        .clip(RoundedCornerShape(5.dp))
+                                                        .background(
+                                                            when {
+                                                                calcLabelTarget == "res" -> C.brand
+                                                                calcNote.resultBefore.isNotBlank() || calcNote.resultAfter.isNotBlank() -> C.brandSoft
+                                                                else -> C.chip
+                                                            }
+                                                        )
+                                                        .clickable { openCalcLabel("res") }
+                                                        .testTag("calcTag:res"),
+                                                    contentAlignment = Alignment.Center,
+                                                ) {
+                                                    MdiIcon(
+                                                        "tag", 9,
+                                                        when {
+                                                            calcLabelTarget == "res" -> C.onBrand
+                                                            calcNote.resultBefore.isNotBlank() || calcNote.resultAfter.isNotBlank() -> C.brand
+                                                            else -> C.sub
+                                                        },
+                                                    )
+                                                }
+                                                if (calcLabelTarget == "res") {
                                                     CalcLabelPopover(
                                                         text = calcLabelText,
                                                         onText = { calcLabelText = it },
                                                         pos = calcLabelPos,
-                                                        onPos = {},
-                                                        showToggle = false,
+                                                        onPos = { toggleCalcLabelPos(it) },
                                                         onDone = { commitCalcLabel() },
                                                         onCancel = { cancelCalcLabel() },
                                                     )
                                                 }
                                             }
-                                        }
-                                        Text("=", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = C.sub)
-                                        Text(
-                                            money(calcTotal ?: 0.0),
-                                            fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, color = C.brand,
-                                            modifier = Modifier
-                                                .testTag("calcTotal")
-                                                .padding(horizontal = 2.dp),
-                                        )
-                                        if (calcNote.resultAfter.isNotBlank()) {
-                                            Box {
+                                            if (calcNote.resultAfter.isNotBlank()) {
                                                 Text(
                                                     calcNote.resultAfter,
                                                     fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = C.sub,
-                                                    modifier = Modifier.clickable { openCalcLabel("ra") },
+                                                    modifier = Modifier.clickable { openCalcLabel("res") },
                                                 )
-                                                if (calcLabelTarget == "ra") {
-                                                    CalcLabelPopover(
-                                                        text = calcLabelText,
-                                                        onText = { calcLabelText = it },
-                                                        pos = calcLabelPos,
-                                                        onPos = {},
-                                                        showToggle = false,
-                                                        onDone = { commitCalcLabel() },
-                                                        onCancel = { cancelCalcLabel() },
-                                                    )
-                                                }
                                             }
                                         }
                                     }
                                 }
-                                // show your work — the live folds in ONE muted
-                                // line under the flow (paper keeps its work)
-                                if (calcStepList.isNotEmpty()) {
-                                    Text(
-                                        calcStepList.joinToString(" · ") { "${it.expr} = ${money(it.value)}" },
-                                        fontSize = F.tiny.sp, color = C.faint,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 6.dp)
-                                            .testTag("calcSteps"),
-                                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                    )
+                            }
+                        }
+                        // show your work — the live folds in ONE muted line
+                        // (in text mode the "= total" preview lives here too)
+                        if (calcStepList.isNotEmpty() || calcTotal != null) {
+                            Text(
+                                listOfNotNull(
+                                    calcTotal?.let { "= ${money(it)}" },
+                                    calcStepList.joinToString(" · ") { s -> "${s.expr} = ${money(s.value)}" },
+                                ).joinToString("   "),
+                                fontSize = F.tiny.sp, color = C.faint,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 8.dp)
+                                    .testTag("calcSteps"),
+                                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        // the long-press CLIPBOARD menu (copy / cut / paste the
+                        // active line — the native toolbar covers text mode)
+                        if (clipTarget == "active") {
+                            val lineText = serializeCalcNote(calcNote)
+                            androidx.compose.material3.DropdownMenu(
+                                expanded = true,
+                                onDismissRequest = { clipTarget = null },
+                                offset = DpOffset(0.dp, 6.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                containerColor = C.card,
+                                tonalElevation = 0.dp,
+                                shadowElevation = 6.dp,
+                            ) {
+                                DropdownItem(text = t("act.copy"), tag = "clipCopy") { copyLineText(lineText); clipTarget = null }
+                                DropdownItem(text = t("act.cut"), tag = "clipCut") {
+                                    copyLineText(lineText)
+                                    calcNote = CalcNote(); calcText = ""; calcActive = -1
+                                    clipTarget = null
+                                }
+                                DropdownItem(text = t("act.paste"), tag = "clipPaste") {
+                                    val clip = Platform.share.readClipboard()
+                                    if (!clip.isNullOrBlank()) {
+                                        calcNote = parseCalcNote(clip)
+                                        calcText = clip
+                                        calcActive = -1
+                                    }
+                                    clipTarget = null
                                 }
                             }
                         }
                     }
                 }
-
-                // JUST AMOUNT — the hero amount exactly as it always was
-                // (v1.6.13 real decimal-pad fix; v1.6.29 press veil; v1.6.31
-                // active ring; comma tolerated like the RN hero field).
-                "amount" -> Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 4.dp)
-                        // v1.6.29 — INPUT PRESS FEEDBACK on the hero amount too
-                        .pressVeil(corner = 18.dp)
-                        // v1.6.31 — ring colour while the amount field is active
-                        .focusRing(corner = 18.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(C.brand.copy(alpha = 0.08f))
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                Column(Modifier.weight(1f)) {
-                    Text(t("lg.amount"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
-                    androidx.compose.foundation.text.BasicTextField(
-                        value = amount,
-                        onValueChange = { raw ->
-                            // digits, one dot/comma, keep it clean
-                            val cleaned = raw
-                                .replace(',', '.')
-                                .filter { it.isDigit() || it == '.' }
-                                .let { s ->
-                                    val firstDot = s.indexOf('.')
-                                    if (firstDot >= 0) s.substring(0, firstDot + 1) + s.substring(firstDot + 1).replace(".", "") else s
-                                }
-                                .take(14)
-                            amount = cleaned
-                            // v1.6.37 — the typed value is the BASE; items
-                            // and the calculator ADD onto it for the entry
-                            // total (see effAmount / the TOTAL row below)
-                        },
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            fontSize = 30.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = C.ink,
-                        ),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
-                        ),
-                        singleLine = true,
-                        cursorBrush = androidx.compose.ui.graphics.SolidColor(C.brand),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        decorationBox = { inner ->
-                            if (amount.isEmpty()) {
-                                androidx.compose.foundation.layout.Row {
-                                    Text("0", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = C.faint)
-                                }
-                                androidx.compose.foundation.layout.Box {}
-                            } else inner()
-                        },
-                    )
-                    if (baseNum != null) {
-                        Text(money(baseNum), fontSize = F.tiny.sp, color = C.faint)
-                    }
-                }
-                    if (items.isEmpty()) {
-                        IconBtn("calculator-variant", { UiStore.openCalculator { v -> amount = trimNum(v) } }, size = 40)
-                    }
-                }
-                // ITEMS — the full line-item editor (name · qty × price);
-                // tapping an existing row below switches here for editing
-                "items" -> ItemEditor(
-                    onAdd = { item -> items = items + item },
-                    onUpdate = { item -> items = items.map { if (it.id == item.id) item else it } },
-                    editing = editingItem,
-                    onEditDone = { editingItem = null },
-                )
-                // QUICK ITEM — label + price, one ＋ (v1.6.27's row, now
-                // inside the add flow exactly as the user asked)
-                "quick" -> Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Box(Modifier.weight(1f)) {
-                        Field(
-                            value = quickLabel,
-                            onChangeText = { quickLabel = it },
-                            placeholder = t("lg.quickItemLabel"),
-                            onSubmit = { addQuickItem() },
-                        )
-                    }
-                    Box(Modifier.width(110.dp)) {
-                        Field(
-                            value = quickPrice,
-                            onChangeText = { raw ->
-                                quickPrice = raw.replace(',', '.')
-                                    .filter { it.isDigit() || it == '.' }
-                                    .let { s ->
-                                        val firstDot = s.indexOf('.')
-                                        if (firstDot >= 0) s.substring(0, firstDot + 1) + s.substring(firstDot + 1).replace(".", "") else s
-                                    }
-                                    .take(12)
-                            },
-                            placeholder = t("lg.quickItemPrice"),
-                            keyboardType = "decimal-pad",
-                            onSubmit = { addQuickItem() },
-                        )
-                    }
-                    Box(
-                        Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(C.brand)
-                            .clickable { addQuickItem() },
-                        contentAlignment = Alignment.Center,
-                    ) { MdiIcon("plus", 22, C.onBrand) }
-                }
-                // RECENT — one-tap reuse of items booked before (the
-                // "other useful type": repeat bookings never re-typed)
+                // RECENT — one-tap reuse of items booked before
                 "recent" -> {
                     val recents = remember(AppStore.state.entries) { recentItems(AppStore.state.entries) }
                     if (recents.isEmpty()) {
@@ -934,10 +953,27 @@ fun EntryEditOverlay(
                             }
                         }
                     }
+                    if (effAmount > 0) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(t("lg.total"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub)
+                            Text(money(effAmount), fontSize = F.body.sp, fontWeight = FontWeight.ExtraBold, color = C.brand, modifier = Modifier.testTag("entryTotal"))
+                        }
+                    }
                 }
             }
-            // line items — always visible no matter the tab, so whatever
-            // the input method, the booked list + its total stay in view
+            // line items — editing an existing item opens the inline editor
+            if (editingItem != null) {
+                ItemEditor(
+                    onAdd = { item -> items = items + item },
+                    onUpdate = { item -> items = items.map { if (it.id == item.id) item else it } },
+                    editing = editingItem,
+                    onEditDone = { editingItem = null },
+                )
+            }
             if (items.isNotEmpty()) {
                 Text(t("lg.itemsTitle"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
             }
@@ -948,7 +984,7 @@ fun EntryEditOverlay(
                         .padding(bottom = 6.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(C.card)
-                        .clickable { editingItem = it; amountMode = "items" }
+                        .clickable { editingItem = it }
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -959,45 +995,7 @@ fun EntryEditOverlay(
                     IconBtn("close", { items = items.filter { x -> x.id != it.id } }, size = 28, danger = true)
                 }
             }
-            // v1.6.34 — the old collapsed “＋ Add items” row is GONE: the
-            // tab strip above IS the add flow now (an existing entry
-            // starts on the amount tab, so the v1.6.18 double-save-looking
-            // forms can never stack).
-            // v1.6.37 — THE ENTRY TOTAL row (the user's sum flow: type 100,
-            // add a 200 item → "100 + 200 = 300"): base + items +
-            // calculator, live. Skipped on the calc tab when it would just
-            // repeat the calculator's own running-total bar.
-            val showTotal = effAmount > 0 &&
-                !(amountMode == "calc" && items.isEmpty() && (baseNum ?: 0.0) <= 0.0)
-            if (showTotal) {
-                Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 10.dp)) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(t("lg.total"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub)
-                        Text(
-                            money(effAmount),
-                            fontSize = F.body.sp, fontWeight = FontWeight.ExtraBold, color = C.brand,
-                            modifier = Modifier.testTag("entryTotal"),
-                        )
-                    }
-                    // the breakdown, exactly the user's own arithmetic
-                    if ((baseNum ?: 0.0) > 0.0 && partsSum > 0.0) {
-                        Text(
-                            "${trimNum(baseNum ?: 0.0)} + ${trimNum(partsSum)}",
-                            fontSize = F.tiny.sp, color = C.faint,
-                        )
-                    }
-                }
-            } else {
-                Spacer(Modifier.height(10.dp))
-            }
-            // date + method — date via the native Material calendar (v1.6.13).
-            // v1.6.17: PickerField on both sides — identical "label above +
-            // 48 dp box" metrics so the pair aligns (the old label-inside
-            // date box sat shorter than the Field beside it).
+            // date + method — date via the native Material calendar (v1.6.13)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box(Modifier.weight(1f)) {
                     com.callmony.ui.kit.PickerField(
@@ -1089,8 +1087,7 @@ fun EntryEditOverlay(
             }
             // note
             Field(label = t("lg.note"), value = note, onChangeText = { note = it }, placeholder = t("lg.optionalNote"), multiline = true)
-            // v1.6.18 — ATTACHMENTS: any list, note or reminder can ride on
-            // this credit / debit / income / expense (entry.refs, LinkRef).
+            // v1.6.18 — ATTACHMENTS
             Text(t("ee.attached"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
             if (refs.isEmpty()) {
                 Text(t("ee.noAttachments"), fontSize = F.tiny.sp, color = C.faint, modifier = Modifier.padding(bottom = 8.dp))
@@ -1141,20 +1138,74 @@ fun EntryEditOverlay(
                     }
                 }
             }
-            } // end of the scrolling form (v1.6.35 pinned-tabs split)
+            } // end of the scrolling form
 
-            // v1.6.37 — THE SMART KEYPAD (annotated calculator's tab only):
-            // the numeric pad + its NEXT LINE key stay pinned at the bottom
-            // above the Save footer. While the LABEL POPOVER is open the pad
-            // HIDES — the popover is anchored at the number and carries the
-            // system QWERTY itself, so nothing sits at the screen bottom
-            // overlapping the date/method pickers (the user's report).
-            if (amountMode == "calc" && calcLabelTarget == null) {
-                CalcPadArea(
-                    onKey = { calcKey(it) },
-                    onNext = { commitCalcLine() },
-                    nextEnabled = calcNote.tokens.isNotEmpty(),
-                )
+            // v1.6.38 — THE MODE ROW + ADVANCED PANEL + KEYPAD, pinned at
+            // the editor's bottom (calculator tab only). Fresh lines start
+            // as TEXT; Aa/123 switches input; Σ reveals M+/M−/MR.
+            if (amountMode == "calc") {
+                Column(Modifier.padding(horizontal = 18.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(C.card)
+                                .border(1.dp, C.line, RoundedCornerShape(12.dp)),
+                        ) {
+                            Box(
+                                Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (calcMode == "text") C.brand else Color.Transparent)
+                                    .clickable { enterTextMode() }
+                                    .testTag("calcModeText")
+                                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                            ) { Text("Aa", fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = if (calcMode == "text") C.onBrand else C.sub) }
+                            Box(
+                                Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (calcMode == "num") C.brand else Color.Transparent)
+                                    .clickable { enterNumMode() }
+                                    .testTag("calcModeNum")
+                                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                            ) { Text("123", fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = if (calcMode == "num") C.onBrand else C.sub) }
+                        }
+                        if (calcAdvanced) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                SmallCalcBtn("M+") { calcMemory = r2((calcMemory ?: 0.0) + (calcTotal ?: 0.0)) }
+                                SmallCalcBtn("M−") { calcMemory = r2((calcMemory ?: 0.0) - (calcTotal ?: 0.0)) }
+                                SmallCalcBtn("MR", enabled = calcMemory != null) {
+                                    val m = calcMemory ?: return@SmallCalcBtn
+                                    val toks = calcNote.tokens.toMutableList()
+                                    if (calcActive in toks.indices) {
+                                        toks[calcActive] = toks[calcActive].copy(number = trimNum(m), pct = false)
+                                    } else {
+                                        toks.add(CalcToken(number = trimNum(m)))
+                                        calcActive = toks.lastIndex
+                                    }
+                                    calcNote = calcNote.copy(tokens = toks)
+                                }
+                                calcMemory?.let {
+                                    Text(money(it), fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.CenterVertically))
+                                }
+                            }
+                        }
+                    }
+                    // the keypad — number mode only (text mode rides the
+                    // system keyboard). 5 rows incl. AC % ± and the SMALL
+                    // next-line key; digits are BIG and the modal does not
+                    // grow (same capped 172–256dp band as before).
+                    if (calcMode == "num") {
+                        CalcPadArea(
+                            onKey = { calcKey(it) },
+                            onNext = { commitCalcLine() },
+                            nextEnabled = calcNote.tokens.isNotEmpty(),
+                        )
+                    }
+                }
             }
         }
     }
@@ -1194,22 +1245,48 @@ fun EntryEditOverlay(
     }
 }
 
-/* ---------------- v1.6.37 — the paper calculator's pad + popover ---------------- */
+/* ---------------- v1.6.38 — the canvas calculator's pad, popover, small buttons ---------------- */
 
-/* The FOCUSED LABEL POPOVER, anchored directly at the number it edits
-   (the user's blueprint: no more jumping to an overlay at the screen
-   bottom): a standard text field on the SYSTEM QWERTY keyboard, a
-   clean Before/After toggle for the label's position ("ball 200" vs
-   "200 Birr"), a ✕ cancel and a proper Done button. Submitting an
-   EMPTY field deletes the label. DropdownMenu keeps the popover
-   on-screen whatever the anchor's position. */
+/** A tiny menu row (the total's actions / the clipboard menu). */
+@Composable
+private fun DropdownItem(text: String, tag: String, onClick: () -> Unit) {
+    val C = C()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onClick() }
+            .testTag(tag)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) { Text(text, fontSize = F.body.sp, color = C.ink, fontWeight = FontWeight.Medium) }
+}
+
+/** A very small pill button (M+ / M− / MR — the Σ advanced panel). */
+@Composable
+private fun SmallCalcBtn(label: String, enabled: Boolean = true, onPress: () -> Unit) {
+    val C = C()
+    Box(
+        Modifier
+            .height(30.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(if (enabled) C.brandSoft else C.card)
+            .border(1.dp, if (enabled) C.brand else C.line, RoundedCornerShape(9.dp))
+            .clickable(enabled = enabled) { vibrate(longArrayOf(8)); onPress() }
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text(label, fontSize = F.tiny.sp, fontWeight = FontWeight.ExtraBold, color = if (enabled) C.brand else C.faint) }
+}
+
+/* The COMPACT label popover (user spec: "the small modal that shows to
+   inter text is very ugly and it should be compact with very small
+   btns"): a narrow card, a 38dp field, tiny Before/After chips and tiny
+   ✕ / Done buttons — anchored at the number/result it labels. */
 @Composable
 private fun CalcLabelPopover(
     text: String,
     onText: (String) -> Unit,
     pos: String,
     onPos: (String) -> Unit,
-    showToggle: Boolean,
     onDone: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -1222,16 +1299,16 @@ private fun CalcLabelPopover(
         expanded = true,
         onDismissRequest = onCancel,
         offset = DpOffset(0.dp, 6.dp),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(12.dp),
         containerColor = C.card,
         tonalElevation = 0.dp,
-        shadowElevation = 6.dp,
+        shadowElevation = 4.dp,
     ) {
         Column(
-            Modifier.widthIn(min = 250.dp, max = 310.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            Modifier.widthIn(min = 208.dp, max = 264.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            androidx.compose.foundation.text.BasicTextField(
+            BasicTextField(
                 value = text,
                 onValueChange = onText,
                 textStyle = TextStyle(fontSize = F.body.sp, color = C.ink),
@@ -1241,53 +1318,57 @@ private fun CalcLabelPopover(
                     .fillMaxWidth()
                     .testTag("calcLabelField")
                     .focusRequester(fr)
-                    .pressVeil()
-                    .focusRing()
-                    .border(1.dp, C.line, RoundedCornerShape(12.dp))
-                    .background(C.inputBg, RoundedCornerShape(12.dp))
-                    .padding(horizontal = 12.dp)
-                    .heightIn(min = 44.dp),
+                    .border(1.dp, C.line, RoundedCornerShape(9.dp))
+                    .background(C.inputBg, RoundedCornerShape(9.dp))
+                    .padding(horizontal = 10.dp)
+                    .heightIn(min = 38.dp),
                 decorationBox = { inner ->
                     if (text.isEmpty()) {
-                        Row { Text(t("ee.calcDescribe"), fontSize = F.body.sp, color = C.faint) }
-                        Spacer(Modifier.height(0.dp))
+                        Row { Text(t("ee.calcDescribe"), fontSize = F.small.sp, color = C.faint) }
                         Box {}
                     } else inner()
                 },
             )
-            if (showToggle) {
-                // Before / After — the label's position (ball 200 vs 200 birr)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Chip(label = t("ee.calcPosBefore"), compact = true, active = pos == "before", onPress = { onPos("before") })
-                    Chip(label = t("ee.calcPosAfter"), compact = true, active = pos == "after", onPress = { onPos("after") })
+            // Before / After — the label's position (ball 200 vs 200 birr)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                listOf("before" to t("ee.calcPosBefore"), "after" to t("ee.calcPosAfter")).forEach { (p, lbl) ->
+                    Box(
+                        Modifier
+                            .height(26.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (pos == p) C.brand else C.chip)
+                            .clickable { onPos(p) }
+                            .testTag("calcPos:$p")
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.Center,
+                    ) { Text(lbl, fontSize = F.tiny.sp, fontWeight = FontWeight.Bold, color = if (pos == p) C.onBrand else C.sub) }
                 }
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                IconBtn("close", onCancel, size = 36)
-                Btn(
-                    label = t("act.done"),
-                    onPress = onDone,
-                    small = true,
-                    modifier = Modifier.testTag("calcLabelDone"),
-                )
+                IconBtn("close", onCancel, size = 28)
+                Box(
+                    Modifier
+                        .height(28.dp)
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(C.brand)
+                        .clickable { onDone() }
+                        .testTag("calcLabelDone"),
+                    contentAlignment = Alignment.Center,
+                ) { Text(t("act.done"), fontSize = F.tiny.sp, fontWeight = FontWeight.ExtraBold, color = C.onBrand) }
             }
         }
     }
 }
 
-/* The keypad area pinned at the editor's bottom (calc tab only): the
-   4×4 numeric pad + the full-width NEXT LINE key that commits the
-   active expression into the stacked ledger.
-
-   SIZING (the layout lesson from the harness's short window — kept
-   from v1.6.36): the pad is capped and FLEXES DOWN on short screens —
-   the rows are weighted children of a min/max-heighted column, so they
-   share whatever height the editor can spare instead of being crushed
-   to zero-height tails. Keys always stay tappable; tall screens get
-   the full-height keys. */
+/* The keypad (number mode): a 4×5 grid — AC ⌫ % ÷ / digits with × − + /
+ ± 0 . ⏎. The ⏎ key IS the (small) NEXT LINE key — a normal key cell,
+ not a bar (the rework spec). The band keeps the capped, flexing height
+ (172–256dp) so the modal never grows; the DIGITS are big (24sp, was
+ 20 — the user's "keypad numbers are small"). */
 @Composable
 private fun CalcPadArea(
     onKey: (String) -> Unit,
@@ -1298,57 +1379,44 @@ private fun CalcPadArea(
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 18.dp, vertical = 4.dp)
+            .padding(vertical = 4.dp)
             .heightIn(min = 172.dp, max = 256.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         listOf(
-            listOf("7", "8", "9", "÷"),
-            listOf("4", "5", "6", "×"),
-            listOf("1", "2", "3", "−"),
-            listOf(".", "0", "⌫", "+"),
+            listOf("AC", "⌫", "%", "÷"),
+            listOf("7", "8", "9", "×"),
+            listOf("4", "5", "6", "−"),
+            listOf("1", "2", "3", "+"),
+            listOf("±", "0", ".", "⏎"),
         ).forEach { rowKeys ->
             Row(
                 Modifier.fillMaxWidth().weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 rowKeys.forEach { k ->
-                    CalcKey(
-                        key = if (k == "−") "-" else k,
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                        onPress = onKey,
-                    )
-                }
-            }
-        }
-        // v1.6.37 — NEXT LINE: commits the active expression into the
-        // stacked ledger and clears the line for the next calculation
-        // (the blueprint's multi-line paper flow)
-        Row(Modifier.fillMaxWidth().weight(1f)) {
-            Box(
-                Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(if (nextEnabled) C.brand else C.brand.copy(alpha = 0.25f))
-                    .clickable(enabled = nextEnabled) {
-                        vibrate(longArrayOf(8))
-                        onNext()
+                    if (k == "⏎") {
+                        // the SMALL next-line key (the blueprint's Next as a key)
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(if (nextEnabled) C.brand else C.brand.copy(alpha = 0.25f))
+                                .clickable(enabled = nextEnabled) {
+                                    vibrate(longArrayOf(8))
+                                    onNext()
+                                }
+                                .testTag("calcKey:Next"),
+                            contentAlignment = Alignment.Center,
+                        ) { MdiIcon("arrow-down", 20, C.onBrand.copy(alpha = if (nextEnabled) 1f else 0.6f)) }
+                    } else {
+                        CalcKey(
+                            key = if (k == "−") "-" else k,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            onPress = onKey,
+                        )
                     }
-                    .testTag("calcKey:Next"),
-                contentAlignment = Alignment.Center,
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    MdiIcon("arrow-down", 16, C.onBrand.copy(alpha = if (nextEnabled) 1f else 0.6f))
-                    Text(
-                        t("ee.calcNext"),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = C.onBrand.copy(alpha = if (nextEnabled) 1f else 0.6f),
-                    )
                 }
             }
         }
@@ -1356,8 +1424,9 @@ private fun CalcPadArea(
 }
 
 /* One key of the numeric calculator pad — flat tile, brand-tinted
-   operators, red backspace (the app calculator's colour language). The
-   key FILLS its row cell (the rows flex — see CalcPadArea). */
+   operators, red backspace, blue % (the app calculator's language).
+   v1.6.38: DIGITS 24sp (bigger glyphs, same cell — "the keypad numbers
+   are small but don't increase the size of the modal"). */
 @Composable
 private fun CalcKey(key: String, modifier: Modifier = Modifier, onPress: (String) -> Unit) {
     val C = C()
@@ -1368,13 +1437,17 @@ private fun CalcKey(key: String, modifier: Modifier = Modifier, onPress: (String
             .clip(RoundedCornerShape(14.dp))
             .background(when {
                 key == "⌫" -> Color(0x1dd64545)
+                key == "AC" -> Color(0x1dd64545)
+                key == "%" -> Color(0x1f4a7d9b)
+                key == "±" -> Color(0x1f4a7d9b)
                 op -> C.brandSoft
                 else -> C.card
             })
             .border(
                 1.dp,
                 when {
-                    key == "⌫" -> C.red
+                    key == "⌫" || key == "AC" -> C.red
+                    key == "%" || key == "±" -> Color(0xFF4a7d9b)
                     op -> C.brand
                     else -> C.line
                 },
@@ -1389,12 +1462,18 @@ private fun CalcKey(key: String, modifier: Modifier = Modifier, onPress: (String
     ) {
         if (key == "⌫") {
             MdiIcon("backspace-outline", 20, C.red)
+        } else if (key == "AC") {
+            Text("AC", fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.red)
         } else {
             Text(
                 display,
-                fontSize = 20.sp,
+                fontSize = if (key.length == 1 && key[0].isDigit()) 24.sp else 21.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (op) C.brand else C.ink,
+                color = when {
+                    op -> C.brand
+                    key == "%" || key == "±" -> Color(0xFF4a7d9b)
+                    else -> C.ink
+                },
             )
         }
     }
@@ -1422,7 +1501,8 @@ internal fun recentItems(entries: List<com.callmony.model.LedgerEntry>): List<Pa
     return out.take(14)
 }
 
-/* line item add/edit form */
+/* line item edit form (v1.6.38: still reachable by tapping an existing
+   item row — the ADD tab is gone but editing what exists stays) */
 @Composable
 private fun ItemEditor(
     onAdd: (EntryItem) -> Unit,
@@ -1524,9 +1604,7 @@ private fun AttachedChip(ref: com.callmony.model.LinkRef, onDetach: () -> Unit) 
 
 /**
  * v1.6.18 — the Attach picker: one sheet, three tabs (Lists / Notes /
- * Reminders), live from the store. Tapping a row attaches or detaches;
- * the ＋ quick-create row at the top opens the corresponding editor on
- * top of this sheet (the new entity shows up here as soon as it exists).
+ * Reminders), live from the store.
  */
 @Composable
 fun AttachmentPicker(refs: List<com.callmony.model.LinkRef>, onChange: (List<com.callmony.model.LinkRef>) -> Unit, onClose: () -> Unit) {
@@ -1534,7 +1612,7 @@ fun AttachmentPicker(refs: List<com.callmony.model.LinkRef>, onChange: (List<com
     var tab by remember { mutableStateOf("list") }
     com.callmony.ui.components.BottomSheet(title = t("att.attachExisting"), onClose = onClose) {
         Column {
-            Segmented(
+            com.callmony.ui.kit.Segmented(
                 listOf(
                     Triple("list", t("misc.list"), null),
                     Triple("note", t("misc.note"), null),
@@ -1590,4 +1668,3 @@ fun AttachmentPicker(refs: List<com.callmony.model.LinkRef>, onChange: (List<com
         }
     }
 }
-

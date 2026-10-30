@@ -428,12 +428,14 @@ private fun fmtTerm(d: Double): String =
 /** v1.6.36 — ONE annotated number of the interlocking chip row, exactly as
  *  the user's updated spec draws it: a label slot BEFORE the number, the
  *  editable number itself, a label slot AFTER it, and the operator that
- *  follows this number (null on the chain's last number). */
+ *  follows this number (null on the chain's last number).
+ *  v1.6.38 — pct: this number was typed with the % key ("10%"). */
 data class CalcToken(
     val before: String = "",  // "ball"
     val number: String,       // "100" (editable text; comma normalized to dot)
     val after: String = "",   // "price in birr"
     val op: String? = null,   // "+", "-", "×", "÷" — the op AFTER this number
+    val pct: Boolean = false, // v1.6.38 — "10%": % of the running total (±) or /100 (×÷)
 )
 
 /** v1.6.36 — the whole annotated calculation as structured data: the number
@@ -491,6 +493,7 @@ fun parseCalcNote(raw: String): CalcNote {
     var after = mutableListOf<String>()   // words collected after a number
     var curNum: String? = null            // the number being annotated
     var curOp: String? = null             // op already set for it
+    var curPct = false                    // v1.6.38 — the number carries %
 
     fun flush() {
         val n = curNum ?: return
@@ -500,12 +503,14 @@ fun parseCalcNote(raw: String): CalcNote {
                 number = n,
                 after = after.joinToString(" "),
                 op = curOp,
+                pct = curPct,
             )
         )
         before = mutableListOf()
         after = mutableListOf()
         curNum = null
         curOp = null
+        curPct = false
     }
 
     for (tok in spaced.split(Regex("\\s+"))) {
@@ -525,15 +530,23 @@ fun parseCalcNote(raw: String): CalcNote {
                 }
                 // a dangling/leading operator is ignored (old rule)
             }
+            // v1.6.38 — a standalone "%" glues onto the number before it
+            // ("10 %" == "10%"), same as the glued form below
+            "%" -> if (curNum != null && curOp == null) curPct = true
             else -> {
-                val n = latinizeDigits(tok).replace(',', '.').toDoubleOrNull()
+                // v1.6.38 — "10%" (glued): strip ONE trailing % and parse
+                // the rest as the number; the marker rides the token
+                val isPct = tok.endsWith("%")
+                val body = if (isPct) tok.dropLast(1) else tok
+                val n = latinizeDigits(body).replace(',', '.').toDoubleOrNull()
                 if (n != null && n.isFinite()) {
                     if (curNum != null) {
                         // adjacent numbers: the fold shows an explicit "+"
                         curOp = "+"
                         flush()
                     }
-                    curNum = latinizeDigits(tok).replace(',', '.')
+                    curNum = latinizeDigits(body).replace(',', '.')
+                    curPct = isPct
                 } else if (curNum != null) {
                     after.add(tok)
                 } else {
@@ -575,6 +588,7 @@ fun serializeCalcNote(n: CalcNote): String {
         if (i > 0) sb.append(' ')
         if (tk.before.isNotBlank()) sb.append(tk.before.trim()).append(' ')
         sb.append(tk.number)
+        if (tk.pct) sb.append('%')
         if (tk.after.isNotBlank()) sb.append(' ').append(tk.after.trim())
         tk.op?.let { sb.append(' ').append(it) }
     }
@@ -607,7 +621,47 @@ fun evalCalcTokens(tokens: List<CalcToken>): Double? {
         nums.add(v)
         lastValidIdx = i
     }
-    return evalChain(nums, ops)
+    return evalChain(resolvePctValues(nums, ops, tokens), ops)
+}
+
+/* v1.6.38 — PERCENTAGE RESOLUTION (the % key, the user report: "the
+   calculator should also have the persontage"). Phone-calculator
+   semantics on the token chain, resolved BEFORE the standard folds:
+   - a % number joined by + or −  is that percent OF THE RUNNING TOTAL
+     so far ("200 + 10%" → 10% of 200 = 20 → 220; "100 + 50 + 10%" →
+     10% of 150 = 15 → 165, the classic behaviour)
+   - a % number joined by × or ÷ is the plain fraction ("200 × 10%" →
+     200 × 0.1 = 20)
+   - a leading % number (nothing before it) is the plain fraction too
+   The running total is evaluated with the SAME ×/÷-before +/−
+   precedence (evalChain on the prefix), so the resolved value is
+   exactly what the folds will consume. */
+private fun resolvePctValues(
+    nums: List<Double>,
+    ops: List<Char>,
+    tokens: List<CalcToken>,
+): List<Double> {
+    // nothing % anywhere → the list as-is (the hot path, zero copies)
+    val anyPct = tokens.any { it.pct }
+    if (!anyPct) return nums
+    val out = nums.toMutableList()
+    var validIdx = -1
+    tokens.forEachIndexed { i, tk ->
+        if (tk.number.replace(',', '.').toDoubleOrNull() == null) return@forEachIndexed
+        validIdx++
+        if (!tk.pct) return@forEachIndexed
+        val n = out[validIdx]
+        val prevOp: Char? = if (validIdx == 0) null else ops[validIdx - 1]
+        out[validIdx] = when (prevOp) {
+            null, '×', '÷' -> r2(n / 100)
+            else -> {
+                // the running total of everything BEFORE this number
+                val base = evalChain(out.subList(0, validIdx), ops.subList(0, validIdx - 1)) ?: 0.0
+                r2(base * n / 100)
+            }
+        }
+    }
+    return out
 }
 
 private fun evalChain(nums: List<Double>, ops: List<Char>): Double? {
@@ -644,7 +698,7 @@ private fun evalChain(nums: List<Double>, ops: List<Char>): Double? {
  *  one ("200 + 300" → 500) — the running display of the user's own
  *  example. Empty for a single bare number (nothing intermediate). */
 fun calcSteps(tokens: List<CalcToken>): List<CalcStep> {
-    val nums = ArrayList<Double>()
+    val nums0 = ArrayList<Double>()
     val ops = ArrayList<Char>()
     var lastValidIdx = -1
     tokens.forEachIndexed { i, tk ->
@@ -653,13 +707,15 @@ fun calcSteps(tokens: List<CalcToken>): List<CalcStep> {
             val prevOp = tokens.getOrNull(lastValidIdx)?.op
             ops.add(prevOp?.get(0) ?: '+')
         }
-        nums.add(v)
+        nums0.add(v)
         lastValidIdx = i
     }
-    if (nums.size <= 1) return emptyList()
+    if (nums0.size <= 1) return emptyList()
 
     val steps = mutableListOf<CalcStep>()
-    val vs = nums.toMutableList()
+    // v1.6.38 — the % numbers fold at their RESOLVED value ("10%" of 200
+    // enters the fold as 20), same semantics as evalCalcTokens
+    val vs = resolvePctValues(nums0, ops, tokens).toMutableList()
     val os = ops.toMutableList()
     // pass 1 — the × ÷ folds
     var i = 0

@@ -21,6 +21,8 @@ internal val EN: Map<String, String> = mapOf(
     "act.edit" to "Edit",
     "act.add" to "Add",
     "act.copy" to "Copy",
+    "act.cut" to "Cut",
+    "act.paste" to "Paste",
     "act.copied" to "Copied",
     "act.retry" to "Try again",
     "act.couldntCopy" to "Couldn't copy",
@@ -385,6 +387,9 @@ internal val EN: Map<String, String> = mapOf(
     "ee.calcPosBefore" to "Before",
     "ee.calcPosAfter" to "After",
     "ee.calcDescribe" to "Describe this number (ball, birr…)",
+    // v1.6.38 — the canvas calculator (total menu / clipboard menu)
+    "ee.calcMakePayment" to "Make payment",
+    "ee.calcCopyTotal" to "Copy total",
     "ee.tabJustAmount" to "Just amount",
     "ee.tabItems" to "Items · qty × price",
     "ee.tabQuick" to "Quick item",

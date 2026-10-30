@@ -21,6 +21,8 @@ internal val TI: Map<String, String> = mapOf(
     "act.edit" to "ኣስተካትለ",
     "act.add" to "ወስኺ",
     "act.copy" to "ቐዳሕ",
+    "act.cut" to "ቈርጽ",
+    "act.paste" to "ለጥፍ",
     "act.copied" to "ተቐዳሕነ",
     "act.retry" to "እንደገና ፈትን",
     "act.couldntCopy" to "ክቐዳሕ ዘይከኣለ",
@@ -454,6 +456,9 @@ internal val TI: Map<String, String> = mapOf(
     "ee.calcPosBefore" to "ቅድሚ",
     "ee.calcPosAfter" to "ድሕሪ",
     "ee.calcDescribe" to "ነዚ ቁጥር ገለጽ (ኳስ፣ ብር…)",
+    // v1.6.38 — the canvas calculator (total menu / clipboard menu)
+    "ee.calcMakePayment" to "ክፍያ ግበር",
+    "ee.calcCopyTotal" to "ጠቅላላ ቅዳ",
     "ee.tabJustAmount" to "መጠን ጥራይ",
     "ee.tabItems" to "እቃታት · ብዛዕባ × ዋጋ",
     "ee.tabQuick" to "ብቕድሚ እቃ",

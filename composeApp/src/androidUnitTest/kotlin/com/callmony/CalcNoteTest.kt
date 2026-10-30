@@ -219,4 +219,50 @@ class CalcNoteTest {
         assertNull(calcLedgerTotal(emptyList()))
         assertNull(calcLedgerTotal(listOf(CalcNote())))
     }
+
+    /* ---------------- v1.6.38 — the % key (phone-calculator semantics) ---------------- */
+
+    @Test
+    fun percent_after_plus_is_percent_of_the_running_total() {
+        // the user's market math: 200 + 10% = 220
+        val n = parseCalcNote("200 + 10%")
+        assertEquals(2, n.tokens.size)
+        assertTrue(n.tokens[1].pct)
+        assertEquals(220.0, evalCalcTokens(n.tokens)!!, 0.0)
+        assertEquals("200 + 10%", serializeCalcNote(n))
+    }
+
+    @Test
+    fun percent_after_minus_discounts() {
+        val n = parseCalcNote("500 - 5%")
+        assertEquals(475.0, evalCalcTokens(n.tokens)!!, 0.0)
+        // a SPACED "%" glues onto the number before it, same thing
+        assertEquals(475.0, evalCalcTokens(parseCalcNote("500 - 5 %").tokens)!!, 0.0)
+    }
+
+    @Test
+    fun percent_after_multiply_is_the_plain_fraction() {
+        val n = parseCalcNote("200 × 10%")
+        assertEquals(20.0, evalCalcTokens(n.tokens)!!, 0.0)
+    }
+
+    @Test
+    fun chained_percent_uses_the_running_total() {
+        // 100 + 50 = 150, then 10% of 150 = 15 → 165 (the classic behaviour)
+        assertEquals(165.0, evalCalcTokens(parseCalcNote("100 + 50 + 10%").tokens)!!, 0.0)
+    }
+
+    @Test
+    fun percent_steps_fold_at_the_resolved_value() {
+        val steps = calcSteps(parseCalcNote("200 + 10%").tokens)
+        assertEquals(1, steps.size)
+        assertEquals(220.0, steps[0].value, 0.0)
+    }
+
+    @Test
+    fun percent_survives_the_full_round_trip_and_mixed_labels() {
+        val n = parseCalcNote("ball 200 + 10% tax = total 220 birr")
+        assertEquals("ball 200 + 10% tax = total 220 birr", serializeCalcNote(n))
+        assertEquals(220.0, evalCalcTokens(n.tokens)!!, 0.0)
+    }
 }

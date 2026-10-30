@@ -675,11 +675,13 @@ private fun openRef(ref: com.callmony.model.LinkRef, entry: LedgerEntry) {
  * text field — typos produced garbage dates, another "not working" source).
  * It reads the LIVE entry from the store, so it stays correct if state
  * changes while it is open. */
-fun openPaymentSheet(entryId: String) {
+fun openPaymentSheet(entryId: String, prefill: Double? = null) {
     com.callmony.ui.kit.HostSheets.push { close ->
         val live = AppStore.state.entries.find { it.id == entryId } ?: run { close(); return@push }
         val C = C()
-        var amount by remember { mutableStateOf("") }
+        // v1.6.38 — optional PREFILL: "make payment of it" on the
+        // calculator's total opens the sheet with the amount already in
+        var amount by remember { mutableStateOf(prefill?.let { trimNumCompat(it) } ?: "") }
         var payDate by remember { mutableStateOf(todayStr()) }
         var method by remember { mutableStateOf("cash") }
         var payNote by remember { mutableStateOf("") }

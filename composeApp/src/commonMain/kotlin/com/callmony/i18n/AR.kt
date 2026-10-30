@@ -21,6 +21,8 @@ internal val AR: Map<String, String> = mapOf(
     "act.edit" to "تعديل",
     "act.add" to "إضافة",
     "act.copy" to "نسخ",
+    "act.cut" to "قص",
+    "act.paste" to "لصق",
     "act.copied" to "تم النسخ",
     "act.retry" to "أعد المحاولة",
     "act.couldntCopy" to "تعذّر النسخ",
@@ -383,6 +385,9 @@ internal val AR: Map<String, String> = mapOf(
     "ee.calcPosBefore" to "قبل",
     "ee.calcPosAfter" to "بعد",
     "ee.calcDescribe" to "صف هذا الرقم (كرة، بر…)",
+    // v1.6.38 — the canvas calculator (total menu / clipboard menu)
+    "ee.calcMakePayment" to "تسجيل دفعة",
+    "ee.calcCopyTotal" to "نسخ الإجمالي",
     "ee.tabJustAmount" to "مبلغ فقط",
     "ee.tabItems" to "بنود · كمية × سعر",
     "ee.tabQuick" to "بند سريع",
