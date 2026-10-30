@@ -388,6 +388,15 @@ internal val AR: Map<String, String> = mapOf(
     // v1.6.38 — the canvas calculator (total menu / clipboard menu)
     "ee.calcMakePayment" to "تسجيل دفعة",
     "ee.calcCopyTotal" to "نسخ الإجمالي",
+    // v1.6.40 — the payments modal / the line confirmations
+    "ee.calcOriginal" to "الأصلي",
+    "ee.calcPayments" to "الدفعات",
+    "ee.calcNoPayments" to "لا دفعات مسجلة بعد",
+    "ee.calcLineTotal" to "إجمالي السطر",
+    "ee.calcDeleteLineTitle" to "حذف هذا السطر؟",
+    "ee.calcDeleteLineMsg" to "يُحذف السطر من الحساب.",
+    "ee.calcClearLineTitle" to "مسح السطر؟",
+    "ee.calcClearLineMsg" to "كل ما كُتب على السطر النشط يُمسح.",
     "ee.tabJustAmount" to "مبلغ فقط",
     "ee.tabItems" to "بنود · كمية × سعر",
     "ee.tabQuick" to "بند سريع",

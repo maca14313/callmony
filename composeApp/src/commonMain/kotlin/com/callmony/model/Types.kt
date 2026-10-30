@@ -88,7 +88,13 @@ data class ContactX(
 
 /* ---------------- money ledger ---------------- */
 
-/** A single payment record — every payment keeps its own row. */
+/** A single payment record — every payment keeps its own row.
+ *  v1.6.40 — lineIdx: when the payment was made from the annotated
+ *  calculator's PER-LINE total menu, the ledger line it was paid against
+ *  (null = the whole entry / the last total). Attribution is by line
+ *  position; deleting or unlocking a line orphans its payments back to
+ *  the entry level (the money stays recorded — it just lists under the
+ *  total instead of the line). */
 @Serializable
 data class Payment(
     val id: String,
@@ -98,6 +104,7 @@ data class Payment(
     val method: String? = null,
     val auto: String? = null, // "tick" | "settle" — created by ticking a row / settle-up
     val refs: List<LinkRef> = emptyList(),
+    val lineIdx: Int? = null, // v1.6.40 — paid against calculator line i
     val createdAt: Long = 0L,
 )
 

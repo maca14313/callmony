@@ -7,6 +7,7 @@ import com.callmony.lib.calcSteps
 import com.callmony.lib.evalCalcTokens
 import com.callmony.lib.parseCalcLedger
 import com.callmony.lib.parseCalcNote
+import com.callmony.lib.quoteTextNumbers
 import com.callmony.lib.serializeCalcLedger
 import com.callmony.lib.serializeCalcNote
 import org.junit.Assert.assertEquals
@@ -264,5 +265,69 @@ class CalcNoteTest {
         val n = parseCalcNote("ball 200 + 10% tax = total 220 birr")
         assertEquals("ball 200 + 10% tax = total 220 birr", serializeCalcNote(n))
         assertEquals(220.0, evalCalcTokens(n.tokens)!!, 0.0)
+    }
+    /* ---------------- v1.6.40 — TEXT-MODE numbers never calculate ---------------- */
+
+    @Test
+    fun text_mode_numbers_are_quoted_into_words() {
+        // "2 rooms" typed entirely on the QWERTY: the 2 is an annotation
+        val marked = quoteTextNumbers("2 rooms", setOf(0))
+        assertEquals("\"2\" rooms", marked)
+        val n = parseCalcNote(marked)
+        assertTrue("the quoted 2 must not be a token", n.tokens.isEmpty())
+        assertEquals("\"2\" rooms", n.text)
+        assertNull(evalCalcTokens(n.tokens))
+    }
+
+    @Test
+    fun keypad_numbers_still_calculate() {
+        // nothing typed on the QWERTY → the marker changes nothing
+        assertEquals("ball 200", quoteTextNumbers("ball 200", emptySet()))
+        assertEquals(200.0, evalCalcTokens(parseCalcNote("ball 200").tokens)!!, 0.0)
+    }
+
+    @Test
+    fun quoted_marker_survives_the_round_trip() {
+        val n = parseCalcNote("\"2\" rooms 500")
+        // the 500 (keypad) is the ONLY math; the quoted 2 rides its label
+        assertEquals(1, n.tokens.size)
+        assertEquals("\"2\" rooms", n.tokens[0].before)
+        assertEquals("500", n.tokens[0].number)
+        assertEquals(500.0, evalCalcTokens(n.tokens)!!, 0.0)
+        assertEquals("\"2\" rooms 500", serializeCalcNote(n))
+    }
+
+    @Test
+    fun a_line_of_only_text_is_a_pure_annotation() {
+        val n = parseCalcNote("just words no math")
+        assertTrue(n.tokens.isEmpty())
+        assertEquals("just words no math", n.text)
+        assertEquals("just words no math", serializeCalcNote(n))
+        // its total is nothing — it never enters the ledger sum
+        assertNull(calcLedgerTotal(listOf(n)))
+    }
+
+    @Test
+    fun the_ledger_keeps_annotation_lines_without_totalling_them() {
+        val lines = parseCalcLedger("note only\n100 + 200")
+        assertEquals(2, lines.size)
+        assertEquals(300.0, calcLedgerTotal(lines)!!, 0.0)
+        assertEquals("note only\n100 + 200", serializeCalcLedger(lines))
+    }
+
+    @Test
+    fun old_unquoted_notes_still_calculate_exactly_as_before() {
+        // back-compat: a v1.6.39 note has no markers — every number counts
+        val n = parseCalcNote("ball 100 × 2 price + 300 transport")
+        assertEquals(500.0, evalCalcTokens(n.tokens)!!, 0.0)
+        assertEquals("ball 100 × 2 price + 300 transport", serializeCalcNote(n))
+    }
+
+    @Test
+    fun quoted_number_after_an_operator_is_a_label_not_an_operand() {
+        // keypad 100, QWERTY "+ 5": the 5 annotates, the math stays 100
+        val marked = quoteTextNumbers("100 + 5", setOf(6))
+        val n = parseCalcNote(marked)
+        assertEquals(100.0, evalCalcTokens(n.tokens)!!, 0.0)
     }
 }

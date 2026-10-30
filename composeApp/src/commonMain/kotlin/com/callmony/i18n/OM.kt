@@ -388,6 +388,15 @@ internal val OM: Map<String, String> = mapOf(
     // v1.6.38 — the canvas calculator (total menu / clipboard menu)
     "ee.calcMakePayment" to "Kaffaltii godhi",
     "ee.calcCopyTotal" to "Walduraa walitti qabi",
+    // v1.6.40 — the payments modal / the line confirmations
+    "ee.calcOriginal" to "Orijiinaalaa",
+    "ee.calcPayments" to "Kaffaltiiwwan",
+    "ee.calcNoPayments" to "Kaffaltii galmeeffamee hin jiru",
+    "ee.calcLineTotal" to "Waliigalaa sararaa",
+    "ee.calcDeleteLineTitle" to "Sarara kana haquu?",
+    "ee.calcDeleteLineMsg" to "Sararri herrega irraa ni haqama.",
+    "ee.calcClearLineTitle" to "Sarara balleessuu?",
+    "ee.calcClearLineMsg" to "Wanti sarara sochii qabaatti barreeffame hundi ni balleessa.",
     "ee.tabJustAmount" to "Gatii qofa",
     "ee.tabItems" to "Meeresa · baay'ee × gatii",
     "ee.tabQuick" to "Meeresa affisaa",

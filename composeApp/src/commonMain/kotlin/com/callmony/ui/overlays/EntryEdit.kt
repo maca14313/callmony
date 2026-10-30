@@ -45,11 +45,13 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.callmony.i18n.t
@@ -66,9 +68,11 @@ import com.callmony.lib.money
 import com.callmony.lib.now
 import com.callmony.lib.parseCalcLedger
 import com.callmony.lib.parseCalcNote
+import com.callmony.lib.quoteTextNumbers
 import com.callmony.lib.r2
 import com.callmony.lib.serializeCalcLedger
 import com.callmony.lib.serializeCalcNote
+import com.callmony.lib.sumPayments
 import com.callmony.lib.ownerNameOf
 import com.callmony.lib.todayStr
 import com.callmony.lib.uid
@@ -94,18 +98,28 @@ import com.callmony.ui.kit.vibrate
 import com.callmony.ui.components.ScrollRow
 import com.callmony.ui.sections.openPaymentSheet
 
-/* EntryEdit — the ledger entry editor. v1.6.39: the ANNOTATED CALCULATOR
-   is a FULL-SCREEN CANVAS over the whole editor — one unified active
-   line (the same native editable field in text AND number mode, so
-   typed text can never disappear on a mode switch — the v1.6.38 "ball"
-   report), a compact keypad the native back button closes, the SMALL
-   Aa / 123 / Next line / Save buttons on the canvas itself (on the line
-   under the active one), long-press-to-unlock on locked lines, a copy
-   icon on every line, and per-line totals with the same long-press menu
-   as the last total (make a payment / copy). ✕ or the native back
-   button collapses the canvas to the form; kind chips, date/method,
-   categories, due date, note, attachments, owner and groups live there,
-   unchanged. */
+/* EntryEdit — the ledger entry editor. v1.6.40: numbers written in TEXT
+   mode never calculate (they carry a quote marker through the save), the
+   TOTAL sits AFTER the last calculation entry on the paper itself (no
+   different background) and long-presses into the SAME payments modal as
+   every individual line total — the original amount, the payment history
+   with the new amount after each payment, and Make payment / Copy inside;
+   make payment now visibly REDUCES the amount (paid · remaining live on
+   the total and on paid lines) with quick buttons after the totals;
+   locked lines show their FULL calculation (no clamp); the ✕ remove and
+   a new VISIBLE clear button beside the Aa/123 toggle ask through a custom
+   confirmation modal; the lock is a noticeable pill long-press unlocks;
+   the cursor sits at the right place (end) after a toggle or Next line;
+   the toggle matches the Save / Next-line height; Save KEEPS the editor
+   open and autosave takes over after the first save.
+   v1.6.39 base: full-screen canvas over the editor — one unified
+   native-editable line in both modes (typed text can never disappear on
+   a mode switch — the "ball" bug), the small Aa/123/Next-line/Save
+   buttons on the canvas, a compact keypad the native back button closes,
+   long-press unlocks a locked line, a copy icon on every line. ✕ or the
+   native back button collapses the canvas to the form; kind chips,
+   date/method, categories, due date, note, attachments, owner and groups
+   live there, unchanged. */
 
 private val KINDS = listOf(
     Triple("credit", "credit", "hand-coin-outline"),
@@ -126,7 +140,15 @@ fun EntryEditOverlay(
 ) {
     val C = C()
     val pop = { UiStore.pop() }
+    // the entry being edited: `existing` is the INITIAL snapshot (seeds the
+    // form once); v1.6.40 — `currentEntry` is LIVE: after the FIRST Save of
+    // a brand-new entry (Save no longer closes the editor) every later
+    // write/autosave/payment reads and updates the SAME row — no duplicate
+    // entries, and payments recorded from the calculator land on it while
+    // the editor stays open underneath the payment sheet.
     val existing = entryId?.let { id -> AppStore.state.entries.find { it.id == id } }
+    var createdId by remember { mutableStateOf<String?>(null) }
+    val currentEntry = (entryId ?: createdId)?.let { id -> AppStore.state.entries.find { it.id == id } }
     val groups = AppStore.state.groups.filter { it.ownerId == ownerId && it.deletedAt == null }
 
     var type by remember { mutableStateOf(existing?.type ?: entryType ?: "credit") }
@@ -182,24 +204,54 @@ fun EntryEditOverlay(
     var calcMode by remember { mutableStateOf("text") }     // "text" | "num"
     var calcExpanded by remember { mutableStateOf(true) }    // the full-screen canvas
     var wantTextFocus by remember { mutableStateOf(true) }  // Aa re-arms the QWERTY
+    // v1.6.40 — WHICH characters of the active line were typed on the
+    // TEXT keyboard: a number carrying ANY of them is an annotation,
+    // never math ("if it is in text mode it shouldn't calculate the number
+    // that was written when it was in text mode"). Maintained by the
+    // prefix/suffix diff in onCalcEdited — every mutation of the line
+    // (QWERTY keystroke, keypad key, native paste/cut, ± re-serialize)
+    // flows through it, so the indices survive every edit.
+    var qwertyIdx by remember { mutableStateOf(setOf<Int>()) }
+    // v1.6.40 — the text-mode cursor: remembered across the Aa ↔ 123
+    // swaps so the blinking caret sits at the RIGHT place (the end where
+    // writing continues), not reset before the first word (the report:
+    // "when i toggle from number to text why the blinking thing goes
+    // right before the first text"). null = default to the end.
+    var calcSelection by remember { mutableStateOf<TextRange?>(null) }
     var calcAdvanced by remember { mutableStateOf(false) }  // Σ panel
     var calcMemory by remember { mutableStateOf<Double?>(null) }
-    var totalMenu by remember { mutableStateOf(false) }     // the total's menu
-    var lineMenuIdx by remember { mutableStateOf<Int?>(null) } // a line total's menu
+    // v1.6.40 — the shared PAYMENTS MODAL (long-press on the last total
+    // AND on every individual line total): -1 = the grand total,
+    // i = ledger line i, null = closed.
+    var payModal by remember { mutableStateOf<Int?>(null) }
+    // v1.6.40 — payments remapped after a line was deleted or unlocked
+    // (its payments stay recorded at entry level; later lines shift down)
+    var paymentsOverride by remember { mutableStateOf<List<com.callmony.model.Payment>?>(null) }
     var catManager by remember { mutableStateOf(false) }
     var showOwnerPicker by remember { mutableStateOf(false) }
 
     // v1.6.39 — THE SUM, live: items + the calculator's whole contribution
     // (committed ledger lines + the active line). calcNote is DERIVED
     // from calcText through the free-text grammar, live.
+    // v1.6.40 — the parse runs through quoteTextNumbers first: numbers
+    // written on the TEXT keyboard are quoted → words, never math.
     val itemsSum = items.sumOf { it.qty * it.price }
-    val calcNote = remember(calcText) { parseCalcNote(calcText) }
+    val calcNote = remember(calcText, qwertyIdx) { parseCalcNote(quoteTextNumbers(calcText, qwertyIdx)) }
     val calcTotal = remember(calcNote) { evalCalcTokens(calcNote.tokens) }
     val calcStepList = remember(calcNote) { calcSteps(calcNote.tokens) }
     val calcLedgerSum = remember(calcLines) { calcLedgerTotal(calcLines) }
     val calcPartsTotal = r2((calcLedgerSum ?: 0.0) + (calcTotal ?: 0.0))
     // THE ENTRY AMOUNT: every line item + the whole calculator
     val effAmount = r2(itemsSum + calcPartsTotal)
+
+    // v1.6.40 — THE PAYMENTS, live: what has been paid against this entry
+    // (recorded from the calculator's own Make payment or the ledger's
+    // Record payment), and what each ledger line has been paid. The total
+    // and the paid lines show paid · remaining — "the make payment is not
+    // reducing the amount" now visibly reduces it.
+    val entryPayments = paymentsOverride ?: currentEntry?.payments ?: emptyList()
+    val paidTotal = sumPayments(entryPayments)
+    val remainingTotal = r2(effAmount - paidTotal)
 
     /* the entry object exactly as Save/autosave/make-payment write it */
     fun buildEntry(id: String): LedgerEntry = LedgerEntry(
@@ -209,7 +261,7 @@ fun EntryEditOverlay(
         kind = kindSel,
         amount = effAmount,
         items = items,
-        payments = existing?.payments ?: listOf(),
+        payments = entryPayments,
         date = date.ifEmpty { todayStr() },
         dueDate = dueOn.takeIf { it }?.let { dueDate.ifEmpty { null } },
         category = category.ifEmpty { null },
@@ -218,17 +270,17 @@ fun EntryEditOverlay(
         // the whole calculator state rides along: every committed ledger
         // line + the still-active line (if any), "\n"-separated
         exprNote = serializeCalcLedger(
-            calcLines + if (calcNote.tokens.isNotEmpty()) listOf(calcNote) else emptyList()
+            calcLines + if (calcNote.tokens.isNotEmpty() || calcNote.text.isNotBlank()) listOf(calcNote) else emptyList()
         ).ifEmpty { null },
         groupId = groupSel,
         refs = refs,
-        createdAt = existing?.createdAt ?: now(),
+        createdAt = currentEntry?.createdAt ?: now(),
         updatedAt = now(),
     )
 
-    fun maybeDueReminder(id: String) {
+    fun maybeDueReminder(id: String, wasNew: Boolean) {
         // auto payment-reminder at 09:00 on the due date (new entries only)
-        if (existing == null && dueOn && dueDate.length >= 8) {
+        if (wasNew && dueOn && dueDate.length >= 8) {
             val parts = dueDate.split("-")
             val at = try {
                 com.callmony.lib.KmpDate(parts[0].toInt(), parts[1].toInt() - 1, parts[2].toInt(), 9, 0, 0).time()
@@ -245,18 +297,22 @@ fun EntryEditOverlay(
         }
     }
 
+    /* v1.6.40 — SAVE KEEPS THE EDITOR OPEN ("when i click save it should
+       not close and it should have auto save"): the first Save of a
+       brand-new entry creates it and from then on the v1.6.38 AUTOSAVE
+       owns every later change — 600 ms after the last keystroke and again
+       on close. Invalid totals (<= 0) still refuse to save. */
     fun save(silent: Boolean = false) {
         if (effAmount <= 0) {
             if (!silent) Toasts.toast(t("lg.amountGreaterThanZero"), "error")
             return
         }
-        val e = buildEntry(existing?.id ?: uid())
-        AppStore.saveEntry(e)
-        maybeDueReminder(e.id)
-        if (!silent) {
-            Toasts.toast(t("act.saved"))
-            pop()
-        }
+        val wasNew = currentEntry == null
+        val id = currentEntry?.id ?: uid()
+        if (wasNew) createdId = id
+        AppStore.saveEntry(buildEntry(id))
+        maybeDueReminder(id, wasNew)
+        if (!silent) Toasts.toast(t("act.saved"))
     }
 
     /* v1.6.38 — AUTO-SAVE (user spec: "it should have auto save"): every
@@ -270,13 +326,16 @@ fun EntryEditOverlay(
     var deleted by remember { mutableStateOf(false) }
     val autoKey = remember { mutableStateOf<String?>(null) }
     val currentKey = listOf(
-        effAmount, serializeCalcLedger(calcLines + if (calcNote.tokens.isNotEmpty()) listOf(calcNote) else emptyList()),
+        effAmount, serializeCalcLedger(calcLines + if (calcNote.tokens.isNotEmpty() || calcNote.text.isNotBlank()) listOf(calcNote) else emptyList()),
         items.map { "${it.id}:${it.qty}:${it.price}" }, date, dueOn, dueDate, category, method, note, owner, groupSel,
         refs.map { "${it.type}:${it.id}" }, type, kindSel,
+        entryPayments.map { "${it.id}:${it.amount}:${it.lineIdx}" },
     ).toString()
     if (autoKey.value == null) autoKey.value = currentKey
     val initialKey = autoKey.value ?: currentKey
-    if (existing != null) {
+    // v1.6.40 — the entry is live after the FIRST Save too (currentEntry),
+    // so a brand-new entry autosaves exactly like an opened one
+    if (currentEntry != null) {
         LaunchedEffect(currentKey) {
             if (!deleted && currentKey != initialKey && effAmount > 0) {
                 kotlinx.coroutines.delay(600)
@@ -287,60 +346,113 @@ fun EntryEditOverlay(
             onDispose {
                 if (!deleted && currentKey != initialKey && effAmount > 0) {
                     // persist whatever changed but never got debounced
-                    AppStore.saveEntry(buildEntry(existing.id))
+                    AppStore.saveEntry(buildEntry(currentEntry.id))
                 }
             }
         }
     }
 
     /* v1.6.38 — "when clicking the total results it should have also the
-       option to make payment of it": the total bar's menu can record a
-       payment of the full total against this entry (saving it first
-       when it is brand new). */
-    fun makePaymentOf(total: Double) {
+       option to make payment of it" + v1.6.40: the payment is made
+       against the LAST total or an individual LINE (lineIdx), the editor
+       SAVES FIRST and STAYS OPEN underneath the payment sheet (HostSheets
+       render above the overlays), and the total/paid lines update LIVE as
+       the payment lands — the reduction is finally visible. */
+    fun makePaymentOf(total: Double, lineIdx: Int? = null) {
         if (total <= 0) return
-        val id = existing?.id ?: uid()
+        val wasNew = currentEntry == null
+        val id = currentEntry?.id ?: uid()
         if (effAmount > 0) {
+            if (wasNew) createdId = id
             AppStore.saveEntry(buildEntry(id))
-            maybeDueReminder(id)
+            maybeDueReminder(id, wasNew)
         }
-        totalMenu = false
-        if (existing == null) pop()
-        openPaymentSheet(id, total)
+        payModal = null
+        openPaymentSheet(id, total, lineIdx)
     }
 
     /* v1.6.39 — NEXT LINE (the small canvas button under the active
        line): commit the active line into the ledger — the old line LOCKS
        (long-press unlocks it again) — and the fresh line keeps the armed
-       input method. A line with no numbers does not commit (nothing to
-       book). */
+       input method. v1.6.40 — a pure TEXT line (words only, or every
+       number written in text mode) commits as an annotation line: kept
+       on the note, never totalled. The fresh line's cursor sits at the
+       START, visible. */
     fun commitCalcLine() {
-        val note = parseCalcNote(calcText)
-        if (note.tokens.isEmpty()) return
+        val note = parseCalcNote(quoteTextNumbers(calcText, qwertyIdx))
+        if (note.tokens.isEmpty() && note.text.isBlank()) return
         calcLines = calcLines + note
         calcText = ""
+        qwertyIdx = emptySet()
+        calcSelection = TextRange(0)
+        if (calcMode == "text") wantTextFocus = true // the caret shows on the fresh line
     }
 
     /* v1.6.39 — long-press a LOCKED line and it UNLOCKS for editing: the
        line comes back down into the active field. Whatever was being
-       typed commits first, so nothing is ever lost. */
+       typed commits first, so nothing is ever lost. v1.6.40 — the caret
+       lands at the END (the right place to keep writing), the line's
+       payments stay recorded at entry level, and the QWERTY marks reset
+       (the serialized text carries its own quote markers). */
     fun unlockCalcLine(i: Int) {
         val line = calcLines.getOrNull(i) ?: return
         val rest = calcLines.filterIndexed { j, _ -> j != i }
-        calcLines = if (calcNote.tokens.isNotEmpty()) rest + calcNote else rest
+        calcLines = if (calcNote.tokens.isNotEmpty() || calcNote.text.isNotBlank()) rest + calcNote else rest
         calcText = serializeCalcNote(line)
+        qwertyIdx = emptySet()
+        calcSelection = TextRange(calcText.length)
         calcMode = "text"
         wantTextFocus = true
+        paymentsOverride = entryPayments.map { p -> if (p.lineIdx == i) p.copy(lineIdx = null) else p }
     }
 
+    /* v1.6.40 — deleting a line goes through the custom CONFIRMATION modal;
+       the deleted line's payments stay recorded (they move to the entry
+       level), later lines' payments shift down with them. */
     fun deleteCalcLine(i: Int) {
         if (i !in calcLines.indices) return
         calcLines = calcLines.filterIndexed { j, _ -> j != i }
+        paymentsOverride = entryPayments.map { p ->
+            when {
+                p.lineIdx == i -> p.copy(lineIdx = null)
+                p.lineIdx != null && p.lineIdx > i -> p.copy(lineIdx = p.lineIdx - 1)
+                else -> p
+            }
+        }
     }
 
     fun copyLineText(text: String) {
         Platform.share.copyText(text)
         Toasts.toast(t("act.copied"))
+    }
+
+    /* v1.6.40 — THE ONE EDIT FUNNEL: every change to the active line —
+       QWERTY keystroke, keypad key, native paste/cut, the ± re-serialize —
+       lands here, and the diff (common prefix + suffix) keeps the
+       text-keyboard index set ALIVE through arbitrary edits: untouched
+       characters keep their marks, the retyped middle region is
+       text-keyboard only when the change came from the QWERTY (a keypad
+       or native-menu edit leaves the region unmarked). That set decides
+       which numbers are annotations instead of math. */
+    fun onCalcEdited(newText: String, fromQwerty: Boolean) {
+        val old = calcText
+        if (newText == old) return
+        var p = 0
+        while (p < old.length && p < newText.length && old[p] == newText[p]) p++
+        var s = 0
+        while (s < old.length - p && s < newText.length - p && old[old.length - 1 - s] == newText[newText.length - 1 - s]) s++
+        val delta = newText.length - old.length
+        qwertyIdx = buildSet {
+            qwertyIdx.forEach { i ->
+                when {
+                    i < p -> add(i)
+                    i >= old.length - s -> add(i + delta)
+                    // inside the changed region: retyped — marks drop
+                }
+            }
+            if (fromQwerty) for (i in p until newText.length - s) add(i)
+        }
+        calcText = newText
     }
 
     /* v1.6.39 — the keypad writes the SAME free-text grammar the QWERTY
@@ -352,31 +464,34 @@ fun EntryEditOverlay(
        inherent now: everything is text); % marks the number the line
        ends with; ± flips its sign (swapping a + / − operator between
        numbers, gluing a − otherwise); AC clears the line; = opens the
-       result zone (the words after = label the total, never math). */
+       result zone (the words after = label the total, never math).
+       v1.6.40 — every mutation flows through onCalcEdited (keypad source:
+       the new characters carry NO text-keyboard mark, so keypad numbers
+       keep calculating) and resets the caret to the end. */
     fun calcKey(k: String) {
         when (k) {
-            "AC" -> calcText = ""
-            "⌫" -> calcText = calcText.trimEnd().dropLast(1)
+            "AC" -> { calcText = ""; qwertyIdx = emptySet() }
+            "⌫" -> onCalcEdited(calcText.trimEnd().dropLast(1), false)
             ".", in "0".."9" -> {
                 val sep = if (calcText.isNotEmpty() && (calcText.last().isLetter() || calcText.last() == '%')) " " else ""
-                calcText += sep + k
+                onCalcEdited(calcText + sep + k, false)
             }
             "+", "-", "×", "÷" -> {
                 val base = calcText.trimEnd()
                 if (base.isEmpty()) {
-                    if (k == "-") calcText = "-" // a leading minus starts a negative number
+                    if (k == "-") onCalcEdited("-", false) // a leading minus starts a negative number
                     return
                 }
                 // a trailing operator is REPLACED, never doubled; the
                 // trailing space keeps the next digit a standalone token
-                calcText = (if (base.last() in "+-−×÷") base.dropLast(1) + k else "$base $k") + " "
+                onCalcEdited((if (base.last() in "+-−×÷") base.dropLast(1) + k else "$base $k") + " ", false)
             }
             "%" -> {
                 val base = calcText.trimEnd()
-                if (base.isNotEmpty() && base.last().isDigit()) calcText = base + "%"
+                if (base.isNotEmpty() && base.last().isDigit()) onCalcEdited(base + "%", false)
             }
             "±" -> {
-                val note = parseCalcNote(calcText)
+                val note = parseCalcNote(quoteTextNumbers(calcText, qwertyIdx))
                 val idx = note.tokens.indexOfLast { it.number.isNotBlank() }
                 if (idx < 0) return
                 val toks = note.tokens.toMutableList()
@@ -391,10 +506,11 @@ fun EntryEditOverlay(
                         toks[idx] = toks[idx].copy(number = if (n.startsWith("-")) n.drop(1) else "-$n")
                     }
                 }
-                calcText = serializeCalcNote(note.copy(tokens = toks))
+                onCalcEdited(serializeCalcNote(note.copy(tokens = toks)), false)
             }
-            "=" -> calcText = calcText.trimEnd() + " = "
+            "=" -> onCalcEdited(calcText.trimEnd() + " = ", false)
         }
+        calcSelection = null // external edit → the caret defaults to the end
     }
 
     /* v1.6.39 — mode switching just arms the INPUT METHOD: the field is
@@ -442,7 +558,7 @@ fun EntryEditOverlay(
     }
 
     Sheet(
-        title = if (existing == null) t("lg.newEntry") else t("lg.editEntry"),
+        title = if (currentEntry == null) t("lg.newEntry") else t("lg.editEntry"),
         subtitle = ownerNameOf(ownerId),
         onBack = pop,
         scrollable = false,
@@ -450,12 +566,12 @@ fun EntryEditOverlay(
         // next line and save btn should be very small")
         footer = {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (existing != null) {
+                if (currentEntry != null) {
                     Btn(
                         label = t("act.delete"), variant = "danger", small = true,
                         onPress = {
                             Confirm.ask(t("lg.deleteEntryTitle"), t("lg.deleteEntryMsg"), t("act.delete"), danger = true) { ok ->
-                                if (ok) { deleted = true; AppStore.deleteEntry(existing.id); Toasts.toastUndo(); pop() }
+                                if (ok) { deleted = true; AppStore.deleteEntry(currentEntry.id); Toasts.toastUndo(); pop() }
                             }
                         },
                         modifier = Modifier.weight(1f),
@@ -801,54 +917,16 @@ fun EntryEditOverlay(
                     contentAlignment = Alignment.Center,
                 ) { MdiIcon("sigma", 17, if (calcAdvanced) C.brand else C.sub) }
             }
-            // THE TOTAL BAR — the LAST total (everything the calculator
-            // adds + items): tap → make a payment of it; long-press → copy
-            Box {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp)
-                        .padding(top = 4.dp, bottom = 2.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(C.card)
-                        .border(1.dp, C.line, RoundedCornerShape(12.dp))
-                        .combinedClickable(
-                            onClick = { if (effAmount > 0) totalMenu = true },
-                            onLongClick = { copyLineText(money(effAmount)) },
-                        )
-                        .testTag("calcLedgerTotal")
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(t("ee.calcTotal"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub)
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (itemsSum > 0.0) {
-                            Text("+ ${money(itemsSum)}", fontSize = F.tiny.sp, color = C.faint)
-                        }
-                        Text(money(effAmount), fontSize = F.body.sp, fontWeight = FontWeight.ExtraBold, color = C.brand)
-                    }
-                }
-                if (totalMenu) {
-                    androidx.compose.material3.DropdownMenu(
-                        expanded = true,
-                        onDismissRequest = { totalMenu = false },
-                        offset = DpOffset(0.dp, 6.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        containerColor = C.card,
-                        tonalElevation = 0.dp,
-                        shadowElevation = 6.dp,
-                    ) {
-                        DropdownItem(text = "${t("ee.calcMakePayment")} · ${money(effAmount)}", tag = "totalMenuPay") { makePaymentOf(effAmount) }
-                        DropdownItem(text = t("ee.calcCopyTotal"), tag = "totalMenuCopy") { copyLineText(money(effAmount)); totalMenu = false }
-                    }
-                }
-            }
             // THE LEDGER — committed (locked) lines above the active line.
             // v1.6.39: long-press UNLOCKS a line back into the active
-            // field; every line carries a copy icon (locked or not); each
-            // line's own total long-presses into the SAME menu as the last
-            // total (make a payment of it / copy it).
+            // field; every line carries a copy icon (locked or not).
+            // v1.6.40: locked lines show their FULL calculation (no
+            // clamping — "it should show the full calculation when it is
+            // locked, dont clamp it"), the lock is a NOTICEABLE brand pill
+            // that begs to be pressed (long-press unlocks), each line's own
+            // total opens the SAME payments modal as the last total (tap or
+            // long-press), and removing a line asks through the custom
+            // confirmation modal.
             Column(
                 Modifier
                     .weight(1f)
@@ -858,7 +936,10 @@ fun EntryEditOverlay(
                     .padding(top = 4.dp, bottom = 8.dp),
             ) {
                 calcLines.forEachIndexed { i, line ->
-                    val lineTotal = evalCalcTokens(line.tokens) ?: 0.0
+                    val lineTotal = evalCalcTokens(line.tokens) // null = pure annotation line
+                    val linePaid = sumPayments(entryPayments.filter { it.lineIdx == i })
+                    val lineRemain = lineTotal?.let { r2(it - linePaid) }
+                    val lineShown = if (linePaid > 0.005) lineRemain else lineTotal
                     Row(
                         Modifier
                             .fillMaxWidth()
@@ -870,47 +951,63 @@ fun EntryEditOverlay(
                             )
                             .testTag("calcLine:$i")
                             .padding(horizontal = 4.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalAlignment = Alignment.Top,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        MdiIcon("lock-outline", 13, C.faint)
+                        // v1.6.40 — the lock is a NOTICEABLE pill ("make the
+                        // lock btn noticebl so it is tempting to click, so it
+                        // will be clicked long to unlock it") — brand-tinted,
+                        // big enough to see, long-press unlocks the line
+                        Box(
+                            Modifier
+                                .size(30.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(C.brandSoft)
+                                .border(1.dp, C.brand, RoundedCornerShape(10.dp))
+                                .combinedClickable(
+                                    onClick = {},
+                                    onLongClick = { vibrate(longArrayOf(20)); unlockCalcLine(i) },
+                                )
+                                .testTag("calcLineLock:$i"),
+                            contentAlignment = Alignment.Center,
+                        ) { MdiIcon("lock-outline", 16, C.brand) }
+                        // the FULL calculation, wrapping — never clamped
                         Text(
                             serializeCalcNote(line),
                             fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.Medium,
-                            modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
                         )
-                        // the line's OWN total — long-press → the same menu
-                        // the last total has (v1.6.39)
-                        Box {
-                            Text(
-                                money(lineTotal),
-                                fontSize = F.small.sp, color = C.ink, fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier
-                                    .combinedClickable(
-                                        onClick = {},
-                                        onLongClick = { vibrate(longArrayOf(20)); lineMenuIdx = i },
+                        // the line's OWN total — the SAME payments modal the
+                        // last total has (v1.6.40; was a dropdown menu)
+                        if (lineShown != null) {
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    money(lineShown),
+                                    fontSize = F.small.sp, color = C.ink, fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier
+                                        .combinedClickable(
+                                            onClick = { payModal = i },
+                                            onLongClick = { vibrate(longArrayOf(20)); payModal = i },
+                                        )
+                                        .testTag("calcLineTotal:$i")
+                                        .padding(horizontal = 2.dp, vertical = 2.dp),
+                                )
+                                if (linePaid > 0.005) {
+                                    Text(
+                                        "${t("lg.paid")} ${money(linePaid)}",
+                                        fontSize = F.tiny.sp, color = C.faint,
                                     )
-                                    .testTag("calcLineTotal:$i")
-                                    .padding(horizontal = 2.dp, vertical = 2.dp),
-                            )
-                            if (lineMenuIdx == i) {
-                                androidx.compose.material3.DropdownMenu(
-                                    expanded = true,
-                                    onDismissRequest = { lineMenuIdx = null },
-                                    offset = DpOffset(0.dp, 6.dp),
-                                    shape = RoundedCornerShape(12.dp),
-                                    containerColor = C.card,
-                                    tonalElevation = 0.dp,
-                                    shadowElevation = 6.dp,
-                                ) {
-                                    DropdownItem(text = "${t("ee.calcMakePayment")} · ${money(lineTotal)}", tag = "lineMenuPay") { lineMenuIdx = null; makePaymentOf(lineTotal) }
-                                    DropdownItem(text = t("ee.calcCopyTotal"), tag = "lineMenuCopy") { copyLineText(money(lineTotal)); lineMenuIdx = null }
                                 }
                             }
                         }
                         // COPY — every calculation line, locked or unlocked
                         CopyBtn(tag = "calcLineCopy:$i") { copyLineText(serializeCalcNote(line)) }
-                        IconBtn("close", { deleteCalcLine(i) }, size = 24, danger = true)
+                        // v1.6.40 — removing asks first (custom modal)
+                        DeleteBtn(tag = "calcLineDelete:$i") {
+                            Confirm.ask(t("ee.calcDeleteLineTitle"), t("ee.calcDeleteLineMsg"), t("act.delete"), danger = true) { ok ->
+                                if (ok) deleteCalcLine(i)
+                            }
+                        }
                     }
                 }
                 // THE ACTIVE LINE — ONE native editable field in BOTH modes
@@ -919,6 +1016,12 @@ fun EntryEditOverlay(
                 // Long-press opens the NATIVE Copy · Cut · Paste ·
                 // Select-all menu with selection handles either way —
                 // exactly like any other input (the user's spec).
+                // v1.6.40 — text mode is a TextFieldValue whose SELECTION
+                // survives the Aa ↔ 123 swaps: after a toggle (or Next line)
+                // the blinking caret sits where writing continues — the END
+                // — instead of jumping before the first word. Edits from
+                // EITHER field land in onCalcEdited, so text-keyboard
+                // numbers are annotations and keypad numbers calculate.
                 Row(
                     Modifier.fillMaxWidth().padding(top = 10.dp),
                     verticalAlignment = Alignment.Top,
@@ -927,8 +1030,11 @@ fun EntryEditOverlay(
                     Box(Modifier.weight(1f)) {
                         if (calcMode == "text") {
                             BasicTextField(
-                                value = calcText,
-                                onValueChange = { calcText = it },
+                                value = TextFieldValue(calcText, calcSelection ?: TextRange(calcText.length)),
+                                onValueChange = { v ->
+                                    calcSelection = v.selection
+                                    onCalcEdited(v.text, fromQwerty = true)
+                                },
                                 textStyle = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = C.ink),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                                 cursorBrush = SolidColor(C.brand),
@@ -948,7 +1054,7 @@ fun EntryEditOverlay(
                         } else {
                             NoImeNumberField(
                                 value = calcText,
-                                onValueChange = { calcText = it },
+                                onValueChange = { onCalcEdited(it, fromQwerty = false) },
                                 fontSizeSp = 17,
                                 textColor = C.ink,
                                 cursorColor = C.brand,
@@ -979,9 +1085,84 @@ fun EntryEditOverlay(
                     )
                 }
             }
+            // THE TOTAL — v1.6.40: ALWAYS AFTER THE LAST CALCULATION ENTRY
+            // (it lived at the top of the canvas before), printed straight
+            // on the paper — NO different background — and it long-presses
+            // (or taps) into the SAME payments modal every individual line
+            // total has. The ORIGINAL amount the calculation itself wrote
+            // stays the big figure; once anything is paid, the paid ·
+            // remaining line appears under it — the reduction "make
+            // payment" never showed before.
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp)
+                    .padding(top = 2.dp),
+            ) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .combinedClickable(
+                            onClick = { if (effAmount > 0) payModal = -1 },
+                            onLongClick = { if (effAmount > 0) { vibrate(longArrayOf(20)); payModal = -1 } },
+                        )
+                        .testTag("calcLedgerTotal")
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(t("ee.calcTotal"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub)
+                    Spacer(Modifier.weight(1f))
+                    if (itemsSum > 0.0) {
+                        Text("+ ${money(itemsSum)}", fontSize = F.tiny.sp, color = C.faint)
+                    }
+                    Text(money(effAmount), fontSize = F.body.sp, fontWeight = FontWeight.ExtraBold, color = C.brand)
+                }
+                if (paidTotal > 0.005) {
+                    Text(
+                        "${t("lg.paid")} ${money(paidTotal)} · ${t("lg.remaining")} ${money(remainingTotal)}",
+                        fontSize = F.tiny.sp, color = C.faint,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("calcTotalPaidLine")
+                            .padding(horizontal = 4.dp),
+                        textAlign = TextAlign.End,
+                    )
+                }
+            }
+            // v1.6.40 — SOME BUTTONS AFTER THE TOTALS (the user's spec): a
+            // one-tap Make payment of what remains, and the payments count
+            // opening the same modal the long-press shows.
+            if (effAmount > 0) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp)
+                        .padding(bottom = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    val payAmount = if (remainingTotal > 0) remainingTotal else effAmount
+                    SmallCalcBtn("${t("ee.calcMakePayment")} · ${money(payAmount)}") {
+                        vibrate(longArrayOf(8))
+                        makePaymentOf(payAmount, null)
+                    }
+                    if (entryPayments.isNotEmpty()) {
+                        SmallCalcBtn("${t("ee.calcPayments")} · ${entryPayments.size}") {
+                            vibrate(longArrayOf(8))
+                            payModal = -1
+                        }
+                    }
+                }
+            }
             // THE SMALL CONTROLS — ON the canvas, on the NEXT LINE under
             // the active one, and SMALL (the user's v1.6.39 spec): the
             // Aa / 123 input method, Next line, Save.
+            // v1.6.40 — the toggle matches the Save / Next-line HEIGHT
+            // ("make the toggle btn height just like the save and next line
+            // btn"), and a VISIBLE ✕ sits right beside it — clearing the
+            // active line through the custom confirmation modal (the
+            // phantom invisible button that used to open a delete confirm
+            // beside the toggle is gone).
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -991,30 +1172,54 @@ fun EntryEditOverlay(
             ) {
                 Row(
                     Modifier
+                        .height(30.dp)
                         .clip(RoundedCornerShape(9.dp))
                         .background(C.card)
                         .border(1.dp, C.line, RoundedCornerShape(9.dp)),
                 ) {
                     Box(
                         Modifier
+                            .height(30.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(if (calcMode == "text") C.brand else Color.Transparent)
                             .clickable { enterTextMode() }
                             .testTag("calcModeText")
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.Center,
                     ) { Text("Aa", fontSize = F.tiny.sp, fontWeight = FontWeight.ExtraBold, color = if (calcMode == "text") C.onBrand else C.sub) }
                     Box(
                         Modifier
+                            .height(30.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(if (calcMode == "num") C.brand else Color.Transparent)
                             .clickable { enterNumMode() }
                             .testTag("calcModeNum")
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.Center,
                     ) { Text("123", fontSize = F.tiny.sp, fontWeight = FontWeight.ExtraBold, color = if (calcMode == "num") C.onBrand else C.sub) }
                 }
+                // v1.6.40 — the CLEAR button beside the toggle: a VISIBLE ✕
+                // asking through the custom confirmation modal
+                Box(
+                    Modifier
+                        .height(30.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(Color(0x14D64545))
+                        .border(1.dp, C.red, RoundedCornerShape(9.dp))
+                        .clickable {
+                            if (calcText.isEmpty()) return@clickable
+                            Confirm.ask(t("ee.calcClearLineTitle"), t("ee.calcClearLineMsg"), t("act.delete"), danger = true) { ok ->
+                                if (ok) { calcText = ""; qwertyIdx = emptySet(); calcSelection = null }
+                            }
+                        }
+                        .testTag("calcBtnClear")
+                        .padding(horizontal = 9.dp),
+                    contentAlignment = Alignment.Center,
+                ) { MdiIcon("close", 15, C.red) }
                 Spacer(Modifier.weight(1f))
-                // Next line — SMALL (enabled only when the line computes)
-                val nextEnabled = calcNote.tokens.isNotEmpty()
+                // Next line — SMALL (v1.6.40: a text-only line commits as an
+                // annotation line too — only a blank line is disabled)
+                val nextEnabled = calcText.isNotBlank()
                 Box(
                     Modifier
                         .height(30.dp)
@@ -1051,7 +1256,7 @@ fun EntryEditOverlay(
                     SmallCalcBtn("MR", enabled = calcMemory != null) {
                         val m = calcMemory ?: return@SmallCalcBtn
                         val base = calcText.trimEnd()
-                        calcText = if (base.isEmpty()) trimNum(m) else "$base ${trimNum(m)}"
+                        onCalcEdited(if (base.isEmpty()) trimNum(m) else "$base ${trimNum(m)}", false)
                     }
                     calcMemory?.let {
                         Text(money(it), fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.CenterVertically))
@@ -1062,6 +1267,74 @@ fun EntryEditOverlay(
             // compact; the native back button closes it)
             if (calcMode == "num") {
                 CalcPadArea(onKey = { calcKey(it) })
+            }
+        }
+    }
+
+    // v1.6.40 — THE SHARED PAYMENTS MODAL (the long-press target of the
+    // LAST total and of every individual line total): the ORIGINAL amount
+    // of the calculation stays the headline, the list shows every recorded
+    // payment WITH THE NEW AMOUNT after it ("the new amount history"), and
+    // Make payment / Copy sit at the bottom. The editor stays open beneath
+    // it; recording a payment updates the total's paid · remaining live.
+    if (payModal != null) {
+        val modalLine = payModal?.takeIf { it >= 0 }
+        val modalOriginal = if (modalLine != null) {
+            evalCalcTokens(calcLines.getOrNull(modalLine)?.tokens ?: emptyList()) ?: 0.0
+        } else effAmount
+        val modalPays = if (modalLine != null) entryPayments.filter { it.lineIdx == modalLine } else entryPayments
+        val modalPaid = sumPayments(modalPays)
+        val modalRemain = r2(modalOriginal - modalPaid)
+        com.callmony.ui.components.BottomSheet(
+            title = "${if (modalLine != null) t("ee.calcLineTotal") else t("ee.calcTotal")} · ${money(modalOriginal)}",
+            onClose = { payModal = null },
+        ) {
+            Column {
+                // ORIGINAL / PAID / REMAINING — the calculation's own amount
+                // first, the reduction right under it
+                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("${t("ee.calcOriginal")}: ${money(modalOriginal)}", fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.Bold)
+                    Text("${t("lg.paid")} ${money(modalPaid)} · ${t("lg.remaining")} ${money(modalRemain)}", fontSize = F.small.sp, color = if (modalPaid > 0) C.brand else C.faint, fontWeight = FontWeight.Bold)
+                }
+                // THE PAYMENT HISTORY — each record with the amount it left
+                // ("the new amount history")
+                if (modalPays.isEmpty()) {
+                    Text(t("ee.calcNoPayments"), fontSize = F.tiny.sp, color = C.faint, modifier = Modifier.padding(bottom = 8.dp))
+                } else {
+                    var run = modalOriginal
+                    modalPays.forEach { p ->
+                        run = r2(run - p.amount)
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(C.cardAlt.copy(alpha = 0.5f))
+                                .padding(horizontal = 10.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            MdiIcon("cash-check", 16, C.brand)
+                            Text(com.callmony.lib.fd(p.date), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.Medium)
+                            Spacer(Modifier.weight(1f))
+                            Text(money(p.amount), fontSize = F.small.sp, color = C.ink, fontWeight = FontWeight.Bold)
+                            Text("→ ${money(run)}", fontSize = F.tiny.sp, color = C.faint, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                // THE ACTIONS
+                Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Btn(
+                        small = true, label = "${t("ee.calcMakePayment")} · ${money(if (modalRemain > 0) modalRemain else modalOriginal)}", variant = "soft",
+                        onPress = { makePaymentOf(if (modalRemain > 0) modalRemain else modalOriginal, modalLine) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    Btn(
+                        small = true, label = t("ee.calcCopyTotal"), variant = "secondary",
+                        onPress = { copyLineText(money(modalOriginal)); payModal = null },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
     }
@@ -1101,23 +1374,10 @@ fun EntryEditOverlay(
     }
 }
 
-/* ---------------- v1.6.38 — the canvas calculator's pad, popover, small buttons ---------------- */
+/* ---------------- v1.6.38 — the canvas calculator's small buttons ---------------- */
 
-/** A tiny menu row (the total's actions / the clipboard menu). */
-@Composable
-private fun DropdownItem(text: String, tag: String, onClick: () -> Unit) {
-    val C = C()
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .clickable { onClick() }
-            .testTag(tag)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-    ) { Text(text, fontSize = F.body.sp, color = C.ink, fontWeight = FontWeight.Medium) }
-}
-
-/** A very small pill button (M+ / M− / MR — the Σ advanced panel). */
+/** A very small pill button (M+ / M− / MR — the Σ advanced panel; v1.6.40
+ *  also the Make-payment / Payments chips under the total). */
 @Composable
 private fun SmallCalcBtn(label: String, enabled: Boolean = true, onPress: () -> Unit) {
     val C = C()
@@ -1147,6 +1407,21 @@ private fun CopyBtn(tag: String, onPress: () -> Unit) {
             .testTag(tag),
         contentAlignment = Alignment.Center,
     ) { MdiIcon("content-copy", 13, C.sub) }
+}
+
+/* v1.6.40 — the per-line REMOVE button: a small red ✕ that asks through
+   the custom confirmation modal before the line is deleted. */
+@Composable
+private fun DeleteBtn(tag: String, onPress: () -> Unit) {
+    val C = C()
+    Box(
+        Modifier
+            .size(26.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onPress() }
+            .testTag(tag),
+        contentAlignment = Alignment.Center,
+    ) { MdiIcon("close", 13, C.red) }
 }
 
 /* The keypad (number mode): a 4×5 grid — AC ⌫ % ÷ / digits with × − + /

@@ -441,6 +441,15 @@ internal val AM: Map<String, String> = mapOf(
     // v1.6.38 — the canvas calculator (total menu / clipboard menu)
     "ee.calcMakePayment" to "ክፍያ አድርግ",
     "ee.calcCopyTotal" to "ጠቅላላ ቅዳ",
+    // v1.6.40 — the payments modal / the line confirmations
+    "ee.calcOriginal" to "ዋና መጠን",
+    "ee.calcPayments" to "ክፍያዎች",
+    "ee.calcNoPayments" to "እስካሁን የተመዘገበ ክፍያ የለም",
+    "ee.calcLineTotal" to "የመስመር ድምር",
+    "ee.calcDeleteLineTitle" to "ይህ መስመር ይጠፋ?",
+    "ee.calcDeleteLineMsg" to "መስመሩ ከስሌቱ ይወገዳል።",
+    "ee.calcClearLineTitle" to "መስመሩ ይጠፋ?",
+    "ee.calcClearLineMsg" to "በንቁው መስመር ላይ የተጻፈው ሁሉ ይጠፋል።",
     "ee.tabJustAmount" to "ብቻ መጠን",
     "ee.tabItems" to "እቃዎች · ብዛት × ዋጋ",
     "ee.tabQuick" to "ፈጣን እቃ",

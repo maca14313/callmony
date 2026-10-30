@@ -633,3 +633,21 @@ Work Log:
 
 Stage Summary:
 - v1.6.39 = the full-screen unified canvas calculator (every item of the user's v1.6.39 list) + the compact-container/bigger-keys call keypad, 157/157 tests, committed and pushed with the APK + GitHub Release per the standing instruction.
+
+---
+Task ID: 20
+Agent: main agent (Z.ai)
+Task: v1.6.40 — the full v1.6.40 user-report batch on the annotated calculation (text-mode numbers, the total/payments modal, locked-line clamp, confirm modals, the lock pill, the caret, save-stays-open), "check github and commit even the apk".
+
+Work Log:
+- GitHub first (per instruction): origin/main == d09fe40 (v1.6.39 vc50, 157/157 tests). Sandbox had reset again → Android SDK reinstalled (cmdline-tools → platform-tools/android-34/build-tools 34.0.0); gradle plugin cache also refilled.
+- ITEM 1 — TEXT-MODE NUMBERS NEVER CALCULATE: qwertyIdx (char indices typed on the QWERTY) maintained by ONE edit funnel onCalcEdited (prefix/suffix diff; every mutation — QWERTY, keypad, native paste/cut, ± re-serialize, MR — flows through it); quoteTextNumbers() wraps any number carrying a QWERTY char in double quotes at parse time; parseCalcNote treats quoted tokens as WORDS (marker persists through the save — `"2" rooms 500`; old notes unchanged); CalcNote.text carries PURE ANNOTATION lines through the ledger (commit via Next line, never totalled).
+- ITEM 2 — THE TOTAL after the last entry, transparent (no card/border), tap OR long-press opens THE SHARED PAYMENTS MODAL (BottomSheet: original headline, each payment + the NEW amount after it, paid · remaining, Make payment / Copy). Payment.lineIdx attributes per-line payments (delete/unlock orphans them to entry level via paymentsOverride remap). MAKE PAYMENT REDUCES: makePaymentOf saves + stays open (HostSheets render above overlays), the total grows "Paid X · Remaining Y" (calcTotalPaidLine) and paid lines show remaining + tiny Paid. Quick buttons after the totals: Make payment · remaining + Payments · n chips.
+- ITEM 3 — locked lines wrap (no maxLines clamp). ITEM 4 — DeleteBtn per line + the VISIBLE red ✕ clear chip BESIDE the Aa/123 toggle (calcBtnClear), both through Confirm.ask. ITEM 5 — the lock is a 30dp brandSoft/brand pill (calcLineLock:$i), long-press unlocks (row too). ITEM 6 — the text field is a TextFieldValue with the selection remembered across mode swaps (caret at the END after num→text; start after Next line; end after unlock); Aa/123 boxes 30dp = Save/Next-line height. ITEM 7 — save() no longer pops: createdId + currentEntry (live lookup) make the first Save create the entry once and the v1.6.38 autosave own everything after; footer/Sheet/maybeDueReminder all on currentEntry.
+- i18n: ee.calcOriginal/Payments/NoPayments/LineTotal/DeleteLineTitle/DeleteLineMsg/ClearLineTitle/ClearLineMsg ×5 languages.
+- TESTS: 171/171 green (CalcNoteTest +7; NEW EntryEditCalcV1640Test 7-battery; EntryEditCalcTabTest updated for the modal + keypad-driven unlock edit). Harness lessons: testTag inside a combinedClickable row with its own TestTag is swallowed by semantics merging; keypad digits APPEND to the number in progress.
+- BUILD: compileDebugKotlinAndroid clean; assembleRelease. APK 1.6.40 vc51, aapt-verified, apksigner SHA-256 same key as every release. releases/callmony-1.6.40-release.apk + download/callmony-1.6.40-kmp-release.apk.
+- Docs: README Versioning v1.6.40, CHANGELOG full entry, sandbox/chat-logs/2026-10-30-v1.6.40-text-mode-payments-caret.md, this worklog.
+
+Stage Summary:
+- v1.6.40 = every item of the user's v1.6.40 list (text-mode annotations, the shared payments modal with the visible reduction, full locked lines, custom confirmations, the lock pill, the caret, save-stays-open + autosave), 171/171 tests, committed and pushed with the APK + GitHub Release per the standing instruction.

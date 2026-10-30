@@ -83,8 +83,18 @@ android {
         // on the canvas; long-press unlocks a locked line; per-line copy
         // icons; per-line totals share the last total's long-press menu)
         // and the main call keypad's container is compact with BIGGER keys.
-        versionCode = 50
-        versionName = "1.6.39"
+        // v1.6.40 — numbers written in TEXT mode never calculate (a quote
+        // marker rides them through the save), the TOTAL sits AFTER the
+        // last entry on the paper itself and opens the shared payments
+        // modal with every individual line total (original · history ·
+        // make payment that now visibly REDUCES: paid · remaining live),
+        // locked lines show their FULL calculation, the ✕ remove and the
+        // clear button beside Aa/123 ask through a custom confirm modal,
+        // the lock is a noticeable pill, the caret lands at the right
+        // place after a toggle, the toggle matches Save/Next-line height,
+        // and Save KEEPS the editor open with autosave taking over.
+        versionCode = 51
+        versionName = "1.6.40"
     }
 
     signingConfigs {

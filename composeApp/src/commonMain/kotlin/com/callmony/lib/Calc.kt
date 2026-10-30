@@ -442,11 +442,15 @@ data class CalcToken(
  *  chain + the label slots around the RESULT chip. This is the editor's
  *  source of truth; it serializes back to the SAME free-text grammar the
  *  v1.6.35 parser already speaks, so old notes open as chips and new chips
- *  stay plain readable text on the saved entry. */
+ *  stay plain readable text on the saved entry.
+ *  v1.6.40 — text: a line with NO calculable numbers is a pure annotation
+ *  (every number on it was written in TEXT mode, or none at all); its raw
+ *  text rides here so it round-trips through the ledger untouched. */
 data class CalcNote(
     val tokens: List<CalcToken> = emptyList(),
     val resultBefore: String = "",  // label before the total ("total")
     val resultAfter: String = "",   // label after the total ("birr")
+    val text: String = "",          // v1.6.40 — pure-annotation line (no math)
 )
 
 /** v1.6.36 — one live intermediate result for the step-by-step card
@@ -473,7 +477,13 @@ private fun latinizeDigits(s: String): String {
  *  number; glued operators split between digits; everything after the
  *  first '=' is the result zone — its words become the result labels
  *  around the written total (never part of the math). Deterministic and
- *  pure: the same text always yields the same chips. */
+ *  pure: the same text always yields the same chips.
+ *  v1.6.40 — QUOTED numbers are TEXT, never math ("\"200\""): numbers
+ *  written while the calculator was in TEXT mode are annotations — the
+ *  marker persists through the save, so a reopened note keeps the split
+ *  between what calculates and what is just words. A line whose every
+ *  number is quoted (or that has none) is a PURE ANNOTATION — its text
+ *  rides CalcNote.text and never enters any total. */
 fun parseCalcNote(raw: String): CalcNote {
     if (raw.isBlank()) return CalcNote()
 
@@ -534,6 +544,12 @@ fun parseCalcNote(raw: String): CalcNote {
             // ("10 %" == "10%"), same as the glued form below
             "%" -> if (curNum != null && curOp == null) curPct = true
             else -> {
+                // v1.6.40 — a QUOTED number is TEXT, never math: numbers
+                // written in TEXT mode carry the marker through the save
+                val quoted = tok.length >= 2 && tok.startsWith("\"") && tok.endsWith("\"")
+                if (quoted) {
+                    if (curNum != null) after.add(tok) else before.add(tok)
+                } else {
                 // v1.6.38 — "10%" (glued): strip ONE trailing % and parse
                 // the rest as the number; the marker rides the token
                 val isPct = tok.endsWith("%")
@@ -552,10 +568,16 @@ fun parseCalcNote(raw: String): CalcNote {
                 } else {
                     before.add(tok)
                 }
+                }
             }
         }
     }
     flush()
+
+    // v1.6.40 — a line with NO calculable number is a PURE ANNOTATION: the
+    // body text rides CalcNote.text (quotes and all) so the ledger keeps
+    // the line without ever totalling it.
+    if (tokens.isEmpty()) return CalcNote(text = body.trim())
 
     // the result zone: "= total 500 birr" → before="total", after="birr".
     // No number in the tail → all the words become the trailing label.
@@ -581,8 +603,10 @@ fun parseCalcNote(raw: String): CalcNote {
 /** v1.6.36 — chips → the free-text grammar. Byte-stable round-trip for
  *  anything the chip editor can produce ("ball 100 × 2 price + 300
  *  transport = total 500 birr"); the result zone is only written when the
- *  user annotated the total (labels exist), never by default. */
+ *  user annotated the total (labels exist), never by default.
+ *  v1.6.40 — a PURE ANNOTATION line serializes to its own text. */
 fun serializeCalcNote(n: CalcNote): String {
+    if (n.tokens.isEmpty()) return n.text.trim()
     val sb = StringBuilder()
     n.tokens.forEachIndexed { i, tk ->
         if (i > 0) sb.append(' ')
@@ -600,6 +624,41 @@ fun serializeCalcNote(n: CalcNote): String {
         if (n.resultAfter.isNotBlank()) sb.append(' ').append(n.resultAfter.trim())
     }
     return sb.toString().trim()
+}
+
+/** v1.6.40 — QUOTE the numbers that were written in TEXT mode, so the
+ *  parser treats them as annotations instead of math (the user's report:
+ *  "if it is in text mode it shouldn't calculate the number that was
+ *  written when it was in text mode"). `qwerty` holds the indices in
+ *  `raw` of every character typed on the system keyboard; a whitespace
+ *  token that parses as a number (the grammar's own rule: optional
+ *  trailing %, comma decimal) and carries ANY text-keyboard character
+ *  gets wrapped in double quotes — the marker the parser understands and
+ *  the save persists. Keypad-written numbers pass through untouched, and
+ *  already-quoted tokens are left alone (the marker is self-preserving
+ *  through unlock / edit / recommit). Pure, so the harness pins it. */
+fun quoteTextNumbers(raw: String, qwerty: Set<Int>): String {
+    if (qwerty.isEmpty() || raw.isBlank()) return raw
+    val sb = StringBuilder(raw.length + 8)
+    var i = 0
+    val n = raw.length
+    while (i < n) {
+        if (raw[i].isWhitespace()) { sb.append(raw[i]); i++; continue }
+        var j = i
+        while (j < n && !raw[j].isWhitespace()) j++
+        val tok = raw.substring(i, j)
+        val looksNumber = tok.let {
+            val b = if (it.endsWith("%")) it.dropLast(1) else it
+            b.replace(',', '.').toDoubleOrNull() != null
+        }
+        val fromQwerty = (i until j).any { it in qwerty }
+        val alreadyQuoted = tok.length >= 2 && tok.startsWith("\"") && tok.endsWith("\"")
+        if (looksNumber && fromQwerty && !alreadyQuoted) {
+            sb.append('"').append(tok).append('"')
+        } else sb.append(tok)
+        i = j
+    }
+    return sb.toString()
 }
 
 /** v1.6.36 — the live total of the chip chain. Same semantics as

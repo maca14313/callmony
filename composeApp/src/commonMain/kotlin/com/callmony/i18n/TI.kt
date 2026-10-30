@@ -459,6 +459,15 @@ internal val TI: Map<String, String> = mapOf(
     // v1.6.38 — the canvas calculator (total menu / clipboard menu)
     "ee.calcMakePayment" to "ክፍያ ግበር",
     "ee.calcCopyTotal" to "ጠቅላላ ቅዳ",
+    // v1.6.40 — the payments modal / the line confirmations
+    "ee.calcOriginal" to "ቀዳማይ መጠን",
+    "ee.calcPayments" to "ክፍልትታት",
+    "ee.calcNoPayments" to "ክፍያ ዝተመዝገበ ኣይነበረን",
+    "ee.calcLineTotal" to "ጠቕላላ መስመር",
+    "ee.calcDeleteLineTitle" to "እዚ መስመር ክጠፋ?",
+    "ee.calcDeleteLineMsg" to "መስመር ካብ ስሌት ክጥፋእ እዩ።",
+    "ee.calcClearLineTitle" to "መስመር ክጥፋእ?",
+    "ee.calcClearLineMsg" to "ኣብ እቲ ንቑሕ መስመር ዝተጻሕፈ ኩሉ ክጥፋእ እዩ።",
     "ee.tabJustAmount" to "መጠን ጥራይ",
     "ee.tabItems" to "እቃታት · ብዛዕባ × ዋጋ",
     "ee.tabQuick" to "ብቕድሚ እቃ",

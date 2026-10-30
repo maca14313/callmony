@@ -104,8 +104,29 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.39 (versionCode 50)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.40 (versionCode 51)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
+
+- **1.6.40** — TEXT-MODE NUMBERS NEVER CALCULATE: numbers typed on the
+  system QWERTY are annotations (a quote marker rides them through the
+  save — a note reads `"2" rooms 500`, the 500 is math, the quoted 2 is
+  text), keypad numbers are the math, and old notes still calculate
+  exactly as before; a line of only text is a pure annotation that
+  rides the ledger without totalling. The TOTAL sits AFTER the last
+  calculation entry on the paper itself (no different background) and
+  opens THE SHARED PAYMENTS MODAL — the same one every individual line
+  total opens: the original amount, every recorded payment with the NEW
+  amount after it (the new-amount history), and Make payment / Copy.
+  MAKE PAYMENT VISIBLY REDUCES: the total and paid lines show
+  Paid · Remaining live, with quick Make-payment / Payments buttons
+  after the totals; per-line payments are attributed to their line.
+  Locked lines show their FULL calculation (no clamp); the ✕ remove and
+  a VISIBLE clear ✕ beside the Aa/123 toggle ask through the custom
+  confirmation modal; the lock is a noticeable brand pill long-press
+  unlocks; the caret sits at the right place (the end) after a toggle
+  or Next line, and the toggle matches the Save / Next-line height.
+  SAVE KEEPS THE EDITOR OPEN and the autosave takes over after the
+  first save. Tests 171/171.
 
 - **1.6.39** — THE CANVAS CALCULATOR GOES FULL SCREEN over the whole
   editor, and the active line is ONE unified native-editable field in

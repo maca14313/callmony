@@ -216,15 +216,17 @@ class EntryEditCalcTabTest {
             rule.onAllNodes(hasText("300 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
 
-        // the total bar's menu offers MAKE A PAYMENT of the 300
+        // the total's PAYMENTS MODAL opens on tap (v1.6.40 — was a
+        // dropdown): the original, the payment history, the actions
         rule.onNodeWithTag("calcLedgerTotal").performClick()
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("totalMenuPay").fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText(t("ee.calcOriginal"), substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
-        // dismiss via copy (the payment-sheet flow is covered by the
-        // ledger tests)
-        rule.onNodeWithTag("totalMenuCopy").performClick()
+        // the modal's Make payment opens the payment sheet (the entry
+        // is saved first — the editor stays open beneath it); dismiss
+        // via the modal's own close (back) to end the test clean
+        back()
         rule.waitForIdle()
 
         // Save: amount 300 + BOTH lines on the note
@@ -258,10 +260,12 @@ class EntryEditCalcTabTest {
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodesWithTag("calcTextField").fetchSemanticsNodes().isNotEmpty()
         }
-        // the active field carries the line's text — keep editing it
-        val field = rule.onNodeWithTag("calcTextField")
-        field.performClick()
-        field.performTextInput(" + 5")
+        // the active field carries the line's text — keep editing it.
+        // v1.6.40: the + 5 rides the KEYPAD (numbers typed on the QWERTY
+        // are annotations now — that is the v1.6.40 semantics, pinned by
+        // the text-mode battery below)
+        toNumMode()
+        listOf("+", "5").forEach { key(it) }
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodes(hasText("205 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
@@ -279,8 +283,9 @@ class EntryEditCalcTabTest {
         )
     }
 
-    /* 6 — each line's OWN total long-presses into the SAME menu the last
-       total has (make a payment of it / copy it) */
+    /* 6 — each line's OWN total opens the SAME payments modal the last
+       total has (v1.6.40: the modal with the payment list and the
+       make-payment / copy actions) */
     @Test
     fun individualLineTotalsHaveTheLastTotalsMenu() {
         ready()
@@ -289,21 +294,22 @@ class EntryEditCalcTabTest {
         listOf("2", "0", "0").forEach { key(it) }
         nextLine()
 
-        // long-press the LINE'S OWN total → the menu items exist
-        rule.onNodeWithTag("calcLineTotal:0").performTouchInput { longClick() }
+        // tap the LINE'S OWN total → the shared payments modal is up
+        // (the line's own original 200 is the headline)
+        rule.onNodeWithTag("calcLineTotal:0").performClick()
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("lineMenuPay").fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("${t("ee.calcLineTotal")} · 200 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
         assertTrue(
-            "the line total's menu must offer copy too",
-            rule.onAllNodesWithTag("lineMenuCopy").fetchSemanticsNodes().isNotEmpty(),
+            "the modal shows the original amount row",
+            rule.onAllNodes(hasText("${t("ee.calcOriginal")}: 200 Br", substring = true)).fetchSemanticsNodes().isNotEmpty(),
         )
-        // copy closes it (a payment would open the payment sheet)
-        rule.onNodeWithTag("lineMenuCopy").performClick()
+        // close it (a payment would open the payment sheet)
+        back()
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("lineMenuCopy").fetchSemanticsNodes().isEmpty()
+            rule.onAllNodes(hasText("${t("ee.calcOriginal")}: 200 Br", substring = true)).fetchSemanticsNodes().isEmpty()
         }
     }
 

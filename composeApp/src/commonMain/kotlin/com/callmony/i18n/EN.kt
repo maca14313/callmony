@@ -390,6 +390,15 @@ internal val EN: Map<String, String> = mapOf(
     // v1.6.38 — the canvas calculator (total menu / clipboard menu)
     "ee.calcMakePayment" to "Make payment",
     "ee.calcCopyTotal" to "Copy total",
+    // v1.6.40 — the payments modal / the line confirmations
+    "ee.calcOriginal" to "Original",
+    "ee.calcPayments" to "Payments",
+    "ee.calcNoPayments" to "No payments recorded yet",
+    "ee.calcLineTotal" to "Line total",
+    "ee.calcDeleteLineTitle" to "Delete this line?",
+    "ee.calcDeleteLineMsg" to "The line is removed from the calculation.",
+    "ee.calcClearLineTitle" to "Clear the line?",
+    "ee.calcClearLineMsg" to "Everything written on the active line is cleared.",
     "ee.tabJustAmount" to "Just amount",
     "ee.tabItems" to "Items · qty × price",
     "ee.tabQuick" to "Quick item",
