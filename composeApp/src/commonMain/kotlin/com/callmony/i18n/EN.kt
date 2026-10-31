@@ -383,7 +383,7 @@ internal val EN: Map<String, String> = mapOf(
     "ee.calcStep" to "Step",
     "ee.calcTotal" to "TOTAL",
     "ee.calcLabelHint" to "Label (ball, price…)",
-    "ee.calcNext" to "Next line",
+    "ee.calcNext" to "Next",
     "ee.calcPosBefore" to "Before",
     "ee.calcPosAfter" to "After",
     "ee.calcDescribe" to "Describe this number (ball, birr…)",
@@ -392,6 +392,8 @@ internal val EN: Map<String, String> = mapOf(
     "ee.calcCopyTotal" to "Copy total",
     // v1.6.41 — the pay chip beside every total / the payment cap
     "ee.calcPay" to "Pay",
+    "ee.calcEntryLocked" to "Locked",
+    "ee.calcEntryUnlocked" to "Unlocked",
     "lg.paymentTooMuch" to "The payment cannot go above the remaining amount",
     // v1.6.40 — the payments modal / the line confirmations
     "ee.calcOriginal" to "Original",

@@ -343,4 +343,52 @@ class CalcNoteTest {
         assertEquals(0, quoted.start)
         assertEquals(3, quoted.end) // "2" with its quotes
     }
+
+    /* ---------------- v1.6.42 — the commit-date marker ---------------- */
+
+    @Test
+    fun the_commit_date_rides_the_round_trip() {
+        val n = parseCalcNote("ball 100 × 2 @2026-10-31")
+        assertEquals("2026-10-31", n.date)
+        assertEquals(2, n.tokens.size)
+        assertEquals(200.0, evalCalcTokens(n.tokens)!!, 0.0)
+        // serialize puts it back; displayCalcNote keeps it out of the text
+        assertEquals("ball 100 × 2 @2026-10-31", serializeCalcNote(n))
+        assertEquals("ball 100 × 2", com.callmony.lib.displayCalcNote(n))
+    }
+
+    @Test
+    fun a_dated_annotation_line_round_trips_too() {
+        val n = parseCalcNote("note only @2026-10-30")
+        assertEquals("2026-10-30", n.date)
+        assertEquals("note only", n.text)
+        assertEquals("note only @2026-10-30", serializeCalcNote(n))
+        assertEquals("note only", com.callmony.lib.displayCalcNote(n))
+    }
+
+    @Test
+    fun old_notes_without_a_date_open_with_no_date() {
+        val n = parseCalcNote("ball 100 × 2")
+        assertEquals("", n.date)
+        assertEquals("ball 100 × 2", serializeCalcNote(n))
+    }
+
+    @Test
+    fun the_date_marker_never_becomes_math_or_a_label() {
+        // a marker with separators the grammar could otherwise eat
+        val n = parseCalcNote("100 + 300 @2026-10-31")
+        assertEquals("2026-10-31", n.date)
+        assertEquals(400.0, evalCalcTokens(n.tokens)!!, 0.0)
+        assertTrue(n.resultBefore.isEmpty() && n.resultAfter.isEmpty())
+    }
+
+    @Test
+    fun the_ledger_carries_dates_line_by_line() {
+        val lines = parseCalcLedger("100 @2026-10-30\n200 @2026-10-31")
+        assertEquals(2, lines.size)
+        assertEquals("2026-10-30", lines[0].date)
+        assertEquals("2026-10-31", lines[1].date)
+        assertEquals(300.0, calcLedgerTotal(lines)!!, 0.0)
+        assertEquals("100 @2026-10-30\n200 @2026-10-31", serializeCalcLedger(lines))
+    }
 }

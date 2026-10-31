@@ -434,7 +434,7 @@ internal val AM: Map<String, String> = mapOf(
     "ee.calcStep" to "ደረጃ",
     "ee.calcTotal" to "ጠቅላላ",
     "ee.calcLabelHint" to "መለያ (ኳስ፣ ዋጋ…)",
-    "ee.calcNext" to "ቀጣይ መስመር",
+    "ee.calcNext" to "ቀጣይ",
     "ee.calcPosBefore" to "በፊት",
     "ee.calcPosAfter" to "በኋላ",
     "ee.calcDescribe" to "ይህን ቁጥር ይግለጹ (ኳስ፣ ብር…)",
@@ -443,6 +443,8 @@ internal val AM: Map<String, String> = mapOf(
     "ee.calcCopyTotal" to "ጠቅላላ ቅዳ",
     // v1.6.41 — the pay chip beside every total / the payment cap
     "ee.calcPay" to "ክፈል",
+    "ee.calcEntryLocked" to "ተቆልቋል",
+    "ee.calcEntryUnlocked" to "ተከፍቷል",
     "lg.paymentTooMuch" to "ክፍያው ከቀሪው መጠን በላይ ሊሆን አይችልም",
     // v1.6.40 — the payments modal / the line confirmations
     "ee.calcOriginal" to "ዋና መጠን",

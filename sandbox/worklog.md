@@ -674,3 +674,25 @@ Work Log:
 
 Stage Summary:
 - v1.6.41 = every item of the user's 11-item list, 181/181 tests, committed and pushed with the APK + GitHub Release per the standing instruction.
+
+---
+
+Task ID: 18
+Agent: main agent (Z.ai)
+Task: Callmony v1.6.42 — the ten-report round on the annotated calculator (num-mode lag/close, placeholder/caret, + key, clear-✕, RTL-first-text, read-out sum, pay gate + history-above-total, "Next", per-entry dates), deliver APK + GitHub release.
+
+Work Log:
+- GitHub checked first (standing instruction): origin/main == cd75401 (v1.6.41). Sandbox reset → resync + SDK reinstall.
+- #1 num-mode lag/close: Robolectric stress (300 rapid keys, flat 2ms/key; 50 keys after 25 lines: 101ms) exonerated Compose — fixed the three device-side hazards: guarded (hasFocus-aware) requestFocus in the AndroidView actual (was unconditional ×2/token — IMM restart churn on real devices), cached textSize/textColor writes (were requestLayout() per keystroke), autosave key gated behind currentEntry != null (was whole-ledger serialization per keystroke on unsaved drafts).
+- #2: the placeholder WAS the caret bug — decorationBox replaced the field with example text when empty (the field, caret included, did not compose). Placeholder + hint removed; field always renders, 44dp write area.
+- #3: + back on the 1 2 3 row (− to bottom-right; ⌫ top-right, ÷ row 2, % wide, = gone). #4: clear-✕ beside Aa/123 removed. #9: ee.calcNext → "Next" ×5 languages.
+- #5: textDirection = Content on the QWERTY field — Arabic typed first renders RTL (the native field always did).
+- #6: sum total = pure read-out (no pay chip, no history rows, no modal; Paid · Remaining stays).
+- #8: pay gate — committed line LOCKED (chip greyed/inert); lock-pill TAP unlocks (green open-lock, brand-tinted block, armed chip); long-press unchanged (edits the line); payment history ABOVE the total, lock-state header (Locked/Unlocked colours), hairline separation, FULL notes (wrap, no ellipsis).
+- #10: commit date per line — " @YYYY-MM-DD" marker through the save, stripped by the parser (never math/label), rendered beside the calculation; payment rows carry dates.
+- Tests 193/193 (CalcNoteTest +5 date cases; NEW V1642 7-battery; V1641/V1640/CalcTab updated to the pill→chip flow). Two semantics-merging harness lessons documented (dead-tap-on-merged-tag poison; disabled chip tag rides the row).
+- Build 1.6.42 vc53; aapt + apksigner verified (same key 2f6d65be…869ad); both iOS targets compile.
+- Delivered: releases/callmony-1.6.42-release.apk committed + pushed; GitHub Release v1.6.42 published with the APK; copy at /home/z/my-project/download/callmony-1.6.42-kmp-release.apk; sandbox + chat-logs committed.
+
+Stage Summary:
+- v1.6.42: all ten reports fixed on the v1.6.41 base; suite fully green; freeze-free foundation untouched.

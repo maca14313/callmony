@@ -221,8 +221,9 @@ class EntryEditCalcV1641Test {
         )
     }
 
-    /* 4 — the line's own total sits BELOW the locked line with the PAY
-       chip beside it; the sum total carries a pay chip too */
+    /* 4 — v1.6.42: the line's own total sits BELOW the locked line with the
+       PAY chip beside it (DISABLED while locked); the sum total carries NO
+       pay chip anymore (report #6 — it is a pure read-out now) */
     @Test
     fun lineTotalsSitBelowWithAPayChip() {
         ready()
@@ -242,30 +243,38 @@ class EntryEditCalcV1641Test {
             "the line's own total must sit BELOW its calculation",
             lineTotal.positionInRoot.y > lineText.positionInRoot.y,
         )
-        // the pay chip beside it, and one beside the sum total
+        // the pay chip beside it (v1.6.42: locked = present but INERT)
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodesWithTag("calcLinePay:0").fetchSemanticsNodes().isNotEmpty()
         }
-        assertTrue(
-            "the sum total must carry a pay chip too",
-            rule.onAllNodesWithTag("calcTotalPay").fetchSemanticsNodes().isNotEmpty(),
+        // the sum total carries NO pay chip (report #6)
+        assertEquals(
+            "the sum total must not carry a pay chip",
+            0,
+            rule.onAllNodesWithTag("calcTotalPay").fetchSemanticsNodes().size,
         )
     }
 
-    /* 5 — a payment cannot go above the remaining total */
+    /* 5 — v1.6.42: a payment cannot go above the remaining total — paid
+       through an UNLOCKED line's pay chip (the sum total is a read-out
+       now; the gate opens with the lock pill) */
     @Test
     fun aPaymentCannotGoAboveTheTotal() {
         ready()
         openEditor()
         toNumMode()
         listOf("3", "0", "0").forEach { key(it) }
+        nextLine()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("300 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithTag("calcLine:0").fetchSemanticsNodes().isNotEmpty()
         }
-
-        // total → modal → Pay (prefilled with the remaining 300)
-        rule.onNodeWithTag("calcLedgerTotal").performClick()
+        // unlock the entry (the pay gate), then open its modal
+        rule.onNodeWithTag("calcLineLock:0").performClick()
         rule.waitForIdle()
+        rule.onNodeWithTag("calcLinePay:0").performClick()
+        rule.waitForIdle()
+
+        // the modal's Pay (prefilled with the remaining 300)
         val payBtns = rule.onAllNodes(hasText(t("ee.calcPay"), substring = true) and hasClickAction())
         rule.waitUntil(timeoutMillis = 15000) { payBtns.fetchSemanticsNodes().isNotEmpty() }
         payBtns[payBtns.fetchSemanticsNodes().size - 1].performClick()
@@ -351,19 +360,23 @@ class EntryEditCalcV1641Test {
         }
     }
 
-    /* 8 — the payment history shows ON THE CANVAS, notes included */
+    /* 8 — v1.6.42: the payment history shows ON THE CANVAS above the paid
+       entry's total, notes included — paid through the entry's own
+       UNLOCKED pay chip */
     @Test
     fun thePaymentHistoryShowsOnTheCanvasWithNotes() {
         ready()
         openEditor()
         toNumMode()
         listOf("3", "0", "0").forEach { key(it) }
+        nextLine()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("300 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithTag("calcLine:0").fetchSemanticsNodes().isNotEmpty()
         }
-
-        // pay the full 300 with a note
-        rule.onNodeWithTag("calcLedgerTotal").performClick()
+        // the pay gate: unlock the entry, open its modal, pay the full 300
+        rule.onNodeWithTag("calcLineLock:0").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag("calcLinePay:0").performClick()
         rule.waitForIdle()
         val payBtns = rule.onAllNodes(hasText(t("ee.calcPay"), substring = true) and hasClickAction())
         rule.waitUntil(timeoutMillis = 15000) { payBtns.fetchSemanticsNodes().isNotEmpty() }
@@ -382,7 +395,7 @@ class EntryEditCalcV1641Test {
 
         // back on the canvas: the history row carries the note and → 0
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("calcPayHist:0").fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithTag("calcLinePayHist:0:0").fetchSemanticsNodes().isNotEmpty()
         }
         assertTrue(
             "the note rides the on-canvas history",
@@ -391,6 +404,13 @@ class EntryEditCalcV1641Test {
         assertTrue(
             "the history row shows the new amount",
             rule.onAllNodes(hasText("0 Br", substring = true)).fetchSemanticsNodes().isNotEmpty(),
+        )
+        // and the history sits ABOVE the entry's total (report #8)
+        val hist = rule.onNodeWithTag("calcLinePayHist:0:0").fetchSemanticsNode()
+        val total = rule.onNodeWithTag("calcLineTotal:0").fetchSemanticsNode()
+        assertTrue(
+            "the history list must sit ABOVE the total",
+            hist.positionInRoot.y < total.positionInRoot.y,
         )
     }
 

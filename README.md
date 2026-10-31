@@ -104,8 +104,29 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.41 (versionCode 52)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.42 (versionCode 53)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
+
+- **1.6.42** — THE v1.6.41 REPORT LIST, all ten items: (1) the number-mode
+  typing lag/close fixed at its only device-side suspects — the native
+  field's focus requests are now guarded (only when the view really lacks
+  focus — no more IMM restart churn), its per-recompositon textSize/textColor
+  writes (each a requestLayout) are cached, and the per-keystroke autosave
+  key is only computed for a saved entry; (2) the PLACEHOLDER IS GONE — the
+  empty active line now shows the blinking caret (the old decorationBox
+  REPLACED the field with example text whenever the line was empty — that
+  is why the caret "was not showing" after Next line); (3) the + key is
+  BACK on the 1 2 3 row (− takes the bottom-right slot); (4) the clear-✕
+  beside the Aa/123 toggle is removed (AC/⌫ own clearing); (5) RTL text
+  typed FIRST renders right-to-left (textDirection = Content on the QWERTY
+  field); (6) the sum total is a pure read-out — no pay chip, no history
+  rows, just Paid · Remaining; (8) the PAY chip beside an individual entry
+  is ENABLED ONLY AFTER THE LOCK PILL IS TAPPED (locked = greyed + inert),
+  the entry's payment history shows ABOVE its total with the FULL note,
+  and locked/unlocked entries render in different colours with clear
+  separation; (9) the button says just "Next"; (10) every entry carries
+  its COMMIT DATE (persisted as a trailing " @YYYY-MM-DD" marker, old
+  notes open clean) and payments keep theirs. Tests 193/193.
 
 - **1.6.41** — THE CARET IS ALWAYS THERE: a focus token re-focuses the
   active field on canvas open/raise, every Aa/123 toggle, Next line and

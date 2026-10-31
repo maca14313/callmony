@@ -445,12 +445,16 @@ data class CalcToken(
  *  stay plain readable text on the saved entry.
  *  v1.6.40 — text: a line with NO calculable numbers is a pure annotation
  *  (every number on it was written in TEXT mode, or none at all); its raw
- *  text rides here so it round-trips through the ledger untouched. */
+ *  text rides here so it round-trips through the ledger untouched.
+ *  v1.6.42 — date: the day the line was COMMITTED ("it should show the date
+ *  for each entry"), riding a trailing " @YYYY-MM-DD" marker through the
+ *  save; old notes without one open with date="" and simply show nothing. */
 data class CalcNote(
     val tokens: List<CalcToken> = emptyList(),
     val resultBefore: String = "",  // label before the total ("total")
     val resultAfter: String = "",   // label after the total ("birr")
     val text: String = "",          // v1.6.40 — pure-annotation line (no math)
+    val date: String = "",          // v1.6.42 — commit date (YYYY-MM-DD)
 )
 
 /** v1.6.36 — one live intermediate result for the step-by-step card
@@ -487,8 +491,14 @@ private fun latinizeDigits(s: String): String {
 fun parseCalcNote(raw: String): CalcNote {
     if (raw.isBlank()) return CalcNote()
 
-    val body = raw.substringBefore('=')
-    val tail = if (raw.contains('=')) raw.substringAfter('=').trim() else ""
+    // v1.6.42 — strip a trailing " @YYYY-MM-DD" commit-date marker first:
+    // it is bookkeeping, never part of the calculation or its labels
+    val dateMarker = Regex("\\s*@\\s*(\\d{4}-\\d{2}-\\d{2})\\s*$")
+    val date = dateMarker.find(raw)?.groupValues?.get(1) ?: ""
+    val rawBody = if (date.isNotEmpty()) raw.replace(dateMarker, "") else raw
+
+    val body = rawBody.substringBefore('=')
+    val tail = if (rawBody.contains('=')) rawBody.substringAfter('=').trim() else ""
 
     // split glued operators between digits ("2x2", "100+300") after
     // normalizing Arabic-Indic / Eastern digits — same rules as parseExprNote
@@ -577,7 +587,7 @@ fun parseCalcNote(raw: String): CalcNote {
     // v1.6.40 — a line with NO calculable number is a PURE ANNOTATION: the
     // body text rides CalcNote.text (quotes and all) so the ledger keeps
     // the line without ever totalling it.
-    if (tokens.isEmpty()) return CalcNote(text = body.trim())
+    if (tokens.isEmpty()) return CalcNote(text = body.trim(), date = date)
 
     // the result zone: "= total 500 birr" → before="total", after="birr".
     // No number in the tail → all the words become the trailing label.
@@ -597,15 +607,26 @@ fun parseCalcNote(raw: String): CalcNote {
         resAfter = post.joinToString(" ")
     }
 
-    return CalcNote(tokens, resBefore, resAfter)
+    return CalcNote(tokens, resBefore, resAfter, date = date)
 }
 
 /** v1.6.36 — chips → the free-text grammar. Byte-stable round-trip for
  *  anything the chip editor can produce ("ball 100 × 2 price + 300
  *  transport = total 500 birr"); the result zone is only written when the
  *  user annotated the total (labels exist), never by default.
- *  v1.6.40 — a PURE ANNOTATION line serializes to its own text. */
+ *  v1.6.40 — a PURE ANNOTATION line serializes to its own text.
+ *  v1.6.42 — a dated line re-appends its " @YYYY-MM-DD" commit marker. */
 fun serializeCalcNote(n: CalcNote): String {
+    val base = serializeCalcNoteBody(n)
+    return if (n.date.isNotEmpty()) "$base @${n.date}" else base
+}
+
+/** v1.6.42 — the line as the USER sees and edits it: the same free-text
+ *  serialization WITHOUT the trailing commit-date marker (the field, the
+ *  copy button and the locked-line text all render this). */
+fun displayCalcNote(n: CalcNote): String = serializeCalcNoteBody(n)
+
+private fun serializeCalcNoteBody(n: CalcNote): String {
     if (n.tokens.isEmpty()) return n.text.trim()
     val sb = StringBuilder()
     n.tokens.forEachIndexed { i, tk ->

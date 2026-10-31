@@ -452,7 +452,7 @@ internal val TI: Map<String, String> = mapOf(
     "ee.calcStep" to "እርከብ",
     "ee.calcTotal" to "ጠቕላላ",
     "ee.calcLabelHint" to "ምልልይ (ኳስ፣ ዋጋ…)",
-    "ee.calcNext" to "ብቕጽቢ መስመር",
+    "ee.calcNext" to "ብቕጽቢ",
     "ee.calcPosBefore" to "ቅድሚ",
     "ee.calcPosAfter" to "ድሕሪ",
     "ee.calcDescribe" to "ነዚ ቁጥር ገለጽ (ኳስ፣ ብር…)",
@@ -461,6 +461,8 @@ internal val TI: Map<String, String> = mapOf(
     "ee.calcCopyTotal" to "ጠቅላላ ቅዳ",
     // v1.6.41 — the pay chip beside every total / the payment cap
     "ee.calcPay" to "ክፍል",
+    "ee.calcEntryLocked" to "ተቐሪቑ",
+    "ee.calcEntryUnlocked" to "ተከፍታዕ",
     "lg.paymentTooMuch" to "እቲ ክፍያ ካብ ዝተረፈ ዝላዕለ ኮይኑ ኣይኽእልን",
     // v1.6.40 — the payments modal / the line confirmations
     "ee.calcOriginal" to "ቀዳማይ መጠን",

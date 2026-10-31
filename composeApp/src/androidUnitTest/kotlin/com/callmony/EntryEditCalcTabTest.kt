@@ -135,7 +135,10 @@ class EntryEditCalcTabTest {
         }
         saveFromCanvas()
         val note = rule.runOnUiThread {
+            // v1.6.42 — committed lines carry a " @date" marker; compare
+            // the marker-stripped form
             AppStore.state.entries.lastOrNull { it.amount == 200.0 }?.exprNote
+                ?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), "")
         }
         assertEquals("the × must be gone — the line commits as just 200", "200", note)
     }
@@ -166,7 +169,11 @@ class EntryEditCalcTabTest {
         }
         saveFromCanvas()
         val savedId = rule.runOnUiThread {
-            AppStore.state.entries.firstOrNull { it.amount == 200.0 && it.exprNote == "ball 200" }?.id
+            // v1.6.42 — committed lines carry a trailing " @date" marker now;
+            // compare on the marker-stripped form
+            AppStore.state.entries.firstOrNull {
+                it.amount == 200.0 && it.exprNote?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), "") == "ball 200"
+            }?.id
         }
         checkNotNull(savedId) {
             "the label did not survive the mode switch — entries now: " +
@@ -216,9 +223,11 @@ class EntryEditCalcTabTest {
             rule.onAllNodes(hasText("300 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
 
-        // the total's PAYMENTS MODAL opens on tap (v1.6.40 — was a
-        // dropdown): the original, the payment history, the actions
-        rule.onNodeWithTag("calcLedgerTotal").performClick()
+        // the total's PAYMENTS MODAL no longer opens on the sum (v1.6.42 —
+        // it is a pure read-out); an UNLOCKED line's own modal does
+        rule.onNodeWithTag("calcLineLock:0").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag("calcLineTotal:0").performClick()
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodes(hasText(t("ee.calcOriginal"), substring = true)).fetchSemanticsNodes().isNotEmpty()
@@ -229,11 +238,13 @@ class EntryEditCalcTabTest {
         back()
         rule.waitForIdle()
 
-        // Save: amount 300 + BOTH lines on the note
+        // Save: amount 300 + BOTH lines on the note (each with its commit
+        // date marker — v1.6.42)
         saveFromCanvas()
         val savedId = rule.runOnUiThread {
             AppStore.state.entries.firstOrNull { e ->
-                e.amount == 300.0 && e.exprNote == "1 × 200\n100"
+                e.amount == 300.0 &&
+                    e.exprNote?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), "") == "1 × 200\n100"
             }?.id
         }
         checkNotNull(savedId) {
@@ -283,9 +294,8 @@ class EntryEditCalcTabTest {
         )
     }
 
-    /* 6 — each line's OWN total opens the SAME payments modal the last
-       total has (v1.6.40: the modal with the payment list and the
-       make-payment / copy actions) */
+    /* 6 — each line's OWN total opens the SAME payments modal (v1.6.42:
+       after the entry is UNLOCKED — the lock pill tap arms the gate) */
     @Test
     fun individualLineTotalsHaveTheLastTotalsMenu() {
         ready()
@@ -294,8 +304,19 @@ class EntryEditCalcTabTest {
         listOf("2", "0", "0").forEach { key(it) }
         nextLine()
 
-        // tap the LINE'S OWN total → the shared payments modal is up
-        // (the line's own original 200 is the headline)
+        // v1.6.42 — LOCKED: the line's own total is inert (the pay gate)
+        rule.onNodeWithTag("calcLineTotal:0").performClick()
+        rule.waitForIdle()
+        assertEquals(
+            "a locked line's total must not open the modal",
+            0,
+            rule.onAllNodes(hasText("${t("ee.calcLineTotal")} · 200 Br", substring = true)).fetchSemanticsNodes().size,
+        )
+
+        // tap the LOCK PILL → unlocked → tap the LINE'S OWN total → the
+        // shared payments modal is up (the line's own original 200 headline)
+        rule.onNodeWithTag("calcLineLock:0").performClick()
+        rule.waitForIdle()
         rule.onNodeWithTag("calcLineTotal:0").performClick()
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {

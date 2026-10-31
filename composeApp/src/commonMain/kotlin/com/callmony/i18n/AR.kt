@@ -381,7 +381,7 @@ internal val AR: Map<String, String> = mapOf(
     "ee.calcStep" to "خطوة",
     "ee.calcTotal" to "الإجمالي",
     "ee.calcLabelHint" to "تسمية (كرة، سعر…)",
-    "ee.calcNext" to "سطر التالي",
+    "ee.calcNext" to "التالي",
     "ee.calcPosBefore" to "قبل",
     "ee.calcPosAfter" to "بعد",
     "ee.calcDescribe" to "صف هذا الرقم (كرة، بر…)",
@@ -390,6 +390,8 @@ internal val AR: Map<String, String> = mapOf(
     "ee.calcCopyTotal" to "نسخ الإجمالي",
     // v1.6.41 — the pay chip beside every total / the payment cap
     "ee.calcPay" to "دفع",
+    "ee.calcEntryLocked" to "مقفل",
+    "ee.calcEntryUnlocked" to "مفتوح",
     "lg.paymentTooMuch" to "لا يمكن أن تتجاوز الدفعة المبلغ المتبقي",
     // v1.6.40 — the payments modal / the line confirmations
     "ee.calcOriginal" to "الأصلي",

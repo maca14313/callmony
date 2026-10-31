@@ -381,7 +381,7 @@ internal val OM: Map<String, String> = mapOf(
     "ee.calcStep" to "Tarkaanffii",
     "ee.calcTotal" to "WALIIGALAA",
     "ee.calcLabelHint" to "Mallatteessa (kubbaa, gatii…)",
-    "ee.calcNext" to "Sarara itti aanu",
+    "ee.calcNext" to "Itti aanu",
     "ee.calcPosBefore" to "Dura",
     "ee.calcPosAfter" to "Booda",
     "ee.calcDescribe" to "Lakkoofsa kana ibsi (kubbaa, birr…)",
@@ -390,6 +390,8 @@ internal val OM: Map<String, String> = mapOf(
     "ee.calcCopyTotal" to "Walduraa walitti qabi",
     // v1.6.41 — the pay chip beside every total / the payment cap
     "ee.calcPay" to "Kaffal",
+    "ee.calcEntryLocked" to "Cufame",
+    "ee.calcEntryUnlocked" to "Banaa’e",
     "lg.paymentTooMuch" to "Kaffaltiin mecca hafe irra ol ta'uu hin dandeessisu",
     // v1.6.40 — the payments modal / the line confirmations
     "ee.calcOriginal" to "Orijiinaalaa",

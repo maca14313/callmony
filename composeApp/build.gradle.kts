@@ -102,8 +102,8 @@ android {
         // are capped at the remaining total, the delete-entry button is
         // gone, the compact header carries UNDO/REDO, and the canvas is
         // RTL-aware.
-        versionCode = 52
-        versionName = "1.6.41"
+        versionCode = 53
+        versionName = "1.6.42"
     }
 
     signingConfigs {

@@ -176,20 +176,36 @@ class EntryEditCalcV1640Test {
         assertEquals(0, rule.onAllNodesWithTag("calcTotal").fetchSemanticsNodes().size)
     }
 
-    /* 3 — the TOTAL opens the shared PAYMENTS MODAL (original · history) */
+    /* 3 — v1.6.42: the SUM total no longer opens a payments modal (report
+       #6 — it is a pure read-out); an UNLOCKED entry's pay chip opens the
+       shared modal (original · history) */
     @Test
-    fun theTotalOpensThePaymentsModal() {
+    fun theSumTotalIsAReadOutAndUnlockedLinesOpenTheModal() {
         ready()
         openEditor()
         toNumMode()
         listOf("3", "0", "0").forEach { key(it) }
+        nextLine()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("300 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithTag("calcLine:0").fetchSemanticsNodes().isNotEmpty()
         }
 
-        rule.onNodeWithTag("calcLedgerTotal").performClick()
+        // the sum total is INERT now — v1.6.42: its semantics carry NO
+        // click action (the tag merges into an ancestor, so a performClick
+        // would tap the merged node's center — poison for the pill toggles
+        // below — hence the pure semantics probe instead of a dead tap)
+        val totalNode = rule.onNodeWithTag("calcLedgerTotal").fetchSemanticsNode()
+        assertEquals(
+            "the sum total must not be clickable",
+            false,
+            totalNode.config.contains(androidx.compose.ui.semantics.SemanticsActions.OnClick),
+        )
+
+        // unlock the entry → its pay chip opens the modal
+        rule.onNodeWithTag("calcLineLock:0").performClick()
         rule.waitForIdle()
-        // the modal: the original amount + the empty-history note + actions
+        rule.onNodeWithTag("calcLinePay:0").performClick()
+        rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodes(hasText("${t("ee.calcOriginal")}: 300 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
@@ -197,33 +213,31 @@ class EntryEditCalcV1640Test {
             "the no-payments note shows",
             rule.onAllNodes(hasText(t("ee.calcNoPayments"), substring = true)).fetchSemanticsNodes().isNotEmpty(),
         )
-        assertTrue(
-            "the modal's pay action shows",
-            rule.onAllNodes(hasText(t("ee.calcPay"), substring = true) and hasClickAction())
-                .fetchSemanticsNodes().isNotEmpty(),
-        )
         back() // close the modal
         rule.waitForIdle()
     }
 
-    /* 4 — MAKE PAYMENT REDUCES the amount (paid · remaining live) */
+    /* 4 — MAKE PAYMENT REDUCES the amount (paid · remaining live) — paid
+       through an UNLOCKED entry's chip (v1.6.42 flow) */
     @Test
     fun makePaymentReducesTheAmount() {
         ready()
         openEditor()
         toNumMode()
         listOf("3", "0", "0").forEach { key(it) }
+        nextLine()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("300 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithTag("calcLine:0").fetchSemanticsNodes().isNotEmpty()
         }
 
-        // total → modal → Pay (the editor saves first and STAYS OPEN)
-        rule.onNodeWithTag("calcLedgerTotal").performClick()
+        // unlock the entry → its modal → Pay (the editor saves first and
+        // STAYS OPEN)
+        rule.onNodeWithTag("calcLineLock:0").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag("calcLinePay:0").performClick()
         rule.waitForIdle()
         val makePay = rule.onAllNodes(hasText(t("ee.calcPay"), substring = true) and hasClickAction())
         rule.waitUntil(timeoutMillis = 15000) { makePay.fetchSemanticsNodes().isNotEmpty() }
-        // the MODAL's Pay action (v1.6.41 compact modal: the quick chips are
-        // gone — the pay chip beside the total opens this same modal)
         makePay[makePay.fetchSemanticsNodes().size - 1].performClick()
         rule.waitForIdle()
 
@@ -231,8 +245,6 @@ class EntryEditCalcV1640Test {
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodes(hasText(t("lg.recordPayment"), substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
-        // the payment sheet's Save (the LAST act.save — the sheet renders
-        // above the editor's own Save buttons)
         savePaySheet()
         rule.waitForIdle()
 
@@ -330,40 +342,28 @@ class EntryEditCalcV1640Test {
         }
     }
 
-    /* 7 — the CLEAR button beside the Aa/123 toggle asks before clearing */
+    /* 7 — v1.6.42: the CLEAR button beside the Aa/123 toggle is REMOVED
+       (report #4: "want to remove x btn beside the text and numbers
+       toggle that is for clear the line") — AC and ⌫ on the keypad own
+       clearing the line */
     @Test
-    fun theClearButtonAsksBeforeClearing() {
+    fun theClearButtonIsGone() {
         ready()
         openEditor()
-        val field = rule.onNodeWithTag("calcTextField")
-        field.performClick()
-        field.performTextInput("keep me")
+        assertEquals(
+            "the clear-line ✕ must be gone",
+            0,
+            rule.onAllNodesWithTag("calcBtnClear").fetchSemanticsNodes().size,
+        )
+        // and clearing still works through the keypad's AC (in num mode)
+        toNumMode()
+        listOf("2", "5").forEach { key(it) }
         rule.waitForIdle()
-
-        rule.onNodeWithTag("calcBtnClear").performClick()
-        rule.waitForIdle()
-        rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText(t("ee.calcClearLineTitle"), substring = true)).fetchSemanticsNodes().isNotEmpty()
-        }
-        // cancel first: the line survives
-        val cancelBtn = rule.onAllNodes(hasText(t("act.cancel")) and hasClickAction())
-        cancelBtn[0].performClick()
+        rule.onNodeWithTag("calcKey:AC").performClick()
         rule.waitForIdle()
         assertTrue(
-            "cancel must keep the line",
-            rule.onAllNodes(hasText("keep me", substring = true)).fetchSemanticsNodes().isNotEmpty(),
+            "AC still clears the active line",
+            rule.onAllNodes(hasText("25", substring = true)).fetchSemanticsNodes().isEmpty(),
         )
-        // clear it for real
-        rule.onNodeWithTag("calcBtnClear").performClick()
-        rule.waitForIdle()
-        rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText(t("ee.calcClearLineTitle"), substring = true)).fetchSemanticsNodes().isNotEmpty()
-        }
-        val confirmBtn = rule.onAllNodes(hasText(t("act.delete")) and hasClickAction())
-        confirmBtn[0].performClick()
-        rule.waitForIdle()
-        rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("keep me", substring = true)).fetchSemanticsNodes().isEmpty()
-        }
     }
 }
