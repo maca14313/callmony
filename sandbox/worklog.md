@@ -696,3 +696,19 @@ Work Log:
 
 Stage Summary:
 - v1.6.42: all ten reports fixed on the v1.6.41 base; suite fully green; freeze-free foundation untouched.
+
+---
+Task ID: 21
+Agent: main agent (Z.ai)
+Task: v1.6.44 — the user pasted back the v1.6.43 crash report (the firewall's own clipboard capture): decode the 60-frame trace and kill the number-mode typing lag/crash at its ROOT, then commit + push + release with the APK.
+
+Work Log:
+- Sandbox had reset; local main re-fetched and fast-forwarded to origin/main 2475e3c (v1.6.43, vc54 — the v1.6.43 commit-and-push was already on the remote). Android SDK reinstalled via sandbox/install_sdk.sh.
+- DECODE: the chain is et.setText(span) at NoImeFieldActual.kt:142 INSIDE the AndroidView update block (runs mid CompositionImpl.applyChanges) → Editor.maybeFireScheduledRestartInputForSetText → IMM.restartInput → startInputInner → TextView.onCreateInputConnection(TextView.java:9753) → focusSearch(FOCUS_DOWN) → Compose focus traversal BEYOND a LazyList's bounds → LazyListBeyondBoundsState.remeasure → forceRemeasure → LazyLayout subcompose → composeInitial → drainPendingModificationsForCompositionLocked → ComposeRuntimeError "pending composition has not been applied". The same beyond-bounds traversal per keystroke = the lag; the re-entrant subcompose = the close. Robolectric's shadow IMM makes startInputInner a no-op, which is why every previous harness run was blind to it.
+- FIX (two independent layers): (1) NEW NoImeEditText subclass — onCreateInputConnection returns null (this field never talks to an IME; the chain's entry door is closed; native Copy/Cut/Paste/Select-all untouched — the ActionMode path never uses the InputConnection; onCheckIsTextEditor stays true); (2) the update block NEVER calls setText synchronously — it records the latest pending text/highlight/colour and posts ONE single-flight runnable that applies the programmatic-guarded setText + caret-at-end on the main looper AFTER the composition has fully applied. v1.6.43 no-op fast-exit and v1.6.42 cached cosmetics kept.
+- Tests 205/205 (was 202): NEW NoImeFieldV1644Test ×3 (door shut on both a fresh and the composed instance; the SideEffect STRUCTURAL PROOF — the same apply pass that recomposes the field must still see the OLD text; the highlighted-span branch lands through the posted path). EntryEditCalcV1643Test battery passes unchanged.
+- Build 1.6.44 vc55; aapt verified; apksigner SHA-256 2f6d65be…869ad (same release key as always — installs over v1.6.43, data intact); APK SHA-256 9807cca2…70fd66; both iOS targets compile.
+- Delivered: releases/callmony-1.6.44-release.apk committed + pushed; GitHub Release v1.6.44 published with the APK; copy at /home/z/my-project/download/callmony-1.6.44-kmp-release.apk; README + CHANGELOG + sandbox/chat-logs/2026-10-31-v1.6.44-nummode-crash-decoded.md (verbatim report + decode + fix map) committed.
+
+Stage Summary:
+- The diagnostics loop the user ordered in v1.6.43 closed its first cycle: the firewall captured the crash, the user pasted it back, and the trace named the killer. v1.6.44 kills it at the root with two independent layers. If anything ever crashes again, the firewall stays armed — paste the report and the next round starts from ground truth.

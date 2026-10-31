@@ -109,8 +109,17 @@ android {
         // padding) with the canvas reserving the exact measured band, and
         // the num-mode field's recomposition no-op path touches the native
         // view zero times.
-        versionCode = 54
-        versionName = "1.6.43"
+        // v1.6.44 — the firewall's first capture DECODED and the number-mode
+        // crash KILLED AT THE ROOT: et.setText() inside the AndroidView
+        // update block ran MID applyChanges, and TextView's
+        // onCreateInputConnection→focusSearch re-entered the runtime through
+        // a beyond-bounds LazyList remeasure ("pending composition has not
+        // been applied"). NoImeEditText now offers NO InputConnection (the
+        // door the chain entered through — this field never talks to an IME)
+        // and every text write leaves the apply phase as a posted
+        // single-flight runnable.
+        versionCode = 55
+        versionName = "1.6.44"
     }
 
     signingConfigs {

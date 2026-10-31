@@ -104,8 +104,30 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.43 (versionCode 54)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.44 (versionCode 55)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
+
+- **1.6.44** — THE FIREWALL'S FIRST CAPTURE DECODED, THE NUMBER-MODE CRASH
+  KILLED AT THE ROOT: the user pasted back the v1.6.43 crash report and its
+  60-frame trace finally named the killer — `et.setText()` inside the
+  AndroidView update block (which runs mid applyChanges) fired
+  `InputMethodManager.restartInput → TextView.onCreateInputConnection →
+  focusSearch(FOCUS_DOWN)`, which walked the Compose tree BEYOND a
+  LazyList's bounds and forced a synchronous remeasure/subcompose WHILE THE
+  PARENT COMPOSITION WAS STILL BEING APPLIED → ComposeRuntimeError "pending
+  composition has not been applied" → the app closes; the same
+  beyond-bounds traversal on every keystroke is the reported LAG — one root
+  cause, both symptoms. Fix, two independent layers: (1) `NoImeEditText`
+  offers NO InputConnection (this field never talks to an IME — the 12-key
+  grid is the input method — so TextView's focusSearch never runs at all;
+  the native Copy/Cut/Paste/Select-all menu is untouched); (2) text writes
+  LEAVE the composition apply phase — the update block posts ONE
+  single-flight runnable that applies the programmatic setText + caret
+  right after the composition has fully applied. Re-entrancy is now
+  structurally impossible. Tests 205/205 (NEW NoImeFieldV1644Test ×3,
+  including the SideEffect structural proof that the apply phase no longer
+  writes the view).
+
 
 - **1.6.43** — THE CRASH FIREWALL (user order: "if it continues to crash
   make it to log the error and automatically copy it to clipboard"):
