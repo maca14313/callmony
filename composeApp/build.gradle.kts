@@ -102,8 +102,15 @@ android {
         // are capped at the remaining total, the delete-entry button is
         // gone, the compact header carries UNDO/REDO, and the canvas is
         // RTL-aware.
-        versionCode = 53
-        versionName = "1.6.42"
+        // v1.6.43 — the crash firewall (uncaught exceptions AND a main-thread
+        // watchdog both land the report in logcat + a file + the CLIPBOARD,
+        // on the user's order), the keypad's keys sit ABOVE the phone's
+        // system navigation bar (never under the gesture bar, real bottom
+        // padding) with the canvas reserving the exact measured band, and
+        // the num-mode field's recomposition no-op path touches the native
+        // view zero times.
+        versionCode = 54
+        versionName = "1.6.43"
     }
 
     signingConfigs {

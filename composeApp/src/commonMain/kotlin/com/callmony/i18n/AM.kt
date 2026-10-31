@@ -1129,6 +1129,8 @@ internal val AM: Map<String, String> = mapOf(
     "diag.state" to "የመተግበሪያው ሁኔታ",
     "diag.copy" to "ሪፖርት በቅጂ አስቀምጥ",
     "diag.copied" to "በቅጂ ተቀምጧል",
+    // v1.6.43 — the crash-firewall boot toast (report already on clipboard)
+    "diag.autoCopied" to "የብልሽት ሪፖርቱ በቅጂ ላይ ተቀምጧል — ለመላክ ይለጥፉት",
     "diag.gotIt" to "ገባኝ",
     "diag.clearAll" to "ሁሉንም አጥፋ",
     "diag.empty" to "ምንም ችግር አልተመዘገበም",

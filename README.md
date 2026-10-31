@@ -104,8 +104,32 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.42 (versionCode 53)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.43 (versionCode 54)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
+
+- **1.6.43** — THE CRASH FIREWALL (user order: "if it continues to crash
+  make it to log the error and automatically copy it to clipboard"):
+  uncaught exceptions on ANY thread land the full report (kind, version,
+  device, thread, boot phase, stack) in LOGCAT + `files/crash-last.txt`
+  + `files/crash-history.log` AND THE CLIPBOARD — automatically, at crash
+  time — and a main-thread WATCHDOG captures the lag→close signature
+  ("it starts to lag, and finally the app closes" — an ANR, which no
+  exception handler can see) by dumping the LIVE main-thread stack to the
+  same channels BEFORE the system ANR flow runs; the next launch re-copies
+  any un-handed-over report and says so with a toast, so the trace can
+  always be pasted back to the developer. THE KEYPAD NEVER SITS UNDER THE
+  PHONE'S NAVIGATION BAR ("not under the phone netiv navigation… just on
+  top of the apps bottom navigation not the mobile, the keypad should
+  have some bottom padding"): navigationBarsPadding inside the root keypad
+  host lifts the keys above the gesture-bar zone (the canvas colour still
+  fills the band — no see-through hole), the grid gains real bottom
+  padding, and the canvas now reserves the EXACT covered band by direct
+  measurement (the keypad reports its top edge in window px; the covered
+  band = canvas bottom − keypad top — inset-independent by construction).
+  The num-mode field's recomposition no-op path touches the native view
+  ZERO times (synced text/highlight/cosmetics fast-exit + guarded
+  setSelection). Tests 202/202 (NEW CrashFirewallTest ×5 + the
+  EntryEditCalcV1643Test ×4 keypad/reservation battery).
 
 - **1.6.42** — THE v1.6.41 REPORT LIST, all ten items: (1) the number-mode
   typing lag/close fixed at its only device-side suspects — the native

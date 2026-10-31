@@ -149,6 +149,21 @@ class MainActivity : ComponentActivity() {
             lang = persistedLanguage(),
         )
         com.callmony.lib.AppStore.hydrate()
+        // v1.6.43 — crash-report hand-over: if the PREVIOUS process captured
+        // a crash/freeze report, it is already on the clipboard (copied at
+        // capture time); this re-copies it now that the app is alive again
+        // and says so — so the user can always long-press → Paste the trace
+        // to the developer, even if the crash-time copy failed.
+        try {
+            if (CrashFirewall.copyPendingReport(this) != null) {
+                android.widget.Toast.makeText(
+                    this,
+                    com.callmony.i18n.t("diag.autoCopied"),
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+            }
+        } catch (_: Throwable) {
+        }
         com.callmony.lib.BootTrace.mark("activity.content")
         setContent {
             CallmonyApp()

@@ -1129,6 +1129,8 @@ internal val OM: Map<String, String> = mapOf(
     "diag.state" to "Haala appii",
     "diag.copy" to "Gabaasa galmeesi",
     "diag.copied" to "Galmeeffameera",
+    // v1.6.43 — the crash-firewall boot toast (report already on clipboard)
+    "diag.autoCopied" to "Galmee dogoggoraa gara clipboard'iitti galmeeffameera — erguuf maxxansaa",
     "diag.gotIt" to "Tole",
     "diag.clearAll" to "Hunda balleessi",
     "diag.empty" to "Rakkoon kamiyyuu hin galmeeffamne",

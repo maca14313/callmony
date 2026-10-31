@@ -442,10 +442,17 @@ object HostSheets {
  *  it"). The calculator's number keypad lives here while number mode is
  *  armed. `lift` is how much of the CONTENT area's bottom band the
  *  overlay covers, so the Toaster (and anything else anchoring on the
- *  content bottom) can rise above it and stay visible. */
+ *  content bottom) can rise above it and stay visible.
+ *  v1.6.43 — `overlayTopPx`: the overlay's own TOP edge in WINDOW pixels,
+ *  reported by the overlay through onGloballyPositioned (-1 = none). With
+ *  it, any composable inside the content area can measure EXACTLY how much
+ *  of its own bottom band the overlay covers (its own bottom edge minus
+ *  the overlay's top) — no inset APIs, no assumptions about the system nav
+ *  bar, immune to the shell's inset-consumption chains. */
 object RootBottomOverlays {
     val content = androidx.compose.runtime.mutableStateOf<(@Composable () -> Unit)?>(null)
     val lift = androidx.compose.runtime.mutableStateOf(0.dp)
+    val overlayTopPx = androidx.compose.runtime.mutableStateOf(-1f)
 }
 
 @Composable

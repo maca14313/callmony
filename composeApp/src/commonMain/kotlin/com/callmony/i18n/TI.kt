@@ -1129,6 +1129,8 @@ internal val TI: Map<String, String> = mapOf(
     "diag.state" to "ሁኔታ ኣፕሊኬሽን",
     "diag.copy" to "ሪፖርት ቐሊሉ",
     "diag.copied" to "ተቐሊሉ እዩ",
+    // v1.6.43 — the crash-firewall boot toast (report already on clipboard)
+    "diag.autoCopied" to "ርእሲ ጕዳይ ናብ ኪልብቦርድ ተቐሊሉ ኣሎ — ንምልኣኽ ለጥፎ",
     "diag.gotIt" to "እወ",
     "diag.clearAll" to "ኩሉ ኣጥፍእ",
     "diag.empty" to "ምንም ጸገም ኣይተመዝገበን",

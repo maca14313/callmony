@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -42,7 +43,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
@@ -989,21 +989,40 @@ fun EntryEditOverlay(
         LaunchedEffect(wantPad) {
             RootBottomOverlays.content.value = if (wantPad) {
                 { CalcKeypadHostContent(onKey = { calcKey(it) }, rtl = isRTL(currentLang().code)) }
-            } else null
+            } else {
+                RootBottomOverlays.overlayTopPx.value = -1f
+                null
+            }
         }
         DisposableEffect(Unit) {
             onDispose {
                 RootBottomOverlays.content.value = null
                 RootBottomOverlays.lift.value = 0.dp
+                RootBottomOverlays.overlayTopPx.value = -1f
             }
         }
-        // the band of the content area the root keypad covers: measured
-        // from the canvas's own bottom edge to the window bottom (the nav,
-        // exactly — the imeLiftPadding trick), so the canvas reserves it
-        // and its controls sit right on the keypad's top edge.
+        // v1.6.43 — the band of the content area the root keypad covers is
+        // now MEASURED DIRECTLY: the keypad reports its own top edge in
+        // window pixels (RootBottomOverlays.overlayTopPx) and the canvas
+        // reports its own bottom edge — the difference is exactly the
+        // covered band, whatever the phone's navigation mode (gesture bar,
+        // 3-button, nothing) and whatever insets the shell consumed on the
+        // way down. The old CALC_PAD_H-minus-navBelow arithmetic silently
+        // assumed the keypad reached the window BOTTOM; v1.6.43 lifts the
+        // keys ABOVE the phone's system navigation bar (navigationBarsPadding
+        // inside the host), so the band grew by exactly that system inset —
+        // which the direct measurement absorbs for free.
         val density = LocalDensity.current
-        var navBelowDp by remember { mutableStateOf(0.dp) }
-        val padLift = if (wantPad) (CALC_PAD_H - navBelowDp).coerceAtLeast(0.dp) else 0.dp
+        var canvasBottomPx by remember { mutableStateOf(-1f) }
+        val overlayTopPx = RootBottomOverlays.overlayTopPx.value
+        // covered band = (the content area's bottom edge) − (the keypad's
+        // top edge): positive exactly while the keypad reaches UP past the
+        // app's bottom nav into the canvas. Inset-independent by
+        // construction — the sysNav slice the keypad no longer occupies and
+        // the sysNav slice the app nav gained cancel out.
+        val padLift = if (wantPad && overlayTopPx >= 0f && canvasBottomPx >= 0f) {
+            with(density) { (canvasBottomPx - overlayTopPx).coerceAtLeast(0f).toDp() }
+        } else 0.dp
         LaunchedEffect(padLift) { RootBottomOverlays.lift.value = padLift }
         CompositionLocalProvider(
             LocalLayoutDirection provides if (isRTL(currentLang().code)) LayoutDirection.Rtl else LayoutDirection.Ltr,
@@ -1011,14 +1030,15 @@ fun EntryEditOverlay(
         Column(
             Modifier
                 .fillMaxSize()
-                // OUTSIDE the paddings: reports the canvas's TRUE bounds, so
-                // the measured nav band never feeds back into padLift (the
-                // onGloballyPositioned-after-padding ordering would oscillate)
+                // OUTSIDE the paddings: reports the canvas's TRUE bottom edge
+                // (the top of the app's bottom nav) — v1.6.43 pairs it with
+                // RootBottomOverlays.overlayTopPx (the keypad's measured top)
+                // so the reserved band is the exact covered band, and a
+                // padLift change can never feed back into it (the padding it
+                // feeds sits below this measurement point)
                 .onGloballyPositioned { c ->
-                    val root = c.findRootCoordinates()
-                    val below = (root.size.height - (c.positionInWindow().y + c.size.height)).toInt().coerceAtLeast(0)
-                    val dp = with(density) { below.toDp() }
-                    if (dp != navBelowDp) navBelowDp = dp
+                    val b = c.positionInWindow().y + c.size.height
+                    if (b != canvasBottomPx) canvasBottomPx = b
                 }
                 .background(C.canvas)
                 .imeLiftPadding()
@@ -1686,7 +1706,18 @@ private fun DeleteBtn(tag: String, onPress: () -> Unit) {
    navigation — so it COVERS the nav exactly like the system IME does
    ("the number keypads should cover the bottom navigation just like the
    normal keyboard does it"), and it mirrors for RTL. Fixed height so the
-   canvas reserves precisely the band it covers. */
+   canvas reserves precisely the band it covers.
+   v1.6.43 — THE KEYS SIT ABOVE THE PHONE'S SYSTEM NAVIGATION BAR (user
+   report: "the keypad should be not under the phone netiv navigation, it
+   should be just on top of the apps bottom navigation not the mobile, the
+   keypad should have some bottom padding"): navigationBarsPadding inside
+   the host stops the bottom key row from reaching into the gesture-bar /
+   3-button zone where taps fight the system (and the keys were literally
+   under the phone's nav). The canvas-coloured background still paints
+   through that system band — no see-through hole under the keypad — the
+   grid gains real bottom padding, and the host reports its TOP edge in
+   window pixels so the canvas reserves the exact band it covers (see the
+   padLift note above). */
 private val CALC_PAD_H = 224.dp
 
 /** The text-keyboard colour — everything written in TEXT mode renders in
@@ -1707,8 +1738,22 @@ private fun CalcKeypadHostContent(onKey: (String) -> Unit, rtl: Boolean) {
                 Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(CALC_PAD_H)
+                    // v1.6.43 — the overlay's top edge in WINDOW pixels:
+                    // the canvas pairs this with its own bottom edge to
+                    // reserve the exact covered band (see padLift above)
+                    .onGloballyPositioned { c ->
+                        val y = c.positionInWindow().y
+                        if (RootBottomOverlays.overlayTopPx.value != y) {
+                            RootBottomOverlays.overlayTopPx.value = y
+                        }
+                    }
+                    // the background sits OUTSIDE the nav padding so the
+                    // canvas colour still fills the system-nav band — no
+                    // see-through hole under the keypad
                     .background(C.canvas)
+                    // v1.6.43 — never under the PHONE's navigation bar
+                    .navigationBarsPadding()
+                    .height(CALC_PAD_H)
                     .testTag("calcPadRoot"),
             ) {
                 CalcPadGrid(onKey = onKey)
@@ -1738,7 +1783,11 @@ private fun CalcPadGrid(onKey: (String) -> Unit) {
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp)
-            .padding(top = 5.dp, bottom = 6.dp)
+            // v1.6.43 — real bottom padding on the keypad (the user's ask:
+            // "the keypad should have some bottom padding") — the keys
+            // already stop above the phone's system nav bar; this keeps a
+            // visible breathing strip under the ± 0 . − row
+            .padding(top = 6.dp, bottom = 10.dp)
             .fillMaxHeight(),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {

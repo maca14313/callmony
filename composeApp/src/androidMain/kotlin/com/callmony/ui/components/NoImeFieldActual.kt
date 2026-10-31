@@ -113,39 +113,61 @@ actual fun NoImeNumberField(
             }
         },
         update = { et ->
-            state.programmatic = true
-            val current = et.text?.toString() ?: ""
-            if (current != value) {
-                if (highlight.isNotEmpty()) {
-                    // the TEXT-keyboard characters render in their own colour
-                    val span = SpannableString(value)
-                    highlight.forEach { i ->
-                        if (i in 0 until value.length) {
-                            span.setSpan(
-                                ForegroundColorSpan(hlArgb), i, i + 1,
-                                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
-                            )
+            // v1.6.43 — fast exit: a recomposition where NOTHING changed
+            // (the common case — the field recomposes on every keystroke's
+            // parent scope) must touch the view ZERO times: no text compare,
+            // no span rebuild, no setter. This is the widest remaining
+            // real-device surface on the number-mode typing path (the crash
+            // report is still open; every skipped view write is one less
+            // layout/IMM round-trip on OEM builds).
+            val dirty = state.syncedValue != value ||
+                state.syncedHighlight != highlight ||
+                state.appliedColor != textColorArgb ||
+                state.appliedSize != et.pxToSp(textSizePx)
+            if (dirty) {
+                state.programmatic = true
+                val current = et.text?.toString() ?: ""
+                if (current != value) {
+                    if (highlight.isNotEmpty()) {
+                        // the TEXT-keyboard characters render in their own colour
+                        val span = SpannableString(value)
+                        highlight.forEach { i ->
+                            if (i in 0 until value.length) {
+                                span.setSpan(
+                                    ForegroundColorSpan(hlArgb), i, i + 1,
+                                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                                )
+                            }
                         }
+                        et.setText(span)
+                    } else {
+                        et.setText(value)
                     }
-                    et.setText(span)
-                } else {
-                    et.setText(value)
+                    // the caret sits at the END — but only MOVE it when it is not
+                    // already there (a no-op setSelection still notifies)
+                    if (et.selectionStart != value.length || et.selectionEnd != value.length) {
+                        et.setSelection(value.length)
+                    }
                 }
-                et.setSelection(value.length) // the caret sits at the END
+                // remember what the view now holds — including after an EXTERNAL
+                // edit (native paste/cut landed via the watcher), so the next
+                // no-op recomposition really is free
+                state.syncedValue = value
+                state.syncedHighlight = highlight
+                // v1.6.42 — cached: the colour/size setters each trigger a
+                // requestLayout(); applying them on EVERY recomposition (every
+                // keystroke) relaid the view out for nothing.
+                if (state.appliedColor != textColorArgb) {
+                    et.setTextColor(textColorArgb)
+                    state.appliedColor = textColorArgb
+                }
+                val spSize = et.pxToSp(textSizePx)
+                if (state.appliedSize != spSize) {
+                    et.textSize = spSize
+                    state.appliedSize = spSize
+                }
+                state.programmatic = false
             }
-            // v1.6.42 — cached: the colour/size setters each trigger a
-            // requestLayout(); applying them on EVERY recomposition (every
-            // keystroke) relaid the view out for nothing.
-            if (state.appliedColor != textColorArgb) {
-                et.setTextColor(textColorArgb)
-                state.appliedColor = textColorArgb
-            }
-            val spSize = et.pxToSp(textSizePx)
-            if (state.appliedSize != spSize) {
-                et.textSize = spSize
-                state.appliedSize = spSize
-            }
-            state.programmatic = false
         },
     )
 }
@@ -156,6 +178,11 @@ private class NumberFieldState {
     // v1.6.42 — last-applied view cosmetics (see update): skip no-op writes
     var appliedColor = 0
     var appliedSize = -1f
+    // v1.6.43 — last-synced CONTENT (text + highlight): with these the
+    // update block can prove a recomposition is a no-op and return before
+    // touching the view at all
+    var syncedValue: String? = null
+    var syncedHighlight: Set<Int> = emptySet()
 }
 
 private fun EditText.pxToSp(px: Float): Float = px / resources.displayMetrics.scaledDensity

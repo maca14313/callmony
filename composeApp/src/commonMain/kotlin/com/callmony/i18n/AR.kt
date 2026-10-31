@@ -1129,6 +1129,8 @@ internal val AR: Map<String, String> = mapOf(
     "diag.state" to "حالة التطبيق",
     "diag.copy" to "نسخ التقرير",
     "diag.copied" to "تم نسخ التقرير",
+    // v1.6.43 — the crash-firewall boot toast (report already on clipboard)
+    "diag.autoCopied" to "تم نسخ تقرير الخطأ إلى الحافظة — الصقه لإرساله",
     "diag.gotIt" to "فهمت",
     "diag.clearAll" to "مسح الكل",
     "diag.empty" to "لا مشاكل مسجلة",

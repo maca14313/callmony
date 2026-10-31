@@ -1131,6 +1131,8 @@ internal val EN: Map<String, String> = mapOf(
     "diag.state" to "App state",
     "diag.copy" to "Copy report",
     "diag.copied" to "Report copied",
+    // v1.6.43 — the crash-firewall boot toast (report already on clipboard)
+    "diag.autoCopied" to "Crash report copied to clipboard — paste it to send it",
     "diag.gotIt" to "Got it",
     "diag.clearAll" to "Clear all",
     "diag.empty" to "No problems recorded",

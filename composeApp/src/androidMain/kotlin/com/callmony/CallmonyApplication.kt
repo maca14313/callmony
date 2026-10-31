@@ -11,6 +11,13 @@ class CallmonyApplication : Application() {
         BootTrace.mark("app.init")
         super.onCreate()
         AndroidPlatform.init(this)
+        // v1.6.43 — THE CRASH FIREWALL (user order: "if it continues to crash
+        // make it to log the error and automatically copy it to clipboard"):
+        // uncaught exceptions on any thread land in logcat + files/crash-*.txt
+        // + the CLIPBOARD, and a main-thread watchdog captures the lag→close
+        // (ANR) signature with a live stack dump before the system kills us.
+        // Robolectric-neutral; the system crash flow itself is untouched.
+        CrashFirewall.install(this)
         // v1.6.18 — all persistence (JSON serialize + mirrored commit) moves
         // onto the single-writer IO queue; the MAIN thread never touches the
         // disk again. This is the freeze/lag/ANR ("app closes itself") fix.
