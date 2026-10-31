@@ -330,4 +330,17 @@ class CalcNoteTest {
         val n = parseCalcNote(marked)
         assertEquals(100.0, evalCalcTokens(n.tokens)!!, 0.0)
     }
+    /* ---------------- v1.6.41 — the text-mode colour spans ---------------- */
+
+    @Test
+    fun quoted_numbers_carry_the_textmode_colour_span() {
+        val s = com.callmony.ui.overlays.coloredLockedLine(
+            "\"2\" rooms 500", androidx.compose.ui.graphics.Color.Gray, com.callmony.ui.overlays.TEXTMODE_COLOR,
+        )
+        assertEquals(2, s.spanStyles.size)
+        // the quoted token "2" is the TEXTMODE colour; the whole line is the base
+        val quoted = s.spanStyles.first { it.item.color == com.callmony.ui.overlays.TEXTMODE_COLOR }
+        assertEquals(0, quoted.start)
+        assertEquals(3, quoted.end) // "2" with its quotes
+    }
 }

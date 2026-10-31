@@ -388,6 +388,9 @@ internal val AR: Map<String, String> = mapOf(
     // v1.6.38 — the canvas calculator (total menu / clipboard menu)
     "ee.calcMakePayment" to "تسجيل دفعة",
     "ee.calcCopyTotal" to "نسخ الإجمالي",
+    // v1.6.41 — the pay chip beside every total / the payment cap
+    "ee.calcPay" to "دفع",
+    "lg.paymentTooMuch" to "لا يمكن أن تتجاوز الدفعة المبلغ المتبقي",
     // v1.6.40 — the payments modal / the line confirmations
     "ee.calcOriginal" to "الأصلي",
     "ee.calcPayments" to "الدفعات",

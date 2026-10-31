@@ -675,7 +675,7 @@ private fun openRef(ref: com.callmony.model.LinkRef, entry: LedgerEntry) {
  * text field — typos produced garbage dates, another "not working" source).
  * It reads the LIVE entry from the store, so it stays correct if state
  * changes while it is open. */
-fun openPaymentSheet(entryId: String, prefill: Double? = null, lineIdx: Int? = null) {
+fun openPaymentSheet(entryId: String, prefill: Double? = null, lineIdx: Int? = null, maxAmount: Double? = null) {
     com.callmony.ui.kit.HostSheets.push { close ->
         val live = AppStore.state.entries.find { it.id == entryId } ?: run { close(); return@push }
         val C = C()
@@ -737,6 +737,14 @@ fun openPaymentSheet(entryId: String, prefill: Double? = null, lineIdx: Int? = n
                         val v = amount.replace(",", ".").toDoubleOrNull()
                         if (v == null || v <= 0) {
                             Toasts.toast(t("lg.amountGreaterThanZero"), "error")
+                            return@Btn
+                        }
+                        // v1.6.41 — a payment made from the calculator can
+                        // never go above the remaining total ("when making
+                        // payment it should not go above the total for the
+                        // individual line and for the sum total")
+                        if (maxAmount != null && v > maxAmount + 0.005) {
+                            Toasts.toast(t("lg.paymentTooMuch"), "error")
                             return@Btn
                         }
                         AppStore.addPayment(

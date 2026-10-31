@@ -104,8 +104,26 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.40 (versionCode 51)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.41 (versionCode 52)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
+
+- **1.6.41** — THE CARET IS ALWAYS THERE: a focus token re-focuses the
+  active field on canvas open/raise, every Aa/123 toggle, Next line and
+  unlock — the number field drives REAL view focus (caret blinks, IME
+  still suppressed). The = key is GONE and ⌫ took ÷'s top-right place
+  (÷ down a row, % wide on the first row). TEXT-MODE writing renders in
+  its own blue — live in the active line, persisted on the locked lines.
+  The NUMBER KEYPAD renders at the shell ROOT and COVERS THE BOTTOM NAV
+  exactly like the system IME, the canvas reserving precisely the strip
+  it covers. A locked line's own total sits BELOW its calculation with
+  a PAY chip beside it (the sum total too), and the PAYMENT HISTORY
+  shows on the canvas for every entry and the sum — notes included,
+  each row showing the new amount it left. Payments are CAPPED at the
+  remaining total; the delete-entry button is gone; the compact 38dp
+  header carries UNDO/REDO (a snapshot before every calculator edit);
+  and the canvas + keypad + modal are RTL-aware for Arabic. Tests
+  181/181.
+
 
 - **1.6.40** — TEXT-MODE NUMBERS NEVER CALCULATE: numbers typed on the
   system QWERTY are annotations (a quote marker rides them through the

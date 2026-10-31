@@ -388,6 +388,9 @@ internal val OM: Map<String, String> = mapOf(
     // v1.6.38 — the canvas calculator (total menu / clipboard menu)
     "ee.calcMakePayment" to "Kaffaltii godhi",
     "ee.calcCopyTotal" to "Walduraa walitti qabi",
+    // v1.6.41 — the pay chip beside every total / the payment cap
+    "ee.calcPay" to "Kaffal",
+    "lg.paymentTooMuch" to "Kaffaltiin mecca hafe irra ol ta'uu hin dandeessisu",
     // v1.6.40 — the payments modal / the line confirmations
     "ee.calcOriginal" to "Orijiinaalaa",
     "ee.calcPayments" to "Kaffaltiiwwan",

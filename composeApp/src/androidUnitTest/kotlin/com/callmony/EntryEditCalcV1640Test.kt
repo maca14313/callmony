@@ -198,8 +198,8 @@ class EntryEditCalcV1640Test {
             rule.onAllNodes(hasText(t("ee.calcNoPayments"), substring = true)).fetchSemanticsNodes().isNotEmpty(),
         )
         assertTrue(
-            "the modal's make-payment action shows",
-            rule.onAllNodes(hasText(t("ee.calcMakePayment"), substring = true) and hasClickAction())
+            "the modal's pay action shows",
+            rule.onAllNodes(hasText(t("ee.calcPay"), substring = true) and hasClickAction())
                 .fetchSemanticsNodes().isNotEmpty(),
         )
         back() // close the modal
@@ -217,13 +217,13 @@ class EntryEditCalcV1640Test {
             rule.onAllNodes(hasText("300 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
 
-        // total → modal → Make payment (the editor saves first and STAYS OPEN)
+        // total → modal → Pay (the editor saves first and STAYS OPEN)
         rule.onNodeWithTag("calcLedgerTotal").performClick()
         rule.waitForIdle()
-        val makePay = rule.onAllNodes(hasText(t("ee.calcMakePayment"), substring = true) and hasClickAction())
+        val makePay = rule.onAllNodes(hasText(t("ee.calcPay"), substring = true) and hasClickAction())
         rule.waitUntil(timeoutMillis = 15000) { makePay.fetchSemanticsNodes().isNotEmpty() }
-        // the MODAL's action is the LAST match in z-order — the quick
-        // Make-payment chip under the total sits beneath the modal scrim
+        // the MODAL's Pay action (v1.6.41 compact modal: the quick chips are
+        // gone — the pay chip beside the total opens this same modal)
         makePay[makePay.fetchSemanticsNodes().size - 1].performClick()
         rule.waitForIdle()
 

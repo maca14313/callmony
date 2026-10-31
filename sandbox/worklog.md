@@ -651,3 +651,26 @@ Work Log:
 
 Stage Summary:
 - v1.6.40 = every item of the user's v1.6.40 list (text-mode annotations, the shared payments modal with the visible reduction, full locked lines, custom confirmations, the lock pill, the caret, save-stays-open + autosave), 171/171 tests, committed and pushed with the APK + GitHub Release per the standing instruction.
+
+---
+Task ID: 21
+Agent: main agent (Z.ai)
+Task: v1.6.41 — the full 11-item user-report batch on the annotated calculator (caret, = key, ⌫/÷ swap, colours, keypad over the nav, totals below, payment cap, no delete btn, undo/redo + compact header, RTL, pay chips + compact modal + on-canvas history), "check github and commit even the apk".
+
+Work Log:
+- GitHub first (per instruction): origin/main == ea93a51 (v1.6.40 vc51, 171/171). Sandbox reset again → resync + SDK reinstall (sandbox/install_sdk.sh).
+- ITEM 1 — CARET ALWAYS: focusToken bumped on canvas open/raise, Aa/123, Next line, unlock; text field double-requested (now + 200ms — beats OverlayHost/HostSheetsHost clears); NoImeNumberField grew focusToken (Android actual: EditText requestFocus ×2, IME suppressed) + highlight/highlightColor params. wantTextFocus removed; closeKeypad stays quiet by design.
+- ITEMS 2+3 — GRID: = removed; row1 = AC | %(2f) | ⌫; ÷/×/−/+ cascade rows 2-5 (classic calculator column). calcKey handler for "=" kept but no key emits it.
+- ITEM 4 — COLOURS: TEXTMODE_COLOR 0xFF4A7D9B; visualTransformation over the QWERTY field (runs by qwertyIdx); ForegroundColorSpans in the EditText (programmatic syncs); coloredLockedLine() paints the quoted tokens on locked lines (pure + pinned).
+- ITEM 5 — KEYPAD OVER NAV: RootBottomOverlays slot (Kit) rendered in CallmonyApp AFTER BottomNav (the onboarding's z-exception); CalcKeypadHostContent = transparent Box + BottomCenter 224dp keypad (RTL-wrapped); canvas measures its bottom band OUTSIDE the paddings (onGloballyPositioned BEFORE background/imeLift/padding — the after-padding ordering oscillates) and pads by 224-nav; Toaster lifts by RootBottomOverlays.lift; keypad hidden while payModal/host-sheets open; DisposableEffect clears on dispose.
+- ITEMS 6+11 — locked line: lock pill + Column(text; total-below + PayChip + Paid; history rows) + copy/delete; TOTAL row: label + items + amount + PayChip; paid·remaining line; the WHOLE entry's payment history rows (notes) under it; quick-chip row REMOVED (replaced by the pay chips). PaymentHistoryRow component (date · −amount · note → remaining).
+- ITEM 7 — CAP: openPaymentSheet(..., maxAmount) → Save validates v <= maxAmount (+0.005) else lg.paymentTooMuch toast; makePaymentOf passes the remaining.
+- ITEM 8 — footer = Save only (delete-entry gone). ITEM 9 — header 38dp: ✕32 + undo28 + redo28 + small title + Σ28; CalcSnap(lines,text,qwerty) undo/redo stacks (60 deep) pushed in the funnel + commit/unlock/delete/clear/AC.
+- ITEM 10 — RTL: canvas + root keypad + payments modal wrapped with LocalLayoutDirection per currentLang().rtl.
+- i18n: ee.calcPay + lg.paymentTooMuch ×5 languages; undo/redo Material paths added to MdiIcons.
+- TESTS: 181/181 (CalcNoteTest +1 colour spans; NEW EntryEditCalcV1641Test ×9; V1640 updated for the compact modal). Fixes along the way: the keypad initially rendered TopStart (needed its own Box + BottomCenter align); the undo test's "ball" matched the PLACEHOLDER when the field emptied (→ zebra); the payment test must target the amount field by its prefilled "300" (editor fields compose beneath the sheet); V1641 @After clears HostSheets/RootBottomOverlays/Confirm/Toasts + resets language (one sandbox shared across same-config tests — a leaked sheet killed wantPad and its scrim swallowed later taps; leaked ar broke Recents string waits). One RecentsV1636 flake in an intermediate run = the documented sandbox-load flakiness; two forced clean runs 181/181.
+- BUILD: compileReleaseKotlinAndroid + compileDebugUnitTestKotlinAndroid clean; assembleRelease. APK 1.6.41 vc52, aapt-verified, apksigner SHA-256 same key as every release. releases/callmony-1.6.41-release.apk + download/callmony-1.6.41-kmp-release.apk.
+- Docs: README Versioning v1.6.41, CHANGELOG full entry, sandbox/chat-logs/2026-10-31-v1.6.41-caret-keypad-colours-pay-chips.md, this worklog.
+
+Stage Summary:
+- v1.6.41 = every item of the user's 11-item list, 181/181 tests, committed and pushed with the APK + GitHub Release per the standing instruction.

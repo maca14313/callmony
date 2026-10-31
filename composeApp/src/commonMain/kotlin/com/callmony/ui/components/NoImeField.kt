@@ -37,4 +37,13 @@ expect fun NoImeNumberField(
     alignEnd: Boolean = false,
     alignStart: Boolean = false,
     maxLines: Int = 1,
+    // v1.6.41 — the canvas calculator's active line: WHICH characters were
+    // written on the TEXT keyboard (they render in their own colour —
+    // "different colour for what was written in text and number modes") and
+    // a token that re-requests field focus whenever it bumps, so the
+    // blinking caret is ALWAYS visible (canvas open, Aa/123 toggle, Next
+    // line, unlock). Android drives the caret with real view focus.
+    highlight: Set<Int> = emptySet(),
+    highlightColor: Color = Color.Unspecified,
+    focusToken: Int = 0,
 )

@@ -13,7 +13,9 @@ import androidx.compose.ui.unit.sp
 /** iOS actual: an editable field (UIKit's keyboard is suppressed by the
  *  SwiftUI shell when embedded; the 12-key grid remains the dialer input).
  *  v1.6.34: alignEnd + maxLines serve the calculator display. v1.6.39:
- *  alignStart serves the canvas calculator's active line. */
+ *  alignStart serves the canvas calculator's active line. v1.6.41: the
+ *  highlight / focusToken params keep the expect signature common (the
+ *  colour spans and the view-focus caret are Android-driven). */
 @Composable
 actual fun NoImeNumberField(
     value: String,
@@ -25,6 +27,9 @@ actual fun NoImeNumberField(
     alignEnd: Boolean,
     alignStart: Boolean,
     maxLines: Int,
+    highlight: Set<Int>,
+    highlightColor: Color,
+    focusToken: Int,
 ) {
     BasicTextField(
         value = value,

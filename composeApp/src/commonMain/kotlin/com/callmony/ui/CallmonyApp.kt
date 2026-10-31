@@ -400,6 +400,15 @@ private fun CallmonyAppContent() {
             BottomNav()
         }
 
+        // v1.6.41 — ROOT-LEVEL BOTTOM OVERLAYS: rendered AFTER the bottom
+        // nav (a later sibling = higher z), the only slot that can COVER it
+        // — the calculator's number keypad pins here while number mode is
+        // armed, exactly like the system IME covers the nav (user report:
+        // "the number keypads should cover the bottom navigation just like
+        // the normal keyboard does it"). Everything else keeps the standing
+        // v1.6.26 rule — nothing else may render under the nav.
+        com.callmony.ui.kit.RootBottomOverlays.content.value?.invoke()
+
         // onboarding stays full-screen — it is a blocking first-run wizard
         if (!AppStore.state.settings.onboarded) {
             BootTrace.mark("ui.onboarding")

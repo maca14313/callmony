@@ -298,7 +298,7 @@ fun Toaster() {
     Box(
         Modifier
             .fillMaxSize()
-            .padding(bottom = 10.dp)
+            .padding(bottom = 10.dp + RootBottomOverlays.lift.value)
             .padding(horizontal = 20.dp),
         contentAlignment = Alignment.BottomCenter,
     ) {
@@ -433,6 +433,19 @@ object HostSheets {
     fun pop(id: Long) {
         stack.removeAll { it.id == id }
     }
+}
+
+/* v1.6.41 — ROOT-LEVEL BOTTOM OVERLAYS: the shell renders this slot AFTER
+ *  the always-visible bottom nav — the ONLY place that can draw over it,
+ *  exactly like the system IME does (user report: "the number keypads
+ *  should cover the bottom navigation just like the normal keyboard does
+ *  it"). The calculator's number keypad lives here while number mode is
+ *  armed. `lift` is how much of the CONTENT area's bottom band the
+ *  overlay covers, so the Toaster (and anything else anchoring on the
+ *  content bottom) can rise above it and stay visible. */
+object RootBottomOverlays {
+    val content = androidx.compose.runtime.mutableStateOf<(@Composable () -> Unit)?>(null)
+    val lift = androidx.compose.runtime.mutableStateOf(0.dp)
 }
 
 @Composable

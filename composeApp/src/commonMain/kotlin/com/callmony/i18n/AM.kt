@@ -441,6 +441,9 @@ internal val AM: Map<String, String> = mapOf(
     // v1.6.38 — the canvas calculator (total menu / clipboard menu)
     "ee.calcMakePayment" to "ክፍያ አድርግ",
     "ee.calcCopyTotal" to "ጠቅላላ ቅዳ",
+    // v1.6.41 — the pay chip beside every total / the payment cap
+    "ee.calcPay" to "ክፈል",
+    "lg.paymentTooMuch" to "ክፍያው ከቀሪው መጠን በላይ ሊሆን አይችልም",
     // v1.6.40 — the payments modal / the line confirmations
     "ee.calcOriginal" to "ዋና መጠን",
     "ee.calcPayments" to "ክፍያዎች",

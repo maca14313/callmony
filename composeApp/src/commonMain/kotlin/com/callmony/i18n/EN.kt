@@ -390,6 +390,9 @@ internal val EN: Map<String, String> = mapOf(
     // v1.6.38 — the canvas calculator (total menu / clipboard menu)
     "ee.calcMakePayment" to "Make payment",
     "ee.calcCopyTotal" to "Copy total",
+    // v1.6.41 — the pay chip beside every total / the payment cap
+    "ee.calcPay" to "Pay",
+    "lg.paymentTooMuch" to "The payment cannot go above the remaining amount",
     // v1.6.40 — the payments modal / the line confirmations
     "ee.calcOriginal" to "Original",
     "ee.calcPayments" to "Payments",

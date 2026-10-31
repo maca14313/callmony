@@ -93,8 +93,17 @@ android {
         // the lock is a noticeable pill, the caret lands at the right
         // place after a toggle, the toggle matches Save/Next-line height,
         // and Save KEEPS the editor open with autosave taking over.
-        versionCode = 51
-        versionName = "1.6.40"
+        // v1.6.41 — the caret is ALWAYS visible (canvas open / toggle /
+        // Next line — view focus in num mode, token-driven), the = key is
+        // gone and ⌫ took ÷'s top-right place, text-mode writing renders in
+        // its own colour, the number keypad covers the BOTTOM NAV like the
+        // system IME, locked-line totals sit BELOW their lines with pay
+        // chips and on-canvas payment history (notes included), payments
+        // are capped at the remaining total, the delete-entry button is
+        // gone, the compact header carries UNDO/REDO, and the canvas is
+        // RTL-aware.
+        versionCode = 52
+        versionName = "1.6.41"
     }
 
     signingConfigs {
