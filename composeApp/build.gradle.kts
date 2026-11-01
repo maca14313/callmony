@@ -137,8 +137,20 @@ android {
         // LedgerEntry.calcTitle, headlining the collapsed band and the
         // export), and the calculation fonts de-bulk (the active line
         // renders the light 18sp cut, SemiBold totals, lighter keypad).
-        versionCode = 58
-        versionName = "1.6.47"
+        // v1.6.48 — the seven-report calculator round: every amount in the
+        // app follows the LIVE currency (money()/compactMoney() default to
+        // the setting) with a currency chip + picker on the canvas header,
+        // the sum total's number sits BESIDE the TOTAL label, the
+        // individual line's date sits beside ITS OWN total, glued
+        // mixed-mode tokens split at the typing-mode boundary
+        // (applyModeSplit — keypad numbers calculate even glued to QWERTY
+        // words), the line totals share ONE font size (locked or not) on a
+        // tighter vertical rhythm, the enter key is the literal NEWLINE
+        // INSIDE the same individual calculation (Next stays the one
+        // commit+save key), and the lock icon returns as a text-height
+        // inert glyph. saveEntry's merge now carries calcTitle/calcPrefix.
+        versionCode = 59
+        versionName = "1.6.48"
     }
 
     signingConfigs {

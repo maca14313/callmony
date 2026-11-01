@@ -104,8 +104,33 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.47 (versionCode 58)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.48 (versionCode 59)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
+
+- **1.6.48** — THE SEVEN-REPORT CALCULATOR ROUND: (1) THE CURRENCY
+  ACTUALLY CHANGES — `money()`/`compactMoney()` default to the LIVE
+  setting instead of hard-coded ETB (Settings always had the picker; the
+  calculator kept printing "Br" whatever the user chose), and a new
+  currency chip on the canvas header opens a compact picker so it changes
+  right where the calculating happens; (2) the sum total's number sits
+  BESIDE the "TOTAL" label on one row, not under it; (3) the individual
+  line's date sits beside ITS OWN total (moved down from the text row);
+  (4) WHAT CALCULATES IS DECIDED BY THE MODE IT WAS WRITTEN IN — new pure
+  `applyModeSplit()` splits glued tokens at every text-keyboard /
+  number-keyboard boundary, so "555555555dsssssss" (keypad number +
+  QWERTY word, no space) still calculates 555555555, while text-keyboard
+  numbers stay quoted annotations; round-trip stable through the save;
+  (5) ONE font size for every line total (locked or not — 16sp SemiBold
+  both) on a tighter vertical rhythm; (6) THE ENTER KEY IS THE LITERAL
+  NEWLINE INSIDE the same individual calculation (round three: the user
+  explained the why — v1.6.47's enter committed the line) — the line
+  keeps calculating across the break, ⌫ over a trailing newline removes
+  just it, and the newlines fold to spaces at commit so the saved grammar
+  stays one-line-per-calculation; Next remains the one commit + save key;
+  (7) THE LOCK ICON RETURNS at text height — a plain inert 14dp glyph at
+  the head of every committed line (open lock beside the active field).
+  Bonus fix: `saveEntry`'s merge path dropped `calcTitle`/`calcPrefix`
+  (edits of existing rows never persisted either). Tests 238/238.
 
 - **1.6.47** — THE SIX-REPORT ROUND: (1) the keypad's bottom row is the
   native keyboard's — a WIDE blank SPACE bar with a normal-width ENTER key

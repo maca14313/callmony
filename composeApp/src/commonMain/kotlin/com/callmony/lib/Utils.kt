@@ -83,21 +83,33 @@ private fun numberStr(n: Double): String {
 fun currencySymbol(code: String): String =
     CURRENCIES.find { it.code == code }?.symbol ?: code
 
-fun money(n: Double, currency: String = "ETB", signed: Boolean = false): String {
-    val sym = currencySymbol(currency)
+/** v1.6.48 — THE CURRENCY ACTUALLY APPLIES (report #1: "the ability to
+ *  change the currency"): money() used to hard-code ETB unless a caller
+ *  remembered to pass the setting along — the Settings region row and the
+ *  onboarding picker wrote settings.currency but the calculator, the
+ *  ledgers and the cards all kept printing "Br". The default is now the
+ *  LIVE setting (null → AppStore.state.settings.currency, ETB before
+ *  hydration), so one change in Settings — or the new currency chip on
+ *  the calculator's canvas header — re-renders every amount in the app
+ *  the same frame. Callers that pass an explicit currency (list/bank
+ *  rows with their own) are untouched. */
+fun money(n: Double, currency: String? = null, signed: Boolean = false): String {
+    val cur = currency ?: AppStore.state.settings.currency
+    val sym = currencySymbol(cur)
     val body = "${numberStr(n)} $sym"
     if (signed && n != 0.0) return "${if (n > 0) "+" else "−"}$body"
     return if (n < 0) "−$body" else body
 }
 
-fun compactMoney(n: Double, currency: String = "ETB", signed: Boolean = false): String {
+fun compactMoney(n: Double, currency: String? = null, signed: Boolean = false): String {
+    val cur = currency ?: AppStore.state.settings.currency
     val absV = abs(n)
     if (absV >= 100000) {
         val v = if (absV >= 1000000) fmtFixed(absV / 1000000, 1) + "M" else fmtFixed(absV / 1000, 0) + "K"
         val sign = if (signed && n != 0.0) { if (n > 0) "+" else "−" } else if (n < 0) "−" else ""
-        return "$sign$v ${currencySymbol(currency)}"
+        return "$sign$v ${currencySymbol(cur)}"
     }
-    return money(n, currency, signed)
+    return money(n, cur, signed)
 }
 
 /* ---------------- dates (localized via i18n registry) ---------------- */

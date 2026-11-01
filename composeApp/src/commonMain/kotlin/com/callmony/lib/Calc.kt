@@ -710,6 +710,75 @@ fun quoteTextNumbers(raw: String, qwerty: Set<Int>): String {
     return sb.toString()
 }
 
+/** v1.6.48 — THE MODE-SPLIT PRE-PARSE (report #4: "i wrote the 555555555
+ *  in the number mode, and i wrote the dsssssss in text mode, so it
+ *  should calculate the 555555555 even if there is no space between them,
+ *  what will be considered is in what mode it was"): inside ONE
+ *  whitespace token, characters typed on DIFFERENT keyboards are
+ *  DIFFERENT things — the token is SPLIT at every text-keyboard /
+ *  number-keyboard boundary, so the keypad-written number becomes its own
+ *  token and calculates even when the user glued QWERTY letters straight
+ *  onto it ("555555555dsssssss" → "555555555 dsssssss" → the number
+ *  rides the ledger, the word rides its label slot). A text-keyboard run
+ *  that parses as a number is QUOTED (the v1.6.40 marker — numbers
+ *  written in TEXT mode never calculate), single-mode tokens keep
+ *  quoteTextNumbers' own rule, and already-quoted tokens pass untouched.
+ *  The split lands ONLY in the parse funnel — the field keeps rendering
+ *  exactly what was typed — and it is round-trip stable: the split form
+ *  is plain free-text grammar, so a reloaded line re-parses to the same
+ *  tokens with the same text-mode ranges. Pure + index-aligned (a 1:1
+ *  '\n'→' ' fold upstream of it keeps the qwerty indices valid). */
+fun applyModeSplit(raw: String, qwerty: Set<Int>): String {
+    if (raw.isBlank()) return raw
+    val sb = StringBuilder(raw.length + 8)
+    var i = 0
+    val n = raw.length
+    while (i < n) {
+        if (raw[i].isWhitespace()) { sb.append(raw[i]); i++; continue }
+        var j = i
+        while (j < n && !raw[j].isWhitespace()) j++
+        val tok = raw.substring(i, j)
+        val alreadyQuoted = tok.length >= 2 && tok.startsWith("\"") && tok.endsWith("\"")
+        val anyQwerty = (i until j).any { it in qwerty }
+        val anyKeypad = (i until j).any { it !in qwerty }
+        if (anyQwerty && anyKeypad && !alreadyQuoted) {
+            // MIXED token: walk runs of consecutive same-keyboard chars,
+            // separating each with one space; a QWERTY run that parses as
+            // a number is quoted on its way out
+            var k = i
+            var first = true
+            while (k < j) {
+                val q = k in qwerty
+                var m = k
+                while (m < j && ((m in qwerty) == q)) m++
+                val sub = raw.substring(k, m)
+                if (!first) sb.append(' ')
+                first = false
+                val subIsNumber = sub.let {
+                    val b = if (it.endsWith("%")) it.dropLast(1) else it
+                    b.replace(',', '.').toDoubleOrNull() != null
+                }
+                if (q && subIsNumber) sb.append('"').append(sub).append('"')
+                else sb.append(sub)
+                k = m
+            }
+        } else {
+            // single-mode token (or already marked): quoteTextNumbers'
+            // own rule — a number that carries ANY text-keyboard character
+            // is an annotation, never math
+            val looksNumber = tok.let {
+                val b = if (it.endsWith("%")) it.dropLast(1) else it
+                b.replace(',', '.').toDoubleOrNull() != null
+            }
+            if (looksNumber && anyQwerty && !alreadyQuoted) {
+                sb.append('"').append(tok).append('"')
+            } else sb.append(tok)
+        }
+        i = j
+    }
+    return sb.toString()
+}
+
 /** v1.6.36 — the live total of the chip chain. Same semantics as
  *  parseExprNote: × ÷ bind tighter than + − (folded left to right), a
  *  dangling trailing op is ignored, ÷0 drops the operator, and a missing

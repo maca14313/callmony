@@ -500,6 +500,15 @@ object AppStore {
                 // (clearing the calc text clears the stored note; the old
                 // merge kept the first-ever text forever)
                 exprNote = e.exprNote,
+                // v1.6.48 — the CANVAS TITLE and the LINE PREFIX ride every
+                // save of an existing row too: the merge used to drop both,
+                // so an edit that only changed the title or the prefix
+                // style never persisted — hidden while drafts were the only
+                // writer (the leave-time create builds a fresh row), it
+                // surfaced the moment Next saved early and a later save hit
+                // the merge path
+                calcTitle = e.calcTitle,
+                calcPrefix = e.calcPrefix,
                 listId = e.listId ?: existing.listId,
                 groupId = e.groupId,
                 refs = if (e.refs.isNotEmpty()) e.refs else existing.refs,

@@ -89,7 +89,8 @@ import com.callmony.lib.money
 import com.callmony.lib.now
 import com.callmony.lib.parseCalcLedger
 import com.callmony.lib.parseCalcNote
-import com.callmony.lib.quoteTextNumbers
+import com.callmony.lib.applyModeSplit
+import com.callmony.lib.currencySymbol
 import com.callmony.lib.r2
 import com.callmony.lib.serializeCalcLedger
 import com.callmony.lib.serializeCalcNote
@@ -100,6 +101,7 @@ import com.callmony.lib.todayStr
 import com.callmony.lib.uid
 import com.callmony.platform.NativeDateTime
 import com.callmony.platform.Platform
+import com.callmony.model.CURRENCIES
 import com.callmony.model.ENTRY_CATEGORIES as CATS
 import com.callmony.model.EntryItem
 import com.callmony.model.LedgerEntry
@@ -298,6 +300,11 @@ fun EntryEditOverlay(
     // entry as calcPrefix (absent = bullet, the shown-by-default style the
     // report asks for; old rows decode without it, backups mirror it).
     var prefixMode by remember { mutableStateOf(existing?.calcPrefix ?: "bullet") }
+    // v1.6.48 — THE CURRENCY CHIP (report #1: "the ability to change the
+    // currency"): the canvas header carries the live currency's symbol;
+    // the tap opens the compact picker sheet — one tap re-renders every
+    // amount in the app (money() reads the live setting since v1.6.48).
+    var currencySheet by remember { mutableStateOf(false) }
     // v1.6.46 — THE SAVE PULSE (report #3: "the next btn also should do
     // what the save btn does"): NEXT commits the line AND persists the
     // entry — and since v1.6.47 it is the ONE key that does both: the
@@ -313,10 +320,19 @@ fun EntryEditOverlay(
     // v1.6.39 — THE SUM, live: items + the calculator's whole contribution
     // (committed ledger lines + the active line). calcNote is DERIVED
     // from calcText through the free-text grammar, live.
-    // v1.6.40 — the parse runs through quoteTextNumbers first: numbers
-    // written on the TEXT keyboard are quoted → words, never math.
+    // v1.6.48 — TWO new steps in the parse funnel: (1) report #4's MODE
+    // SPLIT — applyModeSplit separates characters typed on DIFFERENT
+    // keyboards inside one glued token ("555555555dsssssss" → the keypad
+    // 555555555 calculates, the QWERTY dsssssss rides its label slot) and
+    // quotes text-keyboard numbers (quoteTextNumbers' rule, folded in);
+    // (2) report #6's NEWLINE FOLD — the enter key is a real newline INSIDE
+    // the same individual calculation now, and the 1:1 index-aligned fold
+    // keeps every derived value AND the saved grammar one-line: a reloaded
+    // entry can never split its active line in two.
     val itemsSum = items.sumOf { it.qty * it.price }
-    val calcNote = remember(calcText, qwertyIdx) { parseCalcNote(quoteTextNumbers(calcText, qwertyIdx)) }
+    val calcNote = remember(calcText, qwertyIdx) {
+        parseCalcNote(applyModeSplit(calcText.replace('\n', ' '), qwertyIdx))
+    }
     val calcTotal = remember(calcNote) { evalCalcTokens(calcNote.tokens) }
     val calcStepList = remember(calcNote) { calcSteps(calcNote.tokens) }
     val calcLedgerSum = remember(calcLines) { calcLedgerTotal(calcLines) }
@@ -549,7 +565,10 @@ fun EntryEditOverlay(
        on the note, never totalled. v1.6.41 — undoable, and the fresh
        line's caret is right there (token). */
     fun commitCalcLine() {
-        val note = parseCalcNote(quoteTextNumbers(calcText, qwertyIdx))
+        // v1.6.48 — the DERIVED parse (newlines folded, mode-split
+        // applied — see calcNote above): committing hands the ledger the
+        // exact tokens the live total has been reading all along.
+        val note = calcNote
         if (note.tokens.isEmpty() && note.text.isBlank()) return
         pushUndo()
         // v1.6.42 — the commit STAMPS THE DATE (report #10: "it should show
@@ -679,7 +698,28 @@ fun EntryEditOverlay(
     fun calcKey(k: String) {
         when (k) {
             "AC" -> { calcText = ""; qwertyIdx = emptySet() }
-            "⌫" -> onCalcEdited(calcText.trimEnd().dropLast(1), false)
+            // v1.6.48 — ⌫ over a NEWLINE removes just the newline (the
+            // native backspace's exact contract over an enter); everywhere
+            // else the old rule stands — the last meaningful character
+            // dies together with its trailing whitespace.
+            "⌫" -> if (calcText.endsWith("\n")) {
+                onCalcEdited(calcText.dropLast(1), false)
+            } else {
+                onCalcEdited(calcText.trimEnd().dropLast(1), false)
+            }
+            // v1.6.48 — THE ENTER KEY IS THE NEWLINE INSIDE THE SAME
+            // INDIVIDUAL CALCULATION (report #6: "the reason i wanted the
+            // inter btn in the number keypad is to go to next line in the
+            // same individual calculation, just like the netiv inter btn
+            // do, not to do what the next btn do"): the break lands in the
+            // active line's own text, the line keeps calculating across it
+            // (the grammar splits on whitespace), and Next stays the one
+            // commit + save key. Never doubles a trailing newline.
+            "\n" -> {
+                if (calcText.isNotEmpty() && !calcText.endsWith("\n")) {
+                    onCalcEdited(calcText + "\n", false)
+                }
+            }
             // v1.6.47 — THE SPACE KEY (report #1: "in its row add the space
             // key too"): the keypad's bottom row is the native keyboard's
             // — a wide blank space bar beside the enter key. It appends ONE
@@ -709,7 +749,9 @@ fun EntryEditOverlay(
                 if (base.isNotEmpty() && base.last().isDigit()) onCalcEdited(base + "%", false)
             }
             "±" -> {
-                val note = parseCalcNote(quoteTextNumbers(calcText, qwertyIdx))
+                // v1.6.48 — the ± reads the SAME derived parse (mode-split,
+                // newline-folded) the live total reads
+                val note = calcNote
                 val idx = note.tokens.indexOfLast { it.number.isNotBlank() }
                 if (idx < 0) return
                 val toks = note.tokens.toMutableList()
@@ -1115,7 +1157,7 @@ fun EntryEditOverlay(
         // v1.6.41 — the number keypad renders at the ROOT (over the nav);
         // hide it while a payments modal / host sheet is open so nothing
         // floats under it.
-        val wantPad = calcMode == "num" && payModal == null && HostSheets.stack.isEmpty()
+        val wantPad = calcMode == "num" && payModal == null && !currencySheet && HostSheets.stack.isEmpty()
         // v1.6.47 — report #2 ("sometimes the netiv keyboard opens up on
         // the number mode why"): the window-level IME SUPPRESSION arms with
         // the keypad itself. The v1.6.45 fix force-hid the IME on the num
@@ -1137,12 +1179,16 @@ fun EntryEditOverlay(
                 com.callmony.platform.Platform.ui.setImeSuppressed(false)
             }
             RootBottomOverlays.content.value = if (wantPad) {
-                // v1.6.47 — onEnter: the keypad's enter key is the NORMAL
-                // enter (report #1: "the inter btn is not the next btn") —
-                // a NEWLINE: it commits the active line and hands over a
-                // fresh one, and nothing else. Next (and only Next) owns
-                // the commit + SAVE of v1.6.46 report #3.
-                { CalcKeypadHostContent(onKey = { calcKey(it) }, onEnter = { if (calcText.isNotBlank()) commitCalcLine() }, rtl = isRTL(currentLang().code)) }
+                // v1.6.48 — onEnter, ROUND THREE (report #6: "the reason i
+                // wanted the inter btn in the number keypad is to go to
+                // next line in the same individual calculation, just like
+                // the netiv inter btn do, not to do what the next btn
+                // do"): the enter key inserts a real NEWLINE into the
+                // ACTIVE LINE — the same individual calculation keeps
+                // calculating across the break, exactly the native enter's
+                // contract. It neither commits nor saves: Next (and only
+                // Next) owns the commit + SAVE of v1.6.46 report #3.
+                { CalcKeypadHostContent(onKey = { calcKey(it) }, onEnter = { calcKey("\n") }, rtl = isRTL(currentLang().code)) }
             } else {
                 RootBottomOverlays.overlayTopPx.value = -1f
                 null
@@ -1321,6 +1367,29 @@ fun EntryEditOverlay(
                         color = if (prefixMode != "none") C.brand else C.faint,
                     )
                 }
+                // v1.6.48 — THE CURRENCY CHIP (report #1: "the ability to
+                // change the currency"): the live currency's SYMBOL rides
+                // the header beside the prefix chip; the tap opens the
+                // compact picker sheet — one tap and every amount in the
+                // app follows (money() reads the live setting).
+                Box(
+                    Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(C.brandSoft)
+                        .border(1.dp, C.brand, RoundedCornerShape(9.dp))
+                        .clickable { currencySheet = true }
+                        .testTag("calcCurrencyBtn"),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        currencySymbol(AppStore.state.settings.currency),
+                        fontSize = F.tiny.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = C.brand,
+                        maxLines = 1,
+                    )
+                }
                 Box(
                     Modifier
                         .size(28.dp)
@@ -1376,7 +1445,11 @@ fun EntryEditOverlay(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .padding(top = 6.dp)
+                            // v1.6.48 — report #5: the lines sit TIGHTER
+                            // ("it shouldn't have to much space between
+                            // them vertically") — 6dp → 3dp between
+                            // blocks, the strip's own padding 5dp → 3dp
+                            .padding(top = 3.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .background(C.cardAlt.copy(alpha = 0.35f))
                             .combinedClickable(
@@ -1384,7 +1457,7 @@ fun EntryEditOverlay(
                                 onLongClick = { vibrate(longArrayOf(20)); unlockCalcLine(i) },
                             )
                             .testTag("calcLine:$i")
-                            .padding(horizontal = 4.dp, vertical = 5.dp),
+                            .padding(horizontal = 4.dp, vertical = 3.dp),
                         verticalAlignment = Alignment.Top,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
@@ -1400,6 +1473,18 @@ fun EntryEditOverlay(
                                 modifier = Modifier.width(20.dp).testTag("calcLinePrefix:$i"),
                             )
                         }
+                        // v1.6.48 — THE LOCK ICON, BACK (report #7: "bring
+                        // back the lock icon, it's height should be equal to
+                        // the text height"): a plain glyph as tall as the
+                        // line's text (the old 30dp pill was the bulk the
+                        // user never asked for), purely a NOTICE that the
+                        // line is locked — INERT (the v1.6.47 lesson: its
+                        // tap must never do anything); a deliberate
+                        // long-press still pulls the line into editing.
+                        MdiIcon(
+                            "lock-outline", F.small, C.faint,
+                            Modifier.testTag("calcLineLock:$i"),
+                        )
                         Column(Modifier.weight(1f)) {
                             // the FULL calculation, wrapping — never clamped;
                             // v1.6.41 — the TEXT-mode pieces (the quoted
@@ -1407,47 +1492,53 @@ fun EntryEditOverlay(
                             // v1.6.45 — report #3: EVERY text-mode token
                             // (words included — letters only ever come from
                             // the text keyboard) keeps its colour, saved or
-                            // edited; v1.6.42 — the commit DATE rides beside
-                            // it (report #10), the date marker never in the
-                            // text
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(
-                                    coloredLockedLine(displayCalcNote(line), C.sub, TEXTMODE_COLOR),
-                                    fontSize = F.small.sp, fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                if (line.date.isNotEmpty()) {
-                                    Text(
-                                        com.callmony.lib.fd(line.date),
-                                        fontSize = F.tiny.sp, color = C.faint, fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.testTag("calcLineDate:$i"),
-                                    )
-                                }
-                            }
+                            // edited; v1.6.48 — report #3: the DATE moved
+                            // DOWN to sit beside the line's OWN total
+                            // ("in the individual total, the date should sit
+                            // beside it"), no longer riding the text's row
+                            Text(
+                                coloredLockedLine(displayCalcNote(line), C.sub, TEXTMODE_COLOR),
+                                fontSize = F.small.sp, fontWeight = FontWeight.Medium,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
                             // v1.6.41 — the line's OWN total sits BELOW the
                             // calculation ("when calculation line is locked it
                             // own total should show below it not on it's
                             // side"); v1.6.45 — a pure read-out: payments are
                             // made on the SUM TOTAL's Pay button, so the
-                            // number is inert text with its paid hint.
-                            if (lineShown != null) {
+                            // number is inert text with its paid hint;
+                            // v1.6.48 — report #3: the DATE sits BESIDE the
+                            // total on the same row; report #5: the total's
+                            // font size matches the ACTIVE line's live total
+                            // (one size locked or not) on a tighter 1dp lead
+                            if (lineShown != null || line.date.isNotEmpty()) {
                                 Row(
-                                    Modifier.padding(top = 2.dp),
+                                    Modifier.padding(top = 1.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
-                                    Text(
-                                        money(lineShown),
-                                        fontSize = F.small.sp, color = C.faint, fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier
-                                            .testTag("calcLineTotal:$i")
-                                            .padding(horizontal = 2.dp, vertical = 2.dp),
-                                    )
+                                    if (lineShown != null) {
+                                        Text(
+                                            money(lineShown),
+                                            fontSize = F.body.sp, color = C.faint, fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier
+                                                .testTag("calcLineTotal:$i")
+                                                .padding(horizontal = 2.dp, vertical = 1.dp),
+                                        )
+                                    }
                                     if (linePaid > 0.005) {
                                         Text(
                                             "${t("lg.paid")} ${money(linePaid)}",
                                             fontSize = F.tiny.sp, color = C.faint,
                                             modifier = Modifier.testTag("calcLinePaid:$i"),
+                                        )
+                                    }
+                                    if (line.date.isNotEmpty()) {
+                                        Spacer(Modifier.weight(1f))
+                                        Text(
+                                            com.callmony.lib.fd(line.date),
+                                            fontSize = F.tiny.sp, color = C.faint, fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.testTag("calcLineDate:$i"),
                                         )
                                     }
                                 }
@@ -1483,7 +1574,7 @@ fun EntryEditOverlay(
                 // native field in num mode), and the num field carries the
                 // focus token so its caret is always live.
                 Row(
-                    Modifier.fillMaxWidth().padding(top = 10.dp),
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
                     verticalAlignment = Alignment.Top,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
@@ -1499,6 +1590,14 @@ fun EntryEditOverlay(
                             modifier = Modifier.width(20.dp).testTag("calcActivePrefix"),
                         )
                     }
+                    // v1.6.48 — the ACTIVE line's OPEN lock (report #7):
+                    // text-height like its committed siblings, inert — this
+                    // is the one line being edited right now, the open
+                    // counterpart of every committed line's closed lock
+                    MdiIcon(
+                        "lock-off-outline", F.small, C.brand,
+                        Modifier.testTag("calcActiveLock"),
+                    )
                     Box(Modifier.weight(1f)) {
                         if (calcMode == "text") {
                             // read in composition so colour changes recompose
@@ -1569,7 +1668,10 @@ fun EntryEditOverlay(
                                 cursorColor = C.brand,
                                 modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp).testTag("calcNumField"),
                                 alignStart = true,
-                                maxLines = 3,
+                                // v1.6.48 — SIX lines: the enter key lands
+                                // real newlines inside the same individual
+                                // calculation now (report #6)
+                                maxLines = 6,
                                 highlight = qwertyIdx,
                                 highlightColor = TEXTMODE_COLOR,
                                 focusToken = focusToken,
@@ -1586,10 +1688,12 @@ fun EntryEditOverlay(
                 if (calcTotal != null) {
                     Text(
                         "= ${money(calcTotal)}",
-                        // v1.6.46 — SemiBold instead of ExtraBold (the
-                        // de-bulked look), one point larger so it still leads
-                        fontSize = 21.sp, fontWeight = FontWeight.SemiBold, color = C.brand,
-                        modifier = Modifier.padding(top = 6.dp).testTag("calcTotal"),
+                        // v1.6.48 — report #5: the live total matches the
+                        // committed lines' totals — ONE font size whether
+                        // the line is locked or not (the brand colour still
+                        // leads the eye), on a tighter lead
+                        fontSize = F.body.sp, fontWeight = FontWeight.SemiBold, color = C.brand,
+                        modifier = Modifier.padding(top = 3.dp).testTag("calcTotal"),
                     )
                 }
                 if (calcStepList.isNotEmpty()) {
@@ -1640,14 +1744,22 @@ fun EntryEditOverlay(
                     )
                 }
                 Column(Modifier.weight(1f)) {
+                    // v1.6.48 — report #2: the total number sits BESIDE the
+                    // "TOTAL" label, not under it — ONE row: label, amount,
+                    // (the items hint); the paid · remaining line rides
+                    // underneath once something is paid
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(t("ee.calcTotal"), fontSize = F.small.sp, fontWeight = FontWeight.SemiBold, color = C.sub)
+                        // v1.6.46 — SemiBold, one point larger (the de-bulked look)
+                        Text(
+                            money(effAmount),
+                            fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = C.brand,
+                            modifier = Modifier.testTag("calcTotalAmount"),
+                        )
                         if (itemsSum > 0.0) {
                             Text("+ ${money(itemsSum)}", fontSize = F.tiny.sp, color = C.faint)
                         }
                     }
-                    // v1.6.46 — SemiBold, one point larger (the de-bulked look)
-                    Text(money(effAmount), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = C.brand)
                     if (paidTotal > 0.005) {
                         Text(
                             "${t("lg.paid")} ${money(paidTotal)} · ${t("lg.remaining")} ${money(remainingTotal)}",
@@ -1856,6 +1968,39 @@ fun EntryEditOverlay(
                 }
             }
         }
+        }
+    }
+
+    // v1.6.48 — THE CURRENCY PICKER (report #1: "the ability to change
+    // the currency"): the canvas header's currency chip opens this compact
+    // sheet — the same eight currencies the Settings region row carries.
+    // One tap writes settings.currency and every money() in the app
+    // re-renders the same frame (the live default since v1.6.48); the
+    // keypad hides while the sheet is up (wantPad) and re-arms on close.
+    if (currencySheet) {
+        com.callmony.ui.components.BottomSheet(
+            title = t("st.currency"),
+            onClose = { currencySheet = false },
+        ) {
+            Column {
+                Row(Modifier.padding(bottom = 6.dp)) {
+                    ScrollRow {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            CURRENCIES.forEach { cur ->
+                                Chip(
+                                    label = "${cur.code} ${cur.symbol}",
+                                    compact = true,
+                                    active = AppStore.state.settings.currency == cur.code,
+                                    onPress = {
+                                        AppStore.updateSettings { it.copy(currency = cur.code) }
+                                        currencySheet = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

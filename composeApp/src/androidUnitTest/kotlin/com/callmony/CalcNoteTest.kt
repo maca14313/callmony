@@ -1,5 +1,6 @@
 package com.callmony
 
+import com.callmony.lib.applyModeSplit
 import com.callmony.lib.CalcNote
 import com.callmony.lib.CalcToken
 import com.callmony.lib.calcLedgerTotal
@@ -433,5 +434,82 @@ class CalcNoteTest {
         assertTrue((0..2).all { it in marks })  // the quoted "2"
         assertTrue((4..8).all { it in marks })  // rooms
         assertTrue((10..12).none { it in marks }) // the keypad 500
+    }
+
+    /* ---------- v1.6.48 — the MODE-SPLIT pre-parse (report #4) + the newline fold (report #6) ---------- */
+
+    @Test
+    fun the_users_glued_example_splits_and_calculates() {
+        // report #4 verbatim: "555555555" on the keypad, "dsssssss" glued
+        // straight after on the QWERTY — the keypad number still calculates
+        //              5 5 5 5 5 5 5 5 5 d s s s s s s s
+        // indices:     0 1 2 3 4 5 6 7 8 9 ...
+        val raw = "555555555dsssssss"
+        val qwerty = (9..16).toSet()
+        val split = applyModeSplit(raw, qwerty)
+        assertEquals("555555555 dsssssss", split)
+        val n = parseCalcNote(split)
+        assertEquals(1, n.tokens.size)
+        assertEquals("555555555", n.tokens[0].number)
+        assertEquals("dsssssss", n.tokens[0].after)
+        assertEquals(555555555.0, evalCalcTokens(n.tokens)!!, 0.0)
+        // round-trip stable: the split form is plain grammar
+        assertEquals("555555555 dsssssss", serializeCalcNote(n))
+        // and the RENDER marks match the live field's (word blue, number ink)
+        val marks = textModeRanges("555555555 dsssssss")
+        assertTrue((0..8).none { it in marks })
+        assertTrue((10..16).all { it in marks })
+    }
+
+    @Test
+    fun a_text_mode_number_glued_after_keypad_digits_is_quoted_not_folded() {
+        // "555" on the keypad then "5" on the QWERTY, no space: the run
+        // boundary still splits, and the TEXT-mode number is quoted — it
+        // must NOT fold into the keypad number
+        val split = applyModeSplit("5555", setOf(3))
+        assertEquals("555 \"5\"", split)
+        val n = parseCalcNote(split)
+        assertEquals(555.0, evalCalcTokens(n.tokens)!!, 0.0)
+        assertEquals(1, n.tokens.size)
+        assertEquals("\"5\"", n.tokens[0].after)
+    }
+
+    @Test
+    fun pure_text_tokens_and_pure_keypad_tokens_never_split() {
+        // all-QWERTY word: one run, unchanged
+        assertEquals("dsssssss", applyModeSplit("dsssssss", (0..7).toSet()))
+        // all-QWERTY NUMBER: quoteTextNumbers' own rule (quoted annotation)
+        assertEquals("\"200\"", applyModeSplit("200", (0..2).toSet()))
+        // all-keypad: untouched, calculating
+        assertEquals("555", applyModeSplit("555", emptySet()))
+        // already-quoted: self-preserving
+        assertEquals("\"200\"", applyModeSplit("\"200\"", (1..3).toSet()))
+        // no qwerty marks at all → identity, whatever the text
+        assertEquals("rooms 500 = 500", applyModeSplit("rooms 500 = 500", emptySet()))
+    }
+
+    @Test
+    fun a_three_run_token_splits_at_each_mode_boundary() {
+        // keypad "5", QWERTY "d", keypad "5" — all three runs separate; the
+        // two keypad numbers fold as the grammar's implicit +
+        val split = applyModeSplit("5d5", setOf(1))
+        assertEquals("5 d 5", split)
+        val n = parseCalcNote(split)
+        assertEquals(10.0, evalCalcTokens(n.tokens)!!, 0.0)
+    }
+
+    @Test
+    fun the_newline_is_just_whitespace_to_the_calculation() {
+        // report #6: the enter key lands a real newline INSIDE the same
+        // individual calculation — the grammar splits on \s+, so the line
+        // keeps calculating across the break
+        val n = parseCalcNote("555\n5")
+        assertEquals(560.0, evalCalcTokens(n.tokens)!!, 0.0)
+        // and the serialized (committed) form is one line, folded cleanly
+        assertEquals("555 + 5", serializeCalcNote(n))
+        // the 1:1 fold keeps qwerty indices valid through applyModeSplit:
+        // "555\n5" with the LAST 5 typed in text mode quotes only that 5
+        val split = applyModeSplit("555\n5".replace('\n', ' '), setOf(4))
+        assertEquals("555 \"5\"", split)
     }
 }

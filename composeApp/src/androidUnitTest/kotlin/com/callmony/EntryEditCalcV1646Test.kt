@@ -127,39 +127,49 @@ class EntryEditCalcV1646Test {
         AppStore.state.entries.count { it.amount == amount }
     }
 
-    /* 1 + 3 — v1.6.47, REWRITTEN for the round-two enter contract
-       ("the inter btn is not the next btn it is the normal inter btn like
-       in the netiv keyboard and in its row add the space key too"): the
-       keypad's enter is the NEWLINE — it commits the active line and
-       nothing else (Next owns the commit + SAVE); the space key sits in
-       its row. ENTER twice, then backing out: the leave-time create
-       persists BOTH lines as ONE entry — never a duplicate.
+    /* 1 + 3 — v1.6.48, REWRITTEN AGAIN for the round-three enter contract
+       ("the reason i wanted the inter btn in the number keypad is to go
+       to next line in the same individual calculation, just like the
+       netiv inter btn do, not to do what the next btn do"): the keypad's
+       enter is the LITERAL NEWLINE INSIDE the same individual calculation
+       — the line keeps calculating across the break and NOTHING commits
+       by itself (Next owns the commit + SAVE); the space key sits in the
+       enter's row. 275 ⏎ 70 stays ONE line reading 345 live; backing out
+       persists the never-saved draft through the leave-time create — ONE
+       entry, never a duplicate.
        Harness note: the store is a JVM singleton across the battery, so
        the amounts are deliberately ones no other test writes (275 / 345)
        and the "same entry" checks are ID-based. */
     @Test
-    fun theEnterKeyIsTheNewlineAndBackingOutPersists() {
+    fun theEnterKeyNewlinesTheSameLineAndBackingOutPersistsIt() {
         ready()
         openEditor()
         toNumMode()
         listOf("2", "7", "5").forEach { key(it) }
 
+        // ENTER — the newline INSIDE the same individual calculation
         enter()
-        awaitLine(0)
         rule.waitForIdle()
+        // nothing committed: the line stays active, no ledger block
+        assertEquals(
+            "the enter key must not commit — it is the newline, not Next",
+            0,
+            rule.onAllNodesWithTag("calcLine:0").fetchSemanticsNodes().size,
+        )
         Thread.sleep(300) // any stray save pulse would land here — none may
         rule.waitForIdle()
         assertEquals(
-            "the enter key must NOT persist by itself — it is the newline, not Next",
+            "the enter key must NOT persist by itself",
             0,
-            entryCount(275.0),
+            entryCount(345.0),
         )
 
-        // a second line: 70 → the two lines read 345
+        // the SAME line continues on the next visual row: 70 → reads 345
         listOf("7", "0").forEach { key(it) }
-        enter()
-        awaitLine(1)
-        // the blank-line ENTER afterwards is a harmless no-op
+        rule.waitUntil(timeoutMillis = 15000) {
+            rule.onAllNodes(hasText("345 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+        }
+        // a trailing blank ENTER afterwards is a harmless no-op
         enter()
         rule.waitForIdle()
         // the canvas + keypad stayed up throughout (the enter key and the
@@ -174,7 +184,8 @@ class EntryEditCalcV1646Test {
         )
 
         // backing out persists the never-saved draft (the leave-time
-        // create) — ONE entry, both lines, never a duplicate
+        // create) — ONE entry, the one multi-visual-line calculation, never
+        // a duplicate
         repeat(4) {
             if (rule.onAllNodesWithTag("calcBtnNext").fetchSemanticsNodes().isEmpty() &&
                 rule.onAllNodesWithTag("calcCollapsed").fetchSemanticsNodes().isEmpty()
@@ -183,6 +194,14 @@ class EntryEditCalcV1646Test {
             rule.waitForIdle()
         }
         rule.waitUntil(timeoutMillis = 15000) { entryCount(345.0) == 1 }
+        // the draft folded to the one-line grammar on its way out
+        val savedExpr = rule.runOnUiThread {
+            AppStore.state.entries.first { it.amount == 345.0 }.exprNote
+        }
+        assertTrue(
+            "the newline folds to a space in the saved grammar — got: $savedExpr",
+            savedExpr?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), "") == "275 + 70",
+        )
     }
 
     /* 3 — the Save button is GONE, canvas up or collapsed: no act.save
