@@ -254,28 +254,23 @@ class EntryEditCalcV1642Test {
             rule.onAllNodes(hasText(fd(todayStr()), substring = true)).fetchSemanticsNodes().isNotEmpty(),
         )
 
-        // #8 — LOCKED: the pay chip is inert (no modal)
-        rule.onNodeWithTag("calcLinePay:0").performClick()
-        rule.waitForIdle()
+        // v1.6.45 — report #2: NO pay chip on the individual entry at all
+        // (locked or unlocked — payments moved to the sum total)
         assertEquals(
-            "a locked entry's pay chip must not open the modal",
+            "the individual entry must not carry a pay chip anymore",
             0,
-            rule.onAllNodes(hasText("${t("ee.calcLineTotal")} · 300 Br", substring = true)).fetchSemanticsNodes().size,
+            rule.onAllNodesWithTag("calcLinePay:0").fetchSemanticsNodes().size,
         )
 
-        // the lock pill tap UNLOCKS the entry — proven functionally right
-        // here: the previously-inert pay chip now opens the modal. (The
-        // Unlocked/Locked state LABEL rides the history block, asserted
-        // after the payment lands below.)
-        rule.onNodeWithTag("calcLineLock:0").performClick()
-        rule.waitForIdle()
-        rule.onNodeWithTag("calcLinePay:0").performClick()
+        // the SUM TOTAL's Pay chip opens the payments modal directly — no
+        // lock gate stands between the user and a payment now
+        rule.onNodeWithTag("calcTotalPay").performClick()
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("${t("ee.calcLineTotal")} · 300 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("${t("ee.calcTotal")} · 300 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
 
-        // pay through the now-armed chip, with a LONG note
+        // pay through the modal, with a LONG note
         val payBtns = rule.onAllNodes(hasText(t("ee.calcPay"), substring = true) and hasClickAction())
         rule.waitUntil(timeoutMillis = 15000) { payBtns.fetchSemanticsNodes().isNotEmpty() }
         payBtns[payBtns.fetchSemanticsNodes().size - 1].performClick()
@@ -292,43 +287,30 @@ class EntryEditCalcV1642Test {
         saves[saves.fetchSemanticsNodes().size - 1].performClick()
         rule.waitForIdle()
 
-        // the history row: ABOVE the total, FULL note (the tail would be
-        // ellipsed under a one-line clamp), the payment's date, and the
-        // entry's UNLOCKED state on the block (report #8: the history list
-        // shows whether it is locked or unlocked)
+        // v1.6.45 — the history lives in the MODAL the sum total's Pay
+        // button opens (report #2: "the history of payment should show with
+        // modal that have lists with their full notes"): reopen it — the row
+        // carries the FULL note (the tail would be ellipsed under a
+        // one-line clamp), the payment's date, and what it left
+        rule.onNodeWithTag("calcTotalPay").performClick()
+        rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("calcLinePayHist:0:0").fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithTag("calcModalPayHist:0").fetchSemanticsNodes().isNotEmpty()
         }
         assertTrue(
-            "the history block carries the UNLOCKED state",
-            rule.onAllNodes(hasText(t("ee.calcEntryUnlocked"), substring = true)).fetchSemanticsNodes().isNotEmpty(),
-        )
-        assertTrue(
-            "the FULL note must show (its tail included)",
+            "the FULL note must show in the modal list (its tail included)",
             rule.onAllNodes(hasText("whole family together", substring = true)).fetchSemanticsNodes().isNotEmpty(),
         )
         assertTrue(
             "the payment row carries its date",
             rule.onAllNodes(hasText(fd(todayStr()), substring = true)).fetchSemanticsNodes().isNotEmpty(),
         )
-        val hist = rule.onNodeWithTag("calcLinePayHist:0:0").fetchSemanticsNode()
-        val total = rule.onNodeWithTag("calcLineTotal:0").fetchSemanticsNode()
-        assertTrue(
-            "the history list must sit ABOVE the entry's total",
-            hist.positionInRoot.y < total.positionInRoot.y,
-        )
 
-        // #6 — the sum total: NO pay chip, NO history rows under it — just
-        // the Paid · Remaining line
+        // and the canvas itself stays clean: no per-line history rows
         assertEquals(
-            "no pay chip at the sum total",
+            "no payment-history rows on the canvas",
             0,
-            rule.onAllNodesWithTag("calcTotalPay").fetchSemanticsNodes().size,
-        )
-        assertEquals(
-            "no payment-history rows at the sum total",
-            0,
-            rule.onAllNodesWithTag("calcPayHist:0").fetchSemanticsNodes().size,
+            rule.onAllNodesWithTag("calcLinePayHist:0:0").fetchSemanticsNodes().size,
         )
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodesWithTag("calcTotalPaidLine").fetchSemanticsNodes().isNotEmpty()
@@ -336,6 +318,12 @@ class EntryEditCalcV1642Test {
         assertTrue(
             "the sum shows Paid · Remaining",
             rule.onAllNodes(hasText("${t("lg.paid")} 300 Br", substring = true)).fetchSemanticsNodes().isNotEmpty(),
+        )
+        // the LEFT CIRCLE went to 0 — everything is paid (report #2: "a
+        // cercle that shows how many left")
+        assertTrue(
+            "the left circle must show 0 left once fully paid",
+            rule.onAllNodes(hasText("0 ${t("ee.calcLeft")}", substring = true)).fetchSemanticsNodes().isNotEmpty(),
         )
     }
 

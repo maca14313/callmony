@@ -461,6 +461,8 @@ internal val TI: Map<String, String> = mapOf(
     "ee.calcCopyTotal" to "ጠቅላላ ቅዳ",
     // v1.6.41 — the pay chip beside every total / the payment cap
     "ee.calcPay" to "ክፍል",
+    "ee.calcLeft" to "ዝተረፈ",
+    "ee.calcItems" to "ኣቃሳት",
     "ee.calcEntryLocked" to "ተቐሪቑ",
     "ee.calcEntryUnlocked" to "ተከፍታዕ",
     "lg.paymentTooMuch" to "እቲ ክፍያ ካብ ዝተረፈ ዝላዕለ ኮይኑ ኣይኽእልን",

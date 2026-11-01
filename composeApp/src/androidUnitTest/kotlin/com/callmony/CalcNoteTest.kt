@@ -7,8 +7,11 @@ import com.callmony.lib.calcSteps
 import com.callmony.lib.evalCalcTokens
 import com.callmony.lib.parseCalcLedger
 import com.callmony.lib.parseCalcNote
+import com.callmony.lib.calcLeftCount
 import com.callmony.lib.quoteTextNumbers
 import com.callmony.lib.serializeCalcLedger
+import com.callmony.lib.textModeRanges
+import com.callmony.model.Payment
 import com.callmony.lib.serializeCalcNote
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -334,14 +337,20 @@ class CalcNoteTest {
 
     @Test
     fun quoted_numbers_carry_the_textmode_colour_span() {
+        // v1.6.45 — words carry the TEXTMODE colour too (letters only ever
+        // come from the text keyboard): base + the quoted "2" + rooms = 3
         val s = com.callmony.ui.overlays.coloredLockedLine(
             "\"2\" rooms 500", androidx.compose.ui.graphics.Color.Gray, com.callmony.ui.overlays.TEXTMODE_COLOR,
         )
-        assertEquals(2, s.spanStyles.size)
+        assertEquals(3, s.spanStyles.size)
         // the quoted token "2" is the TEXTMODE colour; the whole line is the base
         val quoted = s.spanStyles.first { it.item.color == com.callmony.ui.overlays.TEXTMODE_COLOR }
         assertEquals(0, quoted.start)
         assertEquals(3, quoted.end) // "2" with its quotes
+        // and the WORD span rides beside it — same colour, saved or edited
+        val word = s.spanStyles.last { it.item.color == com.callmony.ui.overlays.TEXTMODE_COLOR }
+        assertEquals(4, word.start)
+        assertEquals(9, word.end) // rooms
     }
 
     /* ---------------- v1.6.42 — the commit-date marker ---------------- */
@@ -390,5 +399,73 @@ class CalcNoteTest {
         assertEquals("2026-10-31", lines[1].date)
         assertEquals(300.0, calcLedgerTotal(lines)!!, 0.0)
         assertEquals("100 @2026-10-30\n200 @2026-10-31", serializeCalcLedger(lines))
+    }
+
+    /* ---------- v1.6.45 — the colour separation that survives save + edit ---------- */
+
+    @Test
+    fun text_mode_ranges_mark_words_and_quoted_numbers_only() {
+        // "rooms" = word (letters only ever come from the text keyboard),
+        // "500" = keypad number, the quoted "2" = text-mode annotation
+        //            r o o m s   5 0 0   " 2 "   b i r r
+        // indices:   0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17
+        val s = "rooms 500 \"2\" birr"
+        val marks = textModeRanges(s)
+        assertTrue("rooms must be text-mode", (0..4).all { it in marks })
+        assertTrue("the keypad number must stay ink", (6..8).none { it in marks })
+        assertTrue("the quoted annotation must be text-mode", (10..12).all { it in marks })
+        assertTrue("birr must be text-mode", (14..17).all { it in marks })
+        assertTrue("spaces never carry a mark", s.indices.filter { s[it] == ' ' }.none { it in marks })
+        // operators stay ink even between words
+        assertEquals(emptySet<Int>(), textModeRanges("3 + 4 × 2"))
+        // blank is blank
+        assertEquals(emptySet<Int>(), textModeRanges("   "))
+    }
+
+    @Test
+    fun unlock_marks_match_the_locked_render_marks() {
+        // a committed line's display text — the SAME set drives the locked
+        // line's colours (coloredLockedLine) and the qwerty marks rebuilt
+        // when the line is unlocked for editing, so live / saved / edited
+        // all show one separation
+        //        "   2   "       r o o m s       5 0 0
+        // idx:   0   1   2   3   4 5 6 7 8 9   10 11 12
+        val display = "\"2\" rooms 500"
+        val marks = textModeRanges(display)
+        assertTrue((0..2).all { it in marks })  // the quoted "2"
+        assertTrue((4..8).all { it in marks })  // rooms
+        assertTrue((10..12).none { it in marks }) // the keypad 500
+    }
+
+    /* ---------- v1.6.45 — the LEFT CIRCLE's FIFO count ---------- */
+
+    private fun pay(amount: Double, lineIdx: Int? = null) = Payment(
+        id = "p$amount$lineIdx", amount = amount, date = "2026-10-31", lineIdx = lineIdx,
+    )
+
+    @Test
+    fun the_left_count_settles_lines_fifo() {
+        val lines = parseCalcLedger("300\n200")
+        // nothing paid: both left
+        assertEquals(2, calcLeftCount(lines, emptyList()))
+        // 400 pays off line 0 (300) and 100 of line 1 → one left
+        assertEquals(1, calcLeftCount(lines, listOf(pay(400.0))))
+        // 500 settles everything
+        assertEquals(0, calcLeftCount(lines, listOf(pay(500.0))))
+        // an attributed payment on line 1 first, then entry-level FIFO
+        // covers line 0 and the rest of line 1 → 0 left
+        assertEquals(0, calcLeftCount(lines, listOf(pay(100.0, lineIdx = 1), pay(400.0))))
+        // attribution and FIFO work together without double-counting: 100
+        // ATTRIBUTED to line 0 + 350 entry-level — line 0 needs 200 more of
+        // the 350 (leaves 150), line 1 needs 200 but only 150 remains →
+        // still owes 50 → 1 left
+        assertEquals(1, calcLeftCount(lines, listOf(pay(100.0, lineIdx = 0), pay(350.0))))
+    }
+
+    @Test
+    fun pure_annotation_lines_never_count_as_left() {
+        val lines = parseCalcLedger("a pure note line\n300")
+        assertEquals(1, calcLeftCount(lines, emptyList()))
+        assertEquals(0, calcLeftCount(lines, listOf(pay(300.0))))
     }
 }

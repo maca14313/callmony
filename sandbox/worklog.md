@@ -712,3 +712,24 @@ Work Log:
 
 Stage Summary:
 - The diagnostics loop the user ordered in v1.6.43 closed its first cycle: the firewall captured the crash, the user pasted it back, and the trace named the killer. v1.6.44 kills it at the root with two independent layers. If anything ever crashes again, the firewall stays armed — paste the report and the next round starts from ground truth.
+
+---
+Task ID: 23
+Agent: main agent (Z.ai)
+Task: v1.6.45 — the six-report round on the annotated calculator (IME leak in num mode, pay on the sum total + modal history + left circle, colour separation saved/edited, compact record sheet, dates everywhere, copies including totals) + commit/push/release with the APK.
+
+Work Log:
+- Sandbox reset: local main fast-forwarded to origin 4bc5669 (v1.6.44 vc55, 205/205 — already pushed). Android SDK reinstalled.
+- #1: NoImeEditText force-hides the IME on every onFocusChanged(true) + onWindowFocusChanged(true) (exception-proof, imeHideAttempts test hook); enterNumMode clears the QWERTY focus first.
+- #2: per-line pay chips / on-canvas history blocks / total-tap removed; sum total row gains the always-armed Pay chip (calcTotalPay) + the LEFT CIRCLE (36dp ring, paid fraction, FIFO line count in the centre + "N left" caption, calcLeftCount in Calc.kt — attributed payments spend on their own line, entry-level walk FIFO; first draft double-counted attributed through the walk, caught by the pure tests) + the payments modal (summary, full-note history rows with dates, conditional Pay, whole-ledger Copy).
+- #3: textModeRanges() (quoted tokens OR any token containing a letter) drives coloredLockedLine AND the qwerty marks rebuilt in unlockCalcLine — the separation is identical live/saved/edited.
+- #4: record-payment sheet compacted — hint + kind headline gone, fill-remaining inside the amount field, Date+Note one row, method chips on a scroller, one small full-width Save.
+- #5: dates already rode lines/payments; verified everywhere incl. the new modal + export.
+- #6: lineCopyText (line + " = total"), active copy with the live total, formatCalcLedgerExport (lines + dates + totals + attributed AND entry-level payments with notes + items + TOTAL + Paid·Remaining) on calcTotalCopy + the modal's Copy.
+- i18n: ee.calcLeft + ee.calcItems ×5 languages.
+- Tests 217/217 (was 205): NEW V1645 UI ×6, NoImeFieldV1645 ×2, CalcNoteTest ×4 + span test updated; V1640/V1641/V1642/CalcTab reworked to the new flow. Lessons: inert Text tags need useUnmergedTree; over-cap check made differential (JVM-singleton store pollution).
+- Build 1.6.45 vc56 (one daemon OOM → --max-workers=2 retry); aapt + apksigner verified (same key 2f6d65be…869ad); both iOS targets compile.
+- Delivered: releases/callmony-1.6.45-release.apk committed + pushed; GitHub Release v1.6.45 published with the APK; copy at /home/z/my-project/download/callmony-1.6.45-kmp-release.apk; README + CHANGELOG + sandbox/chat-logs/2026-11-01-v1.6.45-six-reports-pay-on-total.md committed.
+
+Stage Summary:
+- All six reports fixed; suite fully green; the freeze-free foundation and the v1.6.44 crash fixes untouched. Live: https://github.com/maca14313/callmony/releases/tag/v1.6.45

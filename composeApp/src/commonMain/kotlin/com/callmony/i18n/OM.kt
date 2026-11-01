@@ -390,6 +390,8 @@ internal val OM: Map<String, String> = mapOf(
     "ee.calcCopyTotal" to "Walduraa walitti qabi",
     // v1.6.41 — the pay chip beside every total / the payment cap
     "ee.calcPay" to "Kaffal",
+    "ee.calcLeft" to "hara'aa",
+    "ee.calcItems" to "Meeresa",
     "ee.calcEntryLocked" to "Cufame",
     "ee.calcEntryUnlocked" to "Banaa’e",
     "lg.paymentTooMuch" to "Kaffaltiin mecca hafe irra ol ta'uu hin dandeessisu",

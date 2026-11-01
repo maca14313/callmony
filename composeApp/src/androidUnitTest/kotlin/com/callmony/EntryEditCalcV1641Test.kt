@@ -238,21 +238,23 @@ class EntryEditCalcV1641Test {
         // the total is BELOW the line's text
         val lineText = rule.onAllNodes(hasText("1 × 200", substring = true))
             .fetchSemanticsNodes().first()
-        val lineTotal = rule.onNodeWithTag("calcLineTotal:0").fetchSemanticsNode()
+        // v1.6.45 — the total is inert TEXT now (no click of its own), so
+        // its tag lives only in the UNMERGED tree
+        val lineTotal = rule.onNodeWithTag("calcLineTotal:0", useUnmergedTree = true).fetchSemanticsNode()
         assertTrue(
             "the line's own total must sit BELOW its calculation",
             lineTotal.positionInRoot.y > lineText.positionInRoot.y,
         )
-        // the pay chip beside it (v1.6.42: locked = present but INERT)
-        rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("calcLinePay:0").fetchSemanticsNodes().isNotEmpty()
-        }
-        // the sum total carries NO pay chip (report #6)
+        // v1.6.45 — the pay button lives ONLY on the sum total: the line
+        // carries NO chip of its own, the total's chip is right there
         assertEquals(
-            "the sum total must not carry a pay chip",
+            "the individual line must not carry a pay chip anymore",
             0,
-            rule.onAllNodesWithTag("calcTotalPay").fetchSemanticsNodes().size,
+            rule.onAllNodesWithTag("calcLinePay:0").fetchSemanticsNodes().size,
         )
+        rule.waitUntil(timeoutMillis = 15000) {
+            rule.onAllNodesWithTag("calcTotalPay").fetchSemanticsNodes().isNotEmpty()
+        }
     }
 
     /* 5 — v1.6.42: a payment cannot go above the remaining total — paid
@@ -268,10 +270,8 @@ class EntryEditCalcV1641Test {
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodesWithTag("calcLine:0").fetchSemanticsNodes().isNotEmpty()
         }
-        // unlock the entry (the pay gate), then open its modal
-        rule.onNodeWithTag("calcLineLock:0").performClick()
-        rule.waitForIdle()
-        rule.onNodeWithTag("calcLinePay:0").performClick()
+        // the sum total's Pay chip opens the payments modal directly
+        rule.onNodeWithTag("calcTotalPay").performClick()
         rule.waitForIdle()
 
         // the modal's Pay (prefilled with the remaining 300)
@@ -289,17 +289,22 @@ class EntryEditCalcV1641Test {
         rule.waitUntil(timeoutMillis = 15000) { amountField.fetchSemanticsNodes().isNotEmpty() }
         amountField[0].performTextReplacement("400")
         rule.waitForIdle()
-        // Save → refused with the cap toast, nothing recorded
+        // Save → refused with the cap toast, nothing recorded. The check is
+        // DIFFERENTIAL (payments before vs after): the store is a JVM
+        // singleton, so other tests' amounts must never poison this one.
+        val paysBefore = rule.runOnUiThread {
+            AppStore.state.entries.sumOf { it.payments.size }
+        }
         val saves = rule.onAllNodes(hasText(t("act.save")) and hasClickAction())
         saves[saves.fetchSemanticsNodes().size - 1].performClick()
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodes(hasText(t("lg.paymentTooMuch"), substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
-        val overCapRecorded = rule.runOnUiThread {
-            AppStore.state.entries.any { e -> e.payments.any { it.amount == 400.0 } }
+        val paysAfter = rule.runOnUiThread {
+            AppStore.state.entries.sumOf { it.payments.size }
         }
-        assertTrue("the over-cap payment must NOT be recorded", !overCapRecorded)
+        assertEquals("the over-cap payment must NOT be recorded", paysBefore, paysAfter)
     }
 
     /* 6 — the DELETE-ENTRY button is gone from the editor */
@@ -373,10 +378,8 @@ class EntryEditCalcV1641Test {
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodesWithTag("calcLine:0").fetchSemanticsNodes().isNotEmpty()
         }
-        // the pay gate: unlock the entry, open its modal, pay the full 300
-        rule.onNodeWithTag("calcLineLock:0").performClick()
-        rule.waitForIdle()
-        rule.onNodeWithTag("calcLinePay:0").performClick()
+        // the sum total's Pay chip → the payments modal → pay the full 300
+        rule.onNodeWithTag("calcTotalPay").performClick()
         rule.waitForIdle()
         val payBtns = rule.onAllNodes(hasText(t("ee.calcPay"), substring = true) and hasClickAction())
         rule.waitUntil(timeoutMillis = 15000) { payBtns.fetchSemanticsNodes().isNotEmpty() }
@@ -393,24 +396,28 @@ class EntryEditCalcV1641Test {
         saves[saves.fetchSemanticsNodes().size - 1].performClick()
         rule.waitForIdle()
 
-        // back on the canvas: the history row carries the note and → 0
+        // v1.6.45 — the history lives IN THE PAYMENTS MODAL now (report #2:
+        // "the history of the payment also should show when the payment btn
+        // is clicked on the sum total"): reopen it and the row carries the
+        // note IN FULL and → 0
+        rule.onNodeWithTag("calcTotalPay").performClick()
+        rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("calcLinePayHist:0:0").fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithTag("calcModalPayHist:0").fetchSemanticsNodes().isNotEmpty()
         }
         assertTrue(
-            "the note rides the on-canvas history",
+            "the note rides the modal history list",
             rule.onAllNodes(hasText("lunch money", substring = true)).fetchSemanticsNodes().isNotEmpty(),
         )
         assertTrue(
             "the history row shows the new amount",
             rule.onAllNodes(hasText("0 Br", substring = true)).fetchSemanticsNodes().isNotEmpty(),
         )
-        // and the history sits ABOVE the entry's total (report #8)
-        val hist = rule.onNodeWithTag("calcLinePayHist:0:0").fetchSemanticsNode()
-        val total = rule.onNodeWithTag("calcLineTotal:0").fetchSemanticsNode()
-        assertTrue(
-            "the history list must sit ABOVE the total",
-            hist.positionInRoot.y < total.positionInRoot.y,
+        // and nothing of the history renders on the canvas itself
+        assertEquals(
+            "the canvas must stay clean of per-line history rows",
+            0,
+            rule.onAllNodesWithTag("calcLinePayHist:0:0").fetchSemanticsNodes().size,
         )
     }
 

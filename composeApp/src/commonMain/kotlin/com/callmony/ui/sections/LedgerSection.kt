@@ -82,7 +82,6 @@ import com.callmony.ui.kit.focusRing
 import com.callmony.ui.kit.pressVeil
 import com.callmony.ui.kit.Pill
 import com.callmony.ui.kit.SectionHeader
-import com.callmony.ui.kit.Segmented
 import com.callmony.ui.kit.Toasts
 import com.callmony.ui.components.ScrollRow
 
@@ -681,87 +680,132 @@ fun openPaymentSheet(entryId: String, prefill: Double? = null, lineIdx: Int? = n
         val C = C()
         // v1.6.38 — optional PREFILL: "make payment of it" on the
         // calculator's total opens the sheet with the amount already in
+        // v1.6.45 — report #4 ("the record payment modal is to bulkt, agly,
+        //   it should be very compact and easy"): the sheet lost its hint
+        //   paragraph and its kind·amount headline (the title carries the
+        //   amount; one tiny line carries the remaining), the FILL-remaining
+        //   action moved INSIDE the amount field, Date + Note share ONE row,
+        //   the five method segments became compact chips on one scroller,
+        //   and Save is one small full-width button — four tight rows where
+        //   there were seven stacked blocks.
         var amount by remember { mutableStateOf(prefill?.let { trimNumCompat(it) } ?: "") }
         var payDate by remember { mutableStateOf(todayStr()) }
         var method by remember { mutableStateOf("cash") }
         var payNote by remember { mutableStateOf("") }
         val remaining = entryRemaining(live)
-        BottomSheet(title = t("lg.recordPayment"), onClose = close) {
+        BottomSheet(title = "${t("lg.recordPayment")} · ${compactMoney(live.amount)}", onClose = close) {
             Column {
-                Text(t("lg.paymentHint"), fontSize = F.tiny.sp, color = C.sub, modifier = Modifier.padding(bottom = 10.dp))
-                Text("${t("lg.kind${(live.kind ?: live.type).replaceFirstChar { it.uppercase() }}")} · ${compactMoney(live.amount)}", fontSize = F.tiny.sp, color = C.brand, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp))
-                Field(label = t("lg.paymentAmount"), value = amount, onChangeText = { amount = it }, placeholder = "0", keyboardType = "decimal-pad")
                 if (remaining > 0.005) {
-                    Row(Modifier.padding(bottom = 12.dp)) {
-                        Btn(small = true, label = "${t("lg.fillRemaining")}: ${compactMoney(remaining)}", variant = "soft", onPress = { amount = trimNumCompat(remaining) })
-                    }
+                    Text(
+                        "${t("lg.remaining")}: ${compactMoney(remaining)}",
+                        fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
                 }
-                com.callmony.ui.kit.PickerField(
-                    label = t("lg.paymentDate"),
-                    value = com.callmony.lib.fd(payDate),
-                    icon = "calendar-blank-outline",
-                    onPress = {
-                        val initial = try {
-                            val p = payDate.split("-")
-                            com.callmony.lib.KmpDate(
-                                p.getOrNull(0)?.toInt() ?: dateOf(now()).year,
-                                (p.getOrNull(1)?.toIntOrNull() ?: (dateOf(now()).month0 + 1)) - 1,
-                                p.getOrNull(2)?.toIntOrNull() ?: dateOf(now()).day,
-                                12, 0, 0,
-                            ).time()
-                        } catch (_: Exception) { now() }
-                        NativeDateTime.pickDate(
-                            epochMillis = initial,
-                            onPick = { epoch ->
-                                val d = dateOf(epoch)
-                                payDate = "${d.year}-${(d.month0 + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
+                // AMOUNT — with the fill-remaining action tucked INSIDE the
+                // field (one glance, one tap, nothing stacked)
+                Field(
+                    label = t("lg.paymentAmount"),
+                    value = amount,
+                    onChangeText = { amount = it },
+                    placeholder = "0",
+                    keyboardType = "decimal-pad",
+                    right = if (remaining > 0.005) {
+                        {
+                            Text(
+                                "${t("lg.fillRemaining")}: ${compactMoney(remaining)}",
+                                fontSize = F.tiny.sp, color = C.brand, fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { amount = trimNumCompat(remaining) }
+                                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                            )
+                        }
+                    } else null,
+                )
+                // DATE + NOTE — one row, side by side
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.weight(1f)) {
+                        com.callmony.ui.kit.PickerField(
+                            label = t("lg.paymentDate"),
+                            value = com.callmony.lib.fd(payDate),
+                            icon = "calendar-blank-outline",
+                            onPress = {
+                                val initial = try {
+                                    val p = payDate.split("-")
+                                    com.callmony.lib.KmpDate(
+                                        p.getOrNull(0)?.toInt() ?: dateOf(now()).year,
+                                        (p.getOrNull(1)?.toIntOrNull() ?: (dateOf(now()).month0 + 1)) - 1,
+                                        p.getOrNull(2)?.toIntOrNull() ?: dateOf(now()).day,
+                                        12, 0, 0,
+                                    ).time()
+                                } catch (_: Exception) { now() }
+                                NativeDateTime.pickDate(
+                                    epochMillis = initial,
+                                    onPick = { epoch ->
+                                        val d = dateOf(epoch)
+                                        payDate = "${d.year}-${(d.month0 + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
+                                    },
+                                )
                             },
                         )
-                    },
-                    modifier = Modifier.padding(bottom = 12.dp),
-                )
-                Field(label = t("lg.paymentNote"), value = payNote, onChangeText = { payNote = it }, placeholder = t("lg.optionalNote"))
-                Text(t("lg.paymentMethod"), fontSize = F.small.sp, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
-                Segmented(
-                    listOf(
-                        Triple("cash", t("lg.pmCash"), null),
-                        Triple("bank", t("lg.pmBank"), null),
-                        Triple("card", t("lg.pmCard"), null),
-                        Triple("mobile", t("lg.pmMobile"), null),
-                        Triple("other", t("cd.other"), null),
-                    ),
-                    method,
-                ) { method = it }
-                Row(Modifier.padding(top = 12.dp)) {
-                    Btn(label = t("act.save"), onPress = {
-                        val v = amount.replace(",", ".").toDoubleOrNull()
-                        if (v == null || v <= 0) {
-                            Toasts.toast(t("lg.amountGreaterThanZero"), "error")
-                            return@Btn
+                    }
+                    Box(Modifier.weight(1.2f)) {
+                        Field(label = t("lg.paymentNote"), value = payNote, onChangeText = { payNote = it }, placeholder = t("lg.optionalNote"))
+                    }
+                }
+                // METHOD — five compact chips on one horizontal scroller
+                Text(t("lg.paymentMethod"), fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
+                Row(Modifier.padding(top = 4.dp)) {
+                    ScrollRow {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(
+                                "cash" to t("lg.pmCash"),
+                                "bank" to t("lg.pmBank"),
+                                "card" to t("lg.pmCard"),
+                                "mobile" to t("lg.pmMobile"),
+                                "other" to t("cd.other"),
+                            ).forEach { (m, lbl) ->
+                                Chip(label = lbl, compact = true, active = method == m, onPress = { method = m })
+                            }
                         }
-                        // v1.6.41 — a payment made from the calculator can
-                        // never go above the remaining total ("when making
-                        // payment it should not go above the total for the
-                        // individual line and for the sum total")
-                        if (maxAmount != null && v > maxAmount + 0.005) {
-                            Toasts.toast(t("lg.paymentTooMuch"), "error")
-                            return@Btn
-                        }
-                        AppStore.addPayment(
-                            entryId,
-                            Payment(
-                                id = uid(),
-                                amount = v,
-                                date = payDate.ifEmpty { todayStr() },
-                                method = method,
-                                note = payNote.ifEmpty { null },
-                                lineIdx = lineIdx,
-                                createdAt = now(),
+                    }
+                }
+                // SAVE — one small full-width button
+                Row(Modifier.padding(top = 10.dp)) {
+                    Btn(
+                        small = true, label = t("act.save"),
+                        onPress = {
+                            val v = amount.replace(",", ".").toDoubleOrNull()
+                            if (v == null || v <= 0) {
+                                Toasts.toast(t("lg.amountGreaterThanZero"), "error")
+                                return@Btn
+                            }
+                            // v1.6.41 — a payment made from the calculator can
+                            // never go above the remaining total ("when making
+                            // payment it should not go above the total for the
+                            // individual line and for the sum total")
+                            if (maxAmount != null && v > maxAmount + 0.005) {
+                                Toasts.toast(t("lg.paymentTooMuch"), "error")
+                                return@Btn
+                            }
+                            AppStore.addPayment(
+                                entryId,
+                                Payment(
+                                    id = uid(),
+                                    amount = v,
+                                    date = payDate.ifEmpty { todayStr() },
+                                    method = method,
+                                    note = payNote.ifEmpty { null },
+                                    lineIdx = lineIdx,
+                                    createdAt = now(),
+                                )
                             )
-                        )
-                        Toasts.toast(t("lg.paymentAdded"))
-                        close()
-                    })
+                            Toasts.toast(t("lg.paymentAdded"))
+                            close()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             }
         }

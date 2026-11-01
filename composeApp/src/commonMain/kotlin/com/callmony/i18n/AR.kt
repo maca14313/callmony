@@ -390,6 +390,8 @@ internal val AR: Map<String, String> = mapOf(
     "ee.calcCopyTotal" to "نسخ الإجمالي",
     // v1.6.41 — the pay chip beside every total / the payment cap
     "ee.calcPay" to "دفع",
+    "ee.calcLeft" to "متبقي",
+    "ee.calcItems" to "عناصر",
     "ee.calcEntryLocked" to "مقفل",
     "ee.calcEntryUnlocked" to "مفتوح",
     "lg.paymentTooMuch" to "لا يمكن أن تتجاوز الدفعة المبلغ المتبقي",

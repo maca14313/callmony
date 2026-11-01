@@ -392,6 +392,8 @@ internal val EN: Map<String, String> = mapOf(
     "ee.calcCopyTotal" to "Copy total",
     // v1.6.41 — the pay chip beside every total / the payment cap
     "ee.calcPay" to "Pay",
+    "ee.calcLeft" to "left",
+    "ee.calcItems" to "Items",
     "ee.calcEntryLocked" to "Locked",
     "ee.calcEntryUnlocked" to "Unlocked",
     "lg.paymentTooMuch" to "The payment cannot go above the remaining amount",

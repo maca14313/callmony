@@ -1,6 +1,7 @@
 package com.callmony.ui.components
 
 import android.content.Context
+import android.graphics.Rect
 import android.text.Editable
 import android.text.SpannableString
 import android.text.Spanned
@@ -10,6 +11,7 @@ import android.view.Gravity
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -234,9 +236,45 @@ actual fun NoImeNumberField(
  * InputMethodManager.startInputInner returns before any focus search can
  * run. The native long-press menu (Copy · Cut · Paste · Select all) and
  * the selection handles still work — the Editor's ActionMode path never
- * touches the InputConnection. */
+ * touches the InputConnection.
+ * v1.6.45 — report #1 ("i nottised sometimes the regular native keyboard
+ * shows up on the numbers mode"): the QWERTY field in TEXT mode is served
+ * by the system IME, and toggling Aa → 123 removes it from composition —
+ * but "sometimes" nothing tells the IME to go away (the toggle's ime.hide
+ * races the field's disposal; returning to the app re-shows the keyboard
+ * for the last served editor; OEM builds keep it on focus change). This
+ * view NEVER wants the soft keyboard under ANY circumstance, so it now
+ * force-hides the IME on EVERY focus gain AND every window-focus gain —
+ * the two moments a keyboard can attach to it — deterministically, on the
+ * view itself, no matter which path made the field appear. */
 internal class NoImeEditText(ctx: Context) : EditText(ctx) {
     init { NoImeFieldProbe.last = this }
+
+    /** v1.6.45 — test hook: how many force-hide attempts have fired (the
+     * regression battery pins that the focus paths really call it). */
+    internal var imeHideAttempts = 0
+        private set
+
+    private fun forceHideIme() {
+        imeHideAttempts++
+        try {
+            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
+            val token = windowToken ?: return
+            imm.hideSoftInputFromWindow(token, 0)
+        } catch (_: Exception) {
+            // a view that cannot talk to the IMM must never crash for it
+        }
+    }
+
+    override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
+        super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+        if (gainFocus) forceHideIme()
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (hasWindowFocus) forceHideIme()
+    }
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? = null
 }

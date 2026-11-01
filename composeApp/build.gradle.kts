@@ -118,8 +118,17 @@ android {
         // door the chain entered through — this field never talks to an IME)
         // and every text write leaves the apply phase as a posted
         // single-flight runnable.
-        versionCode = 55
-        versionName = "1.6.44"
+        // v1.6.45 — the six-report round: the system keyboard can never
+        // attach to the number field (force-hide on every focus/window
+        // focus gain), payments live ONLY on the sum total (its Pay button
+        // opens the modal with the full-note history list + the compact
+        // record sheet) with a LEFT CIRCLE counting unpaid lines FIFO, the
+        // text/number colour separation survives save + edit
+        // (textModeRanges drives both renderers), the record-payment sheet
+        // is compact, and the copy buttons include the totals (the sum
+        // total's copy exports the whole ledger).
+        versionCode = 56
+        versionName = "1.6.45"
     }
 
     signingConfigs {

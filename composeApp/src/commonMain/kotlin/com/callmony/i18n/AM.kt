@@ -443,6 +443,8 @@ internal val AM: Map<String, String> = mapOf(
     "ee.calcCopyTotal" to "ጠቅላላ ቅዳ",
     // v1.6.41 — the pay chip beside every total / the payment cap
     "ee.calcPay" to "ክፈል",
+    "ee.calcLeft" to "ቀርቷል",
+    "ee.calcItems" to "እቃዎች",
     "ee.calcEntryLocked" to "ተቆልቋል",
     "ee.calcEntryUnlocked" to "ተከፍቷል",
     "lg.paymentTooMuch" to "ክፍያው ከቀሪው መጠን በላይ ሊሆን አይችልም",

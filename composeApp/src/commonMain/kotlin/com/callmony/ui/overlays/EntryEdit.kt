@@ -1,6 +1,7 @@
 package com.callmony.ui.overlays
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -54,6 +55,10 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.OffsetMapping
@@ -61,7 +66,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -87,7 +91,9 @@ import com.callmony.lib.quoteTextNumbers
 import com.callmony.lib.r2
 import com.callmony.lib.serializeCalcLedger
 import com.callmony.lib.serializeCalcNote
+import com.callmony.lib.calcLeftCount
 import com.callmony.lib.sumPayments
+import com.callmony.lib.textModeRanges
 import com.callmony.lib.ownerNameOf
 import com.callmony.lib.todayStr
 import com.callmony.lib.uid
@@ -475,16 +481,19 @@ fun EntryEditOverlay(
        line comes back down into the active field. Whatever was being
        typed commits first, so nothing is ever lost. v1.6.40 — the caret
        lands at the END (the right place to keep writing), the line's
-       payments stay recorded at entry level, and the QWERTY marks reset
-       (the serialized text carries its own quote markers). v1.6.41 —
-       undoable. */
+       payments stay recorded at entry level, and the QWERTY marks are
+       REBUILT FROM THE LINE'S OWN TOKENS (v1.6.45 report #3: quoted
+       numbers and every word — letters only ever come from the text
+       keyboard — are TEXT-mode content, so the blue/ink separation an
+       edited line shows is exactly the one it had when it was committed).
+       v1.6.41 — undoable. */
     fun unlockCalcLine(i: Int) {
         val line = calcLines.getOrNull(i) ?: return
         pushUndo()
         val rest = calcLines.filterIndexed { j, _ -> j != i }
         calcLines = if (calcNote.tokens.isNotEmpty() || calcNote.text.isNotBlank()) rest + calcNote else rest
         calcText = displayCalcNote(line)
-        qwertyIdx = emptySet()
+        qwertyIdx = textModeRanges(calcText)
         calcSelection = TextRange(calcText.length)
         calcMode = "text"
         focusToken++
@@ -619,7 +628,13 @@ fun EntryEditOverlay(
        untouched: nothing re-serializes it, so nothing can disappear.
        v1.6.41 — every switch bumps the CARET TOKEN: the freshly armed
        field takes focus again (the num field via real view focus — no
-       IME — the text field with the system keyboard). */
+       IME — the text field with the system keyboard).
+       v1.6.45 — report #1 ("i nottised sometimes the regular native
+       keyboard shows up on the numbers mode"): the QWERTY field's focus
+       is CLEARED FIRST, so the system IME loses its served editor before
+       the field leaves composition — plus the num field itself now
+       force-hides the IME on every focus / window-focus gain (see
+       NoImeEditText). The toggle's own ime.hide() stays as a third belt. */
     val calcFieldFocus = remember { FocusRequester() }
     val ime = LocalSoftwareKeyboardController.current
     val focusMgr = LocalFocusManager.current
@@ -629,6 +644,7 @@ fun EntryEditOverlay(
     }
     fun enterNumMode() {
         if (calcMode != "num") {
+            focusMgr.clearFocus() // the QWERTY editor drops focus BEFORE it dies
             calcMode = "num"
             focusToken++
             ime?.hide()
@@ -1110,10 +1126,17 @@ fun EntryEditOverlay(
             // v1.6.40: locked lines show their FULL calculation (no
             // clamping — "it should show the full calculation when it is
             // locked, dont clamp it"), the lock is a NOTICEABLE brand pill
-            // that begs to be pressed (long-press unlocks), each line's own
-            // total opens the SAME payments modal as the last total (tap or
-            // long-press), and removing a line asks through the custom
-            // confirmation modal.
+            // that begs to be pressed (long-press unlocks), and removing a
+            // line asks through the custom confirmation modal.
+            // v1.6.45 — report #2 ("i want the pay btn to be just on the sum
+            // total not on the individual entry, and the history of the
+            // payment also should show when the payment btn is clicked on
+            // the sum total not on the individual entry"): the per-line PAY
+            // chip, the per-line payment-history block and the total's
+            // tap-to-pay are ALL GONE — payments live on the SUM TOTAL's
+            // own Pay button + payments modal now. The line keeps its lock
+            // pill (long-press = edit), its date, its total and its paid
+            // hint.
             Column(
                 Modifier
                     .weight(1f)
@@ -1179,8 +1202,12 @@ fun EntryEditOverlay(
                             // the FULL calculation, wrapping — never clamped;
                             // v1.6.41 — the TEXT-mode pieces (the quoted
                             // numbers) render in their own colour;
-                            // v1.6.42 — the commit DATE rides beside it
-                            // (report #10), the date marker never in the text
+                            // v1.6.45 — report #3: EVERY text-mode token
+                            // (words included — letters only ever come from
+                            // the text keyboard) keeps its colour, saved or
+                            // edited; v1.6.42 — the commit DATE rides beside
+                            // it (report #10), the date marker never in the
+                            // text
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(
                                     coloredLockedLine(displayCalcNote(line), C.sub, TEXTMODE_COLOR),
@@ -1195,68 +1222,12 @@ fun EntryEditOverlay(
                                     )
                                 }
                             }
-                            // v1.6.42 — the entry's PAYMENT HISTORY sits BEFORE
-                            // (above) ITS TOTAL as a list with the FULL note
-                            // (report #8), headed by the lock state — locked
-                            // and unlocked entries render in their own colours
-                            // with a clear separation — and separated from the
-                            // total by a hairline.
-                            if (linePays.isNotEmpty()) {
-                                Column(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 3.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(
-                                            if (isUnlocked) C.brand.copy(alpha = 0.08f)
-                                            else C.cardAlt.copy(alpha = 0.4f),
-                                        )
-                                        .testTag("calcLineHist:$i"),
-                                ) {
-                                    Row(
-                                        Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 2.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    ) {
-                                        MdiIcon(
-                                            if (isUnlocked) "lock-off-outline" else "lock-outline",
-                                            11,
-                                            if (isUnlocked) C.green else C.sub,
-                                        )
-                                        Text(
-                                            t(if (isUnlocked) "ee.calcEntryUnlocked" else "ee.calcEntryLocked"),
-                                            fontSize = F.tiny.sp,
-                                            color = if (isUnlocked) C.green else C.sub,
-                                            fontWeight = FontWeight.ExtraBold,
-                                        )
-                                    }
-                                    var run = lineTotal
-                                    linePays.forEachIndexed { pi, p ->
-                                        run = r2((run ?: 0.0) - p.amount)
-                                        PaymentHistoryRow(
-                                            date = com.callmony.lib.fd(p.date),
-                                            amount = p.amount,
-                                            note = p.note,
-                                            remaining = run,
-                                            tag = "calcLinePayHist:$i:$pi",
-                                            onOpen = { if (isUnlocked) payModal = i },
-                                        )
-                                    }
-                                }
-                                Box(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 2.dp)
-                                        .height(1.dp)
-                                        .background(C.line),
-                                )
-                            }
                             // v1.6.41 — the line's OWN total sits BELOW the
                             // calculation ("when calculation line is locked it
                             // own total should show below it not on it's
-                            // side"); v1.6.42 — the PAY button beside it is
-                            // ENABLED ONLY ON THE UNLOCKED ENTRY (locked =
-                            // greyed, inert), same for tapping the total.
+                            // side"); v1.6.45 — a pure read-out: payments are
+                            // made on the SUM TOTAL's Pay button, so the
+                            // number is inert text with its paid hint.
                             if (lineShown != null) {
                                 Row(
                                     Modifier.padding(top = 2.dp),
@@ -1267,26 +1238,24 @@ fun EntryEditOverlay(
                                         money(lineShown),
                                         fontSize = F.small.sp, color = if (isUnlocked) C.ink else C.faint, fontWeight = FontWeight.SemiBold,
                                         modifier = Modifier
-                                            .combinedClickable(
-                                                enabled = isUnlocked,
-                                                onClick = { payModal = i },
-                                                onLongClick = { vibrate(longArrayOf(20)); payModal = i },
-                                            )
                                             .testTag("calcLineTotal:$i")
                                             .padding(horizontal = 2.dp, vertical = 2.dp),
                                     )
-                                    PayChip(tag = "calcLinePay:$i", enabled = isUnlocked) { payModal = i }
                                     if (linePaid > 0.005) {
                                         Text(
                                             "${t("lg.paid")} ${money(linePaid)}",
                                             fontSize = F.tiny.sp, color = C.faint,
+                                            modifier = Modifier.testTag("calcLinePaid:$i"),
                                         )
                                     }
                                 }
                             }
                         }
-                        // COPY — every calculation line, locked or unlocked
-                        CopyBtn(tag = "calcLineCopy:$i") { copyLineText(displayCalcNote(line)) }
+                        // COPY — every calculation line, locked or unlocked;
+                        // v1.6.45 — report #6: the copy INCLUDES the line's
+                        // own total ("why the copy btn is not including the
+                        // total")
+                        CopyBtn(tag = "calcLineCopy:$i") { copyLineText(lineCopyText(displayCalcNote(line), lineTotal)) }
                         // v1.6.40 — removing asks first (custom modal)
                         DeleteBtn(tag = "calcLineDelete:$i") {
                             Confirm.ask(t("ee.calcDeleteLineTitle"), t("ee.calcDeleteLineMsg"), t("act.delete"), danger = true) { ok ->
@@ -1383,8 +1352,9 @@ fun EntryEditOverlay(
                         }
                     }
                     // the active line's copy icon — locked or not, same as
-                    // every committed line (v1.6.39)
-                    CopyBtn(tag = "calcActiveCopy") { copyLineText(calcText) }
+                    // every committed line (v1.6.39); v1.6.45 — report #6:
+                    // the copy INCLUDES the live running total
+                    CopyBtn(tag = "calcActiveCopy") { copyLineText(lineCopyText(calcText, calcTotal)) }
                 }
                 // the live result + the show-your-work steps
                 if (calcTotal != null) {
@@ -1406,14 +1376,21 @@ fun EntryEditOverlay(
             // THE TOTAL — v1.6.40: ALWAYS AFTER THE LAST CALCULATION ENTRY
             // (it lived at the top of the canvas before), printed straight
             // on the paper — NO different background.
-            // v1.6.42 — REPORT #6 ("I don't want Pay chip and payment history
-            // beside and bottom of the sum total. it enough if it shows how
-            // much is paid and how much is remaining like it do now"): the
-            // sum total is a pure read-out again — NO pay chip beside it, NO
-            // payment-history rows under it, no payments modal. Payments are
-            // made on the individual entries (their own unlocked PAY chips,
-            // report #8); the sum simply shows Paid · Remaining once anything
-            // is paid.
+            // v1.6.42 — the sum total is a pure read-out (Paid · Remaining
+            // only; payments were made on the individual entries then).
+            // v1.6.45 — report #2 ("i want the pay btn to be just on the sum
+            // total not on the individual entry, and the history of the
+            // payment also should show when the payment btn is clicked on
+            // the sum total … and need also a cercle that shows how many
+            // left"): the sum total carries THE PAY BUTTON now (it opens the
+            // payments modal — the history with the full notes + the record
+            // form), plus the LEFT CIRCLE — a ring that fills as the total
+            // is paid, with the count of still-unpaid lines in its centre —
+            // and report #6's COPY button, which copies EVERYTHING in the
+            // calculator (every line with its date and total, the payments
+            // with their notes, and the sum total itself).
+            val leftCount = calcLeftCount(calcLines, entryPayments)
+            val paidFraction = if (effAmount > 0.005) (paidTotal / effAmount).toFloat().coerceIn(0f, 1f) else 0f
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -1434,17 +1411,61 @@ fun EntryEditOverlay(
                         Text("+ ${money(itemsSum)}", fontSize = F.tiny.sp, color = C.faint)
                     }
                     Text(money(effAmount), fontSize = F.body.sp, fontWeight = FontWeight.ExtraBold, color = C.brand)
+                    // v1.6.45 — report #6: a copy button FOR THE SUM TOTAL
+                    // AND EVERYTHING IN IT (the whole ledger export — lines,
+                    // dates, totals, payments with notes, paid · remaining)
+                    CopyBtn(tag = "calcTotalCopy") {
+                        copyLineText(
+                            formatCalcLedgerExport(
+                                calcLines, entryPayments, itemsSum, effAmount, paidTotal,
+                                totalLabel = t("ee.calcTotal"), paidLabel = t("lg.paid"),
+                                remainingLabel = t("lg.remaining"), itemsLabel = t("lg.items"),
+                            )
+                        )
+                    }
                 }
-                if (paidTotal > 0.005) {
-                    Text(
-                        "${t("lg.paid")} ${money(paidTotal)} · ${t("lg.remaining")} ${money(remainingTotal)}",
-                        fontSize = F.tiny.sp, color = C.faint,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("calcTotalPaidLine")
-                            .padding(horizontal = 4.dp),
-                        textAlign = TextAlign.End,
-                    )
+                // the PAY + LEFT-CIRCLE row — payments live HERE, on the sum
+                // total (v1.6.45 report #2)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp)
+                        .testTag("calcTotalPayRow"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (calcLines.isNotEmpty()) {
+                        LeftCircle(
+                            count = leftCount,
+                            fraction = paidFraction,
+                            fullyPaid = remainingTotal <= 0.005 && paidTotal > 0.005,
+                            tag = "calcLeftCircle",
+                            countTag = "calcLeftCount",
+                        )
+                    }
+                    Column {
+                        if (paidTotal > 0.005) {
+                            Text(
+                                "${t("lg.paid")} ${money(paidTotal)} · ${t("lg.remaining")} ${money(remainingTotal)}",
+                                fontSize = F.tiny.sp, color = C.faint,
+                                modifier = Modifier.testTag("calcTotalPaidLine"),
+                            )
+                        }
+                        Text(
+                            "$leftCount ${t("ee.calcLeft")}",
+                            fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.testTag("calcLeftLabel"),
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    PayChip(
+                        tag = "calcTotalPay",
+                        // v1.6.45 — always armed: the chip is the HISTORY's
+                        // entry point too — a fully-paid total still opens
+                        // the modal (its own Pay action simply hides when
+                        // nothing remains)
+                        enabled = effAmount > 0,
+                    ) { payModal = -1 }
                 }
             }
             // THE SMALL CONTROLS — ON the canvas, on the NEXT LINE under
@@ -1547,16 +1568,15 @@ fun EntryEditOverlay(
         } // end of the RTL-aware canvas
     }
 
-    // v1.6.40 — THE SHARED PAYMENTS MODAL (the long-press target of the
-    // LAST total and of every individual line total): the ORIGINAL amount
-    // of the calculation stays the headline, the list shows every recorded
-    // payment WITH THE NEW AMOUNT after it ("the new amount history"), and
-    // Make payment / Copy sit at the bottom. The editor stays open beneath
-    // it; recording a payment updates the total's paid · remaining live.
-    // v1.6.41 — COMPACT ("its modal should be very compact it has to much
-    // things in it"): one summary line, tight history rows, one action row
-    // — and the Make payment opens the sheet CAPPED at the remaining
-    // ("when making payment it should not go above the total"). RTL-aware.
+    // v1.6.40 — THE SHARED PAYMENTS MODAL. v1.6.45 — report #2: the modal
+    // opens from THE SUM TOTAL'S PAY BUTTON ONLY (the per-line chips and
+    // history blocks are gone from the canvas): the list shows EVERY
+    // recorded payment — date, amount, the new amount it left, and the
+    // FULL note (wrapping, never ellipsized) — under one compact summary
+    // line, with Pay (the compact record sheet, capped at the remaining)
+    // and Copy (the WHOLE ledger export, report #6) beneath. The editor
+    // stays open under it; recording a payment updates the total's
+    // paid · remaining + the LEFT CIRCLE live. RTL-aware.
     if (payModal != null) {
         val modalLine = payModal?.takeIf { it >= 0 }
         val modalOriginal = if (modalLine != null) {
@@ -1578,10 +1598,12 @@ fun EntryEditOverlay(
                 Text(
                     "${t("ee.calcOriginal")}: ${money(modalOriginal)} · ${t("lg.paid")} ${money(modalPaid)} · ${t("lg.remaining")} ${money(modalRemain)}",
                     fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 6.dp),
+                    modifier = Modifier.padding(bottom = 6.dp).testTag("calcModalSummary"),
                 )
-                // THE PAYMENT HISTORY — tight rows, the note and the new
-                // amount it left on each
+                // THE PAYMENT HISTORY — tight rows, the note IN FULL and the
+                // new amount it left on each (v1.6.45 report #2: "the history
+                // of payment should show with modal that have lists with
+                // their full notes")
                 if (modalPays.isEmpty()) {
                     Text(t("ee.calcNoPayments"), fontSize = F.tiny.sp, color = C.faint, modifier = Modifier.padding(bottom = 6.dp))
                 } else {
@@ -1598,16 +1620,28 @@ fun EntryEditOverlay(
                         )
                     }
                 }
-                // THE ACTIONS — one compact row
+                // THE ACTIONS — one compact row (the Pay action only shows
+                // while something remains; the history list + Copy stay)
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Btn(
-                        small = true, label = "${t("ee.calcPay")} · ${money(modalPayAmount)}", variant = "soft",
-                        onPress = { makePaymentOf(modalPayAmount, modalLine) },
-                        modifier = Modifier.weight(1f),
-                    )
+                    if (modalRemain > 0.005) {
+                        Btn(
+                            small = true, label = "${t("ee.calcPay")} · ${money(modalPayAmount)}", variant = "soft",
+                            onPress = { makePaymentOf(modalPayAmount, modalLine) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                     Btn(
                         small = true, label = t("ee.calcCopyTotal"), variant = "secondary",
-                        onPress = { copyLineText(money(modalOriginal)); payModal = null },
+                        onPress = {
+                            copyLineText(
+                                formatCalcLedgerExport(
+                                    calcLines, entryPayments, itemsSum, effAmount, paidTotal,
+                                    totalLabel = t("ee.calcTotal"), paidLabel = t("lg.paid"),
+                                    remainingLabel = t("lg.remaining"), itemsLabel = t("lg.items"),
+                                )
+                            )
+                            payModal = null
+                        },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -1945,23 +1979,131 @@ private fun PaymentHistoryRow(
     }
 }
 
-/* v1.6.41 — the locked line's text with the TEXT-mode pieces (the quoted
-   numbers) coloured — pure, so the harness pins the span layout. */
+/* v1.6.41 — the locked line's text with the TEXT-mode pieces coloured.
+   v1.6.45 — report #3 ("the colour separation for what is written in both
+   mode should be always there wether it is saved or edited"): the ranges
+   come from textModeRanges — QUOTED numbers AND every word (letters can
+   only come from the text keyboard) — the exact same rule the active
+   field's qwerty marks are rebuilt from, so a line looks identical live,
+   committed and re-edited. Pure, so the harness pins the span layout. */
 internal fun coloredLockedLine(s: String, base: Color, quoted: Color): AnnotatedString {
     val b = AnnotatedString.Builder(s)
     if (s.isNotEmpty()) b.addStyle(SpanStyle(color = base), 0, s.length)
+    val marks = textModeRanges(s)
     var i = 0
     while (i < s.length) {
-        if (s[i] == ' ') { i++; continue }
-        var j = i
-        while (j < s.length && s[j] != ' ') j++
-        val tok = s.substring(i, j)
-        if (tok.length >= 2 && tok.startsWith("\"") && tok.endsWith("\"")) {
+        if (i in marks) {
+            var j = i
+            while (j < s.length && j in marks) j++
             b.addStyle(SpanStyle(color = quoted), i, j)
+            i = j
+        } else {
+            i++
         }
-        i = j
     }
     return b.toAnnotatedString()
+}
+
+/* v1.6.45 — report #6 ("why the copy btn is not including the total"):
+   a line's copy carries its OWN total when it has one. Pure. */
+internal fun lineCopyText(display: String, total: Double?): String =
+    if (total != null) "$display = ${money(total)}" else display
+
+/** v1.6.45 — report #6 ("it should be a copy btn for the sum total and
+ *  everything in there"): the WHOLE calculator as plain text — every
+ *  committed line with its date and its own total, each line's payments
+ *  (date · amount · note · what it left), the line items sum, the TOTAL,
+ *  and Paid · Remaining. Labels are passed in translated so the export
+ *  speaks the app's language; pure, so the harness pins the format. */
+internal fun formatCalcLedgerExport(
+    lines: List<CalcNote>,
+    payments: List<com.callmony.model.Payment>,
+    itemsSum: Double,
+    total: Double,
+    paid: Double,
+    totalLabel: String,
+    paidLabel: String,
+    remainingLabel: String,
+    itemsLabel: String,
+): String {
+    val sb = StringBuilder()
+    lines.forEachIndexed { i, line ->
+        val lt = evalCalcTokens(line.tokens)
+        sb.append(lineCopyText(displayCalcNote(line), lt))
+        if (line.date.isNotEmpty()) sb.append("  ·  ${com.callmony.lib.fd(line.date)}")
+        sb.append('\n')
+        var run = lt
+        payments.filter { it.lineIdx == i }.forEach { p ->
+            run = r2((run ?: 0.0) - p.amount)
+            sb.append("    − ${money(p.amount)}  ·  ${com.callmony.lib.fd(p.date)}")
+            if (!p.note.isNullOrBlank()) sb.append("  —  ${p.note!!.trim()}")
+            if (run != null) sb.append("  (→ ${money(run)})")
+            sb.append('\n')
+        }
+    }
+    // v1.6.45 — ENTRY-LEVEL payments (made against the sum total) walk the
+    // grand total down after the lines, each with its date and full note
+    var entryRun = r2(total - sumPayments(payments.filter { it.lineIdx != null }))
+    payments.filter { it.lineIdx == null }.forEach { p ->
+        entryRun = r2(entryRun - p.amount)
+        sb.append("    − ${money(p.amount)}  ·  ${com.callmony.lib.fd(p.date)}")
+        if (!p.note.isNullOrBlank()) sb.append("  —  ${p.note!!.trim()}")
+        sb.append("  (→ ${money(entryRun)})\n")
+    }
+    if (itemsSum > 0.0) sb.append("$itemsLabel: ${money(itemsSum)}\n")
+    sb.append("$totalLabel: ${money(total)}\n")
+    sb.append("$paidLabel: ${money(paid)} · $remainingLabel: ${money(r2(total - paid))}\n")
+    return sb.toString().trimEnd('\n')
+}
+
+/* v1.6.45 — report #2 ("need also a cercle that shows how many left"):
+   a compact ring on the sum-total row that fills as the total gets paid
+   (brand while paying, green when fully paid), with the COUNT of
+   still-unpaid lines in its centre — one glance answers "how many
+   left". */
+@Composable
+private fun LeftCircle(
+    count: Int,
+    fraction: Float,
+    fullyPaid: Boolean,
+    tag: String,
+    countTag: String,
+) {
+    val C = C()
+    Box(
+        Modifier
+            .size(36.dp)
+            .testTag(tag),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val stroke = 3.dp.toPx()
+            val inset = stroke / 2 + 0.5f
+            val arcSize = Size(size.width - 2 * inset, size.height - 2 * inset)
+            val topLeft = Offset(inset, inset)
+            drawArc(
+                color = C.line,
+                startAngle = 0f, sweepAngle = 360f, useCenter = false,
+                topLeft = topLeft, size = arcSize,
+                style = Stroke(stroke, cap = StrokeCap.Round),
+            )
+            if (fraction > 0f) {
+                drawArc(
+                    color = if (fullyPaid) C.green else C.brand,
+                    startAngle = -90f, sweepAngle = 360f * fraction, useCenter = false,
+                    topLeft = topLeft, size = arcSize,
+                    style = Stroke(stroke, cap = StrokeCap.Round),
+                )
+            }
+        }
+        Text(
+            "$count",
+            fontSize = F.small.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = if (fullyPaid) C.green else C.brand,
+            modifier = Modifier.testTag(countTag),
+        )
+    }
 }
 
 /** v1.6.41 — one UNDO snapshot of the calculator editing state. */

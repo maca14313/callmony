@@ -201,10 +201,9 @@ class EntryEditCalcV1640Test {
             totalNode.config.contains(androidx.compose.ui.semantics.SemanticsActions.OnClick),
         )
 
-        // unlock the entry → its pay chip opens the modal
-        rule.onNodeWithTag("calcLineLock:0").performClick()
-        rule.waitForIdle()
-        rule.onNodeWithTag("calcLinePay:0").performClick()
+        // v1.6.45 — payments live on THE SUM TOTAL: its Pay chip opens the
+        // modal directly (no lock gate, no per-line chip)
+        rule.onNodeWithTag("calcTotalPay").performClick()
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodes(hasText("${t("ee.calcOriginal")}: 300 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
@@ -230,11 +229,9 @@ class EntryEditCalcV1640Test {
             rule.onAllNodesWithTag("calcLine:0").fetchSemanticsNodes().isNotEmpty()
         }
 
-        // unlock the entry → its modal → Pay (the editor saves first and
-        // STAYS OPEN)
-        rule.onNodeWithTag("calcLineLock:0").performClick()
-        rule.waitForIdle()
-        rule.onNodeWithTag("calcLinePay:0").performClick()
+        // the sum total's Pay chip → the payments modal → Pay (the editor
+        // saves first and STAYS OPEN)
+        rule.onNodeWithTag("calcTotalPay").performClick()
         rule.waitForIdle()
         val makePay = rule.onAllNodes(hasText(t("ee.calcPay"), substring = true) and hasClickAction())
         rule.waitUntil(timeoutMillis = 15000) { makePay.fetchSemanticsNodes().isNotEmpty() }

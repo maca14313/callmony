@@ -223,18 +223,16 @@ class EntryEditCalcTabTest {
             rule.onAllNodes(hasText("300 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
 
-        // the total's PAYMENTS MODAL no longer opens on the sum (v1.6.42 —
-        // it is a pure read-out); an UNLOCKED line's own modal does
-        rule.onNodeWithTag("calcLineLock:0").performClick()
-        rule.waitForIdle()
-        rule.onNodeWithTag("calcLineTotal:0").performClick()
+        // v1.6.45 — the SUM TOTAL's Pay chip opens the payments modal (the
+        // one and only pay entry point now; the modal's Pay then opens the
+        // record sheet — the entry is saved first, the editor stays open
+        // beneath it); dismiss via the modal's own close (back) to end the
+        // test clean
+        rule.onNodeWithTag("calcTotalPay").performClick()
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodes(hasText(t("ee.calcOriginal"), substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
-        // the modal's Make payment opens the payment sheet (the entry
-        // is saved first — the editor stays open beneath it); dismiss
-        // via the modal's own close (back) to end the test clean
         back()
         rule.waitForIdle()
 
@@ -304,23 +302,23 @@ class EntryEditCalcTabTest {
         listOf("2", "0", "0").forEach { key(it) }
         nextLine()
 
-        // v1.6.42 — LOCKED: the line's own total is inert (the pay gate)
-        rule.onNodeWithTag("calcLineTotal:0").performClick()
+        // v1.6.45 — the line's own total is INERT TEXT (payments live on
+        // the sum total; tapping a line's total can never open a modal).
+        // Inert text merges into the row — the tag needs the unmerged tree.
+        rule.onNodeWithTag("calcLineTotal:0", useUnmergedTree = true).performClick()
         rule.waitForIdle()
         assertEquals(
-            "a locked line's total must not open the modal",
+            "the line's total must not open any modal",
             0,
-            rule.onAllNodes(hasText("${t("ee.calcLineTotal")} · 200 Br", substring = true)).fetchSemanticsNodes().size,
+            rule.onAllNodes(hasText("${t("ee.calcOriginal")}", substring = true)).fetchSemanticsNodes().size,
         )
 
-        // tap the LOCK PILL → unlocked → tap the LINE'S OWN total → the
-        // shared payments modal is up (the line's own original 200 headline)
-        rule.onNodeWithTag("calcLineLock:0").performClick()
-        rule.waitForIdle()
-        rule.onNodeWithTag("calcLineTotal:0").performClick()
+        // the SUM TOTAL's Pay chip opens the payments modal (the shared
+        // original 300 headline)
+        rule.onNodeWithTag("calcTotalPay").performClick()
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("${t("ee.calcLineTotal")} · 200 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("${t("ee.calcTotal")} · 200 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
         assertTrue(
             "the modal shows the original amount row",

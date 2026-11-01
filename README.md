@@ -104,8 +104,28 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.44 (versionCode 55)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.45 (versionCode 56)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
+
+- **1.6.45** — THE SIX-REPORT ROUND: (1) the system keyboard can never
+  attach to the number field — NoImeEditText force-hides the IME on every
+  focus / window-focus gain (the QWERTY's IME lingering after the Aa → 123
+  toggle, the app-resume re-show, OEM focus churn — all dead at the view
+  level); (2) payments live ONLY on the sum total: its always-armed Pay
+  button opens the payments modal (the full-note history list + Pay +
+  Copy) and the LEFT CIRCLE beside it counts still-unpaid lines, settling
+  them FIFO as payments land (ring fills with the paid fraction, green
+  when done); (3) the text/number colour separation survives save AND
+  edit — textModeRanges (quoted numbers + any word: letters only ever
+  come from the text keyboard) drives both the locked line's colours and
+  the marks rebuilt on unlock; (4) the record-payment sheet is compact —
+  four tight rows, the fill action inside the amount field, date + note
+  side by side, method chips, one small save; (5) dates on every line and
+  every payment everywhere; (6) the copy buttons include the totals — a
+  line copies with its own total, and the sum total's copy button exports
+  the WHOLE ledger (lines + dates + totals + payments with notes + paid ·
+  remaining). Tests 217/217.
+
 
 - **1.6.44** — THE FIREWALL'S FIRST CAPTURE DECODED, THE NUMBER-MODE CRASH
   KILLED AT THE ROOT: the user pasted back the v1.6.43 crash report and its

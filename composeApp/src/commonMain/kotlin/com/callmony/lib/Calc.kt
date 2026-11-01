@@ -647,6 +647,64 @@ private fun serializeCalcNoteBody(n: CalcNote): String {
     return sb.toString().trim()
 }
 
+/** v1.6.45 — WHICH characters of a SAVED/RESTORED line were written in
+ *  TEXT mode (report #3: "in the individual entrys the colour separation
+ *  for what is written in both mode should be always there wether it is
+ *  saved or edited"): a whitespace token is text-mode content when it is
+ *  QUOTED (the persisted marker of a number typed on the QWERTY — those
+ *  never calculate) OR contains a LETTER — letters can ONLY come from the
+ *  text keyboard, the numeric keypad has none. Pure and shared by BOTH
+ *  renderers — the locked line's coloured text (saved) and the QWERTY mark
+ *  set rebuilt when a line is unlocked back into the active field (edited)
+ *  — so the blue/ink separation is identical live, saved and re-edited. */
+fun textModeRanges(raw: String): Set<Int> {
+    if (raw.isBlank()) return emptySet()
+    val out = mutableSetOf<Int>()
+    var i = 0
+    val n = raw.length
+    while (i < n) {
+        if (raw[i].isWhitespace()) { i++; continue }
+        var j = i
+        while (j < n && !raw[j].isWhitespace()) j++
+        val tok = raw.substring(i, j)
+        val quoted = tok.length >= 2 && tok.startsWith("\"") && tok.endsWith("\"")
+        val hasLetter = tok.any { it.isLetter() }
+        if (quoted || hasLetter) for (k in i until j) out.add(k)
+        i = j
+    }
+    return out
+}
+
+/** v1.6.45 — HOW MANY LEDGER LINES ARE STILL LEFT TO PAY (the LEFT CIRCLE
+ *  on the sum total, report #2: "need also a cercle that shows how many
+ *  left"): payments are made against the SUM TOTAL now, so they settle
+ *  the lines OLDEST-FIRST (FIFO, exactly how a real ledger reads): each
+ *  line first spends the payments ATTRIBUTED to it (the pre-v1.6.45
+ *  lineIdx ones), then the entry-level payments walk down the ledger in
+ *  order. A line is "left" when some of its own total remains uncovered.
+ *  Pure, so the harness pins it. */
+fun calcLeftCount(lines: List<CalcNote>, payments: List<Payment>): Int {
+    // only the ENTRY-LEVEL payments walk the ledger FIFO — a payment
+    // ATTRIBUTED to a line (the pre-v1.6.45 lineIdx ones) spends on that
+    // line alone and never double-counts through the walk
+    var budget = sumPayments(payments.filter { it.lineIdx == null })
+    var left = 0
+    lines.forEachIndexed { i, line ->
+        val lt = evalCalcTokens(line.tokens) ?: return@forEachIndexed // annotations never count
+        var covered = sumPayments(payments.filter { it.lineIdx == i })
+        if (budget > 0.005) {
+            val need = r2(lt - covered)
+            if (need > 0) {
+                val give = if (budget < need) budget else need
+                covered = r2(covered + give)
+                budget = r2(budget - give)
+            }
+        }
+        if (r2(lt - covered) > 0.005) left++
+    }
+    return left
+}
+
 /** v1.6.40 — QUOTE the numbers that were written in TEXT mode, so the
  *  parser treats them as annotations instead of math (the user's report:
  *  "if it is in text mode it shouldn't calculate the number that was
