@@ -455,6 +455,23 @@ object RootBottomOverlays {
     val overlayTopPx = androidx.compose.runtime.mutableStateOf(-1f)
 }
 
+/* v1.6.47 — THE ROOT FAB SLOT (user report: "when the ledger tab is
+   clicked or the ledger is open, it should show cercular + btn on bottom
+   right side that opens new canvas"): the ledger's circular ＋ pins to the
+   content area's BOTTOM-END while a ledger surface is showing — above the
+   tab screens AND above the whole overlay stack (the contact detail is an
+   overlay that embeds its own LedgerSection), but never above the sheets
+   that render after it. The LEDGER SECTION itself publishes its FAB here
+   (DisposableEffect — leaving the ledger segment clears it), and the
+   SHELL decides visibility: while any overlay sits ABOVE a ledger surface
+   (the entry editor, search, settings…) the slot stays empty-handed, so
+   the ＋ never floats over a screen it does not belong to. The FAB's own
+   Box is transparent and consumes no input — only the circle is
+   clickable. */
+object RootFab {
+    val content = androidx.compose.runtime.mutableStateOf<(@Composable () -> Unit)?>(null)
+}
+
 @Composable
 fun HostSheetsHost() {
     // v1.6.35 — the same stale-keyboard rule as OverlayHost: a host sheet

@@ -325,13 +325,14 @@ class EntryEditCalcV1640Test {
             rule.onAllNodes(hasText("250 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
 
-        // v1.6.46 — the keypad's wide ENTER key: commit + save (report #1 +
-        // #3) — the same action as Next, driven from the keypad
-        rule.onNodeWithTag("calcKeyEnter").performClick()
+        // v1.6.46 — Next commits + saves; v1.6.47 — Next is the ONE key that
+        // does both (the keypad's enter became the plain newline, "the inter
+        // btn is not the next btn") — driven from the canvas's Next button
+        rule.onNodeWithTag("calcBtnNext").performClick()
         rule.waitForIdle()
         // the editor + canvas are STILL up
         assertTrue(
-            "enter must not close the editor",
+            "next must not close the editor",
             rule.onAllNodesWithTag("calcBtnNext").fetchSemanticsNodes().isNotEmpty(),
         )
         // ...and the keypad stays up in num mode

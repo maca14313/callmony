@@ -104,8 +104,31 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.46 (versionCode 57)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.47 (versionCode 58)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
+
+- **1.6.47** — THE SIX-REPORT ROUND: (1) the keypad's bottom row is the
+  native keyboard's — a WIDE blank SPACE bar with a normal-width ENTER key
+  on the right, and the enter is THE NEWLINE, not the Next button (it
+  commits the line and nothing else; Next owns the commit + save);
+  (2) the "sometimes the native keyboard opens in number mode" leak is
+  dead at the WINDOW level — `UiPlatform.setImeSuppressed` pins
+  SOFT_INPUT_STATE_ALWAYS_HIDDEN while the calc keypad is up (the payment
+  sheet's fields leaving the IME on screen with no served editor was the
+  path the field-level hide could never reach); (3) every line leads with
+  a changeable PREFIX — • by default, 1. 2. 3., or none — cycled by the
+  chip beside the canvas title and persisted as `LedgerEntry.calcPrefix`;
+  (4) THE PAYMENTS FREEZE is killed: the old unlock-time payment snapshot
+  froze the list (payments recorded later never showed, and the next save
+  WIPED them from the store) — the remap is now keyed by payment ID and
+  the live store list flows through it; (5) the vestigial LOCK PILL is
+  gone (its tap flipped a state that stopped meaning anything when
+  per-line pay moved to the sum total) — a plain tap on a line does
+  nothing, a deliberate long-press edits; (6) the LEDGER grows the
+  circular ＋ FAB (bottom-right, opens a NEW CANVAS in one tap) and CANVAS
+  CARDS — the payment-percentage ring, the status (✓ Paid / Paid 200 /
+  500 / Pending), the canvas title and the calculation's first line on
+  every card. Tests 228/228.
 
 - **1.6.46** — THE FIVE-REPORT ROUND: (1) the keypad's wide ENTER bar —
   full-width in its own action row UNDER the − key ("just like in the

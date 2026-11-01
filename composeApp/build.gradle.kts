@@ -137,8 +137,8 @@ android {
         // LedgerEntry.calcTitle, headlining the collapsed band and the
         // export), and the calculation fonts de-bulk (the active line
         // renders the light 18sp cut, SemiBold totals, lighter keypad).
-        versionCode = 57
-        versionName = "1.6.46"
+        versionCode = 58
+        versionName = "1.6.47"
     }
 
     signingConfigs {

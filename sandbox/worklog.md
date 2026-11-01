@@ -749,3 +749,23 @@ Recon: sandbox reset again (local at v1.6.25); ff-only to origin/main b895a78 (v
 
 Stage Summary:
 - All five reports fixed; suite 220/220 green; the v1.6.44/45 crash and IME defenses untouched. Live: https://github.com/maca14313/callmony/releases/tag/v1.6.46
+
+---
+
+
+## Session 2026-11-01 (b) — v1.6.47 THE SIX-REPORT ROUND (space + plain-newline enter · window-level IME firewall · line prefixes · payments freeze killed · lock pill retired · ledger ＋ FAB + canvas cards)
+
+User message: sandbox/chat-logs/2026-11-01-v1.6.47-space-enter-ime-prefix-payments-ledger-fab.md
+
+- #1 enter: the bottom row is the native keyboard's — wide blank SPACE bar + normal-width ENTER; onEnter = commitCalcLine() only (the NEWLINE — never saves; Next owns commit+save); pad stays 264dp with six ~37dp rows.
+- #2 IME: new UiPlatform.setImeSuppressed — AndroidUi pins SOFT_INPUT_STATE_ALWAYS_HIDDEN + IMM hide on the window while wantPad (the payment-sheet-close leak the field-level hide couldn't reach); MainActivity registers the activity into AndroidUi; dispose restores.
+- #3 prefixes: chip beside the title cycles • → 1. → none; lines + active line carry it; new LedgerEntry.calcPrefix (absent = bullet); rides the autosave key.
+- #4 payments: paymentsOverride snapshot REPLACED by payRemap keyed by payment ID — live store list flows through it; the unlock/delete remaps only shift the payments that existed; recorded payments show live and survive saves (the wipe is dead).
+- #5 modals: lock pill + unlockedLines REMOVED (tap on a line does nothing; deliberate long-press still edits); documented the deliberate modals (Pay chip = payments modal, ✕ = delete confirm, field long-press = native paste menu).
+- #6 ledger: RootFab slot in the shell (above overlays, hidden under them) + 54dp brand circle FAB → Overlay.EntryEdit(null, ownerId) opens with the canvas up; EntryCard became a canvas card (pay-% ring, status pill, calcTitle head, first-line preview).
+- Suite 228/228 (NEW V1647 ×6 + LedgerFabV1647 ×2; V1646/V1640 updated to the new enter contract). Harness lessons: unmerged tree for tags under clickable rows; unique amounts across classes (185/225/230, 305/315, 430, 888/890); adjacent numbers serialize with an explicit +.
+- Build 1.6.47 vc58: assembleRelease; aapt com.callmony vc58 1.6.47; apksigner same key 2f6d65be…869ad; APK SHA-256 fa99f3c9…89e9a23; both iOS targets compile.
+- Delivered: releases/callmony-1.6.47-release.apk committed + pushed; GitHub Release v1.6.47 published with the APK; copy at /home/z/my-project/download/callmony-1.6.47-release.apk; README + CHANGELOG + chat-log committed.
+
+Stage Summary:
+- All six reports fixed; suite 228/228 green; the crash firewall + v1.6.44/45 IME defenses untouched and extended. Live: https://github.com/maca14313/callmony/releases/tag/v1.6.47

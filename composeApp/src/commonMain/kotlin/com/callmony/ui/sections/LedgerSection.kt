@@ -1,5 +1,6 @@
 package com.callmony.ui.sections
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,6 +33,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -81,6 +90,7 @@ import com.callmony.ui.kit.Money
 import com.callmony.ui.kit.focusRing
 import com.callmony.ui.kit.pressVeil
 import com.callmony.ui.kit.Pill
+import com.callmony.ui.kit.RootFab
 import com.callmony.ui.kit.SectionHeader
 import com.callmony.ui.kit.Toasts
 import com.callmony.ui.components.ScrollRow
@@ -108,6 +118,20 @@ fun LedgerSection(ownerId: String) {
     val lists = AppStore.state.lists
     val contacts = AppStore.state.deviceContacts
     val ownerName = ownerNameOf(ownerId)
+
+    // v1.6.47 — THE CIRCULAR ＋ (report: "when the ledger tab is clicked
+    // or the ledger is open, it should show cercular + btn on bottom right
+    // side that opens new canvas"): published into the shell's ROOT FAB
+    // slot while THIS ledger is showing — the shell pins it bottom-end of
+    // the content area and hides it whenever an overlay sits above the
+    // ledger surface. Tapping it opens the entry editor, which opens with
+    // the full-screen calculation canvas already up — a NEW CANVAS, ready
+    // to type on. Leaving the ledger segment (or the whole screen)
+    // disposes this effect and clears the slot.
+    DisposableEffect(ownerId) {
+        RootFab.content.value = { LedgerFab(ownerId = ownerId) }
+        onDispose { RootFab.content.value = null }
+    }
 
     val mine = remember(entries, ownerId) { entries.filter { it.ownerId == ownerId && it.deletedAt == null } }
     val myGroups = remember(groups, ownerId) { groups.filter { it.ownerId == ownerId && it.deletedAt == null } }
@@ -446,6 +470,100 @@ fun LedgerSection(ownerId: String) {
 
 /* ---------------- entry card ---------------- */
 
+/* v1.6.47 — THE LEDGER'S CIRCULAR ＋ FAB (report: "when the ledger tab is
+ *  clicked or the ledger is open, it should show cercular + btn on bottom
+ *  right side that opens new canvas"): a 54dp brand circle pinned to the
+ *  content area's bottom-end by the shell's RootFab slot. The full-size
+ *  transparent wrapper never consumes input — only the circle itself is
+ *  clickable. The tap opens the entry editor, which starts with the
+ *  full-screen calculation canvas already up (calcExpanded defaults
+ *  true) — one tap, one NEW CANVAS. */
+@Composable
+private fun LedgerFab(ownerId: String) {
+    val C = C()
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 18.dp, bottom = 18.dp)
+                .size(54.dp)
+                .shadow(6.dp, RoundedCornerShape(27.dp))
+                .clip(RoundedCornerShape(27.dp))
+                .background(C.brand)
+                .clickable {
+                    com.callmony.ui.kit.vibrate(longArrayOf(10))
+                    UiStore.open(Overlay.EntryEdit(null, ownerId))
+                }
+                .testTag("ledgerFabNewCanvas"),
+            contentAlignment = Alignment.Center,
+        ) { MdiIcon("plus", 26, C.onBrand) }
+    }
+}
+
+/* v1.6.47 — THE ENTRY CARD'S PAY-PERCENTAGE RING (report: "it should list
+ *  the existing canvas rectangular cards and it should show the status,
+ *  persontage of tge payment and other information on it"): the canvas
+ *  card's own mini of the sum-total ring — the sweep fills with the PAID
+ *  fraction (green once fully paid) and the centre carries the PERCENTAGE
+ *  PAID, so every card answers "how much of this one is settled" at a
+ *  glance. Entries with nothing payable keep the old kind icon instead. */
+@Composable
+private fun PayPctRing(entry: LedgerEntry) {
+    val C = C()
+    val total = entry.amount
+    val paid = entry.payments.sumOf { it.amount }
+    val fraction = if (total > 0.005) (paid / total).toFloat().coerceIn(0f, 1f) else 0f
+    val pctPaid = if (total > 0.005) {
+        kotlin.math.round((paid / total) * 100.0).toInt().coerceIn(0, 100)
+    } else 0
+    val done = total > 0.005 && paid >= total - 0.005
+    val kind = entry.kind ?: (if (entry.type == "credit") "credit" else "debit")
+    if (total <= 0.005) {
+        // nothing payable — the kind badge the card always carried
+        Box(
+            Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (entry.type == "credit") C.brandSoft else C.red.copy(alpha = 0.1f)),
+            contentAlignment = Alignment.Center,
+        ) { MdiIcon(KIND_ICON[kind] ?: "swap-vertical", 17, if (entry.type == "credit") C.brand else C.red) }
+        return
+    }
+    Box(
+        Modifier
+            .size(34.dp)
+            .testTag("entryCardPct:${entry.id}"),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val stroke = 3.dp.toPx()
+            val inset = stroke / 2 + 0.5f
+            val arcSize = Size(size.width - 2 * inset, size.height - 2 * inset)
+            val topLeft = Offset(inset, inset)
+            drawArc(
+                color = C.line,
+                startAngle = 0f, sweepAngle = 360f, useCenter = false,
+                topLeft = topLeft, size = arcSize,
+                style = Stroke(stroke, cap = StrokeCap.Round),
+            )
+            if (fraction > 0f) {
+                drawArc(
+                    color = if (done) C.green else C.brand,
+                    startAngle = -90f, sweepAngle = 360f * fraction, useCenter = false,
+                    topLeft = topLeft, size = arcSize,
+                    style = Stroke(stroke, cap = StrokeCap.Round),
+                )
+            }
+        }
+        Text(
+            "$pctPaid%",
+            fontSize = F.tiny.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (done) C.green else C.brand,
+        )
+    }
+}
+
 @Composable
 fun EntryCard(entry: LedgerEntry, running: Double) {
     val C = C()
@@ -457,6 +575,18 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
     val overdue = entry.dueDate != null && entry.dueDate!! < todayStr() && remaining > 0.005
     val dueToday = entry.dueDate == todayStr() && remaining > 0.005
     val kind = entry.kind ?: (if (entry.type == "credit") "credit" else "debit")
+    // v1.6.47 — THE CANVAS CARD (report: "it should list the existing
+    // canvas rectangular cards"): the title prefers the entry's own CANVAS
+    // TITLE (calcTitle), and the subtitle carries the calculation's first
+    // line (the @date marker stripped) so the card reads like the canvas
+    // it opens into.
+    val cardTitle = entry.calcTitle?.takeIf { it.isNotBlank() }
+        ?: entry.items.singleOrNull()?.name?.takeIf { it.isNotBlank() }
+        ?: t("lg.kind${kind.replaceFirstChar { it.uppercase() }}")
+    val calcPreview = entry.exprNote
+        ?.lineSequence()?.firstOrNull()
+        ?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), "")?.trim()
+        ?.takeIf { it.isNotEmpty() }
 
     Card(Modifier.padding(bottom = 6.dp)) {
         Column {
@@ -468,38 +598,48 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Box(
-                    Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (entry.type == "credit") C.brandSoft else C.red.copy(alpha = 0.1f)),
-                    contentAlignment = Alignment.Center,
-                ) { MdiIcon(KIND_ICON[kind] ?: "swap-vertical", 17, if (entry.type == "credit") C.brand else C.red) }
+                // v1.6.47 — the PAY-PERCENTAGE RING leads the card (the
+                // "persontage of tge payment" the report asks for)
+                PayPctRing(entry)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            // v1.6.27 — a QUICK ITEM (single line item) shows
-                            // ITS LABEL as the card title ("an item that just
-                            // has label and price"); multi-item entries keep
-                            // the kind label, as before.
-                            entry.items.singleOrNull()?.name?.takeIf { it.isNotBlank() }
-                                ?: t("lg.kind${kind.replaceFirstChar { it.uppercase() }}"),
+                            // v1.6.47 — the CANVAS TITLE heads the card
+                            // ("other information on it"); the quick-item
+                            // label and the kind label follow it.
+                            cardTitle,
                             fontSize = F.body.sp,
                             fontWeight = FontWeight.Bold,
                             color = C.ink,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
                         )
                         entry.category?.let { Pill(it, "brand") }
                     }
                     Text(
-                        "${fd(entry.date)} · ${t("lg.balance")} ${compactMoney(running)}" +
-                            (if (entry.payments.isNotEmpty()) " · ${t("lg.payments")} ${entry.payments.size}" else ""),
+                        listOfNotNull(
+                            // v1.6.47 — the canvas's first line previews the
+                            // calculation itself
+                            calcPreview,
+                            fd(entry.date),
+                            "${t("lg.balance")} ${compactMoney(running)}",
+                            if (entry.payments.isNotEmpty()) "${t("lg.payments")} ${entry.payments.size}" else null,
+                        ).joinToString(" · "),
                         fontSize = F.tiny.sp,
                         color = C.sub,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    // v1.6.47 — THE STATUS, ON the card (report: "it should
+                    // show the status"): fully paid ✓, part-paid shows how
+                    // much of the total, unpaid shows what is pending.
+                    when {
+                        remaining > 0.005 && paid > 0.005 -> Pill("${t("lg.paid")} ${compactMoney(paid)} / ${compactMoney(entry.amount)}", "amber")
+                        remaining > 0.005 -> Pill("${t("lg.pending")} ${compactMoney(remaining)}", "red")
+                        remaining < -0.005 -> Pill("${t("lg.overpaidBy")} ${compactMoney(-remaining)}", "green")
+                        else -> Pill("✓ ${t("lg.paid")}", "green")
+                    }
                 }
                 Money(signed, signed = true, colorize = true, size = 15, weight = FontWeight.ExtraBold, compact = true)
                 // v1.6.25 — VISIBLE EDIT ICON (user report: "on the credit or

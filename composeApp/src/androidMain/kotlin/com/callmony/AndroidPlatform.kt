@@ -1004,6 +1004,15 @@ class AndroidKv(private val ctx: Context) : KvStore {
 class AndroidUi(private val ctx: Context) : UiPlatform {
     override val osDarkFlow = MutableStateFlow(currentSystemDark())
 
+    /* v1.6.47 — the live Activity, registered by MainActivity itself, so
+       the window-level IME suppression (setImeSuppressed) can reach the
+       window. Never read before registration — every path is guarded. */
+    var activity: android.app.Activity? = null
+
+    /** the soft-input mode the window carried BEFORE the calculator's
+     *  keypad suppressed the IME (restored on the lift). */
+    private var savedSoftInputMode: Int? = null
+
     private fun currentSystemDark(): Boolean =
         (ctx.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
             android.content.res.Configuration.UI_MODE_NIGHT_YES
@@ -1024,6 +1033,38 @@ class AndroidUi(private val ctx: Context) : UiPlatform {
                 // navigation bar tint on 26+ handled by window; no-op here
             } catch (_: Exception) {}
         }
+    }
+
+    /* v1.6.47 — the number keypad's IME firewall (user report: "sometimes
+       the netiv keyboard opens up on the number mode why"). While the
+       calculator's 12-key grid is up the WINDOW itself refuses the soft
+       keyboard: SOFT_INPUT_STATE_ALWAYS_HIDDEN survives app switches and
+       OEM re-shows, and the immediate IMM hide clears anything already on
+       screen from a just-closed sheet. false restores the saved mode so
+       the QWERTY (text mode / title / every other field) is untouched.
+       Exception-proof by construction — a window that cannot be reached
+       simply keeps whatever it had. */
+    override fun setImeSuppressed(suppress: Boolean) {
+        val act = activity ?: return
+        try {
+            val w = act.window ?: return
+            if (suppress) {
+                if (savedSoftInputMode == null) savedSoftInputMode = w.attributes.softInputMode
+                @Suppress("DEPRECATION")
+                w.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
+                // clear anything the last editor left on screen RIGHT NOW
+                try {
+                    val imm = act.getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+                    imm?.hideSoftInputFromWindow(w.decorView.windowToken, 0)
+                } catch (_: Exception) {}
+            } else {
+                savedSoftInputMode?.let { mode ->
+                    @Suppress("DEPRECATION")
+                    w.setSoftInputMode(mode)
+                }
+                savedSoftInputMode = null
+            }
+        } catch (_: Exception) {}
     }
 }
 

@@ -259,18 +259,29 @@ fun EntryEditOverlay(
     // AND on every individual line total): -1 = the grand total,
     // i = ledger line i, null = closed.
     var payModal by remember { mutableStateOf<Int?>(null) }
-    // v1.6.42 — the PAYMENT GATE per entry (report #8: "the pay btn beside
-    // the individual entrys should only be enabled after it gets
-    // unlocked"): the indices of the ledger lines whose lock pill has been
-    // TAPPED to unlock. A freshly committed line is locked — its PAY chip
-    // sits disabled; one tap on the pill flips the whole entry block to the
-    // unlocked look (different colour + separation) and arms the chip.
-    // Long-press still pulls the line into the active field for editing,
-    // exactly as before.
-    var unlockedLines by remember { mutableStateOf(setOf<Int>()) }
-    // v1.6.40 — payments remapped after a line was deleted or unlocked
-    // (its payments stay recorded at entry level; later lines shift down)
-    var paymentsOverride by remember { mutableStateOf<List<com.callmony.model.Payment>?>(null) }
+    /* v1.6.47 — THE LOCK PILL + unlockedLines are GONE (report #5: "when
+       tauch around the text, number toggle or the sum total, some wird
+       different modals opens up. why"): the pill's TAP used to flip a
+       locked/unlocked state whose only remaining job since v1.6.45 (when
+       per-line pay chips moved to the sum total) was recolouring the
+       block — a tap "around the text" that changed colours for no
+       reason. The line now renders as one calm block: prefix · text ·
+       date · own total, with copy and delete at the end; a DELIBERATE
+       long-press still pulls the line into the active field for editing
+       (the documented v1.6.39 affordance). */
+    /* v1.6.47 — report #4 ("when i add payment sometimes it adds it,
+       sometimes it not, or it will not update it") — THE PAYMENTS VIEW
+       FREEZE, killed. The old `paymentsOverride` SNAPSHOT the payment
+       list the moment a line was unlocked or deleted, and every later
+       read (the total's paid · remaining, the modal's history, every
+       buildEntry save) kept serving that frozen copy: a payment recorded
+       through the sheet never showed up ("it will not update it"), and
+       the NEXT save PERSISTED the stale list — wiping the recorded
+       payment right out of the store ("sometimes it not"). The remap is
+       now keyed by PAYMENT ID: the live store list is remapped through
+       it on every read, so payments recorded later pass through
+       untouched and ride every save. */
+    var payRemap by remember { mutableStateOf<Map<String, Int?>?>(null) }
     var catManager by remember { mutableStateOf(false) }
     var showOwnerPicker by remember { mutableStateOf(false) }
     // v1.6.46 — THE CANVAS TITLE (report #4: "in top if the canvas put a
@@ -280,9 +291,19 @@ fun EntryEditOverlay(
     // decodes without it) and the collapsed band shows it in the label's
     // place once something is typed.
     var calcTitle by remember { mutableStateOf(existing?.calcTitle ?: "") }
+    // v1.6.47 — THE LINE PREFIX (report #3: "show bullet or numbers at the
+    // start of each line that the user can change"): every committed line
+    // (and the active one) leads with • / 1. 2. 3. / nothing. The choice
+    // cycles through the small chip beside the canvas title and rides the
+    // entry as calcPrefix (absent = bullet, the shown-by-default style the
+    // report asks for; old rows decode without it, backups mirror it).
+    var prefixMode by remember { mutableStateOf(existing?.calcPrefix ?: "bullet") }
     // v1.6.46 — THE SAVE PULSE (report #3: "the next btn also should do
-    // what the save btn does"): NEXT and the keypad's ENTER commit the
-    // line AND persist the entry. The save runs one recomposition LATER
+    // what the save btn does"): NEXT commits the line AND persists the
+    // entry — and since v1.6.47 it is the ONE key that does both: the
+    // keypad's ENTER became the plain newline (report #1, "the inter btn
+    // is not the next btn"), so persistence rides Next, the autosave,
+    // and the leave-time create. The save runs one recomposition LATER
     // (the pulse bumps, this effect fires) because the entry must be built
     // from the POST-commit ledger — a same-handler save() would read the
     // pre-commit derived values (effAmount, calcNote…) captured before
@@ -308,7 +329,15 @@ fun EntryEditOverlay(
     // Record payment), and what each ledger line has been paid. The total
     // and the paid lines show paid · remaining — "the make payment is not
     // reducing the amount" now visibly reduces it.
-    val entryPayments = paymentsOverride ?: currentEntry?.payments ?: emptyList()
+    // v1.6.47 — the payments, LIVE through the remap (see payRemap): the
+    // store's own list, with line indices shifted for deleted / unlocked
+    // lines — a payment recorded while the editor is open shows up here
+    // the same frame and rides every save (the freeze was report #4).
+    val entryPayments = remember(payRemap, currentEntry) {
+        val live = currentEntry?.payments ?: emptyList()
+        val m = payRemap ?: return@remember live
+        live.map { p -> if (p.id in m) p.copy(lineIdx = m[p.id]) else p }
+    }
     val paidTotal = sumPayments(entryPayments)
     val remainingTotal = r2(effAmount - paidTotal)
 
@@ -333,6 +362,10 @@ fun EntryEditOverlay(
         ).ifEmpty { null },
         // v1.6.46 — the canvas title rides along (blank never persists)
         calcTitle = calcTitle.trim().ifEmpty { null },
+        // v1.6.47 — the line-prefix choice rides along (bullet is the
+        // default when absent, so it only really needs writing for the
+        // non-default styles — but writing it always keeps reopening exact)
+        calcPrefix = prefixMode,
         groupId = groupSel,
         refs = refs,
         createdAt = currentEntry?.createdAt ?: now(),
@@ -400,7 +433,7 @@ fun EntryEditOverlay(
         // Save button gone that would have silently dropped every
         // item-rename on backing out (caught by the v1.6.46 battery)
         items.map { "${it.id}:${it.qty}:${it.price}:${it.name}" }, date, dueOn, dueDate, category, method, note, owner, groupSel,
-        refs.map { "${it.type}:${it.id}" }, type, kindSel, calcTitle,
+        refs.map { "${it.type}:${it.id}" }, type, kindSel, calcTitle, prefixMode,
         entryPayments.map { "${it.id}:${it.amount}:${it.lineIdx}" },
     ).toString() else ""
     if (autoKey.value == null) autoKey.value = currentKey
@@ -415,7 +448,8 @@ fun EntryEditOverlay(
             }
         }
     }
-    // v1.6.46 — THE SAVE PULSE: Next / ENTER bumped it after a commit; the
+    // v1.6.46 — THE SAVE PULSE: Next bumped it after a commit (v1.6.47:
+    // ENTER no longer feeds it — the enter key is the plain newline); the
     // effect runs one recomposition later, so the entry is built from the
     // post-commit ledger (see commitAndSave). The silent save self-guards
     // (<= 0 never persists).
@@ -534,9 +568,10 @@ fun EntryEditOverlay(
        dont need the save btn"): whatever was being typed locks into the
        ledger (if anything) and the entry persists — one beat later, after
        the recomposition, through the save pulse (see savePulse above).
-       The keypad's wide ENTER key (report #1) and the canvas's Next button
-       both route here; the Save button is GONE — nothing else in the
-       editor saves explicitly any more. */
+       The canvas's Next button is the one route here since v1.6.47 (the
+       keypad's ENTER key became the plain newline — report #1, "the inter
+       btn is not the next btn"); the Save button is GONE — nothing else
+       in the editor saves explicitly any more. */
     fun commitAndSave() {
         if (calcText.isNotBlank()) commitCalcLine()
         savePulse++
@@ -562,12 +597,15 @@ fun EntryEditOverlay(
         calcSelection = TextRange(calcText.length)
         calcMode = "text"
         focusToken++
-        paymentsOverride = entryPayments.map { p -> if (p.lineIdx == i) p.copy(lineIdx = null) else p }
-        unlockedLines = unlockedLines.mapNotNull { u -> when {
-            u == i -> null
-            u > i -> u - 1
-            else -> u
-        } }.toSet()
+        // v1.6.47 — the line's payments move to ENTRY LEVEL through the
+        // ID-keyed remap (the live list keeps flowing — report #4)
+        payRemap = (payRemap ?: emptyMap()) + entryPayments.mapNotNull { p ->
+            when (val li = p.lineIdx) {
+                null -> null
+                i -> p.id to null
+                else -> if (li > i) p.id to (li - 1) else null
+            }
+        }.toMap()
     }
 
     /* v1.6.40 — deleting a line goes through the custom CONFIRMATION modal;
@@ -578,18 +616,15 @@ fun EntryEditOverlay(
         if (i !in calcLines.indices) return
         pushUndo()
         calcLines = calcLines.filterIndexed { j, _ -> j != i }
-        paymentsOverride = entryPayments.map { p ->
-            when {
-                p.lineIdx == i -> p.copy(lineIdx = null)
-                p.lineIdx != null && p.lineIdx > i -> p.copy(lineIdx = p.lineIdx - 1)
-                else -> p
+        // v1.6.47 — later lines' payments shift down through the ID-keyed
+        // remap; the deleted line's stay recorded at entry level (live)
+        payRemap = (payRemap ?: emptyMap()) + entryPayments.mapNotNull { p ->
+            when (val li = p.lineIdx) {
+                null -> null
+                i -> p.id to null
+                else -> if (li > i) p.id to (li - 1) else null
             }
-        }
-        unlockedLines = unlockedLines.mapNotNull { u -> when {
-            u == i -> null
-            u > i -> u - 1
-            else -> u
-        } }.toSet()
+        }.toMap()
     }
 
     fun copyLineText(text: String) {
@@ -645,6 +680,16 @@ fun EntryEditOverlay(
         when (k) {
             "AC" -> { calcText = ""; qwertyIdx = emptySet() }
             "⌫" -> onCalcEdited(calcText.trimEnd().dropLast(1), false)
+            // v1.6.47 — THE SPACE KEY (report #1: "in its row add the space
+            // key too"): the keypad's bottom row is the native keyboard's
+            // — a wide blank space bar beside the enter key. It appends ONE
+            // space (never doubles one), through the undoable funnel, with
+            // no text-keyboard mark — keypad numbers keep calculating.
+            "␣" -> {
+                if (calcText.isNotEmpty() && !calcText.endsWith(" ")) {
+                    onCalcEdited(calcText + " ", false)
+                }
+            }
             ".", in "0".."9" -> {
                 val sep = if (calcText.isNotEmpty() && (calcText.last().isLetter() || calcText.last() == '%')) " " else ""
                 onCalcEdited(calcText + sep + k, false)
@@ -1071,12 +1116,33 @@ fun EntryEditOverlay(
         // hide it while a payments modal / host sheet is open so nothing
         // floats under it.
         val wantPad = calcMode == "num" && payModal == null && HostSheets.stack.isEmpty()
+        // v1.6.47 — report #2 ("sometimes the netiv keyboard opens up on
+        // the number mode why"): the window-level IME SUPPRESSION arms with
+        // the keypad itself. The v1.6.45 fix force-hid the IME on the num
+        // field's own focus / window-focus gains — but the leak's remaining
+        // path never touches that field: open the payment sheet from the
+        // total's Pay chip (its amount/note fields take the focus and raise
+        // the system QWERTY), close it, and the keypad comes BACK while the
+        // IME LINGERS over it — no editor served, no focus change, nothing
+        // to re-hide it. So while the keypad is up the WINDOW itself now
+        // refuses the soft keyboard (SOFT_INPUT_STATE_ALWAYS_HIDDEN + an
+        // immediate IMM hide — see UiPlatform.setImeSuppressed), and the
+        // suppression lifts the moment the keypad leaves. The Compose-side
+        // ime.hide() stays as the instant belt.
         LaunchedEffect(wantPad) {
+            if (wantPad) {
+                try { ime?.hide() } catch (_: Exception) {}
+                com.callmony.platform.Platform.ui.setImeSuppressed(true)
+            } else {
+                com.callmony.platform.Platform.ui.setImeSuppressed(false)
+            }
             RootBottomOverlays.content.value = if (wantPad) {
-                // v1.6.46 — onEnter: the keypad's wide ENTER key commits the
-                // line and saves the entry (report #1 + #3) — the same
-                // commitAndSave the canvas's Next button runs
-                { CalcKeypadHostContent(onKey = { calcKey(it) }, onEnter = { commitAndSave() }, rtl = isRTL(currentLang().code)) }
+                // v1.6.47 — onEnter: the keypad's enter key is the NORMAL
+                // enter (report #1: "the inter btn is not the next btn") —
+                // a NEWLINE: it commits the active line and hands over a
+                // fresh one, and nothing else. Next (and only Next) owns
+                // the commit + SAVE of v1.6.46 report #3.
+                { CalcKeypadHostContent(onKey = { calcKey(it) }, onEnter = { if (calcText.isNotBlank()) commitCalcLine() }, rtl = isRTL(currentLang().code)) }
             } else {
                 RootBottomOverlays.overlayTopPx.value = -1f
                 null
@@ -1087,6 +1153,9 @@ fun EntryEditOverlay(
                 RootBottomOverlays.content.value = null
                 RootBottomOverlays.lift.value = 0.dp
                 RootBottomOverlays.overlayTopPx.value = -1f
+                // the IME suppression cannot outlive the canvas — a leaked
+                // ALWAYS_HIDDEN window would eat the QWERTY in text mode
+                com.callmony.platform.Platform.ui.setImeSuppressed(false)
             }
         }
         // v1.6.43 — the band of the content area the root keypad covers is
@@ -1229,6 +1298,29 @@ fun EntryEditOverlay(
                         modifier = Modifier.fillMaxWidth().testTag("calcTitleField"),
                     )
                 }
+                // v1.6.47 — THE PREFIX TOGGLE (report #3: "show bullet or
+                // numbers at the start of each line that the user can
+                // change"): a small chip between the title and Σ that
+                // cycles • → 1. → — (none). Its glyph is the style itself,
+                // so what you see is what every line gets.
+                val nextPrefix = when (prefixMode) { "bullet" -> "number"; "number" -> "none"; else -> "bullet" }
+                Box(
+                    Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(if (prefixMode != "none") C.brandSoft else C.card)
+                        .border(1.dp, if (prefixMode != "none") C.brand else C.line, RoundedCornerShape(9.dp))
+                        .clickable { prefixMode = nextPrefix }
+                        .testTag("calcPrefixBtn"),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        when (prefixMode) { "number" -> "1."; "none" -> "—"; else -> "•" },
+                        fontSize = F.tiny.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (prefixMode != "none") C.brand else C.faint,
+                    )
+                }
                 Box(
                     Modifier
                         .size(28.dp)
@@ -1254,9 +1346,16 @@ fun EntryEditOverlay(
             // the sum total not on the individual entry"): the per-line PAY
             // chip, the per-line payment-history block and the total's
             // tap-to-pay are ALL GONE — payments live on the SUM TOTAL's
-            // own Pay button + payments modal now. The line keeps its lock
-            // pill (long-press = edit), its date, its total and its paid
-            // hint.
+            // own Pay button + payments modal now. The line keeps its
+            // date, its total and its paid hint.
+            // v1.6.47 — report #3 ("show bullet or numbers at the start of
+            // each line that the user can change"): every committed line
+            // leads with the canvas's PREFIX — a bullet • by default, or
+            // its 1. 2. 3. number, or nothing — chosen by the small chip
+            // beside the canvas title (calcPrefixBtn) and persisted with
+            // the entry as calcPrefix. Report #5 — the LOCK PILL is GONE
+            // (see its note above): the block renders one calm strip and
+            // only a deliberate long-press edits.
             Column(
                 Modifier
                     .weight(1f)
@@ -1271,25 +1370,17 @@ fun EntryEditOverlay(
                     val linePaid = sumPayments(linePays)
                     val lineRemain = lineTotal?.let { r2(it - linePaid) }
                     val lineShown = if (linePaid > 0.005) lineRemain else lineTotal
-                    // v1.6.42 — the PAY GATE: a committed line is LOCKED (its
-                    // pay chip + total sit disabled); tapping the lock pill
-                    // UNLOCKS the entry — different colours, separation, and
-                    // the pay chip arms ("should only be enabled after it gets
-                    // unlocked"). Long-press still edits the line.
-                    val isUnlocked = i in unlockedLines
+                    // v1.6.47 — the line's PREFIX (bullet / number / none),
+                    // same shape the active line below carries
+                    val linePrefix = calcPrefixOf(prefixMode, i)
                     Row(
                         Modifier
                             .fillMaxWidth()
                             .padding(top = 6.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            // v1.6.42 — the locked/unlocked SEPARATION: the
-                            // whole entry block carries its state colour
-                            .background(
-                                if (isUnlocked) C.brand.copy(alpha = 0.07f)
-                                else C.cardAlt.copy(alpha = 0.35f),
-                            )
+                            .background(C.cardAlt.copy(alpha = 0.35f))
                             .combinedClickable(
-                                onClick = {}, // long-press unlocks into editing (v1.6.39)
+                                onClick = {}, // a plain tap does NOTHING (report #5 — no surprise modals)
                                 onLongClick = { vibrate(longArrayOf(20)); unlockCalcLine(i) },
                             )
                             .testTag("calcLine:$i")
@@ -1297,27 +1388,18 @@ fun EntryEditOverlay(
                         verticalAlignment = Alignment.Top,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        // v1.6.40 — the lock is a NOTICEABLE pill; v1.6.42 — a
-                        // TAP flips the entry's lock state (the pay gate),
-                        // long-press still unlocks the line into editing. The
-                        // icon + colour say the state: brand padlock = locked,
-                        // green open padlock = unlocked (payments enabled).
-                        Box(
-                            Modifier
-                                .size(30.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (isUnlocked) C.green.copy(alpha = 0.14f) else C.brandSoft)
-                                .border(1.dp, if (isUnlocked) C.green else C.brand, RoundedCornerShape(10.dp))
-                                .combinedClickable(
-                                    onClick = {
-                                        vibrate(longArrayOf(14))
-                                        unlockedLines = if (isUnlocked) unlockedLines - i else unlockedLines + i
-                                    },
-                                    onLongClick = { vibrate(longArrayOf(20)); unlockCalcLine(i) },
-                                )
-                                .testTag("calcLineLock:$i"),
-                            contentAlignment = Alignment.Center,
-                        ) { MdiIcon(if (isUnlocked) "lock-off-outline" else "lock-outline", 16, if (isUnlocked) C.green else C.brand) }
+                        // v1.6.47 — THE PREFIX at the start of each line
+                        // (report #3): • or "1." — small, faint, aligned with
+                        // the calculation's first line
+                        if (linePrefix != null) {
+                            Text(
+                                linePrefix,
+                                fontSize = F.small.sp,
+                                color = C.faint,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.width(20.dp).testTag("calcLinePrefix:$i"),
+                            )
+                        }
                         Column(Modifier.weight(1f)) {
                             // the FULL calculation, wrapping — never clamped;
                             // v1.6.41 — the TEXT-mode pieces (the quoted
@@ -1356,7 +1438,7 @@ fun EntryEditOverlay(
                                 ) {
                                     Text(
                                         money(lineShown),
-                                        fontSize = F.small.sp, color = if (isUnlocked) C.ink else C.faint, fontWeight = FontWeight.SemiBold,
+                                        fontSize = F.small.sp, color = C.faint, fontWeight = FontWeight.SemiBold,
                                         modifier = Modifier
                                             .testTag("calcLineTotal:$i")
                                             .padding(horizontal = 2.dp, vertical = 2.dp),
@@ -1405,6 +1487,18 @@ fun EntryEditOverlay(
                     verticalAlignment = Alignment.Top,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
+                    // v1.6.47 — the ACTIVE line's own prefix (report #3):
+                    // the bullet, or the number this line will carry once
+                    // committed — where the next line lands, at a glance
+                    calcPrefixOf(prefixMode, calcLines.size)?.let { p ->
+                        Text(
+                            p,
+                            fontSize = F.small.sp,
+                            color = C.faint,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.width(20.dp).testTag("calcActivePrefix"),
+                        )
+                    }
                     Box(Modifier.weight(1f)) {
                         if (calcMode == "text") {
                             // read in composition so colour changes recompose
@@ -1867,13 +1961,12 @@ private fun DeleteBtn(tag: String, onPress: () -> Unit) {
    grid gains real bottom padding, and the host reports its TOP edge in
    window pixels so the canvas reserves the exact band it covers (see the
    padLift note above). */
+/* v1.6.46 — the keypad's total height. v1.6.47 — still 264dp: the
+   native bottom row (space + enter) simply became the SIXTH peer row
+   (~37dp each) instead of a 34dp action band, so every key kept its
+   size, the canvas's v1.6.43 direct-measurement reservation is
+   untouched, and the pinned band stays 264 − 71 = 193dp. */
 private val CALC_PAD_H = 264.dp
-
-/* v1.6.46 — the ENTER row's height (see CalcPadGrid): a slightly shorter
-   band than a key row, so the five key rows keep essentially their old
-   size inside the pad's grown 264dp — the wide enter reads as its own,
-   slimmer action bar, exactly like a native keyboard's bottom row. */
-private val CALC_ENTER_H = 34.dp
 
 /** The text-keyboard colour — everything written in TEXT mode renders in
  *  this blue, everything written in NUMBER mode stays ink ("it should be
@@ -1926,18 +2019,24 @@ private fun CalcKeypadHostContent(onKey: (String) -> Unit, onEnter: () -> Unit, 
    you removed the pluss + from the keypad" — the v1.6.41 column shift
    had slid it down into ='s old bottom-right corner where muscle memory
    never found it); the less-typed − takes the bottom-right slot instead.
-   v1.6.46 — report #1 ("i want the inter btn just like in the native
-   keyboard for the keypad on the right bottom under the -"): a WIDE
-   ENTER key fills the row UNDER the ± 0 . − row — the native keyboard's
-   return bar. The pad grew 224 → 264dp so the five key rows keep their
-   size (each ~37dp) and the enter row is its own 34dp action band:
+   v1.6.46 — report #1: a wide ENTER filled its own row under ± 0 . −.
+   v1.6.47 — report #1, round two ("the inter btn is not the next btn it
+   is the normal inter btn like in the netiv keyboard and in its row add
+   the space key too"): the bottom row is the NATIVE keyboard's bottom
+   row — a WIDE BLANK SPACE BAR with a NORMAL-WIDTH enter key on the
+   right, a peer of the five key rows (not an action bar). And the enter
+   key is the NORMAL enter: a newline — it commits the active line and
+   hands over a fresh one, and NOTHING else. It is NOT the Next button:
+   Next (report #3 of v1.6.46) commits AND SAVES; enter never saves —
+   persistence stays with the autosave, the leave-time create, and Next.
+   The pad keeps its 264dp and all six rows share it (~37dp each):
 
     AC   [    %    ]  ⌫
      7    8    9    ÷
      4    5    6    ×
      1    2    3    +
      ±    0    .    −
-   [        ⏎        ]            */
+   [      space      ] ⏎    */
 @Composable
 private fun CalcPadGrid(onKey: (String) -> Unit, onEnter: () -> Unit) {
     Column(
@@ -1947,7 +2046,7 @@ private fun CalcPadGrid(onKey: (String) -> Unit, onEnter: () -> Unit) {
             // v1.6.43 — real bottom padding on the keypad (the user's ask:
             // "the keypad should have some bottom padding") — the keys
             // already stop above the phone's system nav bar; this keeps a
-            // visible breathing strip under the enter row
+            // visible breathing strip under the space row
             .padding(top = 6.dp, bottom = 10.dp)
             .fillMaxHeight(),
         verticalArrangement = Arrangement.spacedBy(5.dp),
@@ -1979,24 +2078,48 @@ private fun CalcPadGrid(onKey: (String) -> Unit, onEnter: () -> Unit) {
                 }
             }
         }
-        // v1.6.46 — THE ENTER BAR: full-width under the − row
-        EnterKey(onEnter = onEnter)
+        // v1.6.47 — THE NATIVE BOTTOM ROW: the wide blank SPACE bar with
+        // the normal-width ENTER key on its right — one of the six key
+        // rows now, not an action band
+        Row(
+            Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            SpaceKey(Modifier.weight(2.6f).fillMaxHeight(), onKey)
+            EnterKey(Modifier.weight(1f).fillMaxHeight(), onEnter)
+        }
     }
 }
 
-/* v1.6.46 — the wide ENTER key (report #1: "just like in the native
- *  keyboard"): a full-width brand-filled bar with the return glyph —
- *  native keyboards never label it, and never disable it. The tap commits
- *  the active line (if any) and SAVES the entry — the same action as the
- *  canvas's Next button (report #3). */
+/* v1.6.47 — THE SPACE BAR (report #1: "in its row add the space key
+ * too"): the native keyboard's blank wide bar — card fill, hairline,
+ * no glyph (native bars carry no label). The tap appends one space
+ * through the undoable funnel. */
 @Composable
-private fun EnterKey(onEnter: () -> Unit) {
+private fun SpaceKey(modifier: Modifier = Modifier, onPress: (String) -> Unit) {
     val C = C()
     Box(
-        Modifier
-            .fillMaxWidth()
-            .height(CALC_ENTER_H)
-            .clip(RoundedCornerShape(12.dp))
+        modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(C.card)
+            .border(1.dp, C.line, RoundedCornerShape(14.dp))
+            .clickable { vibrate(longArrayOf(8)); onPress("␣") }
+            .testTag("calcKeySpace"),
+        contentAlignment = Alignment.Center,
+    ) {}
+}
+
+/* v1.6.46 — the ENTER key. v1.6.47 — report #1, round two: a
+ * NORMAL-WIDTH brand-filled key (the native keyboard's return), glyph
+ * only, never disabled — and it is the NORMAL ENTER, not the Next
+ * button: the tap COMMITS the active line (the canvas's newline) and
+ * hands over a fresh one; it never saves (Next owns the save). */
+@Composable
+private fun EnterKey(modifier: Modifier = Modifier, onEnter: () -> Unit) {
+    val C = C()
+    Box(
+        modifier
+            .clip(RoundedCornerShape(14.dp))
             .background(C.brand)
             .clickable { vibrate(longArrayOf(8)); onEnter() }
             .testTag("calcKeyEnter"),
@@ -2161,6 +2284,16 @@ internal fun coloredLockedLine(s: String, base: Color, quoted: Color): Annotated
    a line's copy carries its OWN total when it has one. Pure. */
 internal fun lineCopyText(display: String, total: Double?): String =
     if (total != null) "$display = ${money(total)}" else display
+
+/* v1.6.47 — report #3 ("show bullet or numbers at the start of each line
+ * that the user can change"): the prefix a line of index `i` carries —
+ * "•" for every line in bullet mode, "1." "2." "3." in number mode, null
+ * when the canvas is set to none. Pure, so the harness pins the walk. */
+internal fun calcPrefixOf(mode: String, i: Int): String? = when (mode) {
+    "number" -> (i + 1).toString() + "."
+    "none" -> null
+    else -> "•"
+}
 
 /** v1.6.45 — report #6 ("it should be a copy btn for the sum total and
  *  everything in there"): the WHOLE calculator as plain text — every

@@ -72,6 +72,7 @@ import com.callmony.ui.kit.C
 import com.callmony.ui.kit.ConfirmHost
 import com.callmony.ui.kit.MdiIcon
 import com.callmony.ui.kit.PressIndication
+import com.callmony.ui.kit.RootFab
 import com.callmony.ui.kit.Spinner
 import com.callmony.ui.kit.SystemBarsAppearance
 import com.callmony.ui.kit.Toaster
@@ -377,6 +378,21 @@ private fun CallmonyAppContent() {
 
                 // overlay stack (renders above the tab screens, below the nav)
                 OverlayHost()
+
+                // v1.6.47 — THE LEDGER'S CIRCULAR ＋ (report: "when the
+                // ledger tab is clicked or the ledger is open, it should
+                // show cercular + btn on bottom right side that opens new
+                // canvas"): rendered ABOVE the overlay stack because the
+                // contact detail (an overlay) carries its own ledger — but
+                // only while a LEDGER SURFACE is what the user is looking
+                // at: the moment any overlay opens on top of it (the entry
+                // editor the FAB itself opens, search, settings…) the slot
+                // renders nothing. The tab screens and sheets that follow
+                // still draw over it.
+                RootFab.content.value?.let { fab ->
+                    val topOverlay = UiStore.overlayStack.lastOrNull()
+                    if (topOverlay == null || topOverlay is Overlay.Contact) fab()
+                }
 
                 // keypad half-modal — above the nav now too
                 if (UiStore.keypadOpen) {

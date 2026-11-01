@@ -127,6 +127,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         AndroidPlatform.init(applicationContext)
+        // v1.6.47 — the live activity for the number keypad's window-level
+        // IME suppression (see AndroidUi.setImeSuppressed): registered
+        // right after the platform init, cleared on destroy — an activity
+        // that is gone can never be reached through a stale reference.
+        (com.callmony.platform.Platform.ui as? AndroidUi)?.activity = this
         // v1.6.28 — THE "FLASH WHEN IT OPENS" + "STILL OPENS SLOW" FIX, at
         // the source. Both run BEFORE the first Compose frame:
         //   1. seedBootAppearance — the store's in-memory settings are the
@@ -210,6 +215,12 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        // v1.6.47 — never leave a dead activity reachable for the IME guard
+        try {
+            if (com.callmony.platform.Platform.ui is AndroidUi) {
+                (com.callmony.platform.Platform.ui as AndroidUi).activity = null
+            }
+        } catch (_: Exception) {}
         // v1.6.33 — release the observer + its thread cleanly (the observer
         // intentionally STAYS armed across onPause: the ended call is
         // written while the user is on the in-call screen, app backgrounded).

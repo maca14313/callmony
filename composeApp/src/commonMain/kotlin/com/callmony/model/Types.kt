@@ -149,6 +149,11 @@ data class LedgerEntry(
     // persisted with the entry the same optional-default way as exprNote
     // (old rows decode without it, old code ignores it, backups mirror it).
     val calcTitle: String? = null,
+    // v1.6.47 — the canvas's LINE PREFIX ("show bullet or numbers at the
+    // start of each line that the user can change"): "bullet" (the default
+    // when absent) | "number" | "none". Same optional-default pattern as
+    // exprNote / calcTitle.
+    val calcPrefix: String? = null,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
     val deletedAt: Long? = null,

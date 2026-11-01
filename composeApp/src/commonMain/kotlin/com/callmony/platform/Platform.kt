@@ -171,6 +171,16 @@ interface UiPlatform {
     val osDarkFlow: MutableStateFlow<Boolean>
     fun setStatusBarMode(dark: Boolean)
     fun setNavColor(rgba: Long)
+    /** v1.6.47 — WINDOW-LEVEL IME SUPPRESSION for the calculator's number
+     *  keypad (user report: "sometimes the netiv keyboard opens up on the
+     *  number mode why"): while the 12-key grid is up, the window itself
+     *  refuses the soft keyboard — Android sets
+     *  SOFT_INPUT_STATE_ALWAYS_HIDDEN (+ an immediate IMM hide), which
+     *  covers the paths the field-level force-hide cannot reach (an IME
+     *  left on screen by a just-closed sheet with no editor served, OEM
+     *  re-shows on window focus). false restores the previous mode. A
+     *  default no-op everywhere else. */
+    fun setImeSuppressed(suppress: Boolean) {}
 }
 
 /** The service registry — initialized by each platform at startup. */

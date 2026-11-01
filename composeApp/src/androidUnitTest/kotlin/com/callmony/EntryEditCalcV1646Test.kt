@@ -33,11 +33,13 @@ import org.robolectric.annotation.GraphicsMode
 /* v1.6.46 — regression battery for the five-report round:
 
      1. "i want the inter btn just like in the native keyboard for the
-        keypad on the right bottom under the -" → the keypad carries a
-        WIDE ENTER bar under the ± 0 . − row (geometry pinned in
-        EntryEditCalcV1643Test 2a); here the behaviour is pinned: ENTER
-        commits the line AND saves the entry, again and again without
-        ever duplicating it.
+        keypad on the right bottom under the -" → the keypad carries the
+        ENTER key under the ± 0 . − row (geometry pinned in
+        EntryEditCalcV1643Test 2a). v1.6.47 REWROTE the behaviour for the
+        round-two report ("the inter btn is not the next btn… in its row
+        add the space key too"): the enter is the plain NEWLINE (commit
+        only — Next owns the save) and the SPACE bar joined its row; the
+        tests below pin the new contract.
      2. "put the pay btn bised the TOTAL text and the circle: a ring
         filling as you pay, should show how much % is left from the total
         and dont say something like 1 left" → the PAY chip sits BESIDE the
@@ -45,8 +47,7 @@ import org.robolectric.annotation.GraphicsMode
         itself is pinned in EntryEditCalcV1645Test).
      3. "the next btn also should do what the save btn does, if we make it
         like that, we dont need the save btn" → NO act.save button exists
-        anywhere in the editor (canvas up or collapsed); NEXT and ENTER
-        both persist.
+        anywhere in the editor (canvas up or collapsed); NEXT persists.
      4. "in top if the canvas put a input that does have just the bottom
         border so we can give the canvas a title" → the header's
         bottom-border-only title input heads the canvas, headlines the
@@ -126,15 +127,18 @@ class EntryEditCalcV1646Test {
         AppStore.state.entries.count { it.amount == amount }
     }
 
-    /* 1 + 3 — the keypad's ENTER commits AND saves: the first ENTER
-       creates the entry with the committed line; a second line + ENTER
-       UPDATES it (two lines, one entry — never a duplicate); the editor
-       and the keypad stay up the whole time.
+    /* 1 + 3 — v1.6.47, REWRITTEN for the round-two enter contract
+       ("the inter btn is not the next btn it is the normal inter btn like
+       in the netiv keyboard and in its row add the space key too"): the
+       keypad's enter is the NEWLINE — it commits the active line and
+       nothing else (Next owns the commit + SAVE); the space key sits in
+       its row. ENTER twice, then backing out: the leave-time create
+       persists BOTH lines as ONE entry — never a duplicate.
        Harness note: the store is a JVM singleton across the battery, so
        the amounts are deliberately ones no other test writes (275 / 345)
        and the "same entry" checks are ID-based. */
     @Test
-    fun theEnterKeyCommitsAndSavesWithoutDuplicating() {
+    fun theEnterKeyIsTheNewlineAndBackingOutPersists() {
         ready()
         openEditor()
         toNumMode()
@@ -142,37 +146,48 @@ class EntryEditCalcV1646Test {
 
         enter()
         awaitLine(0)
-        rule.waitUntil(timeoutMillis = 15000) { entryCount(275.0) >= 1 }
-        val id = rule.runOnUiThread {
-            AppStore.state.entries.first { it.amount == 275.0 }.id
-        }
+        rule.waitForIdle()
+        Thread.sleep(300) // any stray save pulse would land here — none may
+        rule.waitForIdle()
+        assertEquals(
+            "the enter key must NOT persist by itself — it is the newline, not Next",
+            0,
+            entryCount(275.0),
+        )
 
-        // a second line: 70 → the entry becomes 345, still THE SAME entry
+        // a second line: 70 → the two lines read 345
         listOf("7", "0").forEach { key(it) }
         enter()
         awaitLine(1)
-        rule.waitUntil(timeoutMillis = 15000) {
-            rule.runOnUiThread { AppStore.state.entries.find { it.id == id }?.amount == 345.0 }
-        }
-        assertEquals("the second ENTER updates the same entry", 1, entryCount(345.0))
-        // the blank-line ENTER afterwards is a harmless no-op (nothing to
-        // commit, nothing new to persist)
+        // the blank-line ENTER afterwards is a harmless no-op
         enter()
         rule.waitForIdle()
-        assertEquals("a blank ENTER must not duplicate anything", 1, entryCount(345.0))
-        // and the canvas + keypad stayed up throughout
+        // the canvas + keypad stayed up throughout (the enter key and the
+        // space bar beside it are both still armed)
         assertTrue(
-            "the editor must still be open",
-            rule.onAllNodesWithTag("calcBtnNext").fetchSemanticsNodes().isNotEmpty(),
-        )
-        assertTrue(
-            "the keypad must still be armed",
+            "the keypad stays armed while the editor is open",
             rule.onAllNodesWithTag("calcKeyEnter").fetchSemanticsNodes().isNotEmpty(),
         )
+        assertTrue(
+            "the space bar sits in the enter key's row",
+            rule.onAllNodesWithTag("calcKeySpace").fetchSemanticsNodes().isNotEmpty(),
+        )
+
+        // backing out persists the never-saved draft (the leave-time
+        // create) — ONE entry, both lines, never a duplicate
+        repeat(4) {
+            if (rule.onAllNodesWithTag("calcBtnNext").fetchSemanticsNodes().isEmpty() &&
+                rule.onAllNodesWithTag("calcCollapsed").fetchSemanticsNodes().isEmpty()
+            ) return@repeat
+            rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+            rule.waitForIdle()
+        }
+        rule.waitUntil(timeoutMillis = 15000) { entryCount(345.0) == 1 }
     }
 
     /* 3 — the Save button is GONE, canvas up or collapsed: no act.save
-       control anywhere in the editor (Next and ENTER own persistence) */
+       control anywhere in the editor (Next owns persistence since v1.6.47
+       — the enter key became the plain newline) */
     @Test
     fun theSaveButtonIsGoneEverywhere() {
         ready()
@@ -260,14 +275,16 @@ class EntryEditCalcV1646Test {
             0,
             rule.onAllNodes(hasText(t("ee.calcTitlePh"))).fetchSemanticsNodes().size,
         )
-        // a line to make it payable: rooms 300
+        // a line to make it payable: rooms 300 — NEXT commits AND saves
+        // (v1.6.47: the keypad's enter is the plain newline now, so the
+        // title's persistence test rides the Next button)
         toNumMode()
         listOf("3", "0", "0").forEach { key(it) }
-        rule.onNodeWithTag("calcKeyEnter").performClick()
+        rule.onNodeWithTag("calcBtnNext").performClick()
         rule.waitForIdle()
         awaitLine(0)
 
-        // the entry carries the title (ENTER saved it)
+        // the entry carries the title (Next saved it)
         rule.waitUntil(timeoutMillis = 15000) {
             rule.runOnUiThread { AppStore.state.entries.any { it.calcTitle == "march rooms" } }
         }
