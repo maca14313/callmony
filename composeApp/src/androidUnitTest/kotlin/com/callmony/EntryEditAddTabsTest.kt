@@ -133,9 +133,15 @@ class EntryEditAddTabsTest {
             rule.onAllNodes(hasText("235 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
 
-        // Save → the entry carries the item AND the calc note, amount 235
-        rule.onAllNodes(hasText(t("act.save")) and hasClickAction())[0].performClick()
+        // v1.6.46 — THE SAVE BUTTON IS GONE (report #3: Next does what Save
+        // did): backing out of the editor persists the never-saved draft
+        // through the leave-time create — the entry carries the item AND the
+        // calc note, amount 235
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
         rule.waitForIdle()
+        rule.waitUntil(timeoutMillis = 15000) {
+            rule.onAllNodesWithTag("calcTextField").fetchSemanticsNodes().isEmpty()
+        }
         val saved = rule.runOnUiThread {
             AppStore.state.entries.firstOrNull { e -> e.amount == 235.0 && e.items.size == 1 }
         }
@@ -205,10 +211,14 @@ class EntryEditAddTabsTest {
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodes(hasText("Coffee X", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
-        // then the ENTRY's Save persists the edited item (the footer is
-        // pinned — always visible, never inside the form scroll)
-        rule.onAllNodes(hasText(t("act.save")) and hasClickAction())[0].performClick()
+        // v1.6.46 — no footer Save any more: backing out of the editor
+        // persists the edited item through the leave-time save (the entry
+        // is live — the autosave/leave path owns it)
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
         rule.waitForIdle()
+        rule.waitUntil(timeoutMillis = 15000) {
+            rule.runOnUiThread { AppStore.state.entries.find { it.id == id }?.items?.firstOrNull()?.name == "Coffee X" }
+        }
         val renamed = rule.runOnUiThread {
             AppStore.state.entries.find { it.id == id }?.items?.firstOrNull()?.name
         }

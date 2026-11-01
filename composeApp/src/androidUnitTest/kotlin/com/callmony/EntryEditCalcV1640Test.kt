@@ -136,14 +136,27 @@ class EntryEditCalcV1640Test {
             rule.onAllNodes(hasText("500 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
 
-        // Save keeps the split: amount 500, note "2 rooms 500 with the 2 quoted
-        rule.onNodeWithTag("calcBtnSave").performClick()
-        rule.waitForIdle()
+        // v1.6.46 — NEXT does what Save did (report #3): commit the line and
+        // persist — the split (quoted 2 as annotation, keypad 500 as math)
+        // survives, amount 500
+        nextLine()
+        rule.waitUntil(timeoutMillis = 15000) {
+            rule.onAllNodesWithTag("calcLine:0").fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.waitUntil(timeoutMillis = 15000) {
+            rule.runOnUiThread { AppStore.state.entries.any { it.amount == 500.0 } }
+        }
         val saved = rule.runOnUiThread {
             AppStore.state.entries.firstOrNull { it.amount == 500.0 }
         }
         checkNotNull(saved) { "entry not saved — entries: ${entriesNow()}" }
-        assertEquals("the quoted 2 must persist as an annotation", "\"2\" rooms 500", saved.exprNote)
+        // v1.6.46 — the line went through a real COMMIT this time, so it
+        // carries the " @date" marker (v1.6.42) — compare marker-stripped
+        assertEquals(
+            "the quoted 2 must persist as an annotation",
+            "\"2\" rooms 500",
+            saved.exprNote?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), ""),
+        )
 
         // the quoted 2 reopens as an annotation: total still 500
         val reopened = rule.runOnUiThread {
@@ -300,9 +313,10 @@ class EntryEditCalcV1640Test {
         }
     }
 
-    /* 6 — SAVE KEEPS THE EDITOR OPEN (and the autosave owns the rest) */
+    /* 6 — v1.6.46 — NEXT KEEPS THE EDITOR OPEN (it commits + saves in one
+       tap; the autosave owns every later change — the Save button is gone) */
     @Test
-    fun saveKeepsTheEditorOpen() {
+    fun nextCommitsSavesAndKeepsTheEditorOpen() {
         ready()
         openEditor()
         toNumMode()
@@ -311,16 +325,18 @@ class EntryEditCalcV1640Test {
             rule.onAllNodes(hasText("250 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
 
-        rule.onNodeWithTag("calcBtnSave").performClick()
+        // v1.6.46 — the keypad's wide ENTER key: commit + save (report #1 +
+        // #3) — the same action as Next, driven from the keypad
+        rule.onNodeWithTag("calcKeyEnter").performClick()
         rule.waitForIdle()
-        // the editor + canvas are STILL up (the canvas's own Save button
-        // exists in both input modes)
+        // the editor + canvas are STILL up
         assertTrue(
-            "save must not close the editor",
-            rule.onAllNodesWithTag("calcBtnSave").fetchSemanticsNodes().isNotEmpty(),
+            "enter must not close the editor",
+            rule.onAllNodesWithTag("calcBtnNext").fetchSemanticsNodes().isNotEmpty(),
         )
-        // ...and the active line still lives in num mode (the keypad is up)
+        // ...and the keypad stays up in num mode
         assertTrue(
+            "the keypad must stay armed",
             rule.onAllNodesWithTag("calcKey:1").fetchSemanticsNodes().isNotEmpty(),
         )
         // the entry exists exactly once

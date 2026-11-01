@@ -7,11 +7,9 @@ import com.callmony.lib.calcSteps
 import com.callmony.lib.evalCalcTokens
 import com.callmony.lib.parseCalcLedger
 import com.callmony.lib.parseCalcNote
-import com.callmony.lib.calcLeftCount
 import com.callmony.lib.quoteTextNumbers
 import com.callmony.lib.serializeCalcLedger
 import com.callmony.lib.textModeRanges
-import com.callmony.model.Payment
 import com.callmony.lib.serializeCalcNote
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -435,37 +433,5 @@ class CalcNoteTest {
         assertTrue((0..2).all { it in marks })  // the quoted "2"
         assertTrue((4..8).all { it in marks })  // rooms
         assertTrue((10..12).none { it in marks }) // the keypad 500
-    }
-
-    /* ---------- v1.6.45 — the LEFT CIRCLE's FIFO count ---------- */
-
-    private fun pay(amount: Double, lineIdx: Int? = null) = Payment(
-        id = "p$amount$lineIdx", amount = amount, date = "2026-10-31", lineIdx = lineIdx,
-    )
-
-    @Test
-    fun the_left_count_settles_lines_fifo() {
-        val lines = parseCalcLedger("300\n200")
-        // nothing paid: both left
-        assertEquals(2, calcLeftCount(lines, emptyList()))
-        // 400 pays off line 0 (300) and 100 of line 1 → one left
-        assertEquals(1, calcLeftCount(lines, listOf(pay(400.0))))
-        // 500 settles everything
-        assertEquals(0, calcLeftCount(lines, listOf(pay(500.0))))
-        // an attributed payment on line 1 first, then entry-level FIFO
-        // covers line 0 and the rest of line 1 → 0 left
-        assertEquals(0, calcLeftCount(lines, listOf(pay(100.0, lineIdx = 1), pay(400.0))))
-        // attribution and FIFO work together without double-counting: 100
-        // ATTRIBUTED to line 0 + 350 entry-level — line 0 needs 200 more of
-        // the 350 (leaves 150), line 1 needs 200 but only 150 remains →
-        // still owes 50 → 1 left
-        assertEquals(1, calcLeftCount(lines, listOf(pay(100.0, lineIdx = 0), pay(350.0))))
-    }
-
-    @Test
-    fun pure_annotation_lines_never_count_as_left() {
-        val lines = parseCalcLedger("a pure note line\n300")
-        assertEquals(1, calcLeftCount(lines, emptyList()))
-        assertEquals(0, calcLeftCount(lines, listOf(pay(300.0))))
     }
 }

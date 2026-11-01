@@ -127,8 +127,18 @@ android {
         // (textModeRanges drives both renderers), the record-payment sheet
         // is compact, and the copy buttons include the totals (the sum
         // total's copy exports the whole ledger).
-        versionCode = 56
-        versionName = "1.6.45"
+        // v1.6.46 — the five-report round: the keypad grows the wide ENTER
+        // bar under the − row (commit + save, the native keyboard's return),
+        // the sum total becomes ONE row — the percentage ring (what % is
+        // left, never "N left") beside the TOTAL text with the Pay chip on
+        // it, Next/ENTER replace the removed Save button (plus a leave-time
+        // create so backing out persists a never-saved draft), the canvas
+        // header becomes a bottom-border-only TITLE input (persisted as
+        // LedgerEntry.calcTitle, headlining the collapsed band and the
+        // export), and the calculation fonts de-bulk (the active line
+        // renders the light 18sp cut, SemiBold totals, lighter keypad).
+        versionCode = 57
+        versionName = "1.6.46"
     }
 
     signingConfigs {

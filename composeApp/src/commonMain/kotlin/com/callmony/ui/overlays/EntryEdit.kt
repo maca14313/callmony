@@ -36,10 +36,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -91,7 +93,6 @@ import com.callmony.lib.quoteTextNumbers
 import com.callmony.lib.r2
 import com.callmony.lib.serializeCalcLedger
 import com.callmony.lib.serializeCalcNote
-import com.callmony.lib.calcLeftCount
 import com.callmony.lib.sumPayments
 import com.callmony.lib.textModeRanges
 import com.callmony.lib.ownerNameOf
@@ -272,6 +273,21 @@ fun EntryEditOverlay(
     var paymentsOverride by remember { mutableStateOf<List<com.callmony.model.Payment>?>(null) }
     var catManager by remember { mutableStateOf(false) }
     var showOwnerPicker by remember { mutableStateOf(false) }
+    // v1.6.46 — THE CANVAS TITLE (report #4: "in top if the canvas put a
+    // input that does have just the bottom border so we can give the canvas
+    // a title"): the header's old static label became a bottom-border-only
+    // input; it rides the entry as calcTitle (optional, so every older row
+    // decodes without it) and the collapsed band shows it in the label's
+    // place once something is typed.
+    var calcTitle by remember { mutableStateOf(existing?.calcTitle ?: "") }
+    // v1.6.46 — THE SAVE PULSE (report #3: "the next btn also should do
+    // what the save btn does"): NEXT and the keypad's ENTER commit the
+    // line AND persist the entry. The save runs one recomposition LATER
+    // (the pulse bumps, this effect fires) because the entry must be built
+    // from the POST-commit ledger — a same-handler save() would read the
+    // pre-commit derived values (effAmount, calcNote…) captured before
+    // commitCalcLine() mutated the lines.
+    var savePulse by remember { mutableStateOf(0) }
 
     // v1.6.39 — THE SUM, live: items + the calculator's whole contribution
     // (committed ledger lines + the active line). calcNote is DERIVED
@@ -315,6 +331,8 @@ fun EntryEditOverlay(
         exprNote = serializeCalcLedger(
             calcLines + if (calcNote.tokens.isNotEmpty() || calcNote.text.isNotBlank()) listOf(calcNote) else emptyList()
         ).ifEmpty { null },
+        // v1.6.46 — the canvas title rides along (blank never persists)
+        calcTitle = calcTitle.trim().ifEmpty { null },
         groupId = groupSel,
         refs = refs,
         createdAt = currentEntry?.createdAt ?: now(),
@@ -360,10 +378,13 @@ fun EntryEditOverlay(
 
     /* v1.6.38 — AUTO-SAVE (user spec: "it should have auto save"): every
        change to an EXISTING entry persists ~600ms after the last
-       keystroke and again on close — no Save needed, nothing is ever
-       lost by backing out. New entries still Save explicitly (an
-       unconfirmed draft must not appear in the book). Invalid totals
-       (<= 0) never overwrite a good entry.
+       keystroke and again on close — nothing is ever lost by backing out.
+       v1.6.46 — with the SAVE BUTTON GONE (report #3: Next does what Save
+       did) the "new entries save explicitly" rule lives on the save PULSE
+       instead (Next / the keypad's ENTER) plus the leave-time create below
+       — backing out of a calculator that holds anything payable persists
+       it, so nothing can be lost by leaving either. Invalid totals (<= 0)
+       never overwrite a good entry.
        v1.6.42 — the key is only COMPUTED for a live entry (report #1: the
        whole-ledger serialization ran on EVERY keystroke even for a
        brand-new, not-yet-saved entry — pure waste while typing). */
@@ -373,8 +394,13 @@ fun EntryEditOverlay(
     val autoKey = remember { mutableStateOf<String?>(null) }
     val currentKey = if (currentEntry != null) listOf(
         effAmount, serializeCalcLedger(calcLines + if (calcNote.tokens.isNotEmpty() || calcNote.text.isNotBlank()) listOf(calcNote) else emptyList()),
-        items.map { "${it.id}:${it.qty}:${it.price}" }, date, dueOn, dueDate, category, method, note, owner, groupSel,
-        refs.map { "${it.type}:${it.id}" }, type, kindSel,
+        // v1.6.46 — the item NAME rides the key too: a rename (qty and
+        // price untouched) changed NOTHING here before, so neither the
+        // autosave nor the leave-time save ever fired for it — with the
+        // Save button gone that would have silently dropped every
+        // item-rename on backing out (caught by the v1.6.46 battery)
+        items.map { "${it.id}:${it.qty}:${it.price}:${it.name}" }, date, dueOn, dueDate, category, method, note, owner, groupSel,
+        refs.map { "${it.type}:${it.id}" }, type, kindSel, calcTitle,
         entryPayments.map { "${it.id}:${it.amount}:${it.lineIdx}" },
     ).toString() else ""
     if (autoKey.value == null) autoKey.value = currentKey
@@ -388,14 +414,40 @@ fun EntryEditOverlay(
                 if (!deleted && currentKey != initialKey && effAmount > 0) save(silent = true)
             }
         }
-        DisposableEffect(Unit) {
-            onDispose {
-                if (!deleted && currentKey != initialKey && effAmount > 0) {
-                    // persist whatever changed but never got debounced
-                    AppStore.saveEntry(buildEntry(currentEntry.id))
-                }
+    }
+    // v1.6.46 — THE SAVE PULSE: Next / ENTER bumped it after a commit; the
+    // effect runs one recomposition later, so the entry is built from the
+    // post-commit ledger (see commitAndSave). The silent save self-guards
+    // (<= 0 never persists).
+    LaunchedEffect(savePulse) {
+        if (savePulse > 0) save(silent = true)
+    }
+    // v1.6.46 — THE LEAVE-TIME SAVE, staleness-proofed: a plain
+    // DisposableEffect(Unit) closure would freeze the FIRST composition's
+    // derived values (effAmount, currentKey…), so the action is refreshed
+    // through rememberUpdatedState and the dispose handler always runs the
+    // LATEST one. Two branches: a LIVE entry persists whatever changed but
+    // never got debounced; a NEVER-SAVED draft with something payable is
+    // CREATED here — with the Save button gone this is the only thing
+    // standing between "typed a calculation, backed out" and "lost it".
+    val leaveSave by rememberUpdatedState {
+        val ce = currentEntry
+        when {
+            deleted -> {}
+            // a LIVE entry: persist whatever changed but never got debounced
+            ce != null -> if (currentKey != initialKey && effAmount > 0) {
+                AppStore.saveEntry(buildEntry(ce.id))
+            }
+            // a NEVER-SAVED draft with something payable: CREATE it now
+            effAmount > 0 -> {
+                val id = uid()
+                AppStore.saveEntry(buildEntry(id))
+                maybeDueReminder(id, true)
             }
         }
+    }
+    DisposableEffect(Unit) {
+        onDispose { leaveSave() }
     }
 
     /* v1.6.38 — "when clicking the total results it should have also the
@@ -475,6 +527,19 @@ fun EntryEditOverlay(
         qwertyIdx = emptySet()
         calcSelection = TextRange(0)
         focusToken++ // the caret shows on the fresh line
+    }
+
+    /* v1.6.46 — COMMIT + SAVE, THE ONE ACTION (report #3: "the next btn
+       also should do what the save btn does, if we make it like that, we
+       dont need the save btn"): whatever was being typed locks into the
+       ledger (if anything) and the entry persists — one beat later, after
+       the recomposition, through the save pulse (see savePulse above).
+       The keypad's wide ENTER key (report #1) and the canvas's Next button
+       both route here; the Save button is GONE — nothing else in the
+       editor saves explicitly any more. */
+    fun commitAndSave() {
+        if (calcText.isNotBlank()) commitCalcLine()
+        savePulse++
     }
 
     /* v1.6.39 — long-press a LOCKED line and it UNLOCKS for editing: the
@@ -688,16 +753,13 @@ fun EntryEditOverlay(
         subtitle = ownerNameOf(ownerId),
         onBack = pop,
         scrollable = false,
-        // v1.6.38 — the footer buttons are SMALL (the rework spec: "the
-        // next line and save btn should be very small"). v1.6.41 — the
-        // DELETE-ENTRY button is GONE ("don't want the delete entry btn") —
-        // an entry is deleted from the ledger list, never mid-edit; the
-        // footer is Save alone.
-        footer = {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Btn(label = t("act.save"), small = true, onPress = { save() }, modifier = Modifier.weight(1f), disabled = effAmount <= 0)
-            }
-        },
+        // v1.6.46 — NO FOOTER, NO SAVE BUTTON (report #3: "the next btn
+        // also should do what the save btn does, if we make it like that,
+        // we dont need the save btn"): Next and the keypad's ENTER persist
+        // the entry, the 600ms autosave owns every later change, and
+        // backing out creates whatever never got saved (leaveSave) — a
+        // footer Save would be a fourth way to do the same thing. The
+        // sheet's footer band is simply gone (the form scrolls longer).
     ) {
         Column(Modifier.fillMaxSize()) {
             // THE PINNED BAND: kind chips + the input-mode strip
@@ -755,7 +817,14 @@ fun EntryEditOverlay(
                     ) {
                         MdiIcon("calculator-variant", 17, C.brand)
                         Column(Modifier.weight(1f)) {
-                            Text(t("ee.calcLabel"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
+                            // v1.6.46 — a typed canvas TITLE headlines the
+                            // collapsed band (the generic label only shows
+                            // while the canvas is untitled)
+                            Text(
+                                calcTitle.trim().ifEmpty { t("ee.calcLabel") },
+                                fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
                             val preview = calcLines.firstOrNull()?.let { serializeCalcNote(it) }
                                 ?: calcText.ifEmpty { null }
                             if (preview != null) {
@@ -1004,7 +1073,10 @@ fun EntryEditOverlay(
         val wantPad = calcMode == "num" && payModal == null && HostSheets.stack.isEmpty()
         LaunchedEffect(wantPad) {
             RootBottomOverlays.content.value = if (wantPad) {
-                { CalcKeypadHostContent(onKey = { calcKey(it) }, rtl = isRTL(currentLang().code)) }
+                // v1.6.46 — onEnter: the keypad's wide ENTER key commits the
+                // line and saves the entry (report #1 + #3) — the same
+                // commitAndSave the canvas's Next button runs
+                { CalcKeypadHostContent(onKey = { calcKey(it) }, onEnter = { commitAndSave() }, rtl = isRTL(currentLang().code)) }
             } else {
                 RootBottomOverlays.overlayTopPx.value = -1f
                 null
@@ -1100,15 +1172,63 @@ fun EntryEditOverlay(
                         .testTag("calcBtnRedo"),
                     contentAlignment = Alignment.Center,
                 ) { MdiIcon("redo", 16, if (redoStack.isNotEmpty()) C.brand else C.faint) }
-                Text(
-                    t("ee.calcLabel"),
-                    fontSize = F.small.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = C.sub,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                // v1.6.46 — THE TITLE INPUT (report #4: "in top if the canvas
+                // put a input that does have just the bottom border so we can
+                // give the canvas a title"): the header's old static label
+                // became a real single-line field styled with NOTHING but a
+                // bottom hairline — exactly the underline look asked for.
+                // Its placeholder is the old label; the typed title rides
+                // the entry as calcTitle, headlines the collapsed band, and
+                // heads the whole-ledger copy. Tapping it opens the system
+                // QWERTY; the active line's caret is untouched (the focus
+                // token only re-arms on toggles, never on title typing).
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .heightIn(min = 30.dp)
+                        .drawBehind {
+                            // the ONLY decoration: the bottom border
+                            drawLine(
+                                color = C.line,
+                                strokeWidth = 1.dp.toPx(),
+                                start = Offset(0f, size.height - 0.5f),
+                                end = Offset(size.width, size.height - 0.5f),
+                            )
+                        },
+                ) {
+                    BasicTextField(
+                        value = calcTitle,
+                        onValueChange = { calcTitle = it },
+                        singleLine = true,
+                        textStyle = TextStyle(
+                            fontSize = F.small.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = C.ink,
+                            textDirection = androidx.compose.ui.text.style.TextDirection.Content,
+                        ),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                        cursorBrush = SolidColor(C.brand),
+                        // the placeholder rides a decorationBox so the field
+                        // itself never carries example text (the v1.6.42
+                        // lesson: a placeholder must never replace the caret)
+                        decorationBox = { inner ->
+                            Box(Modifier.fillMaxWidth()) {
+                                inner()
+                                if (calcTitle.isEmpty()) {
+                                    Text(
+                                        t("ee.calcTitlePh"),
+                                        fontSize = F.small.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = C.faint,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag("calcTitleField"),
+                    )
+                }
                 Box(
                     Modifier
                         .size(28.dp)
@@ -1323,7 +1443,15 @@ fun EntryEditOverlay(
                                 // — Arabic text starts from the right end now,
                                 // exactly like the number field already did).
                                 textStyle = TextStyle(
-                                    fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = C.ink,
+                                    // v1.6.46 — the de-bulked CALCULATION
+                                    // font (report #5: "make the fonts
+                                    // better for calculation, now it looks
+                                    // to bulky"): 18sp Medium — a point
+                                    // larger but a full weight lighter,
+                                    // matching the native field's light
+                                    // cut so the line reads identically in
+                                    // both modes
+                                    fontSize = 18.sp, fontWeight = FontWeight.Medium, color = C.ink,
                                     textDirection = androidx.compose.ui.text.style.TextDirection.Content,
                                 ),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
@@ -1339,7 +1467,10 @@ fun EntryEditOverlay(
                             NoImeNumberField(
                                 value = calcText,
                                 onValueChange = { onCalcEdited(it, fromQwerty = false) },
-                                fontSizeSp = 17,
+                                // v1.6.46 — the de-bulked calculation font:
+                                // 18sp in the LIGHT cut (bold = false),
+                                // matching the QWERTY field above
+                                fontSizeSp = 18,
                                 textColor = C.ink,
                                 cursorColor = C.brand,
                                 modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp).testTag("calcNumField"),
@@ -1348,6 +1479,7 @@ fun EntryEditOverlay(
                                 highlight = qwertyIdx,
                                 highlightColor = TEXTMODE_COLOR,
                                 focusToken = focusToken,
+                                bold = false,
                             )
                         }
                     }
@@ -1360,7 +1492,9 @@ fun EntryEditOverlay(
                 if (calcTotal != null) {
                     Text(
                         "= ${money(calcTotal)}",
-                        fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = C.brand,
+                        // v1.6.46 — SemiBold instead of ExtraBold (the
+                        // de-bulked look), one point larger so it still leads
+                        fontSize = 21.sp, fontWeight = FontWeight.SemiBold, color = C.brand,
                         modifier = Modifier.padding(top = 6.dp).testTag("calcTotal"),
                     )
                 }
@@ -1376,107 +1510,97 @@ fun EntryEditOverlay(
             // THE TOTAL — v1.6.40: ALWAYS AFTER THE LAST CALCULATION ENTRY
             // (it lived at the top of the canvas before), printed straight
             // on the paper — NO different background.
-            // v1.6.42 — the sum total is a pure read-out (Paid · Remaining
-            // only; payments were made on the individual entries then).
-            // v1.6.45 — report #2 ("i want the pay btn to be just on the sum
-            // total not on the individual entry, and the history of the
-            // payment also should show when the payment btn is clicked on
-            // the sum total … and need also a cercle that shows how many
-            // left"): the sum total carries THE PAY BUTTON now (it opens the
-            // payments modal — the history with the full notes + the record
-            // form), plus the LEFT CIRCLE — a ring that fills as the total
-            // is paid, with the count of still-unpaid lines in its centre —
-            // and report #6's COPY button, which copies EVERYTHING in the
-            // calculator (every line with its date and total, the payments
-            // with their notes, and the sum total itself).
-            val leftCount = calcLeftCount(calcLines, entryPayments)
+            // v1.6.45 — report #2: the sum total carried THE PAY BUTTON (the
+            // payments modal — history with full notes + record form), the
+            // LEFT CIRCLE and report #6's COPY button (the whole ledger
+            // export).
+            // v1.6.46 — report #2, round two ("put the pay btn bised the
+            // TOTAL text and the circle: a ring filling as you pay, should
+            // show how much % is left from the total and dont say something
+            // like 1 left"): ONE row now — the PAY RING (its sweep fills
+            // with the paid fraction, its centre carries the PERCENTAGE
+            // left, no "N left" count anywhere), the TOTAL label + amount
+            // (paid · remaining underneath once something is paid), and the
+            // PAY CHIP right beside them. The ring goes green at 0%.
             val paidFraction = if (effAmount > 0.005) (paidTotal / effAmount).toFloat().coerceIn(0f, 1f) else 0f
-            Column(
+            val pctLeft = if (effAmount > 0.005) {
+                kotlin.math.round((remainingTotal / effAmount) * 100.0).toInt().coerceIn(0, 100)
+            } else 100
+            Row(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp)
-                    .padding(top = 2.dp),
+                    .padding(top = 2.dp)
+                    .testTag("calcLedgerTotal")
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .testTag("calcLedgerTotal")
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(t("ee.calcTotal"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub)
-                    Spacer(Modifier.weight(1f))
-                    if (itemsSum > 0.0) {
-                        Text("+ ${money(itemsSum)}", fontSize = F.tiny.sp, color = C.faint)
+                if (effAmount > 0.005) {
+                    PayRing(
+                        percentLeft = pctLeft,
+                        fraction = paidFraction,
+                        fullyPaid = remainingTotal <= 0.005 && paidTotal > 0.005,
+                        tag = "calcPayRing",
+                        pctTag = "calcPayRingPct",
+                    )
+                }
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(t("ee.calcTotal"), fontSize = F.small.sp, fontWeight = FontWeight.SemiBold, color = C.sub)
+                        if (itemsSum > 0.0) {
+                            Text("+ ${money(itemsSum)}", fontSize = F.tiny.sp, color = C.faint)
+                        }
                     }
-                    Text(money(effAmount), fontSize = F.body.sp, fontWeight = FontWeight.ExtraBold, color = C.brand)
-                    // v1.6.45 — report #6: a copy button FOR THE SUM TOTAL
-                    // AND EVERYTHING IN IT (the whole ledger export — lines,
-                    // dates, totals, payments with notes, paid · remaining)
-                    CopyBtn(tag = "calcTotalCopy") {
-                        copyLineText(
-                            formatCalcLedgerExport(
-                                calcLines, entryPayments, itemsSum, effAmount, paidTotal,
-                                totalLabel = t("ee.calcTotal"), paidLabel = t("lg.paid"),
-                                remainingLabel = t("lg.remaining"), itemsLabel = t("lg.items"),
-                            )
+                    // v1.6.46 — SemiBold, one point larger (the de-bulked look)
+                    Text(money(effAmount), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = C.brand)
+                    if (paidTotal > 0.005) {
+                        Text(
+                            "${t("lg.paid")} ${money(paidTotal)} · ${t("lg.remaining")} ${money(remainingTotal)}",
+                            fontSize = F.tiny.sp, color = C.faint,
+                            modifier = Modifier.testTag("calcTotalPaidLine"),
                         )
                     }
                 }
-                // the PAY + LEFT-CIRCLE row — payments live HERE, on the sum
-                // total (v1.6.45 report #2)
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp)
-                        .testTag("calcTotalPayRow"),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    if (calcLines.isNotEmpty()) {
-                        LeftCircle(
-                            count = leftCount,
-                            fraction = paidFraction,
-                            fullyPaid = remainingTotal <= 0.005 && paidTotal > 0.005,
-                            tag = "calcLeftCircle",
-                            countTag = "calcLeftCount",
+                PayChip(
+                    tag = "calcTotalPay",
+                    // v1.6.45 — always armed: the chip is the HISTORY's
+                    // entry point too — a fully-paid total still opens
+                    // the modal (its own Pay action simply hides when
+                    // nothing remains)
+                    enabled = effAmount > 0,
+                ) { payModal = -1 }
+                // v1.6.45 — report #6: a copy button FOR THE SUM TOTAL
+                // AND EVERYTHING IN IT (the whole ledger export — lines,
+                // dates, totals, payments with notes, paid · remaining;
+                // v1.6.46 — headed by the canvas title when there is one)
+                CopyBtn(tag = "calcTotalCopy") {
+                    copyLineText(
+                        formatCalcLedgerExport(
+                            calcLines, entryPayments, itemsSum, effAmount, paidTotal,
+                            title = calcTitle.trim().ifEmpty { null },
+                            totalLabel = t("ee.calcTotal"), paidLabel = t("lg.paid"),
+                            remainingLabel = t("lg.remaining"), itemsLabel = t("lg.items"),
                         )
-                    }
-                    Column {
-                        if (paidTotal > 0.005) {
-                            Text(
-                                "${t("lg.paid")} ${money(paidTotal)} · ${t("lg.remaining")} ${money(remainingTotal)}",
-                                fontSize = F.tiny.sp, color = C.faint,
-                                modifier = Modifier.testTag("calcTotalPaidLine"),
-                            )
-                        }
-                        Text(
-                            "$leftCount ${t("ee.calcLeft")}",
-                            fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.Bold,
-                            modifier = Modifier.testTag("calcLeftLabel"),
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    PayChip(
-                        tag = "calcTotalPay",
-                        // v1.6.45 — always armed: the chip is the HISTORY's
-                        // entry point too — a fully-paid total still opens
-                        // the modal (its own Pay action simply hides when
-                        // nothing remains)
-                        enabled = effAmount > 0,
-                    ) { payModal = -1 }
+                    )
                 }
             }
             // THE SMALL CONTROLS — ON the canvas, on the NEXT LINE under
             // the active one, and SMALL (the user's v1.6.39 spec): the
-            // Aa / 123 input method, Next, Save.
-            // v1.6.40 — the toggle matches the Save / Next HEIGHT.
+            // Aa / 123 input method and Next.
+            // v1.6.40 — the toggle matches the Next HEIGHT.
             // v1.6.42 — REPORT #4: the clear-✕ beside the Aa/123 toggle is
             // REMOVED ("want to remove x btn beside the text and numbers
             // toggle that is for clear the line") — AC on the keypad and
             // ⌫ already clear the active line; report #9 renamed the
             // "Next line" button to plain "Next".
+            // v1.6.46 — report #3: the SAVE button is GONE and NEXT does
+            // what it did ("the next btn also should do what the save btn
+            // does, if we make it like that, we dont need the save btn"):
+            // the tap commits the line (if any) and persists the entry
+            // through the save pulse. Armed whenever there is a line to
+            // commit OR something payable to persist — an empty blank
+            // nothing stays inert.
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -1513,32 +1637,22 @@ fun EntryEditOverlay(
                     ) { Text("123", fontSize = F.tiny.sp, fontWeight = FontWeight.ExtraBold, color = if (calcMode == "num") C.onBrand else C.sub) }
                 }
                 Spacer(Modifier.weight(1f))
-                // Next — SMALL (v1.6.40: a text-only line commits as an
-                // annotation line too — only a blank line is disabled)
-                val nextEnabled = calcText.isNotBlank()
+                // Next — SMALL; commit + SAVE (v1.6.46 report #3). A
+                // text-only line commits as an annotation line first
+                // (v1.6.40); blank with nothing payable is the only
+                // disabled case.
+                val nextEnabled = calcText.isNotBlank() || effAmount > 0.005
                 Box(
                     Modifier
                         .height(30.dp)
                         .clip(RoundedCornerShape(9.dp))
                         .background(if (nextEnabled) C.brandSoft else C.card)
                         .border(1.dp, if (nextEnabled) C.brand else C.line, RoundedCornerShape(9.dp))
-                        .clickable(enabled = nextEnabled) { vibrate(longArrayOf(8)); commitCalcLine() }
+                        .clickable(enabled = nextEnabled) { vibrate(longArrayOf(8)); commitAndSave() }
                         .testTag("calcBtnNext")
                         .padding(horizontal = 10.dp),
                     contentAlignment = Alignment.Center,
                 ) { Text(t("ee.calcNext"), fontSize = F.tiny.sp, fontWeight = FontWeight.ExtraBold, color = if (nextEnabled) C.brand else C.faint) }
-                // Save — SMALL (the canvas's own; the footer's stays for
-                // the collapsed form)
-                Box(
-                    Modifier
-                        .height(30.dp)
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(if (effAmount > 0) C.brand else C.brand.copy(alpha = 0.25f))
-                        .clickable(enabled = effAmount > 0) { save() }
-                        .testTag("calcBtnSave")
-                        .padding(horizontal = 12.dp),
-                    contentAlignment = Alignment.Center,
-                ) { Text(t("act.save"), fontSize = F.tiny.sp, fontWeight = FontWeight.ExtraBold, color = C.onBrand) }
             }
             // the Σ advanced panel — M+ / M− / MR + the memory readout
             if (calcAdvanced) {
@@ -1638,6 +1752,7 @@ fun EntryEditOverlay(
                                     calcLines, entryPayments, itemsSum, effAmount, paidTotal,
                                     totalLabel = t("ee.calcTotal"), paidLabel = t("lg.paid"),
                                     remainingLabel = t("lg.remaining"), itemsLabel = t("lg.items"),
+                                    title = calcTitle.trim().ifEmpty { null },
                                 )
                             )
                             payModal = null
@@ -1752,7 +1867,13 @@ private fun DeleteBtn(tag: String, onPress: () -> Unit) {
    grid gains real bottom padding, and the host reports its TOP edge in
    window pixels so the canvas reserves the exact band it covers (see the
    padLift note above). */
-private val CALC_PAD_H = 224.dp
+private val CALC_PAD_H = 264.dp
+
+/* v1.6.46 — the ENTER row's height (see CalcPadGrid): a slightly shorter
+   band than a key row, so the five key rows keep essentially their old
+   size inside the pad's grown 264dp — the wide enter reads as its own,
+   slimmer action bar, exactly like a native keyboard's bottom row. */
+private val CALC_ENTER_H = 34.dp
 
 /** The text-keyboard colour — everything written in TEXT mode renders in
  *  this blue, everything written in NUMBER mode stays ink ("it should be
@@ -1760,7 +1881,7 @@ private val CALC_PAD_H = 224.dp
 internal val TEXTMODE_COLOR = Color(0xFF4A7D9B)
 
 @Composable
-private fun CalcKeypadHostContent(onKey: (String) -> Unit, rtl: Boolean) {
+private fun CalcKeypadHostContent(onKey: (String) -> Unit, onEnter: () -> Unit, rtl: Boolean) {
     val C = C()
     CompositionLocalProvider(
         LocalLayoutDirection provides if (rtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
@@ -1790,7 +1911,7 @@ private fun CalcKeypadHostContent(onKey: (String) -> Unit, rtl: Boolean) {
                     .height(CALC_PAD_H)
                     .testTag("calcPadRoot"),
             ) {
-                CalcPadGrid(onKey = onKey)
+                CalcPadGrid(onKey = onKey, onEnter = onEnter)
             }
         }
     }
@@ -1804,15 +1925,21 @@ private fun CalcKeypadHostContent(onKey: (String) -> Unit, rtl: Boolean) {
    v1.6.42 — the + is BACK in its CLASSIC spot, the 1 2 3 row ("why did
    you removed the pluss + from the keypad" — the v1.6.41 column shift
    had slid it down into ='s old bottom-right corner where muscle memory
-   never found it); the less-typed − takes the bottom-right slot instead:
+   never found it); the less-typed − takes the bottom-right slot instead.
+   v1.6.46 — report #1 ("i want the inter btn just like in the native
+   keyboard for the keypad on the right bottom under the -"): a WIDE
+   ENTER key fills the row UNDER the ± 0 . − row — the native keyboard's
+   return bar. The pad grew 224 → 264dp so the five key rows keep their
+   size (each ~37dp) and the enter row is its own 34dp action band:
 
     AC   [    %    ]  ⌫
      7    8    9    ÷
      4    5    6    ×
      1    2    3    +
-     ±    0    .    −            */
+     ±    0    .    −
+   [        ⏎        ]            */
 @Composable
-private fun CalcPadGrid(onKey: (String) -> Unit) {
+private fun CalcPadGrid(onKey: (String) -> Unit, onEnter: () -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -1820,7 +1947,7 @@ private fun CalcPadGrid(onKey: (String) -> Unit) {
             // v1.6.43 — real bottom padding on the keypad (the user's ask:
             // "the keypad should have some bottom padding") — the keys
             // already stop above the phone's system nav bar; this keeps a
-            // visible breathing strip under the ± 0 . − row
+            // visible breathing strip under the enter row
             .padding(top = 6.dp, bottom = 10.dp)
             .fillMaxHeight(),
         verticalArrangement = Arrangement.spacedBy(5.dp),
@@ -1852,13 +1979,39 @@ private fun CalcPadGrid(onKey: (String) -> Unit) {
                 }
             }
         }
+        // v1.6.46 — THE ENTER BAR: full-width under the − row
+        EnterKey(onEnter = onEnter)
     }
+}
+
+/* v1.6.46 — the wide ENTER key (report #1: "just like in the native
+ *  keyboard"): a full-width brand-filled bar with the return glyph —
+ *  native keyboards never label it, and never disable it. The tap commits
+ *  the active line (if any) and SAVES the entry — the same action as the
+ *  canvas's Next button (report #3). */
+@Composable
+private fun EnterKey(onEnter: () -> Unit) {
+    val C = C()
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(CALC_ENTER_H)
+            .clip(RoundedCornerShape(12.dp))
+            .background(C.brand)
+            .clickable { vibrate(longArrayOf(8)); onEnter() }
+            .testTag("calcKeyEnter"),
+        contentAlignment = Alignment.Center,
+    ) { MdiIcon("keyboard-return", 20, C.onBrand) }
 }
 
 /* One key of the numeric calculator pad — flat tile, brand-tinted
    operators, red backspace, blue % (the app calculator's language).
    v1.6.38: DIGITS 24sp (bigger glyphs, same cell). v1.6.39: = joins the
-   operator styling. v1.6.41: = is gone; ⌫ is the top-right key. */
+   operator styling. v1.6.41: = is gone; ⌫ is the top-right key.
+   v1.6.46 — the de-bulked calculation font (report #5: "make the fonts
+   better for calculation, now it looks to bulky"): digits 24→23sp and
+   Bold→SemiBold, operators 21→20sp SemiBold — the keys read lighter and
+   calmer without losing their tap-target size. */
 @Composable
 private fun CalcKey(key: String, modifier: Modifier = Modifier, onPress: (String) -> Unit) {
     val C = C()
@@ -1899,8 +2052,8 @@ private fun CalcKey(key: String, modifier: Modifier = Modifier, onPress: (String
         } else {
             Text(
                 display,
-                fontSize = if (key.length == 1 && key[0].isDigit()) 24.sp else 21.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = if (key.length == 1 && key[0].isDigit()) 23.sp else 20.sp,
+                fontWeight = FontWeight.SemiBold,
                 color = when {
                     op -> C.brand
                     key == "%" || key == "±" -> Color(0xFF4a7d9b)
@@ -2014,7 +2167,9 @@ internal fun lineCopyText(display: String, total: Double?): String =
  *  committed line with its date and its own total, each line's payments
  *  (date · amount · note · what it left), the line items sum, the TOTAL,
  *  and Paid · Remaining. Labels are passed in translated so the export
- *  speaks the app's language; pure, so the harness pins the format. */
+ *  speaks the app's language; pure, so the harness pins the format.
+ *  v1.6.46 — the CANVAS TITLE heads the export when there is one (it is
+ *  part of the calculation now). */
 internal fun formatCalcLedgerExport(
     lines: List<CalcNote>,
     payments: List<com.callmony.model.Payment>,
@@ -2025,8 +2180,10 @@ internal fun formatCalcLedgerExport(
     paidLabel: String,
     remainingLabel: String,
     itemsLabel: String,
+    title: String? = null,
 ): String {
     val sb = StringBuilder()
+    if (!title.isNullOrBlank()) sb.append(title.trim()).append("\n\n")
     lines.forEachIndexed { i, line ->
         val lt = evalCalcTokens(line.tokens)
         sb.append(lineCopyText(displayCalcNote(line), lt))
@@ -2056,23 +2213,25 @@ internal fun formatCalcLedgerExport(
     return sb.toString().trimEnd('\n')
 }
 
-/* v1.6.45 — report #2 ("need also a cercle that shows how many left"):
-   a compact ring on the sum-total row that fills as the total gets paid
-   (brand while paying, green when fully paid), with the COUNT of
-   still-unpaid lines in its centre — one glance answers "how many
-   left". */
+/* v1.6.46 — report #2, round two ("put the pay btn bised the TOTAL text
+   and the circle: a ring filling as you pay, should show how much % is
+   left from the total and dont say something like 1 left"): the sum-total
+   ring — its sweep FILLS with the paid fraction (brand while paying,
+   green once done) and its centre carries the PERCENTAGE LEFT, so one
+   glance answers "how much is left" without counting anything. The old
+   v1.6.45 LeftCircle (unpaid-line count + "N left" caption) is gone. */
 @Composable
-private fun LeftCircle(
-    count: Int,
+private fun PayRing(
+    percentLeft: Int,
     fraction: Float,
     fullyPaid: Boolean,
     tag: String,
-    countTag: String,
+    pctTag: String,
 ) {
     val C = C()
     Box(
         Modifier
-            .size(36.dp)
+            .size(40.dp)
             .testTag(tag),
         contentAlignment = Alignment.Center,
     ) {
@@ -2097,11 +2256,11 @@ private fun LeftCircle(
             }
         }
         Text(
-            "$count",
-            fontSize = F.small.sp,
-            fontWeight = FontWeight.ExtraBold,
+            "$percentLeft%",
+            fontSize = F.tiny.sp,
+            fontWeight = FontWeight.Bold,
             color = if (fullyPaid) C.green else C.brand,
-            modifier = Modifier.testTag(countTag),
+            modifier = Modifier.testTag(pctTag),
         )
     }
 }

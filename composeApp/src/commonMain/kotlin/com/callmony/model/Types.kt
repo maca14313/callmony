@@ -144,6 +144,11 @@ data class LedgerEntry(
     // (Db.kt ignoreUnknownKeys), and the v1.6.34 Downloads backup layer
     // mirrors it for free.
     val exprNote: String? = null,
+    // v1.6.46 — the annotated calculator's CANVAS TITLE ("give the canvas a
+    // title"): the bottom-border input at the top of the full-screen canvas,
+    // persisted with the entry the same optional-default way as exprNote
+    // (old rows decode without it, old code ignores it, backups mirror it).
+    val calcTitle: String? = null,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
     val deletedAt: Long? = null,

@@ -209,12 +209,12 @@ class EntryEditCalcV1645Test {
         )
     }
 
-    /* 2 — THE LEFT CIRCLE ("a cercle that shows how many left"): the count
-       of still-unpaid lines walks down as payments settle the ledger
-       FIFO — 2 lines, pay 400 (covers line 0 fully + 100 of line 1) → 1
-       left; pay the last 100 → 0 left. */
+    /* 2 — v1.6.46 — THE PAY RING ("a ring filling as you pay, should show
+       how much % is left from the total and dont say something like 1
+       left"): 2 lines totalling 500 → 100% left; pay 400 (of 500) → 20%
+       left; pay the last 100 → 0% left. No "N left" caption anywhere. */
     @Test
-    fun theLeftCircleCountsDownAsPaymentsSettleLinesFifo() {
+    fun thePayRingCountsDownInPercentages() {
         ready()
         openEditor()
         toNumMode()
@@ -226,31 +226,47 @@ class EntryEditCalcV1645Test {
         nextLine()
         awaitLine(1)
 
-        // 2 payable lines → the circle says 2 left
+        // nothing paid yet → the ring reads the full 100% left
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("calcLeftCircle").fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithTag("calcPayRing").fetchSemanticsNodes().isNotEmpty()
         }
         assertTrue(
-            "two committed lines must read as 2 left",
-            rule.onAllNodes(hasText("2 ${t("ee.calcLeft")}", substring = true)).fetchSemanticsNodes().isNotEmpty(),
+            "an unpaid 500 must read as 100% left",
+            rule.onAllNodes(hasText("100%")).fetchSemanticsNodes().isNotEmpty(),
+        )
+        // the v1.6.45 "N left" caption is GONE — no count text, no old tags
+        assertEquals(
+            "the 'N left' caption tag must be gone",
+            0,
+            rule.onAllNodesWithTag("calcLeftLabel").fetchSemanticsNodes().size,
+        )
+        assertEquals(
+            "the old left-circle tags must be gone",
+            0,
+            rule.onAllNodesWithTag("calcLeftCircle").fetchSemanticsNodes().size,
+        )
+        assertEquals(
+            "no '1 left' style text anywhere",
+            0,
+            rule.onAllNodes(hasText(" left", substring = true)).fetchSemanticsNodes().size,
         )
 
-        // pay 400 of the 500 total: line 0 (300) settles, line 1 still owes
+        // pay 400 of the 500 total → 100 left → 20% left
         payThroughTheTotal("400")
         assertTrue(
-            "after 400 of 500 the circle must read 1 left",
-            rule.onAllNodes(hasText("1 ${t("ee.calcLeft")}", substring = true)).fetchSemanticsNodes().isNotEmpty(),
+            "after 400 of 500 the ring must read 20% left",
+            rule.onAllNodes(hasText("20%")).fetchSemanticsNodes().isNotEmpty(),
         )
         assertTrue(
             "the paid · remaining line shows 400 paid",
             rule.onAllNodes(hasText("${t("lg.paid")} 400 Br", substring = true)).fetchSemanticsNodes().isNotEmpty(),
         )
 
-        // the last 100 settles line 1 → 0 left
+        // the last 100 settles everything → 0% left
         payThroughTheTotal("100")
         assertTrue(
-            "fully paid must read 0 left",
-            rule.onAllNodes(hasText("0 ${t("ee.calcLeft")}", substring = true)).fetchSemanticsNodes().isNotEmpty(),
+            "fully paid must read 0% left",
+            rule.onAllNodes(hasText("0%")).fetchSemanticsNodes().isNotEmpty(),
         )
     }
 

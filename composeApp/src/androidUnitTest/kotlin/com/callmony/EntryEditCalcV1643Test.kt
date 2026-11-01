@@ -37,14 +37,17 @@ import org.robolectric.annotation.GraphicsMode
         navigationBarsPadding (keys stop above the gesture-bar zone — under
         Robolectric the inset is 0, so what is pinned here is the WIRING:
         the overlay reports its measured top edge, the canvas reserves the
-        EXACT covered band — 224dp keypad − 71dp app nav = 153dp — and the
-        reservation collapses when the keypad closes).
+        EXACT covered band — and the reservation collapses when the keypad
+        closes).
+        v1.6.46 — the keypad grew 224 → 264dp (the wide ENTER bar under the
+        − row, report #1), so the covered band is 264dp keypad − 71dp app
+        nav = 193dp now.
 
-   The 153dp pin is the core invariant: if the keypad's height, the app
+   The 193dp pin is the core invariant: if the keypad's height, the app
    nav's shape, or the direct-measurement wiring drifts, the canvas's
-   Next/Save controls would sit under the keypad — exactly the regression
+   Next/ENTER controls would sit under the keypad — exactly the regression
    this guards. (All dp→px values are exact at the harness' 420dpi:
-   2.625 = 21/8, so 224dp·21/8 − 71dp·21/8 = 153dp exactly.) */
+   2.625 = 21/8, so 264dp·21/8 − 71dp·21/8 = 193dp exactly.) */
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-420dpi")
@@ -124,9 +127,10 @@ class EntryEditCalcV1643Test {
     }
 
     /* 2a — the overlay REPORTS its top edge and the canvas reserves the
-       EXACT covered band: keypad 224dp over an app nav of 71dp → 153dp.
-       This is the wiring that keeps the canvas's Next/Save controls clear
-       of the keypad while the keys themselves sit above the phone's system
+       EXACT covered band: keypad 264dp over an app nav of 71dp → 193dp
+       (v1.6.46: the keypad grew a 34dp ENTER bar under the − row). This is
+       the wiring that keeps the canvas's Next/ENTER controls clear of the
+       keypad while the keys themselves sit above the phone's system
        navigation bar. */
     @Test
     fun theCanvasReservesTheExactKeypadBand() {
@@ -140,16 +144,25 @@ class EntryEditCalcV1643Test {
         rule.waitUntil(timeoutMillis = 15000) { RootBottomOverlays.lift.value > 0.dp }
         val lift = RootBottomOverlays.lift.value.value
         assertTrue(
-            "reserved band must be 153dp (224dp keypad − 71dp app nav), was $lift dp",
-            kotlin.math.abs(lift - 153f) < 0.5f,
+            "reserved band must be 193dp (264dp keypad − 71dp app nav), was $lift dp",
+            kotlin.math.abs(lift - 193f) < 0.5f,
         )
         // the keypad still reaches DOWN over the app's bottom navigation
         // (the covered band is real, not degenerate)
         assertTrue("the keypad must intrude into the content area", lift > 100f)
         // the keys kept a healthy size (the nav padding + grid padding did
-        // not squeeze the rows into slivers)
+        // not squeeze the rows into slivers — five key rows at ~37dp inside
+        // the grown pad, plus the 34dp ENTER bar)
         rule.onNodeWithTag("calcKey:1").assertHeightIsAtLeast(30.dp)
         rule.onNodeWithTag("calcKey:0").assertHeightIsAtLeast(30.dp)
+        // v1.6.46 — the ENTER bar sits BELOW the − key, full width
+        val minus = rule.onNodeWithTag("calcKey:-").fetchSemanticsNode()
+        val enter = rule.onNodeWithTag("calcKeyEnter").fetchSemanticsNode()
+        assertTrue(
+            "the ENTER key must sit under the − row",
+            enter.positionInRoot.y > minus.positionInRoot.y,
+        )
+        rule.onNodeWithTag("calcKeyEnter").assertHeightIsAtLeast(30.dp)
     }
 
     /* 2b — closing the keypad collapses the reservation: the top-edge

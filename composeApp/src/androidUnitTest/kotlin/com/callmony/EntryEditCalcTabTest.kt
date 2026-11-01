@@ -109,10 +109,6 @@ class EntryEditCalcTabTest {
         rule.waitForIdle()
     }
 
-    private fun saveFromCanvas() {
-        rule.onNodeWithTag("calcBtnSave").performClick()
-        rule.waitForIdle()
-    }
 
     /* 1 — the ⌫ FIX: after 200 × 100, three ⌫ eat 0,0,1 and the FOURTH
        removes the × (with its spaces) — the locked line that commits
@@ -133,7 +129,6 @@ class EntryEditCalcTabTest {
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodes(hasText("200")).fetchSemanticsNodes().isNotEmpty()
         }
-        saveFromCanvas()
         val note = rule.runOnUiThread {
             // v1.6.42 — committed lines carry a " @date" marker; compare
             // the marker-stripped form
@@ -167,7 +162,6 @@ class EntryEditCalcTabTest {
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodes(hasText("ball 200")).fetchSemanticsNodes().isNotEmpty()
         }
-        saveFromCanvas()
         val savedId = rule.runOnUiThread {
             // v1.6.42 — committed lines carry a trailing " @date" marker now;
             // compare on the marker-stripped form
@@ -238,7 +232,6 @@ class EntryEditCalcTabTest {
 
         // Save: amount 300 + BOTH lines on the note (each with its commit
         // date marker — v1.6.42)
-        saveFromCanvas()
         val savedId = rule.runOnUiThread {
             AppStore.state.entries.firstOrNull { e ->
                 e.amount == 300.0 &&

@@ -104,10 +104,26 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.45 (versionCode 56)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.46 (versionCode 57)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
-- **1.6.45** — THE SIX-REPORT ROUND: (1) the system keyboard can never
+- **1.6.46** — THE FIVE-REPORT ROUND: (1) the keypad's wide ENTER bar —
+  full-width in its own action row UNDER the − key ("just like in the
+  native keyboard"), running the same commit + save as Next; (2) the sum
+  total is ONE row: the PAY RING (fills as you pay, PERCENTAGE left in its
+  centre — 100% → 0%, green when done, no "N left" counting anywhere) with
+  the TOTAL text and the Pay chip beside it; (3) NEXT does what Save did,
+  so the Save button AND the footer are GONE — the save lands one
+  recomposition later through the save pulse (post-commit state),
+  backing out CREATES a never-saved draft with something payable, and the
+  autosave key now carries item names (renames were invisible to it);
+  (4) the canvas header's label became a bottom-border-only TITLE input —
+  persisted as `LedgerEntry.calcTitle`, headlining the collapsed band and
+  the whole-ledger export; (5) the calculation fonts de-bulked — the
+  active line renders 18sp Medium (the native field drops its hard Bold),
+  the totals go SemiBold, the keypad glyphs lighten. Tests 220/220.
+
+- **1.6.45** — THE SIX-REPORT ROUND: (1) the system keyboard can never- **1.6.45** — THE SIX-REPORT ROUND: (1) the system keyboard can never
   attach to the number field — NoImeEditText force-hides the IME on every
   focus / window-focus gain (the QWERTY's IME lingering after the Aa → 123
   toggle, the app-resume re-show, OEM focus churn — all dead at the view

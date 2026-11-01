@@ -46,4 +46,11 @@ expect fun NoImeNumberField(
     highlight: Set<Int> = emptySet(),
     highlightColor: Color = Color.Unspecified,
     focusToken: Int = 0,
+    // v1.6.46 — THE CALCULATION FONT, de-bulked ("make the fonts better
+    // for calculation, now it looks to bulky"): the canvas's active line
+    // opts out of the field's heavy weight — a Regular/Medium 18sp read
+    // instead of the Bold the keypad displays keep (bold stays the DEFAULT
+    // so the dialer, the keypad sheet and the plain calculator are
+    // unchanged).
+    bold: Boolean = true,
 )

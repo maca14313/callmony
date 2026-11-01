@@ -733,3 +733,19 @@ Work Log:
 
 Stage Summary:
 - All six reports fixed; suite fully green; the freeze-free foundation and the v1.6.44 crash fixes untouched. Live: https://github.com/maca14313/callmony/releases/tag/v1.6.45
+
+## v1.6.46 — the five-report round: the ENTER bar, the percentage ring, Save retired, the canvas title, de-bulked fonts (2026-11-01)
+
+Recon: sandbox reset again (local at v1.6.25); ff-only to origin/main b895a78 (v1.6.45 vc56, 217/217). Android SDK reinstalled (dl.google.com download died twice; resumed with curl -C - retries). Full session log: sandbox/chat-logs/2026-11-01-v1.6.46-enter-ring-title.md.
+
+- #1: WIDE ENTER bar (new keyboard-return icon) in its own 34dp row under the ± 0 . − row, full-width brand fill, never disabled; CALC_PAD_H 224→264 keeps the five key rows at ~37dp; reserved band pin 153→193dp (V1643 updated + enter-under-− geometry pinned). Tap = commitAndSave() (same as Next).
+- #2: sum total is ONE row — 40dp PAY RING (paid-fraction sweep, green when done) with the PERCENTAGE left in its centre, TOTAL label + amount + paid·remaining, Pay chip + copy beside; LeftCircle/calcLeftCount/ee.calcLeft all deleted (ring % = round(remaining/total·100)).
+- #3: Next = commit + SAVE (save PULSE — the save runs one recomposition later so it builds from the post-commit ledger; same-handler save would read pre-commit effAmount/calcNote); canvas Save + footer Save REMOVED; LEAVE-TIME CREATE on dispose for never-saved drafts with something payable, staleness-proofed via rememberUpdatedState (the old DisposableEffect(Unit) froze composition #1's derived vals — latent bug fixed for live entries too); autosave key now carries item NAMES (renames were invisible to every save path — caught by the new battery as a failing test); Next armed on text OR payable.
+- #4: header label → bottom-border-only title input (drawBehind hairline, ee.calcTitlePh ×5 languages), persists as new optional LedgerEntry.calcTitle, rides the autosave key, headlines the collapsed band, heads the whole-ledger export (formatCalcLedgerExport title param, canvas + modal copy).
+- #5: active line 18sp Medium both modes (NoImeNumberField bold param, default true — dialer/keypad sheet/Calculator unchanged; Android sans-serif-medium + 0.01 tracking, iOS Medium); "= total" 21sp SemiBold; sum amount 17sp SemiBold; keypad digits 23sp / operators 20sp SemiBold.
+- Tests 220/220 (was 217): NEW V1646 ×5; V1645 ring rewrite, V1642 "0%", V1643 193dp, V1640 Next/ENTER contracts (marker-stripped exprNote), CalcTab saveFromCanvas deleted, AddTabs backs out (leave-time create + rename persistence), CalcNote −2 (calcLeftCount deleted). Lessons: JVM-singleton store poisons cross-class absolute counts (unique amounts + ID checks); terminal display eats literal "[m" (false corruption alarm — verified at byte level before "fixing").
+- Build 1.6.46 vc57: assembleRelease clean; aapt com.callmony vc57 1.6.46; apksigner same key 2f6d65be…869ad; APK SHA-256 7a3b2938…67e6e3; both iOS targets compile.
+- Delivered: releases/callmony-1.6.46-release.apk committed + pushed; GitHub Release v1.6.46 published with the APK; copy at /home/z/my-project/download/callmony-1.6.46-release.apk; README + CHANGELOG + chat-log committed.
+
+Stage Summary:
+- All five reports fixed; suite 220/220 green; the v1.6.44/45 crash and IME defenses untouched. Live: https://github.com/maca14313/callmony/releases/tag/v1.6.46

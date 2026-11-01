@@ -79,6 +79,7 @@ actual fun NoImeNumberField(
     highlight: Set<Int>,
     highlightColor: Color,
     focusToken: Int,
+    bold: Boolean,
 ) {
     val density = LocalDensity.current
     val textSizePx = with(density) { fontSizeSp.sp.toPx() }
@@ -122,8 +123,17 @@ actual fun NoImeNumberField(
                 setPadding(0, 0, 0, 0)
                 setTextColor(textColorArgb)
                 textSize = pxToSp(textSizePx)
-                typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
-                letterSpacing = 0.04f
+                // v1.6.46 — the CALCULATION FONT: the canvas's active line
+                // drops the heavy Bold for sans-serif-medium at Regular
+                // weight (the de-bulked look); everything else (the keypad
+                // sheet's display, the plain calculator) keeps the classic
+                // Bold — and the tight tracking only rides the light cut
+                typeface = if (bold) {
+                    android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+                } else {
+                    android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+                }
+                letterSpacing = if (bold) 0.04f else 0.01f
                 addTextChangedListener(object : TextWatcher {
                     override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                     override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}

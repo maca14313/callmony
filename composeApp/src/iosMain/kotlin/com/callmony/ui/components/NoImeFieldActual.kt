@@ -30,6 +30,7 @@ actual fun NoImeNumberField(
     highlight: Set<Int>,
     highlightColor: Color,
     focusToken: Int,
+    bold: Boolean,
 ) {
     BasicTextField(
         value = value,
@@ -38,8 +39,11 @@ actual fun NoImeNumberField(
         maxLines = if (maxLines <= 1) 1 else maxLines,
         textStyle = TextStyle(
             fontSize = fontSizeSp.sp,
-            fontWeight = FontWeight.Medium,
-            letterSpacing = 1.2.sp,
+            // v1.6.46 — the de-bulked calculation font: the canvas's active
+            // line renders Medium (matching the Android light cut); the
+            // keypad displays keep their heavier weight
+            fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Medium,
+            letterSpacing = if (bold) 1.2.sp else 0.4.sp,
             color = textColor,
             textAlign = when {
                 alignEnd -> TextAlign.End

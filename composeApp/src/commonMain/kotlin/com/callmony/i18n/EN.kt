@@ -392,7 +392,9 @@ internal val EN: Map<String, String> = mapOf(
     "ee.calcCopyTotal" to "Copy total",
     // v1.6.41 — the pay chip beside every total / the payment cap
     "ee.calcPay" to "Pay",
-    "ee.calcLeft" to "left",
+    // v1.6.46 — ee.calcLeft ("N left") was REMOVED with the pay-ring
+    // redesign: the ring's centre now carries the PERCENTAGE left.
+    "ee.calcTitlePh" to "Title",
     "ee.calcItems" to "Items",
     "ee.calcEntryLocked" to "Locked",
     "ee.calcEntryUnlocked" to "Unlocked",
