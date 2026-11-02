@@ -60,6 +60,11 @@ class RecentsV1636Test {
         rule.runOnUiThread {
             AppStore.state.settings = AppStore.state.settings.copy(onboarded = true)
             AppStore.state.callLogPerm = PermState.GRANTED
+            // deterministic layout: without this the async contacts auto-ask
+            // resolves to DENIED mid-test, its "Contacts access is off"
+            // banner reflows the list and pushes the third card past the
+            // lazy viewport
+            AppStore.state.contactsPerm = PermState.GRANTED
             AppStore.state.callLogSyncedAt = System.currentTimeMillis()
             // a back-to-back conversation with ONE number, mixed
             // directions (newest first): outgoing → incoming → incoming
@@ -92,6 +97,11 @@ class RecentsV1636Test {
         rule.runOnUiThread {
             AppStore.state.settings = AppStore.state.settings.copy(onboarded = true)
             AppStore.state.callLogPerm = PermState.GRANTED
+            // deterministic layout: without this the async contacts auto-ask
+            // resolves to DENIED mid-test, its "Contacts access is off"
+            // banner reflows the list and pushes the third card past the
+            // lazy viewport
+            AppStore.state.contactsPerm = PermState.GRANTED
             AppStore.state.callLogSyncedAt = System.currentTimeMillis()
             // same number, but ANOTHER number's call sits between the two
             AppStore.state.systemCalls = listOf(
@@ -101,8 +111,10 @@ class RecentsV1636Test {
             )
         }
         rule.waitForIdle()
+        // wait for the EXPECTED pair — the list composes in stages, so a
+        // presence-only wait races the second card's frame
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithText("+251 9110 0007").fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithText("+251 9110 0007").fetchSemanticsNodes().size == 2
         }
         val cards = rule.onAllNodesWithText("+251 9110 0007").fetchSemanticsNodes()
         check(cards.size == 2) { "non-consecutive same-number calls must stay 2 cards, got ${cards.size}" }

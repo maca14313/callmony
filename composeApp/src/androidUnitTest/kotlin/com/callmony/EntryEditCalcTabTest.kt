@@ -122,18 +122,30 @@ class EntryEditCalcTabTest {
         key("⌫"); key("⌫"); key("⌫")   // 0, 0, 1
         key("⌫")                        // the × itself
         // the line is just 200 now — the operator is GONE
+        // (v1.6.49: the live total renders "= 200" + its own tappable
+        // currency chip — the combined "200 Br" node is gone)
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("200 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("= 200", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
         nextLine()
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodes(hasText("200")).fetchSemanticsNodes().isNotEmpty()
         }
+        // the commit's SAVE lands (v1.6.49: another battery in this run
+        // books its own amount-200 entry — the exprNote tells them apart)
+        rule.waitUntil(timeoutMillis = 15000) {
+            rule.runOnUiThread {
+                AppStore.state.entries.any {
+                    it.amount == 200.0 &&
+                        it.exprNote?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), "") == "200"
+                }
+            }
+        }
         val note = rule.runOnUiThread {
-            // v1.6.42 — committed lines carry a " @date" marker; compare
-            // the marker-stripped form
-            AppStore.state.entries.lastOrNull { it.amount == 200.0 }?.exprNote
-                ?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), "")
+            AppStore.state.entries.lastOrNull {
+                it.amount == 200.0 &&
+                    it.exprNote?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), "") == "200"
+            }?.exprNote?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), "")
         }
         assertEquals("the × must be gone — the line commits as just 200", "200", note)
     }
@@ -155,7 +167,7 @@ class EntryEditCalcTabTest {
         toNumMode()
         listOf("2", "0", "0").forEach { key(it) }
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("200 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("= 200", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
         nextLine()
         // the locked line carries the label AND the number
@@ -205,16 +217,18 @@ class EntryEditCalcTabTest {
         // line 1: 1 × 200 (the user's own example) → 200
         listOf("1", "×", "2", "0", "0").forEach { key(it) }
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("200 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("= 200", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
         nextLine()
         // the committed line is LOCKED: tapping it pulls NOTHING down
         rule.onNodeWithTag("calcLine:0").performClick()
         rule.waitForIdle()
-        // the fresh line keeps the armed input method (num): 100 → 300
+        // the fresh line keeps the armed input method (num): 100 → the SUM
+        // reads 300 (v1.6.49: the sum-total AMOUNT node renders the number
+        // alone — "300 Br" combined no longer exists)
         listOf("1", "0", "0").forEach { key(it) }
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("300 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("300")).fetchSemanticsNodes().isNotEmpty()
         }
 
         // v1.6.45 — the SUM TOTAL's Pay chip opens the payments modal (the
@@ -270,7 +284,7 @@ class EntryEditCalcTabTest {
         listOf("+", "5").forEach { key(it) }
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("205 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("= 205", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
         // re-commit: the edited line replaces the old one
         nextLine()
@@ -325,8 +339,9 @@ class EntryEditCalcTabTest {
         }
     }
 
-    /* 7 — the native BACK button closes the keypad first, then collapses
-       the canvas, then closes the editor itself */
+    /* 7 — v1.6.49: the native BACK button closes the keypad first, then
+       the EDITOR itself (the form is GONE — the canvas IS the editor,
+       there is no collapse step anymore) */
     @Test
     fun backClosesTheKeypadThenTheCanvasThenTheEditor() {
         ready()
@@ -344,42 +359,35 @@ class EntryEditCalcTabTest {
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodesWithTag("calcCollapse").fetchSemanticsNodes().isNotEmpty()
         }
-        // back #2 — the canvas COLLAPSES to the form
-        back()
-        rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("calcCollapsed").fetchSemanticsNodes().isNotEmpty()
-        }
-        // back #3 — the editor itself closes
+        // back #2 — the EDITOR closes (v1.6.49: no form to collapse to —
+        // the canvas was the whole editor)
         back()
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodesWithTag("calcCollapsed").fetchSemanticsNodes().isEmpty() &&
-                rule.onAllNodesWithTag("calcTextField").fetchSemanticsNodes().isEmpty()
+                rule.onAllNodesWithTag("calcTextField").fetchSemanticsNodes().isEmpty() &&
+                rule.onAllNodesWithTag("calcNumField").fetchSemanticsNodes().isEmpty()
         }
     }
 
-    /* 8 — the canvas is FULL SCREEN over the form while it is up (the
-       form's collapsed band does not exist); collapsing shows the band,
-       and tapping the band raises the canvas again */
+    /* 8 — v1.6.49: the canvas IS the whole editor (the form is gone —
+       report #7 "we don't want the page that says edit entry"): no
+       collapsed band ever exists, and the header's ✕ closes the editor
+       directly */
     @Test
     fun theCanvasIsFullScreenAndRaisesAgain() {
         ready()
         openEditor()
-        // full screen: the canvas's own chrome is up, no collapsed band
+        // the canvas's own chrome is up; NO collapsed band, ever
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodesWithTag("calcCollapse").fetchSemanticsNodes().isNotEmpty()
         }
         assertEquals(0, rule.onAllNodesWithTag("calcCollapsed").fetchSemanticsNodes().size)
-        // collapse → the form (the band) shows
+        // ✕ closes the whole editor — no form appears underneath
         rule.onNodeWithTag("calcCollapse").performClick()
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("calcCollapsed").fetchSemanticsNodes().isNotEmpty()
-        }
-        // raise it again
-        rule.onNodeWithTag("calcCollapsed").performClick()
-        rule.waitForIdle()
-        rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("calcTextField").fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithTag("calcTextField").fetchSemanticsNodes().isEmpty() &&
+                rule.onAllNodesWithTag("calcCollapsed").fetchSemanticsNodes().isEmpty()
         }
     }
 
@@ -404,11 +412,21 @@ class EntryEditCalcTabTest {
         rule.waitForIdle()
 
         openEditor(legacyId)
-        // the strip composes beneath the full-screen canvas: Calculator +
-        // Recent — Just amount / Items / Quick item chips are REMOVED
+        // v1.6.49 — the whole FORM is gone (report #7): no tabs at all
+        // compose anywhere — Calculator and Recent went with it
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText(t("ee.tabRecent")) and hasClickAction()).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithTag("calcTextField").fetchSemanticsNodes().isNotEmpty()
         }
+        assertEquals(
+            "the Calculator tab must be gone (the form is deleted)",
+            0,
+            rule.onAllNodes(hasText(t("ee.tabCalc")) and hasClickAction()).fetchSemanticsNodes().size,
+        )
+        assertEquals(
+            "the Recent tab must be gone (the form is deleted)",
+            0,
+            rule.onAllNodes(hasText(t("ee.tabRecent")) and hasClickAction()).fetchSemanticsNodes().size,
+        )
         assertEquals(
             "Just amount chip must be gone",
             0,
@@ -426,11 +444,13 @@ class EntryEditCalcTabTest {
         )
 
         // the legacy 500 reopens as its first locked line → total 500
+        // (v1.6.49: the number renders alone — the currency is its own
+        // tappable chip beside it)
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodesWithTag("calcLine:0").fetchSemanticsNodes().isNotEmpty()
         }
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("500 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("500", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
     }
 }

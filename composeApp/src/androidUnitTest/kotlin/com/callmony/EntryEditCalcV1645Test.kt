@@ -226,13 +226,15 @@ class EntryEditCalcV1645Test {
         nextLine()
         awaitLine(1)
 
-        // nothing paid yet → the ring reads the full 100% left
+        // v1.6.49 — NOTHING PAID YET reads 0% (report #4: "why the
+        // persontage in the cercle says 100 when there is no any payment") —
+        // the ring counts what is PAID now, matching the entry cards
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodesWithTag("calcPayRing").fetchSemanticsNodes().isNotEmpty()
         }
         assertTrue(
-            "an unpaid 500 must read as 100% left",
-            rule.onAllNodes(hasText("100%")).fetchSemanticsNodes().isNotEmpty(),
+            "an unpaid 500 must read 0% — the ring counts the paid share",
+            rule.onAllNodes(hasText("0%")).fetchSemanticsNodes().isNotEmpty(),
         )
         // the v1.6.45 "N left" caption is GONE — no count text, no old tags
         assertEquals(
@@ -251,22 +253,22 @@ class EntryEditCalcV1645Test {
             rule.onAllNodes(hasText(" left", substring = true)).fetchSemanticsNodes().size,
         )
 
-        // pay 400 of the 500 total → 100 left → 20% left
+        // pay 400 of the 500 total → 400 paid → 80% PAID
         payThroughTheTotal("400")
         assertTrue(
-            "after 400 of 500 the ring must read 20% left",
-            rule.onAllNodes(hasText("20%")).fetchSemanticsNodes().isNotEmpty(),
+            "after 400 of 500 the ring must read 80% paid",
+            rule.onAllNodes(hasText("80%")).fetchSemanticsNodes().isNotEmpty(),
         )
         assertTrue(
             "the paid · remaining line shows 400 paid",
             rule.onAllNodes(hasText("${t("lg.paid")} 400 Br", substring = true)).fetchSemanticsNodes().isNotEmpty(),
         )
 
-        // the last 100 settles everything → 0% left
+        // the last 100 settles everything → a GREEN 100% paid
         payThroughTheTotal("100")
         assertTrue(
-            "fully paid must read 0% left",
-            rule.onAllNodes(hasText("0%")).fetchSemanticsNodes().isNotEmpty(),
+            "fully paid must read 100% (green)",
+            rule.onAllNodes(hasText("100%")).fetchSemanticsNodes().isNotEmpty(),
         )
     }
 

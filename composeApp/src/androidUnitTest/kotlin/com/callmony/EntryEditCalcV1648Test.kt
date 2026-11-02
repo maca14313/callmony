@@ -162,18 +162,22 @@ class EntryEditCalcV1648Test {
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodes(hasText("$")).fetchSemanticsNodes().isNotEmpty()
         }
-        // and the calculator speaks dollars: the live total, the line
-        // totals and the sum total all render "$" — not the old hard-coded
-        // birr (money() defaults to the LIVE setting since v1.6.48)
+        // and the calculator speaks dollars: the live total and the sum
+        // total render the number, and the CURRENCY CHIPS read "$" beside
+        // them — not the old hard-coded birr (money() defaults to the LIVE
+        // setting since v1.6.48; v1.6.49 split the symbol into its own
+        // tappable node)
         toNumMode()
         listOf("7", "3", "5").forEach { key(it) }
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("735 $", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("= 735", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
-        val sumAmounts = rule.onAllNodes(hasText("735 $"))
+        rule.waitUntil(timeoutMillis = 15000) {
+            rule.onAllNodesWithTag("calcTotalCur").fetchSemanticsNodes().isNotEmpty()
+        }
         assertTrue(
-            "the sum total's amount follows the live currency",
-            sumAmounts.fetchSemanticsNodes().isNotEmpty(),
+            "the sum total's currency chip follows the live currency",
+            rule.onAllNodes(hasText("$", substring = true)).fetchSemanticsNodes().isNotEmpty(),
         )
     }
 
@@ -257,9 +261,11 @@ class EntryEditCalcV1648Test {
         rule.waitForIdle()
 
         // LIVE: the keypad-written number calculates even glued
-        // ("what will be considered is in what mode it was")
+        // ("what will be considered is in what mode it was") — v1.6.49:
+        // the live total renders "= 555,555,555" with the currency on
+        // its own chip beside it
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("555,555,555 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("= 555,555,555", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
 
         // COMMIT + SAVE through Next: the split rides the entry
@@ -275,12 +281,14 @@ class EntryEditCalcV1648Test {
             savedExpr?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), ""),
         )
         // and the committed line's own total still reads the number
+        // (v1.6.49: the number renders alone — the currency is its own
+        // tappable chip beside it)
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodesWithTag("calcLineTotal:0", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         }
         assertTrue(
             "the committed line's own total reads 555,555,555",
-            rule.onAllNodes(hasText("555,555,555 Br")).fetchSemanticsNodes().isNotEmpty(),
+            rule.onAllNodes(hasText("555,555,555")).fetchSemanticsNodes().isNotEmpty(),
         )
     }
 

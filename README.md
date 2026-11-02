@@ -104,8 +104,39 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.48 (versionCode 59)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.49 (versionCode 60)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
+
+- **1.6.49** — THE TEN-REPORT ROUND: (1) THE CURRENCY BESIDE EVERY TOTAL
+  IS TAPPABLE — a tiny chip prints the currency each total renders in
+  (the line's own → the entry's sum currency → the live setting) and its
+  tap opens the scoped picker: the sum's chip writes the entry's
+  `calcCurrency`, a committed line's chip rewrites that line (riding the
+  save as a ` ~USD` marker), the active line's chip rides its commit;
+  (2) the COPY and ✕ buttons moved ONTO the individual total's own row
+  (the total, currency chip, paid hint, date, lock, copy and delete all
+  share one row); (3) the individual total renders at the line TEXT's
+  own size in every state, the live total aligns under the field (the
+  pushed-left fix), the date renders 11sp Normal, and the ledger's left
+  rail tightened (~32dp from the edge, was ~64dp); (4) the sum total row
+  is COMPACT (ring 40→30dp, one tight line) and the circle counts what
+  is PAID — 0% with nothing paid (it counted what was left, so a fresh
+  entry read "100"), green at 100%, matching the entry cards; (5) THE
+  BREAK SURVIVES THE LOCK — the enter key's newline rides the grammar as
+  the ⏎ marker (U+23CE) and the display puts the visual break back: a
+  multi-line calculation STAYS multi-line when locked, saved, reopened;
+  (6) the TITLE INPUT sits UNDER the header and the new Aa font-size
+  icon ON the header opens the S/M/L picker (riding the entry as
+  `calcFontSize`); (7) THE EDIT-ENTRY PAGE IS DELETED — the canvas IS
+  the editor (every old form field seeds once and rides along; items
+  data intact); (8) the contact detail's ＋ Credit/＋ Debit pills are
+  GONE — the ledger FAB's (and the header row's) ＋ opens a compact kind
+  chooser (root-level host sheet, ownerId explicit — round two fixed a
+  cross-wired RootFab slot and a below-viewport sheet); (9) the entry
+  cards preview the WHOLE calculation (up to four lines, ⏎ folded);
+  (10) PAYMENTS UPDATE — tapping a recorded payment in the modal reopens
+  the sheet as an UPDATE form, rewriting it in place
+  (`AppStore.updatePayment`). Tests 253/253.
 
 - **1.6.48** — THE SEVEN-REPORT CALCULATOR ROUND: (1) THE CURRENCY
   ACTUALLY CHANGES — `money()`/`compactMoney()` default to the LIVE

@@ -128,8 +128,14 @@ fun LedgerSection(ownerId: String) {
     // the full-screen calculation canvas already up — a NEW CANVAS, ready
     // to type on. Leaving the ledger segment (or the whole screen)
     // disposes this effect and clears the slot.
+    // v1.6.49 — report #8 ("in the contact detail page make the tabs +
+    // credit, + debit, to show up when the pluss icon for the ledger is
+    // clicked"): on a CONTACT's ledger the FAB asks the KIND first — a
+    // compact chooser with ＋ Credit / ＋ Debit — instead of opening the
+    // canvas directly (the General ledger keeps the direct new-canvas
+    // behavior, unchanged).
     DisposableEffect(ownerId) {
-        RootFab.content.value = { LedgerFab(ownerId = ownerId) }
+        RootFab.content.value = { LedgerFab(ownerId = ownerId, askKind = !isGeneral) }
         onDispose { RootFab.content.value = null }
     }
 
@@ -223,6 +229,12 @@ fun LedgerSection(ownerId: String) {
         // equal-width compact buttons in a FIXED row (no scrolling to reach
         // them); the secondary actions scroll beneath them in the SAME pill
         // style (v1.6.26 consistency fix).
+        // v1.6.49 — report #8: THE CONTACT DETAIL PAGE LOST ITS ADD PILLS —
+        // "dont want thos + credit, + debit up there… dont need the other
+        // tabs bised them in the contact detail page": the +Credit/+Debit
+        // choices moved into the ledger FAB's tap (openAddKindChooser), so this
+        // whole action stack now renders on the GENERAL ledger only.
+        if (isGeneral) {
         Row(Modifier.padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val primary = if (isGeneral) {
                 Triple("income" to "credit", "expense" to "debit", "credit" to "credit")
@@ -263,6 +275,7 @@ fun LedgerSection(ownerId: String) {
                 ActionPill("share-variant-outline", t("lg.shareStatement")) { shareSheet = true }
             }
         }
+        } // end of the general-only action stack
         // groups
         if (myGroups.isNotEmpty()) {
             Column(Modifier.padding(bottom = 10.dp)) {
@@ -315,9 +328,13 @@ fun LedgerSection(ownerId: String) {
                 // v1.6.25 makes it a LABELED compact chip instead of the
                 // ghost icon the user could never find, and the kind now
                 // follows the active tab exactly (credit tab → + Credit…).
+                // v1.6.49 — report #8: on a CONTACT the labeled kind chip is
+                // GONE ("dont want thos + credit, + debit up there") — every
+                // ＋ on a contact's ledger opens the same +Credit/+Debit
+                // chooser as the FAB; the General ledger keeps both.
                 val addLabel = when (groupFilter) {
-                    "credit" -> if (isGeneral) t("lg.kindIncome") else t("lg.kindCredit")
-                    "debit" -> if (isGeneral) t("lg.kindExpense") else t("lg.kindDebit")
+                    "credit" -> if (isGeneral) t("lg.kindIncome") else null
+                    "debit" -> if (isGeneral) t("lg.kindExpense") else null
                     else -> null
                 }
                 if (addLabel != null) {
@@ -343,7 +360,9 @@ fun LedgerSection(ownerId: String) {
                     }
                 }
                 IconBtn("plus", {
-                    UiStore.open(Overlay.EntryEdit(null, ownerId))
+                    // v1.6.49 — a contact's ＋ asks the kind (report #8);
+                    // the General ledger opens the canvas directly as before
+                    if (isGeneral) UiStore.open(Overlay.EntryEdit(null, ownerId)) else openAddKindChooser(ownerId)
                 }, size = 30)
                 IconBtn(if (ungroupedCollapsed) "chevron-down" else "chevron-up", { ungroupedCollapsed = !ungroupedCollapsed }, size = 30)
             }
@@ -376,6 +395,16 @@ fun LedgerSection(ownerId: String) {
             }
         }
     }
+
+    // v1.6.49 — the contact ledger's kind chooser is a top-level helper
+    // now (openAddKindChooser below): the chooser opens as a ROOT-LEVEL
+    // host sheet carrying its ownerId EXPLICITLY. The first cut bridged a
+    // remember-state through the shell's shared RootFab slot — two
+    // LedgerSections publish into one content slot (the General tab's
+    // ledger stays composed behind the contact detail overlay), and the
+    // fab's captured state write landed on the WRONG section's sheet; and
+    // an in-place BottomSheet sat below the visible viewport (the contact
+    // detail's body is one tall verticalScroll — the v1.6.18 lesson).
 
     // group action menu
     groupMenuFor?.let { g ->
@@ -477,9 +506,12 @@ fun LedgerSection(ownerId: String) {
  *  transparent wrapper never consumes input — only the circle itself is
  *  clickable. The tap opens the entry editor, which starts with the
  *  full-screen calculation canvas already up (calcExpanded defaults
- *  true) — one tap, one NEW CANVAS. */
+ *  true) — one tap, one NEW CANVAS.
+ *  v1.6.49 — report #8: on a CONTACT's ledger the tap first asks the KIND
+ *  (＋ Credit / ＋ Debit) through the chooser sheet; the General ledger
+ *  keeps the direct new-canvas behavior. */
 @Composable
-private fun LedgerFab(ownerId: String) {
+private fun LedgerFab(ownerId: String, askKind: Boolean = false) {
     val C = C()
     Box(Modifier.fillMaxSize()) {
         Box(
@@ -492,11 +524,49 @@ private fun LedgerFab(ownerId: String) {
                 .background(C.brand)
                 .clickable {
                     com.callmony.ui.kit.vibrate(longArrayOf(10))
-                    UiStore.open(Overlay.EntryEdit(null, ownerId))
+                    if (askKind) openAddKindChooser(ownerId)
+                    else UiStore.open(Overlay.EntryEdit(null, ownerId))
                 }
                 .testTag("ledgerFabNewCanvas"),
             contentAlignment = Alignment.Center,
         ) { MdiIcon("plus", 26, C.onBrand) }
+    }
+}
+
+/* v1.6.49 — THE CONTACT LEDGER'S KIND CHOOSER (report #8: "in the contact
+ *  detail page make the tabs + credit, + debit, to show up when the pluss
+ *  icon for the ledger is clicked"): the FAB's — and the header row's — ＋
+ *  opens these two choices instead of the canvas directly; each opens the
+ *  entry editor with its kind preset, canvas up as always. A ROOT-LEVEL
+ *  HOST SHEET carrying its ownerId explicitly: no captured remember state
+ *  (the shared RootFab slot cross-wired two sections' bridges), no in-
+ *  place BottomSheet (the contact detail's tall verticalScroll would push
+ *  it below the viewport — the v1.6.18 record-payment lesson). */
+fun openAddKindChooser(ownerId: String) {
+    com.callmony.ui.kit.HostSheets.push { close ->
+        val C = C()
+        BottomSheet(title = t("lg.addEntry"), onClose = close) {
+            Column {
+                listOf(
+                    Triple("hand-coin-outline", t("lg.kindCredit"), "credit" to "credit"),
+                    Triple("credit-card-outline", t("lg.kindDebit"), "debit" to "debit"),
+                ).forEach { (icon, label, kind) ->
+                    PressableRow(onClick = {
+                        close()
+                        UiStore.open(Overlay.EntryEdit(null, ownerId, kind.first, kind.second))
+                    }) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            MdiIcon(icon, 20, C.ink)
+                            Text("＋ $label", fontSize = 16.sp, color = C.ink)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -583,10 +653,22 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
     val cardTitle = entry.calcTitle?.takeIf { it.isNotBlank() }
         ?: entry.items.singleOrNull()?.name?.takeIf { it.isNotBlank() }
         ?: t("lg.kind${kind.replaceFirstChar { it.uppercase() }}")
-    val calcPreview = entry.exprNote
-        ?.lineSequence()?.firstOrNull()
-        ?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), "")?.trim()
-        ?.takeIf { it.isNotEmpty() }
+    // v1.6.49 — report #9 ("make the entires list cards longer verticaly so
+    // it's shows most of it's calculation"): the preview is now the
+    // WHOLE calculation — every ledger line of its own (up to four visual
+    // rows), the ⏎ intra-line breaks folded to spaces — instead of the
+    // single ellipsized first line, so the card grows to show most of the
+    // math it opens into.
+    val calcPreviewLines = entry.exprNote
+        ?.split('\n')
+        ?.map {
+            it.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), "")
+                .replace(com.callmony.lib.CALC_BREAK, ' ')
+                .trim()
+        }
+        ?.filter { it.isNotEmpty() }
+        ?.take(4)
+        ?: emptyList()
 
     Card(Modifier.padding(bottom = 6.dp)) {
         Column {
@@ -617,11 +699,20 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
                         )
                         entry.category?.let { Pill(it, "brand") }
                     }
+                    // v1.6.49 — THE CALCULATION ITSELF, up to four of its
+                    // lines (report #9) — the card shows most of the math
+                    if (calcPreviewLines.isNotEmpty()) {
+                        Text(
+                            calcPreviewLines.joinToString("\n"),
+                            fontSize = F.tiny.sp,
+                            color = C.sub,
+                            maxLines = 4,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.testTag("entryCardCalc:${entry.id}"),
+                        )
+                    }
                     Text(
                         listOfNotNull(
-                            // v1.6.47 — the canvas's first line previews the
-                            // calculation itself
-                            calcPreview,
                             fd(entry.date),
                             "${t("lg.balance")} ${compactMoney(running)}",
                             if (entry.payments.isNotEmpty()) "${t("lg.payments")} ${entry.payments.size}" else null,
@@ -739,7 +830,19 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
                         Text(t("lg.noPaymentsYet"), fontSize = F.tiny.sp, color = C.faint, modifier = Modifier.padding(bottom = 6.dp))
                     }
                     entry.payments.forEachIndexed { i, p ->
-                        Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        // v1.6.49 — report #10 ("why there is no a way to
+                        // update payment"): tapping the row opens the
+                        // payment's own EDITOR (amount / date / method /
+                        // note, saved in place); the ✕ still removes it
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { openPaymentSheet(entry.id, edit = p) }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                             Text("${i + 1}.", fontSize = F.tiny.sp, color = C.faint, modifier = Modifier.width(18.dp))
                             Text(
                                 buildString {
@@ -752,6 +855,7 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
                                 color = C.ink,
                                 modifier = Modifier.weight(1f),
                             )
+                            IconBtn("pencil-outline", { openPaymentSheet(entry.id, edit = p) }, size = 28, color = C.brand)
                             IconBtn("close", {
                                 Confirm.ask(t("act.remove"), t("lg.paymentRemoved"), t("act.remove"), danger = true) { ok ->
                                     if (ok) AppStore.removePayment(entry.id, p.id)
@@ -813,8 +917,20 @@ private fun openRef(ref: com.callmony.model.LinkRef, entry: LedgerEntry) {
  * The date is now the NATIVE calendar picker (was a hand-typed YYYY-MM-DD
  * text field — typos produced garbage dates, another "not working" source).
  * It reads the LIVE entry from the store, so it stays correct if state
- * changes while it is open. */
-fun openPaymentSheet(entryId: String, prefill: Double? = null, lineIdx: Int? = null, maxAmount: Double? = null) {
+ * changes while it is open.
+ * v1.6.49 — report #10 ("why there is no a way to update payment"): an
+ * `edit` payment reopens the SAME compact sheet as an UPDATE form — the
+ * amount / date / method / note prefilled from the recorded row, the save
+ * rewriting it IN PLACE (AppStore.updatePayment keeps the id, the line
+ * attribution and the auto marker); the cap accounts for the payment being
+ * edited (remaining + its own amount). */
+fun openPaymentSheet(
+    entryId: String,
+    prefill: Double? = null,
+    lineIdx: Int? = null,
+    maxAmount: Double? = null,
+    edit: Payment? = null,
+) {
     com.callmony.ui.kit.HostSheets.push { close ->
         val live = AppStore.state.entries.find { it.id == entryId } ?: run { close(); return@push }
         val C = C()
@@ -828,12 +944,19 @@ fun openPaymentSheet(entryId: String, prefill: Double? = null, lineIdx: Int? = n
         //   the five method segments became compact chips on one scroller,
         //   and Save is one small full-width button — four tight rows where
         //   there were seven stacked blocks.
-        var amount by remember { mutableStateOf(prefill?.let { trimNumCompat(it) } ?: "") }
-        var payDate by remember { mutableStateOf(todayStr()) }
-        var method by remember { mutableStateOf("cash") }
-        var payNote by remember { mutableStateOf("") }
+        // v1.6.49 — an EDIT reopens prefilled from the recorded payment
+        var amount by remember { mutableStateOf(edit?.let { trimNumCompat(it.amount) } ?: prefill?.let { trimNumCompat(it) } ?: "") }
+        var payDate by remember { mutableStateOf(edit?.date?.takeIf { it.isNotEmpty() } ?: todayStr()) }
+        var method by remember { mutableStateOf(edit?.method ?: "cash") }
+        var payNote by remember { mutableStateOf(edit?.note ?: "") }
         val remaining = entryRemaining(live)
-        BottomSheet(title = "${t("lg.recordPayment")} · ${compactMoney(live.amount)}", onClose = close) {
+        // the cap: the remaining total — plus the payment being EDITED (its
+        // own amount stops counting against the cap the moment it reopens)
+        val cap = if (edit != null) r2(remaining + edit.amount) else maxAmount
+        BottomSheet(
+            title = (if (edit != null) t("lg.updatePayment") else t("lg.recordPayment")) + " · ${compactMoney(live.amount)}",
+            onClose = close,
+        ) {
             Column {
                 if (remaining > 0.005) {
                     Text(
@@ -911,10 +1034,11 @@ fun openPaymentSheet(entryId: String, prefill: Double? = null, lineIdx: Int? = n
                         }
                     }
                 }
-                // SAVE — one small full-width button
+                // SAVE — one small full-width button (v1.6.49: UPDATE when
+                // editing, ADD otherwise)
                 Row(Modifier.padding(top = 10.dp)) {
                     Btn(
-                        small = true, label = t("act.save"),
+                        small = true, label = if (edit != null) t("lg.updatePayment") else t("act.save"),
                         onPress = {
                             val v = amount.replace(",", ".").toDoubleOrNull()
                             if (v == null || v <= 0) {
@@ -925,23 +1049,40 @@ fun openPaymentSheet(entryId: String, prefill: Double? = null, lineIdx: Int? = n
                             // never go above the remaining total ("when making
                             // payment it should not go above the total for the
                             // individual line and for the sum total")
-                            if (maxAmount != null && v > maxAmount + 0.005) {
+                            if (cap != null && v > cap + 0.005) {
                                 Toasts.toast(t("lg.paymentTooMuch"), "error")
                                 return@Btn
                             }
-                            AppStore.addPayment(
-                                entryId,
-                                Payment(
-                                    id = uid(),
-                                    amount = v,
-                                    date = payDate.ifEmpty { todayStr() },
-                                    method = method,
-                                    note = payNote.ifEmpty { null },
-                                    lineIdx = lineIdx,
-                                    createdAt = now(),
+                            if (edit != null) {
+                                // v1.6.49 — the recorded payment REWRITES IN
+                                // PLACE: same id, same line attribution, same
+                                // auto marker — only the four editable fields
+                                // move
+                                AppStore.updatePayment(
+                                    entryId,
+                                    edit.copy(
+                                        amount = v,
+                                        date = payDate.ifEmpty { todayStr() },
+                                        method = method,
+                                        note = payNote.ifEmpty { null },
+                                    ),
                                 )
-                            )
-                            Toasts.toast(t("lg.paymentAdded"))
+                                Toasts.toast(t("lg.paymentUpdated"))
+                            } else {
+                                AppStore.addPayment(
+                                    entryId,
+                                    Payment(
+                                        id = uid(),
+                                        amount = v,
+                                        date = payDate.ifEmpty { todayStr() },
+                                        method = method,
+                                        note = payNote.ifEmpty { null },
+                                        lineIdx = lineIdx,
+                                        createdAt = now(),
+                                    )
+                                )
+                                Toasts.toast(t("lg.paymentAdded"))
+                            }
                             close()
                         },
                         modifier = Modifier.fillMaxWidth(),

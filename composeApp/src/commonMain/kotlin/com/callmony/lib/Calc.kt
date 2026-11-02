@@ -429,13 +429,19 @@ private fun fmtTerm(d: Double): String =
  *  the user's updated spec draws it: a label slot BEFORE the number, the
  *  editable number itself, a label slot AFTER it, and the operator that
  *  follows this number (null on the chain's last number).
- *  v1.6.38 — pct: this number was typed with the % key ("10%"). */
+ *  v1.6.38 — pct: this number was typed with the % key ("10%").
+ *  v1.6.49 — lineBreak: the ENTER key landed a newline BETWEEN the previous
+ *  number and THIS one inside the same individual calculation (report #5:
+ *  "when it got locked, the line disappeared, it just one line why") — the
+ *  flag rides the saved grammar as the ⏎ marker and displayCalcNote turns
+ *  it back into the visual line break the user typed. */
 data class CalcToken(
     val before: String = "",  // "ball"
     val number: String,       // "100" (editable text; comma normalized to dot)
     val after: String = "",   // "price in birr"
     val op: String? = null,   // "+", "-", "×", "÷" — the op AFTER this number
     val pct: Boolean = false, // v1.6.38 — "10%": % of the running total (±) or /100 (×÷)
+    val lineBreak: Boolean = false, // v1.6.49 — a ⏎ sat before this number in the saved text
 )
 
 /** v1.6.36 — the whole annotated calculation as structured data: the number
@@ -448,14 +454,41 @@ data class CalcToken(
  *  text rides here so it round-trips through the ledger untouched.
  *  v1.6.42 — date: the day the line was COMMITTED ("it should show the date
  *  for each entry"), riding a trailing " @YYYY-MM-DD" marker through the
- *  save; old notes without one open with date="" and simply show nothing. */
+ *  save; old notes without one open with date="" and simply show nothing.
+ *  v1.6.49 — currency: the line's OWN display currency (report #1: "the
+ *  ability to change the individual currency by clicking the currency
+ *  that is there bisede the total"), riding a trailing " ~USD" marker; null
+ *  = the entry's sum currency / the live setting. */
 data class CalcNote(
     val tokens: List<CalcToken> = emptyList(),
     val resultBefore: String = "",  // label before the total ("total")
     val resultAfter: String = "",   // label after the total ("birr")
     val text: String = "",          // v1.6.40 — pure-annotation line (no math)
     val date: String = "",          // v1.6.42 — commit date (YYYY-MM-DD)
+    val currency: String? = null,   // v1.6.49 — the line's own display currency
 )
+
+/** v1.6.49 — THE INTRA-LINE BREAK MARKER (report #5: "when i click the inter
+ *  btn in the number keypad and go to the next line in the individual, then
+ *  when it got locked, the line disappeared, it just one line why"): the
+ *  enter key is a newline INSIDE one individual calculation, and the commit
+ *  must keep it — but the SAVED ledger grammar is one calculation per '\n',
+ *  so a raw newline in a line's text would split it in two on reload. The
+ *  break therefore rides the save as this single marker character (⏎,
+ *  U+23CE — nothing a QWERTY or the keypad can type), is treated as plain
+ *  WHITESPACE by every grammar rule, and displayCalcNote turns it back into
+ *  the visual line break. Old rows never contain it. */
+const val CALC_BREAK: Char = '\u23CE'
+
+/** v1.6.49 — the grammar's whitespace: real whitespace PLUS the intra-line
+ *  break marker (it separates tokens exactly like a space does). */
+fun isCalcWs(c: Char): Boolean = c.isWhitespace() || c == CALC_BREAK
+
+/** v1.6.49 — the editor funnel's newline fold: real newlines in the active
+ *  line's text become the save-safe marker (1:1, index-aligned — the QWERTY
+ *  marks stay valid through it). */
+fun calcBreakFold(s: String): String =
+    if (s.contains('\n')) s.replace('\n', CALC_BREAK) else s
 
 /** v1.6.36 — one live intermediate result for the step-by-step card
  *  ("100 × 2" → 200, then "200 + 300" → 500). */
@@ -487,15 +520,25 @@ private fun latinizeDigits(s: String): String {
  *  marker persists through the save, so a reopened note keeps the split
  *  between what calculates and what is just words. A line whose every
  *  number is quoted (or that has none) is a PURE ANNOTATION — its text
- *  rides CalcNote.text and never enters any total. */
+ *  rides CalcNote.text and never enters any total.
+ *  v1.6.49 — the ⏎ marker separates tokens exactly like a space (it IS the
+ *  enter key's newline, save-safe) and STAMPS the token after it with
+ *  lineBreak so the display can put the visual break back; a trailing
+ *  " ~USD" marker rides CalcNote.currency (the line's own display money). */
 fun parseCalcNote(raw: String): CalcNote {
     if (raw.isBlank()) return CalcNote()
+
+    // v1.6.49 — strip a trailing " ~USD" per-line currency marker FIRST
+    // (it is bookkeeping, never part of the calculation or its labels)
+    val curMarker = Regex("\\s*~\\s*([A-Za-z]{3})\\s*$")
+    val currency = curMarker.find(raw)?.groupValues?.get(1)?.uppercase()
+    val rawNoCur = if (currency != null) raw.replace(curMarker, "") else raw
 
     // v1.6.42 — strip a trailing " @YYYY-MM-DD" commit-date marker first:
     // it is bookkeeping, never part of the calculation or its labels
     val dateMarker = Regex("\\s*@\\s*(\\d{4}-\\d{2}-\\d{2})\\s*$")
-    val date = dateMarker.find(raw)?.groupValues?.get(1) ?: ""
-    val rawBody = if (date.isNotEmpty()) raw.replace(dateMarker, "") else raw
+    val date = dateMarker.find(rawNoCur)?.groupValues?.get(1) ?: ""
+    val rawBody = if (date.isNotEmpty()) rawNoCur.replace(dateMarker, "") else rawNoCur
 
     val body = rawBody.substringBefore('=')
     val tail = if (rawBody.contains('=')) rawBody.substringAfter('=').trim() else ""
@@ -508,12 +551,32 @@ fun parseCalcNote(raw: String): CalcNote {
         .replace(Regex("(?<=\\d)\\s*[-−]\\s*(?=\\d)"), " - ")
         .replace(Regex("(?<=\\d)\\s*\\+\\s*(?=\\d)"), " + ")
 
+    // v1.6.49 — the token walk keeps the ⏎ markers alive through the parse:
+    // every separator run that CONTAINS one stamps the token after it with
+    // lineBreak, so serialize/display can put the user's enter-key break
+    // back where it was typed (report #5 — the locked line kept "just one
+    // line" because the old fold melted newlines into plain spaces)
+    val toksWithBreaks = mutableListOf<Pair<String, Boolean>>()
+    run {
+        var sepHadBreak = false
+        var idx = 0
+        for (m in Regex("[\\s\\u23CE]+").findAll(spaced)) {
+            val t = spaced.substring(idx, m.range.first)
+            if (t.isNotEmpty()) toksWithBreaks.add(t to sepHadBreak)
+            sepHadBreak = CALC_BREAK in m.value
+            idx = m.range.last + 1
+        }
+        val tailTok = spaced.substring(idx)
+        if (tailTok.isNotEmpty()) toksWithBreaks.add(tailTok to sepHadBreak)
+    }
+
     val tokens = mutableListOf<CalcToken>()
     var before = mutableListOf<String>()  // words waiting for their number
     var after = mutableListOf<String>()   // words collected after a number
     var curNum: String? = null            // the number being annotated
     var curOp: String? = null             // op already set for it
     var curPct = false                    // v1.6.38 — the number carries %
+    var curBrk = false                    // v1.6.49 — a ⏎ sat before this number
 
     fun flush() {
         val n = curNum ?: return
@@ -524,6 +587,7 @@ fun parseCalcNote(raw: String): CalcNote {
                 after = after.joinToString(" "),
                 op = curOp,
                 pct = curPct,
+                lineBreak = curBrk,
             )
         )
         before = mutableListOf()
@@ -531,10 +595,16 @@ fun parseCalcNote(raw: String): CalcNote {
         curNum = null
         curOp = null
         curPct = false
+        curBrk = false
     }
 
-    for (tok in spaced.split(Regex("\\s+"))) {
+    for ((tok, brk) in toksWithBreaks) {
         if (tok.isEmpty()) continue
+        // v1.6.49 — labels carry their break INLINE ("label⏎label2" keeps
+        // the marker inside the joined label string); numbers carry the
+        // lineBreak FLAG; a break that arrives ON an operator rides the
+        // NEXT number (the op itself belongs to the previous token)
+        val markedTok = if (brk) "$CALC_BREAK$tok" else tok
         when (tok) {
             "+", "-", "−", "×", "*", "x", "X", "÷", "/" -> {
                 val op = when (tok) {
@@ -548,6 +618,7 @@ fun parseCalcNote(raw: String): CalcNote {
                     curOp = op
                     flush()
                 }
+                if (brk) curBrk = true
                 // a dangling/leading operator is ignored (old rule)
             }
             // v1.6.38 — a standalone "%" glues onto the number before it
@@ -558,7 +629,7 @@ fun parseCalcNote(raw: String): CalcNote {
                 // written in TEXT mode carry the marker through the save
                 val quoted = tok.length >= 2 && tok.startsWith("\"") && tok.endsWith("\"")
                 if (quoted) {
-                    if (curNum != null) after.add(tok) else before.add(tok)
+                    if (curNum != null) after.add(markedTok) else before.add(markedTok)
                 } else {
                 // v1.6.38 — "10%" (glued): strip ONE trailing % and parse
                 // the rest as the number; the marker rides the token
@@ -571,12 +642,13 @@ fun parseCalcNote(raw: String): CalcNote {
                         curOp = "+"
                         flush()
                     }
+                    if (brk) curBrk = true
                     curNum = latinizeDigits(body).replace(',', '.')
                     curPct = isPct
                 } else if (curNum != null) {
-                    after.add(tok)
+                    after.add(markedTok)
                 } else {
-                    before.add(tok)
+                    before.add(markedTok)
                 }
                 }
             }
@@ -586,15 +658,19 @@ fun parseCalcNote(raw: String): CalcNote {
 
     // v1.6.40 — a line with NO calculable number is a PURE ANNOTATION: the
     // body text rides CalcNote.text (quotes and all) so the ledger keeps
-    // the line without ever totalling it.
-    if (tokens.isEmpty()) return CalcNote(text = body.trim(), date = date)
+    // the line without ever totalling it. v1.6.49 — its ⏎ markers ride
+    // along (displayCalcNote turns them back into the visual breaks) and
+    // so does the line's own currency.
+    if (tokens.isEmpty()) return CalcNote(text = body.trim(), date = date, currency = currency)
 
     // the result zone: "= total 500 birr" → before="total", after="birr".
     // No number in the tail → all the words become the trailing label.
+    // v1.6.49 — breaks never render inside the result labels (they fold
+    // to one space there).
     var resBefore = ""
     var resAfter = ""
     if (tail.isNotEmpty()) {
-        val words = tail.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val words = tail.replace(CALC_BREAK, ' ').split(Regex("\\s+")).filter { it.isNotEmpty() }
         var seenNumber = false
         val pre = mutableListOf<String>()
         val post = mutableListOf<String>()
@@ -607,7 +683,7 @@ fun parseCalcNote(raw: String): CalcNote {
         resAfter = post.joinToString(" ")
     }
 
-    return CalcNote(tokens, resBefore, resAfter, date = date)
+    return CalcNote(tokens, resBefore, resAfter, date = date, currency = currency)
 }
 
 /** v1.6.36 — chips → the free-text grammar. Byte-stable round-trip for
@@ -615,22 +691,32 @@ fun parseCalcNote(raw: String): CalcNote {
  *  transport = total 500 birr"); the result zone is only written when the
  *  user annotated the total (labels exist), never by default.
  *  v1.6.40 — a PURE ANNOTATION line serializes to its own text.
- *  v1.6.42 — a dated line re-appends its " @YYYY-MM-DD" commit marker. */
+ *  v1.6.42 — a dated line re-appends its " @YYYY-MM-DD" commit marker.
+ *  v1.6.49 — a line with its OWN currency re-appends its " ~USD" marker
+ *  after the date. */
 fun serializeCalcNote(n: CalcNote): String {
-    val base = serializeCalcNoteBody(n)
-    return if (n.date.isNotEmpty()) "$base @${n.date}" else base
+    var s = serializeCalcNoteBody(n)
+    if (n.date.isNotEmpty()) s += " @${n.date}"
+    if (!n.currency.isNullOrEmpty()) s += " ~${n.currency}"
+    return s
 }
 
 /** v1.6.42 — the line as the USER sees and edits it: the same free-text
- *  serialization WITHOUT the trailing commit-date marker (the field, the
- *  copy button and the locked-line text all render this). */
-fun displayCalcNote(n: CalcNote): String = serializeCalcNoteBody(n)
+ *  serialization WITHOUT the trailing commit-date/currency markers, with
+ *  the ⏎ markers turned back into the VISUAL line breaks the enter key
+ *  typed (v1.6.49 — the field, the copy button and the locked-line text
+ *  all render this, so a committed multi-line calculation stays
+ *  multi-line instead of collapsing to "just one line"). */
+fun displayCalcNote(n: CalcNote): String =
+    serializeCalcNoteBody(n).replace(CALC_BREAK, '\n')
 
 private fun serializeCalcNoteBody(n: CalcNote): String {
     if (n.tokens.isEmpty()) return n.text.trim()
     val sb = StringBuilder()
     n.tokens.forEachIndexed { i, tk ->
-        if (i > 0) sb.append(' ')
+        // v1.6.49 — a token whose ⏎ flag is set writes the marker as its
+        // separator (the enter key's break), not the plain space
+        if (i > 0) sb.append(if (tk.lineBreak) CALC_BREAK else ' ')
         if (tk.before.isNotBlank()) sb.append(tk.before.trim()).append(' ')
         sb.append(tk.number)
         if (tk.pct) sb.append('%')
@@ -663,9 +749,10 @@ fun textModeRanges(raw: String): Set<Int> {
     var i = 0
     val n = raw.length
     while (i < n) {
-        if (raw[i].isWhitespace()) { i++; continue }
+        // v1.6.49 — the ⏎ break marker is whitespace to this walk too
+        if (isCalcWs(raw[i])) { i++; continue }
         var j = i
-        while (j < n && !raw[j].isWhitespace()) j++
+        while (j < n && !isCalcWs(raw[j])) j++
         val tok = raw.substring(i, j)
         val quoted = tok.length >= 2 && tok.startsWith("\"") && tok.endsWith("\"")
         val hasLetter = tok.any { it.isLetter() }
@@ -692,9 +779,9 @@ fun quoteTextNumbers(raw: String, qwerty: Set<Int>): String {
     var i = 0
     val n = raw.length
     while (i < n) {
-        if (raw[i].isWhitespace()) { sb.append(raw[i]); i++; continue }
+        if (isCalcWs(raw[i])) { sb.append(raw[i]); i++; continue }
         var j = i
-        while (j < n && !raw[j].isWhitespace()) j++
+        while (j < n && !isCalcWs(raw[j])) j++
         val tok = raw.substring(i, j)
         val looksNumber = tok.let {
             val b = if (it.endsWith("%")) it.dropLast(1) else it
@@ -734,9 +821,9 @@ fun applyModeSplit(raw: String, qwerty: Set<Int>): String {
     var i = 0
     val n = raw.length
     while (i < n) {
-        if (raw[i].isWhitespace()) { sb.append(raw[i]); i++; continue }
+        if (isCalcWs(raw[i])) { sb.append(raw[i]); i++; continue }
         var j = i
-        while (j < n && !raw[j].isWhitespace()) j++
+        while (j < n && !isCalcWs(raw[j])) j++
         val tok = raw.substring(i, j)
         val alreadyQuoted = tok.length >= 2 && tok.startsWith("\"") && tok.endsWith("\"")
         val anyQwerty = (i until j).any { it in qwerty }

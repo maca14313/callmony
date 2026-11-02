@@ -149,8 +149,8 @@ android {
         // INSIDE the same individual calculation (Next stays the one
         // commit+save key), and the lock icon returns as a text-height
         // inert glyph. saveEntry's merge now carries calcTitle/calcPrefix.
-        versionCode = 59
-        versionName = "1.6.48"
+        versionCode = 60
+        versionName = "1.6.49"
     }
 
     signingConfigs {

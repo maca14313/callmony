@@ -12,6 +12,8 @@ import com.callmony.lib.quoteTextNumbers
 import com.callmony.lib.serializeCalcLedger
 import com.callmony.lib.textModeRanges
 import com.callmony.lib.serializeCalcNote
+import com.callmony.lib.displayCalcNote
+import com.callmony.lib.calcBreakFold
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -512,4 +514,70 @@ class CalcNoteTest {
         val split = applyModeSplit("555\n5".replace('\n', ' '), setOf(4))
         assertEquals("555 \"5\"", split)
     }
+
+    @Test
+    fun the_break_marker_round_trips_as_a_visual_line_break() {
+        // v1.6.49 report #5: the enter key's newline rides the save as the
+        // ⏎ marker — parse stamps the token after it, serialize writes it
+        // back, and the DISPLAY turns it into the visual break the user
+        // typed (the locked line never collapses to "just one line")
+        val n = parseCalcNote("275 +\u23CE70")
+        assertEquals(345.0, evalCalcTokens(n.tokens)!!, 0.0)
+        assertEquals("275 +\u23CE70", serializeCalcNote(n))
+        assertEquals("275 +\n70", displayCalcNote(n))
+        // the break rides the date/currency markers too
+        val withMeta = parseCalcNote("275 +\u23CE70 @2026-11-02 ~USD")
+        assertEquals("275 +\u23CE70 @2026-11-02 ~USD", serializeCalcNote(withMeta))
+        assertEquals("USD", withMeta.currency)
+        assertEquals("275 +\n70", displayCalcNote(withMeta))
+    }
+
+    @Test
+    fun the_break_marker_is_just_whitespace_to_the_grammar() {
+        // the marker separates tokens exactly like a space does — adjacent
+        // numbers fold as +, labels carry their break inline
+        val n = parseCalcNote("555\u23CE5")
+        assertEquals(560.0, evalCalcTokens(n.tokens)!!, 0.0)
+        assertEquals("555 +\u23CE5", serializeCalcNote(n))
+        // a REAL newline reaching the parse directly (an unfolded legacy
+        // line) still folds to the plain space — only the ⏎ marker carries
+        // the visual break
+        val legacy = parseCalcNote("555\n5")
+        assertEquals(560.0, evalCalcTokens(legacy.tokens)!!, 0.0)
+        assertEquals("555 + 5", serializeCalcNote(legacy))
+    }
+
+    @Test
+    fun the_per_line_currency_marker_rides_the_note() {
+        // v1.6.49 report #1: the line's OWN display currency rides a
+        // trailing " ~USD" — bookkeeping, never part of the calculation or
+        // its labels
+        val n = parseCalcNote("ball 100 price ~USD")
+        assertEquals("USD", n.currency)
+        assertEquals(100.0, evalCalcTokens(n.tokens)!!, 0.0)
+        assertEquals("ball 100 price ~USD", serializeCalcNote(n))
+        // absent → null (the entry's sum currency / the live setting)
+        assertNull(parseCalcNote("ball 100 price").currency)
+        // the ledger round-trip keeps one line's choice off the others
+        val ledger = parseCalcLedger("100 ~USD\n200")
+        assertEquals("USD", ledger[0].currency)
+        assertNull(ledger[1].currency)
+        assertEquals("100 ~USD\n200", serializeCalcLedger(ledger))
+        // a pure annotation line carries its currency too
+        val note = parseCalcNote("just words ~EUR")
+        assertEquals("EUR", note.currency)
+        assertEquals("just words", note.text)
+    }
+
+    @Test
+    fun the_break_fold_is_index_aligned_for_the_qwerty_marks() {
+        // v1.6.49: the editor folds real newlines to the marker 1:1 BEFORE
+        // the mode-split, so QWERTY indices stay valid through it
+        assertEquals("555\u23CE5", calcBreakFold("555\n5"))
+        assertEquals("no newlines", calcBreakFold("no newlines"))
+        val split = applyModeSplit(calcBreakFold("555\n5"), setOf(4))
+        assertEquals("555\u23CE\"5\"", split)
+        val n = parseCalcNote(split)
+        assertEquals(555.0, evalCalcTokens(n.tokens)!!, 0.0)
+}
 }

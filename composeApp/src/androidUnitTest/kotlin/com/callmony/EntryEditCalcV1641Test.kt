@@ -432,8 +432,10 @@ class EntryEditCalcV1641Test {
         openEditor()
         toNumMode()
         listOf("1", "0", "0").forEach { key(it) }
+        // v1.6.49 — the live total renders "= 100" with its own tappable
+        // currency chip beside it (the combined "100 Br" node is gone)
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("100 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("= 100", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
         // the keypad is up (RTL-mirrored) and the total row exists
         assertTrue(

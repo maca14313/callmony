@@ -319,11 +319,13 @@ class EntryEditCalcV1642Test {
             "the sum shows Paid · Remaining",
             rule.onAllNodes(hasText("${t("lg.paid")} 300 Br", substring = true)).fetchSemanticsNodes().isNotEmpty(),
         )
-        // v1.6.46 — the PAY RING went to 0% — everything is paid (report #2
-        // round two: "should show how much % is left from the total")
+        // v1.6.49 — the PAY RING counts what is PAID now (report #4:
+        // "why the persontage in the cercle says 100 when there is no any
+        // payment" — it counted what was LEFT, so a fresh entry read
+        // 100%): fully paid reads a GREEN 100%
         assertTrue(
-            "the pay ring must show 0% once fully paid",
-            rule.onAllNodes(hasText("0%")).fetchSemanticsNodes().isNotEmpty(),
+            "the pay ring must show 100% once fully paid (it counts the paid share)",
+            rule.onAllNodes(hasText("100%")).fetchSemanticsNodes().isNotEmpty(),
         )
     }
 

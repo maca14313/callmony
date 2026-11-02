@@ -509,6 +509,10 @@ object AppStore {
                 // the merge path
                 calcTitle = e.calcTitle,
                 calcPrefix = e.calcPrefix,
+                // v1.6.49 — the sum-total currency and the canvas font size
+                // ride every save of an existing row too (same merge rule)
+                calcCurrency = e.calcCurrency,
+                calcFontSize = e.calcFontSize,
                 listId = e.listId ?: existing.listId,
                 groupId = e.groupId,
                 refs = if (e.refs.isNotEmpty()) e.refs else existing.refs,
@@ -564,6 +568,22 @@ object AppStore {
     fun removePayment(entryId: String, paymentId: String) {
         val next = state.entries.map { e ->
             if (e.id != entryId) e else e.copy(payments = e.payments.filter { it.id != paymentId }, updatedAt = now())
+        }
+        state.entries = next
+        Db.saveEntries(next)
+    }
+
+    /* v1.6.49 — UPDATE A RECORDED PAYMENT (report #10: "why there is no a
+     *  way to update payment"): the amount / date / method / note edit in
+     *  place, keyed by the payment's own id — the line attribution
+     *  (lineIdx) and the auto marker survive untouched. */
+    fun updatePayment(entryId: String, p: Payment) {
+        val next = state.entries.map { e ->
+            if (e.id != entryId) e
+            else e.copy(
+                payments = e.payments.map { if (it.id == p.id) p else it },
+                updatedAt = now(),
+            )
         }
         state.entries = next
         Db.saveEntries(next)

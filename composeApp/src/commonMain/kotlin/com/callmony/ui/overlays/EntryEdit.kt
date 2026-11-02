@@ -90,7 +90,9 @@ import com.callmony.lib.now
 import com.callmony.lib.parseCalcLedger
 import com.callmony.lib.parseCalcNote
 import com.callmony.lib.applyModeSplit
+import com.callmony.lib.calcBreakFold
 import com.callmony.lib.currencySymbol
+import com.callmony.lib.moneyNumber
 import com.callmony.lib.r2
 import com.callmony.lib.serializeCalcLedger
 import com.callmony.lib.serializeCalcNote
@@ -124,36 +126,26 @@ import com.callmony.ui.kit.vibrate
 import com.callmony.ui.components.ScrollRow
 import com.callmony.ui.sections.openPaymentSheet
 
-/* EntryEdit — the ledger entry editor. v1.6.40: numbers written in TEXT
-   mode never calculate (they carry a quote marker through the save), the
-   TOTAL sits AFTER the last calculation entry on the paper itself (no
-   different background) and long-presses into the SAME payments modal as
-   every individual line total — the original amount, the payment history
-   with the new amount after each payment, and Make payment / Copy inside;
-   make payment now visibly REDUCES the amount (paid · remaining live on
-   the total and on paid lines) with quick buttons after the totals;
-   locked lines show their FULL calculation (no clamp); the ✕ remove and
-   a new VISIBLE clear button beside the Aa/123 toggle ask through a custom
-   confirmation modal; the lock is a noticeable pill long-press unlocks;
-   the cursor sits at the right place (end) after a toggle or Next line;
-   the toggle matches the Save / Next-line height; Save KEEPS the editor
-   open and autosave takes over after the first save.
-   v1.6.39 base: full-screen canvas over the editor — one unified
-   native-editable line in both modes (typed text can never disappear on
-   a mode switch — the "ball" bug), the small Aa/123/Next-line/Save
-   buttons on the canvas, a compact keypad the native back button closes,
-   long-press unlocks a locked line, a copy icon on every line. ✕ or the
-   native back button collapses the canvas to the form; kind chips,
-   date/method, categories, due date, note, attachments, owner and groups
-   live there, unchanged. */
-
-private val KINDS = listOf(
-    Triple("credit", "credit", "hand-coin-outline"),
-    Triple("debit", "debit", "credit-card-outline"),
-    Triple("credit", "income", "trending-up"),
-    Triple("debit", "expense", "trending-down"),
-)
-private val QUICK_UNITS = listOf("pic", "kg", "pcs", "bag", "box", "l")
+/* EntryEdit — THE LEDGER ENTRY EDITOR. v1.6.49: the canvas IS the editor —
+   the form page that said "Edit entry" is GONE (report #7: "we don't want
+   the page that says edit entry for the ledger"), so closing the canvas
+   (✕ / the native back) closes the editor itself, and every field the form
+   used to edit rides along unchanged for existing rows (kind, date,
+   method, note, attachments, items, owner, group — seeded once, kept
+   through every save). The canvas header carries the font-size icon
+   (report #6) with the TITLE INPUT moved UNDER it, every individual total
+   shows its OWN tappable currency beside it (report #1) with the copy / ✕
+   buttons on the total's own row (report #2), the totals read one size
+   smaller than before on a much tighter left edge (report #3), and the sum
+   total is one very compact row whose ring counts the PAID percentage
+   (report #4 — it said 100 with no payment because it counted what was
+   LEFT).
+   v1.6.48 base: numbers written in TEXT mode never calculate (quote +
+   mode-split markers), the TOTAL label and its number share one row, the
+   enter key is a newline INSIDE the same individual calculation (kept
+   through the commit as the ⏎ marker), the lock glyph rides at text
+   height, Next is the one commit+save key, and the header's currency chip
+   writes the live app-wide setting. */
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -186,6 +178,12 @@ fun EntryEditOverlay(
     // ledger, no items) reopens with its amount seeded as its first
     // locked line, so nothing is ever lost.
     val existingLedger = remember { parseCalcLedger(existing?.exprNote ?: "") }
+    // v1.6.49 — the canvas IS the whole editor (report #7: "we don't want
+    // the page that says edit entry for the ledger"): every field the old
+    // form used to carry (kind, date, due, category, method, note, owner,
+    // group, items, attachments) is seeded once from the existing row and
+    // rides along through every save below — nothing about an old entry
+    // changes unless the canvas itself changes it.
     var calcLines by remember {
         mutableStateOf(
             existingLedger.ifEmpty {
@@ -204,13 +202,8 @@ fun EntryEditOverlay(
     var owner by remember { mutableStateOf(existing?.ownerId ?: ownerId) }
     var groupSel by remember { mutableStateOf(existing?.groupId ?: groupId) }
     var items by remember { mutableStateOf(existing?.items ?: listOf<EntryItem>()) }
-    var editingItem by remember { mutableStateOf<EntryItem?>(null) }
     // v1.6.18 — attachments: lists / notes / reminders ride on entry.refs
     var refs by remember { mutableStateOf(existing?.refs ?: listOf<com.callmony.model.LinkRef>()) }
-    // v1.6.38 — the input-mode strip is down to Calculator + Recent (the
-    // Just amount / Items / Quick item tabs are removed; Recent keeps the
-    // one-tap repeat booking). Everything opens on the CALCULATOR.
-    var amountMode by remember { mutableStateOf("calc") }
     // v1.6.39 — THE CANVAS CALCULATOR, rebuilt around ONE text source:
     //   calcText IS the active line — typed on the system QWERTY in text
     //   mode or built by the keypad in num mode, but the SAME line either
@@ -220,15 +213,10 @@ fun EntryEditOverlay(
     //   calcNote / tokens / total / steps are all DERIVED from it, live.
     //   calcMode "text" (DEFAULT — system QWERTY) | "num" (the compact
     //   keypad; the field keeps native selection + copy/cut/paste).
-    //   calcExpanded — the canvas is FULL SCREEN over every thing in the
-    //   editor; ✕ / the native back button collapses it (back with the
-    //   keypad up closes the keypad first).
     //   Locked ledger lines: long-press UNLOCKS a line for editing; every
-    //   line carries a copy icon; each line's own total long-presses into
-    //   the same menu as the last total (make payment / copy).
+    //   line carries a copy icon on its own total row.
     var calcText by remember { mutableStateOf("") }         // the ACTIVE line
     var calcMode by remember { mutableStateOf("text") }     // "text" | "num"
-    var calcExpanded by remember { mutableStateOf(true) }    // the full-screen canvas
     // v1.6.41 — THE CARET TOKEN: bumped whenever the active field should
     // (re)take focus — the canvas opening or raising, the Aa / 123 toggle,
     // Next line, an unlock — so the blinking caret is ALWAYS visible where
@@ -284,27 +272,42 @@ fun EntryEditOverlay(
        it on every read, so payments recorded later pass through
        untouched and ride every save. */
     var payRemap by remember { mutableStateOf<Map<String, Int?>?>(null) }
-    var catManager by remember { mutableStateOf(false) }
-    var showOwnerPicker by remember { mutableStateOf(false) }
     // v1.6.46 — THE CANVAS TITLE (report #4: "in top if the canvas put a
     // input that does have just the bottom border so we can give the canvas
-    // a title"): the header's old static label became a bottom-border-only
-    // input; it rides the entry as calcTitle (optional, so every older row
-    // decodes without it) and the collapsed band shows it in the label's
-    // place once something is typed.
+    // a title"): a bottom-border-only input UNDER the header (v1.6.49,
+    // report #6: "put the title input under the header") — it rides the
+    // entry as calcTitle (optional, so every older row decodes without it)
+    // and heads the whole-ledger copy.
     var calcTitle by remember { mutableStateOf(existing?.calcTitle ?: "") }
     // v1.6.47 — THE LINE PREFIX (report #3: "show bullet or numbers at the
     // start of each line that the user can change"): every committed line
     // (and the active one) leads with • / 1. 2. 3. / nothing. The choice
-    // cycles through the small chip beside the canvas title and rides the
-    // entry as calcPrefix (absent = bullet, the shown-by-default style the
-    // report asks for; old rows decode without it, backups mirror it).
+    // cycles through the small chip on the header and rides the entry as
+    // calcPrefix (absent = bullet, the shown-by-default style the report
+    // asks for; old rows decode without it, backups mirror it).
     var prefixMode by remember { mutableStateOf(existing?.calcPrefix ?: "bullet") }
-    // v1.6.48 — THE CURRENCY CHIP (report #1: "the ability to change the
-    // currency"): the canvas header carries the live currency's symbol;
+    // v1.6.48 — THE HEADER CURRENCY CHIP (report #1: "the ability to change
+    // the currency"): the canvas header carries the live currency's symbol;
     // the tap opens the compact picker sheet — one tap re-renders every
     // amount in the app (money() reads the live setting since v1.6.48).
     var currencySheet by remember { mutableStateOf(false) }
+    // v1.6.49 — THE PER-LINE + SUM CURRENCIES (report #1, round two: "the
+    // ability to change the individual currency by clicking the currency
+    // that is there bisede the total and also for the sum total by clicking
+    // the currency that is there bisede the total"): the little tappable
+    // currency beside EVERY total opens the same picker, scoped — "S" =
+    // the entry's sum currency (LedgerEntry.calcCurrency), "A" = the ACTIVE
+    // line's pending choice (rides the commit as CalcNote.currency),
+    // "L<i>" = committed line i's own. null = follow the live setting.
+    var currencySheetFor by remember { mutableStateOf<String?>(null) }
+    var entryCur by remember { mutableStateOf(existing?.calcCurrency) }
+    var calcCur by remember { mutableStateOf<String?>(null) }
+    // v1.6.49 — THE FONT SIZE (report #6: "i want the option to change the
+    // font size and put the font size icon on the header"): s / m / l scale
+    // the calculation text and every total; rides the entry as calcFontSize
+    // so a reopened canvas keeps the reader's chosen size.
+    var calcFontSizeSel by remember { mutableStateOf(existing?.calcFontSize ?: "m") }
+    var fontSheet by remember { mutableStateOf(false) }
     // v1.6.46 — THE SAVE PULSE (report #3: "the next btn also should do
     // what the save btn does"): NEXT commits the line AND persists the
     // entry — and since v1.6.47 it is the ONE key that does both: the
@@ -320,18 +323,22 @@ fun EntryEditOverlay(
     // v1.6.39 — THE SUM, live: items + the calculator's whole contribution
     // (committed ledger lines + the active line). calcNote is DERIVED
     // from calcText through the free-text grammar, live.
-    // v1.6.48 — TWO new steps in the parse funnel: (1) report #4's MODE
-    // SPLIT — applyModeSplit separates characters typed on DIFFERENT
-    // keyboards inside one glued token ("555555555dsssssss" → the keypad
-    // 555555555 calculates, the QWERTY dsssssss rides its label slot) and
-    // quotes text-keyboard numbers (quoteTextNumbers' rule, folded in);
+    // v1.6.48 — TWO steps in the parse funnel: (1) report #4's MODE SPLIT —
+    // applyModeSplit separates characters typed on DIFFERENT keyboards
+    // inside one glued token ("555555555dsssssss" → the keypad 555555555
+    // calculates, the QWERTY dsssssss rides its label slot) and quotes
+    // text-keyboard numbers (quoteTextNumbers' rule, folded in);
     // (2) report #6's NEWLINE FOLD — the enter key is a real newline INSIDE
     // the same individual calculation now, and the 1:1 index-aligned fold
-    // keeps every derived value AND the saved grammar one-line: a reloaded
-    // entry can never split its active line in two.
+    // keeps every derived value AND the QWERTY marks valid.
+    // v1.6.49 — the fold now writes the ⏎ marker instead of a plain space:
+    // a COMMITTED line keeps its visual break (report #5 — the locked line
+    // used to collapse to "just one line") while the saved grammar stays
+    // one-calculation-per-line forever (the marker is whitespace to every
+    // rule and never splits a line on reload).
     val itemsSum = items.sumOf { it.qty * it.price }
     val calcNote = remember(calcText, qwertyIdx) {
-        parseCalcNote(applyModeSplit(calcText.replace('\n', ' '), qwertyIdx))
+        parseCalcNote(applyModeSplit(calcBreakFold(calcText), qwertyIdx))
     }
     val calcTotal = remember(calcNote) { evalCalcTokens(calcNote.tokens) }
     val calcStepList = remember(calcNote) { calcSteps(calcNote.tokens) }
@@ -382,6 +389,10 @@ fun EntryEditOverlay(
         // default when absent, so it only really needs writing for the
         // non-default styles — but writing it always keeps reopening exact)
         calcPrefix = prefixMode,
+        // v1.6.49 — the sum-total currency and the canvas font size ride
+        // along the same optional-default way (report #1 + report #6)
+        calcCurrency = entryCur,
+        calcFontSize = calcFontSizeSel,
         groupId = groupSel,
         refs = refs,
         createdAt = currentEntry?.createdAt ?: now(),
@@ -449,7 +460,7 @@ fun EntryEditOverlay(
         // Save button gone that would have silently dropped every
         // item-rename on backing out (caught by the v1.6.46 battery)
         items.map { "${it.id}:${it.qty}:${it.price}:${it.name}" }, date, dueOn, dueDate, category, method, note, owner, groupSel,
-        refs.map { "${it.type}:${it.id}" }, type, kindSel, calcTitle, prefixMode,
+        refs.map { "${it.type}:${it.id}" }, type, kindSel, calcTitle, prefixMode, entryCur, calcFontSizeSel,
         entryPayments.map { "${it.id}:${it.amount}:${it.lineIdx}" },
     ).toString() else ""
     if (autoKey.value == null) autoKey.value = currentKey
@@ -565,7 +576,7 @@ fun EntryEditOverlay(
        on the note, never totalled. v1.6.41 — undoable, and the fresh
        line's caret is right there (token). */
     fun commitCalcLine() {
-        // v1.6.48 — the DERIVED parse (newlines folded, mode-split
+        // v1.6.48 — the DERIVED parse (newlines folded to ⏎, mode-split
         // applied — see calcNote above): committing hands the ledger the
         // exact tokens the live total has been reading all along.
         val note = calcNote
@@ -575,9 +586,12 @@ fun EntryEditOverlay(
         // the date for each entry"): the line carries the day it was
         // committed, rendered beside it and persisted through the save. A
         // fresh line commits LOCKED — the pay gate opens with the pill.
-        calcLines = calcLines + note.copy(date = todayStr())
+        // v1.6.49 — the ACTIVE line's chosen currency rides the commit
+        // (report #1: the line's OWN display money, " ~USD" in the save).
+        calcLines = calcLines + note.copy(date = todayStr(), currency = calcCur)
         calcText = ""
         qwertyIdx = emptySet()
+        calcCur = null
         calcSelection = TextRange(0)
         focusToken++ // the caret shows on the fresh line
     }
@@ -613,6 +627,9 @@ fun EntryEditOverlay(
         calcLines = if (calcNote.tokens.isNotEmpty() || calcNote.text.isNotBlank()) rest + calcNote else rest
         calcText = displayCalcNote(line)
         qwertyIdx = textModeRanges(calcText)
+        // v1.6.49 — the line's own currency comes back with it (the
+        // re-commit keeps it unless the user changes it again)
+        calcCur = line.currency
         calcSelection = TextRange(calcText.length)
         calcMode = "text"
         focusToken++
@@ -812,12 +829,18 @@ fun EntryEditOverlay(
         ime?.hide()
     }
 
-    /* v1.6.39 — collapse the full-screen canvas down to the form.
-       v1.6.41 — raising it again re-arms the caret. */
-    fun collapseCanvas() {
-        calcExpanded = false
+    /* v1.6.49 — THE CANVAS IS THE EDITOR (report #7: "we don't want the
+       page that says edit entry for the ledger"): the form page that used
+       to sit under the canvas is GONE — ✕ / the native back button now
+       CLOSES the editor itself (the leave-time save underneath persists
+       whatever the 600ms autosave has not caught yet), and every field the
+       form used to edit rides along unchanged for existing rows (kind,
+       date, due, category, method, note, owner, group, items, attachments
+       — seeded once at the top, kept through every save). */
+    fun closeEditor() {
         focusMgr.clearFocus()
         ime?.hide()
+        pop()
     }
 
     /* v1.6.41 — THE CARET, ALWAYS: whenever the token bumps, the active
@@ -826,8 +849,8 @@ fun EntryEditOverlay(
        (real view focus inside the Android actual). The double request
        (immediately + after the host-sheet / overlay focus-clears settle)
        beats the OverlayHost's open-clear and any sheet pop. */
-    LaunchedEffect(focusToken, calcExpanded, calcMode) {
-        if (!calcExpanded || focusToken == 0) return@LaunchedEffect
+    LaunchedEffect(focusToken, calcMode) {
+        if (focusToken == 0) return@LaunchedEffect
         if (calcMode == "text") {
             try { calcFieldFocus.requestFocus() } catch (_: Exception) {}
             kotlinx.coroutines.delay(200)
@@ -835,329 +858,28 @@ fun EntryEditOverlay(
         }
     }
 
-    Sheet(
-        title = if (currentEntry == null) t("lg.newEntry") else t("lg.editEntry"),
-        subtitle = ownerNameOf(ownerId),
-        onBack = pop,
-        scrollable = false,
-        // v1.6.46 — NO FOOTER, NO SAVE BUTTON (report #3: "the next btn
-        // also should do what the save btn does, if we make it like that,
-        // we dont need the save btn"): Next and the keypad's ENTER persist
-        // the entry, the 600ms autosave owns every later change, and
-        // backing out creates whatever never got saved (leaveSave) — a
-        // footer Save would be a fourth way to do the same thing. The
-        // sheet's footer band is simply gone (the form scrolls longer).
-    ) {
-        Column(Modifier.fillMaxSize()) {
-            // THE PINNED BAND: kind chips + the input-mode strip
-            Column(Modifier.padding(horizontal = 18.dp)) {
-                Row(Modifier.padding(top = 6.dp, bottom = 6.dp)) {
-                    ScrollRow {
-                        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                            KINDS.forEach { (ty, kd, icon) ->
-                                val label = t("lg.kind${kd.replaceFirstChar { it.uppercase() }}")
-                                Chip(label = label, icon = icon, active = kindSel == kd, compact = true, onPress = { kindSel = kd; type = ty })
-                            }
-                        }
-                    }
-                }
-                // v1.6.38 — Just amount / Items / Quick item are REMOVED
-                // (user spec; documented in removed/). Calculator + Recent.
-                Row(Modifier.padding(bottom = 8.dp)) {
-                    ScrollRow {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Chip(compact = true, icon = "calculator-variant", label = t("ee.tabCalc"), active = amountMode == "calc", onPress = { amountMode = "calc" })
-                            Chip(compact = true, icon = "history", label = t("ee.tabRecent"), active = amountMode == "recent", onPress = { amountMode = "recent" })
-                        }
-                    }
-                }
-            } // end of the pinned band
-            // THE FORM: the sheet's only scrollable
-            Column(
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 18.dp)
-                    .padding(top = 2.dp, bottom = 24.dp),
-            ) {
-            when (amountMode) {
-                "calc" -> {
-                    /* v1.6.39 — the canvas is FULL SCREEN over every thing
-                       in the editor while it is open (the canvas block
-                       rendered after the Sheet). This is its collapsed
-                       seat in the form — shown ONLY while the canvas is
-                       DOWN; tap to raise it back over everything. */
-                    if (!calcExpanded) {
-                        Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 10.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(C.brand.copy(alpha = 0.06f))
-                            .border(1.dp, C.line, RoundedCornerShape(14.dp))
-                            .clickable { calcExpanded = true; focusToken++ }
-                            .testTag("calcCollapsed")
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        MdiIcon("calculator-variant", 17, C.brand)
-                        Column(Modifier.weight(1f)) {
-                            // v1.6.46 — a typed canvas TITLE headlines the
-                            // collapsed band (the generic label only shows
-                            // while the canvas is untitled)
-                            Text(
-                                calcTitle.trim().ifEmpty { t("ee.calcLabel") },
-                                fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.SemiBold,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            )
-                            val preview = calcLines.firstOrNull()?.let { serializeCalcNote(it) }
-                                ?: calcText.ifEmpty { null }
-                            if (preview != null) {
-                                Text(preview, fontSize = F.tiny.sp, color = C.faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
-                        Text(money(effAmount), fontSize = F.body.sp, fontWeight = FontWeight.ExtraBold, color = C.brand)
-                        MdiIcon("chevron-right", 18, C.faint)
-                    }
-                    }
-                }
-                // RECENT — one-tap reuse of items booked before
-                "recent" -> {
-                    val recents = remember(AppStore.state.entries) { recentItems(AppStore.state.entries) }
-                    if (recents.isEmpty()) {
-                        Text(t("ee.noRecent"), fontSize = F.small.sp, color = C.faint, modifier = Modifier.padding(bottom = 10.dp))
-                    } else {
-                        Row(Modifier.padding(bottom = 10.dp)) {
-                            ScrollRow {
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    recents.forEach { (name, price) ->
-                                        Chip(
-                                            compact = true,
-                                            label = if (price > 0) "$name · ${trimNum(price)}" else name,
-                                            onPress = {
-                                                items = items + EntryItem(id = uid(), name = name, qty = 1.0, price = price)
-                                            },
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if (effAmount > 0) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(bottom = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(t("lg.total"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub)
-                            Text(money(effAmount), fontSize = F.body.sp, fontWeight = FontWeight.ExtraBold, color = C.brand, modifier = Modifier.testTag("entryTotal"))
-                        }
-                    }
-                }
-            }
-            // line items — editing an existing item opens the inline editor
-            if (editingItem != null) {
-                ItemEditor(
-                    onAdd = { item -> items = items + item },
-                    onUpdate = { item -> items = items.map { if (it.id == item.id) item else it } },
-                    editing = editingItem,
-                    onEditDone = { editingItem = null },
-                )
-            }
-            if (items.isNotEmpty()) {
-                Text(t("lg.itemsTitle"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
-            }
-            items.forEach { it ->
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 6.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(C.card)
-                        .clickable { editingItem = it }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "${it.name} · ${it.qty}${it.unit?.let { u -> " $u" } ?: ""} × ${it.price} = ${it.qty * it.price}",
-                        fontSize = F.small.sp, color = C.ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                    IconBtn("close", { items = items.filter { x -> x.id != it.id } }, size = 28, danger = true)
-                }
-            }
-            // date + method — date via the native Material calendar (v1.6.13)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(Modifier.weight(1f)) {
-                    com.callmony.ui.kit.PickerField(
-                        label = t("lg.date"),
-                        value = com.callmony.lib.fd(date),
-                        icon = "calendar-blank-outline",
-                        onPress = {
-                            val initial = try {
-                                com.callmony.lib.KmpDate(
-                                    date.split("-").getOrNull(0)?.toInt() ?: dateOf(now()).year,
-                                    (date.split("-").getOrNull(1)?.toIntOrNull() ?: (dateOf(now()).month0 + 1)) - 1,
-                                    date.split("-").getOrNull(2)?.toIntOrNull() ?: dateOf(now()).day,
-                                    12, 0, 0,
-                                ).time()
-                            } catch (_: Exception) { now() }
-                            NativeDateTime.pickDate(
-                                epochMillis = initial,
-                                onPick = { epoch ->
-                                    val d = dateOf(epoch)
-                                    date = "${d.year}-${(d.month0 + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
-                                },
-                            )
-                        },
-                    )
-                }
-                Box(Modifier.weight(1f)) { Field(label = t("lg.method"), value = method, onChangeText = { method = it }) }
-            }
-            // categories
-            Text(t("cat.category"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
-            Row(Modifier.padding(bottom = 10.dp)) {
-                ScrollRow {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        (listOf("") + CATS + AppStore.state.settings.customCategories).forEach { cat ->
-                            Chip(
-                                label = cat.ifEmpty { t("cat.category") },
-                                active = category == cat,
-                                compact = true,
-                                onPress = { category = cat },
-                            )
-                        }
-                        Chip(label = "＋ ${t("cat.custom")}", compact = true, onPress = { catManager = true })
-                    }
-                }
-            }
-            // due date
-            Row(
-                Modifier.fillMaxWidth().padding(bottom = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Chip(label = t("lg.dueDate"), icon = "calendar-blank-outline", active = dueOn, onPress = {
-                    dueOn = !dueOn
-                    if (dueOn && dueDate.isEmpty()) dueDate = todayStr()
-                })
-                if (dueOn) {
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(14.dp))
-                            .border(1.dp, C.line, RoundedCornerShape(14.dp))
-                            .background(C.inputBg, RoundedCornerShape(14.dp))
-                            .clickable {
-                                val initial = try {
-                                    val p = dueDate.split("-")
-                                    com.callmony.lib.KmpDate(
-                                        p.getOrNull(0)?.toInt() ?: dateOf(now()).year,
-                                        (p.getOrNull(1)?.toIntOrNull() ?: (dateOf(now()).month0 + 1)) - 1,
-                                        p.getOrNull(2)?.toIntOrNull() ?: dateOf(now()).day,
-                                        12, 0, 0,
-                                    ).time()
-                                } catch (_: Exception) { now() }
-                                NativeDateTime.pickDate(
-                                    epochMillis = initial,
-                                    onPick = { epoch ->
-                                        val d = dateOf(epoch)
-                                        dueDate = "${d.year}-${(d.month0 + 1).toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
-                                    },
-                                )
-                            }
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            MdiIcon("calendar-blank-outline", 16, C.brand)
-                            Text(com.callmony.lib.fd(dueDate), fontSize = F.body.sp, color = C.ink, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
-            }
-            // note
-            Field(label = t("lg.note"), value = note, onChangeText = { note = it }, placeholder = t("lg.optionalNote"), multiline = true)
-            // v1.6.18 — ATTACHMENTS
-            Text(t("ee.attached"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
-            if (refs.isEmpty()) {
-                Text(t("ee.noAttachments"), fontSize = F.tiny.sp, color = C.faint, modifier = Modifier.padding(bottom = 8.dp))
-            } else {
-                ScrollRow(Modifier.padding(bottom = 8.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        refs.forEach { ref ->
-                            AttachedChip(ref = ref, onDetach = { refs = refs.filter { it.id != ref.id || it.type != ref.type } })
-                        }
-                    }
-                }
-            }
-            Row(Modifier.padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Chip(label = "＋ ${t("att.attach")}", icon = "link-plus", compact = true, onPress = {
-                    com.callmony.ui.kit.HostSheets.push { close ->
-                        AttachmentPicker(refs = refs, onChange = { refs = it }, onClose = close)
-                    }
-                })
-            }
-            // owner row
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 10.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(C.card)
-                    .clickable { showOwnerPicker = true }
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                MdiIcon("swap-horizontal", 18, C.brand)
-                Text(t("ee.owner"), fontSize = F.small.sp, color = C.sub)
-                Text(ownerNameOf(owner), fontSize = F.body.sp, color = C.ink, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                MdiIcon("chevron-right", 18, C.faint)
-            }
-            // groups
-            if (groups.isNotEmpty() || groupSel != null) {
-                Text(t("ee.selectGroup"), fontSize = F.small.sp, fontWeight = FontWeight.ExtraBold, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
-                Row {
-                    ScrollRow {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Chip(label = t("ee.noGroup"), active = groupSel == null, compact = true, onPress = { groupSel = null })
-                            groups.forEach { g ->
-                                Chip(label = g.title, active = groupSel == g.id, compact = true, onPress = { groupSel = g.id })
-                            }
-                        }
-                    }
-                }
-            }
-            } // end of the scrolling form
-
-        }
-    }
-
-    // v1.6.39 — THE FULL-SCREEN CANVAS: over every thing in the editor —
-    // the form, the pinned bands, the footer. ✕ (or the native back
-    // button) collapses it down to the form; back with the keypad up
-    // closes the keypad first; Aa / 123 arm the input method; Next line
-    // and Save are SMALL buttons ON the canvas, on the line under the
-    // active one (the user's v1.6.39 spec).
+    // v1.6.39 — THE CANVAS CALCULATOR, full screen — and since v1.6.49 the
+    // WHOLE editor (the form is gone). ✕ (or the native back button) closes
+    // the editor; back with the keypad up closes the keypad first; Aa / 123
+    // arm the input method; Next is the SMALL commit+save button ON the
+    // canvas (the user's v1.6.39 spec).
     // v1.6.41 — the canvas is RTL-AWARE ("it should support also right to
     // left" — the whole canvas mirrors for Arabic), its header is VERY
-    // COMPACT with UNDO / REDO beside the collapse chevron, and while the
+    // COMPACT with UNDO / REDO beside the close button, and while the
     // NUMBER KEYPAD is armed it renders at the SHELL ROOT — covering the
     // bottom navigation exactly like the system keyboard does — while the
     // canvas reserves exactly the band it covers.
-    if (amountMode == "calc" && calcExpanded) {
-        AppBackHandler(enabled = true) {
-            when {
-                calcMode == "num" -> closeKeypad()
-                else -> collapseCanvas()
-            }
+    AppBackHandler(enabled = true) {
+        when {
+            calcMode == "num" -> closeKeypad()
+            else -> closeEditor()
         }
+    }
         // v1.6.41 — the number keypad renders at the ROOT (over the nav);
         // hide it while a payments modal / host sheet is open so nothing
         // floats under it.
-        val wantPad = calcMode == "num" && payModal == null && !currencySheet && HostSheets.stack.isEmpty()
+        val wantPad = calcMode == "num" && payModal == null && !currencySheet &&
+            currencySheetFor == null && !fontSheet && HostSheets.stack.isEmpty()
         // v1.6.47 — report #2 ("sometimes the netiv keyboard opens up on
         // the number mode why"): the window-level IME SUPPRESSION arms with
         // the keypad itself. The v1.6.45 fix force-hid the IME on the num
@@ -1247,10 +969,18 @@ fun EntryEditOverlay(
                 .imeLiftPadding()
                 .padding(bottom = padLift),
         ) {
-            // header — v1.6.41: VERY COMPACT (38dp band, 32/28dp controls,
-            // small title) with UNDO / REDO right beside the collapse
-            // chevron ("need undo,redo btns at the top in header and make
-            // the header very compact, so it won't take too much space").
+            // v1.6.49 — the canvas's font sizes (report #6: "i want the
+            // option to change the font size"): one choice scales the
+            // calculation text — the active line and the committed lines —
+            // and every total follows the line text's size (report #3).
+            val fs = calcFontSizesOf(calcFontSizeSel)
+            // header — v1.6.41: VERY COMPACT (38dp band, 32/28dp controls)
+            // with UNDO / REDO beside the close button ("need undo,redo
+            // btns at the top in header and make the header very compact,
+            // so it won't take too much space"). v1.6.49 — the TITLE INPUT
+            // moved UNDER the header (report #6: "put the title input under
+            // the header") and the FONT-SIZE icon joined the right-side
+            // chips (report #6: "put the font size icon on the header").
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -1259,14 +989,15 @@ fun EntryEditOverlay(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
+                // v1.6.49 — ✕ CLOSES THE EDITOR (the form is gone — report #7)
                 Box(
                     Modifier
                         .size(32.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .clickable { collapseCanvas() }
+                        .clickable { closeEditor() }
                         .testTag("calcCollapse"),
                     contentAlignment = Alignment.Center,
-                ) { MdiIcon("chevron-down", 18, C.sub) }
+                ) { MdiIcon("close", 18, C.sub) }
                 // UNDO — disabled when the stack is empty
                 Box(
                     Modifier
@@ -1287,68 +1018,12 @@ fun EntryEditOverlay(
                         .testTag("calcBtnRedo"),
                     contentAlignment = Alignment.Center,
                 ) { MdiIcon("redo", 16, if (redoStack.isNotEmpty()) C.brand else C.faint) }
-                // v1.6.46 — THE TITLE INPUT (report #4: "in top if the canvas
-                // put a input that does have just the bottom border so we can
-                // give the canvas a title"): the header's old static label
-                // became a real single-line field styled with NOTHING but a
-                // bottom hairline — exactly the underline look asked for.
-                // Its placeholder is the old label; the typed title rides
-                // the entry as calcTitle, headlines the collapsed band, and
-                // heads the whole-ledger copy. Tapping it opens the system
-                // QWERTY; the active line's caret is untouched (the focus
-                // token only re-arms on toggles, never on title typing).
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .heightIn(min = 30.dp)
-                        .drawBehind {
-                            // the ONLY decoration: the bottom border
-                            drawLine(
-                                color = C.line,
-                                strokeWidth = 1.dp.toPx(),
-                                start = Offset(0f, size.height - 0.5f),
-                                end = Offset(size.width, size.height - 0.5f),
-                            )
-                        },
-                ) {
-                    BasicTextField(
-                        value = calcTitle,
-                        onValueChange = { calcTitle = it },
-                        singleLine = true,
-                        textStyle = TextStyle(
-                            fontSize = F.small.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = C.ink,
-                            textDirection = androidx.compose.ui.text.style.TextDirection.Content,
-                        ),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-                        cursorBrush = SolidColor(C.brand),
-                        // the placeholder rides a decorationBox so the field
-                        // itself never carries example text (the v1.6.42
-                        // lesson: a placeholder must never replace the caret)
-                        decorationBox = { inner ->
-                            Box(Modifier.fillMaxWidth()) {
-                                inner()
-                                if (calcTitle.isEmpty()) {
-                                    Text(
-                                        t("ee.calcTitlePh"),
-                                        fontSize = F.small.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = C.faint,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().testTag("calcTitleField"),
-                    )
-                }
+                Spacer(Modifier.weight(1f))
                 // v1.6.47 — THE PREFIX TOGGLE (report #3: "show bullet or
                 // numbers at the start of each line that the user can
-                // change"): a small chip between the title and Σ that
-                // cycles • → 1. → — (none). Its glyph is the style itself,
-                // so what you see is what every line gets.
+                // change"): a small chip that cycles • → 1. → — (none). Its
+                // glyph is the style itself, so what you see is what every
+                // line gets.
                 val nextPrefix = when (prefixMode) { "bullet" -> "number"; "number" -> "none"; else -> "bullet" }
                 Box(
                     Modifier
@@ -1367,11 +1042,10 @@ fun EntryEditOverlay(
                         color = if (prefixMode != "none") C.brand else C.faint,
                     )
                 }
-                // v1.6.48 — THE CURRENCY CHIP (report #1: "the ability to
-                // change the currency"): the live currency's SYMBOL rides
-                // the header beside the prefix chip; the tap opens the
-                // compact picker sheet — one tap and every amount in the
-                // app follows (money() reads the live setting).
+                // v1.6.48 — THE HEADER CURRENCY CHIP (the app-wide LIVE
+                // setting): the tap opens the compact picker sheet — one tap
+                // and every amount in the app follows (money() reads the
+                // live setting).
                 Box(
                     Modifier
                         .size(28.dp)
@@ -1390,6 +1064,25 @@ fun EntryEditOverlay(
                         maxLines = 1,
                     )
                 }
+                // v1.6.49 — THE FONT-SIZE CHIP (report #6: "i want the option
+                // to change the font size and put the font size icon on the
+                // header"): two A glyphs in the chosen size's own scale; the
+                // tap opens the S / M / L picker.
+                Box(
+                    Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(if (calcFontSizeSel != "m") C.brandSoft else C.card)
+                        .border(1.dp, if (calcFontSizeSel != "m") C.brand else C.line, RoundedCornerShape(9.dp))
+                        .clickable { fontSheet = true }
+                        .testTag("calcFontBtn"),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text("A", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = if (calcFontSizeSel != "m") C.brand else C.sub)
+                        Text("A", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = if (calcFontSizeSel != "m") C.brand else C.sub)
+                    }
+                }
                 Box(
                     Modifier
                         .size(28.dp)
@@ -1400,6 +1093,63 @@ fun EntryEditOverlay(
                         .testTag("calcAdvanced"),
                     contentAlignment = Alignment.Center,
                 ) { MdiIcon("sigma", 15, if (calcAdvanced) C.brand else C.sub) }
+            }
+            // v1.6.49 — THE TITLE INPUT, UNDER THE HEADER (report #6: "put
+            // the title input under the header"): the bottom-hairline-only
+            // field v1.6.46 introduced, now a full-width row of its own
+            // beneath the header band. Its placeholder is the old label;
+            // the typed title rides the entry as calcTitle and heads the
+            // whole-ledger copy. Tapping it opens the system QWERTY; the
+            // active line's caret is untouched (the focus token only
+            // re-arms on toggles, never on title typing).
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .padding(top = 2.dp, bottom = 4.dp)
+                    .heightIn(min = 30.dp)
+                    .drawBehind {
+                        // the ONLY decoration: the bottom border
+                        drawLine(
+                            color = C.line,
+                            strokeWidth = 1.dp.toPx(),
+                            start = Offset(0f, size.height - 0.5f),
+                            end = Offset(size.width, size.height - 0.5f),
+                        )
+                    },
+            ) {
+                BasicTextField(
+                    value = calcTitle,
+                    onValueChange = { calcTitle = it },
+                    singleLine = true,
+                    textStyle = TextStyle(
+                        fontSize = F.small.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = C.ink,
+                        textDirection = androidx.compose.ui.text.style.TextDirection.Content,
+                    ),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                    cursorBrush = SolidColor(C.brand),
+                    // the placeholder rides a decorationBox so the field
+                    // itself never carries example text (the v1.6.42
+                    // lesson: a placeholder must never replace the caret)
+                    decorationBox = { inner ->
+                        Box(Modifier.fillMaxWidth()) {
+                            inner()
+                            if (calcTitle.isEmpty()) {
+                                Text(
+                                    t("ee.calcTitlePh"),
+                                    fontSize = F.small.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = C.faint,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("calcTitleField"),
+                )
             }
             // THE LEDGER — committed (locked) lines above the active line.
             // v1.6.39: long-press UNLOCKS a line back into the active
@@ -1430,7 +1180,9 @@ fun EntryEditOverlay(
                     .weight(1f)
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 14.dp)
+                    // v1.6.49 — report #3: the whole ledger moved IN —
+                    // 14dp → 10dp — no wasted left rail
+                    .padding(horizontal = 10.dp)
                     .padding(top = 4.dp, bottom = 8.dp),
             ) {
                 calcLines.forEachIndexed { i, line ->
@@ -1439,16 +1191,18 @@ fun EntryEditOverlay(
                     val linePaid = sumPayments(linePays)
                     val lineRemain = lineTotal?.let { r2(it - linePaid) }
                     val lineShown = if (linePaid > 0.005) lineRemain else lineTotal
-                    // v1.6.47 — the line's PREFIX (bullet / number / none),
-                    // same shape the active line below carries
+                    // v1.6.47 — the line's PREFIX (bullet / number / none)
                     val linePrefix = calcPrefixOf(prefixMode, i)
+                    // v1.6.49 — the line's OWN display currency (report #1):
+                    // its explicit choice, else the entry's sum currency,
+                    // else the live setting (CurrencyChip's null path)
+                    val lineCur = line.currency ?: entryCur
                     Row(
                         Modifier
                             .fillMaxWidth()
                             // v1.6.48 — report #5: the lines sit TIGHTER
                             // ("it shouldn't have to much space between
-                            // them vertically") — 6dp → 3dp between
-                            // blocks, the strip's own padding 5dp → 3dp
+                            // them vertically")
                             .padding(top = 3.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .background(C.cardAlt.copy(alpha = 0.35f))
@@ -1457,102 +1211,92 @@ fun EntryEditOverlay(
                                 onLongClick = { vibrate(longArrayOf(20)); unlockCalcLine(i) },
                             )
                             .testTag("calcLine:$i")
-                            .padding(horizontal = 4.dp, vertical = 3.dp),
+                            // v1.6.49 — report #3: a MUCH tighter left edge —
+                            // "why the individual calculation has so much
+                            // padding on the left, it is west of space": the
+                            // lock moved onto the total row, the prefix
+                            // column and both paddings shrank (the text now
+                            // starts ~32dp from the screen edge, was ~64dp)
+                            .padding(horizontal = 2.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.Top,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        // v1.6.47 — THE PREFIX at the start of each line
-                        // (report #3): • or "1." — small, faint, aligned with
-                        // the calculation's first line
                         if (linePrefix != null) {
                             Text(
                                 linePrefix,
-                                fontSize = F.small.sp,
+                                fontSize = fs.lineSp.sp,
                                 color = C.faint,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.width(20.dp).testTag("calcLinePrefix:$i"),
+                                modifier = Modifier.width(PREFIX_W).testTag("calcLinePrefix:$i"),
                             )
                         }
-                        // v1.6.48 — THE LOCK ICON, BACK (report #7: "bring
-                        // back the lock icon, it's height should be equal to
-                        // the text height"): a plain glyph as tall as the
-                        // line's text (the old 30dp pill was the bulk the
-                        // user never asked for), purely a NOTICE that the
-                        // line is locked — INERT (the v1.6.47 lesson: its
-                        // tap must never do anything); a deliberate
-                        // long-press still pulls the line into editing.
-                        MdiIcon(
-                            "lock-outline", F.small, C.faint,
-                            Modifier.testTag("calcLineLock:$i"),
-                        )
                         Column(Modifier.weight(1f)) {
                             // the FULL calculation, wrapping — never clamped;
-                            // v1.6.41 — the TEXT-mode pieces (the quoted
-                            // numbers) render in their own colour;
-                            // v1.6.45 — report #3: EVERY text-mode token
-                            // (words included — letters only ever come from
-                            // the text keyboard) keeps its colour, saved or
-                            // edited; v1.6.48 — report #3: the DATE moved
-                            // DOWN to sit beside the line's OWN total
-                            // ("in the individual total, the date should sit
-                            // beside it"), no longer riding the text's row
+                            // v1.6.49 — the ⏎ markers render as REAL line
+                            // breaks, so a calculation the enter key wrote
+                            // across several lines STAYS several lines when
+                            // it locks (report #5: "when it got locked, the
+                            // line disappeared, it just one line why")
                             Text(
                                 coloredLockedLine(displayCalcNote(line), C.sub, TEXTMODE_COLOR),
-                                fontSize = F.small.sp, fontWeight = FontWeight.Medium,
+                                fontSize = fs.lineSp.sp, fontWeight = FontWeight.Medium,
                                 modifier = Modifier.fillMaxWidth(),
                             )
-                            // v1.6.41 — the line's OWN total sits BELOW the
-                            // calculation ("when calculation line is locked it
-                            // own total should show below it not on it's
-                            // side"); v1.6.45 — a pure read-out: payments are
-                            // made on the SUM TOTAL's Pay button, so the
-                            // number is inert text with its paid hint;
-                            // v1.6.48 — report #3: the DATE sits BESIDE the
-                            // total on the same row; report #5: the total's
-                            // font size matches the ACTIVE line's live total
-                            // (one size locked or not) on a tighter 1dp lead
-                            if (lineShown != null || line.date.isNotEmpty()) {
-                                Row(
-                                    Modifier.padding(top = 1.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                ) {
-                                    if (lineShown != null) {
-                                        Text(
-                                            money(lineShown),
-                                            fontSize = F.body.sp, color = C.faint, fontWeight = FontWeight.SemiBold,
-                                            modifier = Modifier
-                                                .testTag("calcLineTotal:$i")
-                                                .padding(horizontal = 2.dp, vertical = 1.dp),
-                                        )
-                                    }
-                                    if (linePaid > 0.005) {
-                                        Text(
-                                            "${t("lg.paid")} ${money(linePaid)}",
-                                            fontSize = F.tiny.sp, color = C.faint,
-                                            modifier = Modifier.testTag("calcLinePaid:$i"),
-                                        )
-                                    }
-                                    if (line.date.isNotEmpty()) {
-                                        Spacer(Modifier.weight(1f))
-                                        Text(
-                                            com.callmony.lib.fd(line.date),
-                                            fontSize = F.tiny.sp, color = C.faint, fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.testTag("calcLineDate:$i"),
-                                        )
+                            // v1.6.49 — THE TOTAL ROW (reports #1 #2 #3): the
+                            // copy and ✕ buttons live ON this row (report #2:
+                            // "make the copy and the x btn in the row of the
+                            // individual total"), the total itself reads at
+                            // the line TEXT's own size (report #3: "should be
+                            // smaller as the text and numbers… wether it is
+                            // locked or not… or when editing, always") with
+                            // its OWN tappable currency beside it (report #1)
+                            // and the date smaller and lighter (report #3),
+                            // the lock glyph at text height at the row's end.
+                            // The row ALWAYS renders — a pure-annotation line
+                            // keeps its buttons reachable.
+                            Row(
+                                Modifier.padding(top = 1.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                if (lineShown != null) {
+                                    Text(
+                                        moneyNumber(lineShown),
+                                        fontSize = fs.lineSp.sp, color = C.faint, fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.testTag("calcLineTotal:$i"),
+                                    )
+                                }
+                                CurrencyChip(cur = lineCur, tag = "calcLineCur:$i") { currencySheetFor = "L$i" }
+                                if (linePaid > 0.005) {
+                                    Text(
+                                        "${t("lg.paid")} ${money(linePaid, lineCur)}",
+                                        fontSize = 11.sp, color = C.faint,
+                                        modifier = Modifier.testTag("calcLinePaid:$i"),
+                                    )
+                                }
+                                Spacer(Modifier.weight(1f))
+                                if (line.date.isNotEmpty()) {
+                                    Text(
+                                        com.callmony.lib.fd(line.date),
+                                        fontSize = 11.sp, color = C.faint, fontWeight = FontWeight.Normal,
+                                        modifier = Modifier.testTag("calcLineDate:$i"),
+                                    )
+                                }
+                                // v1.6.48 — THE LOCK ICON at text height, now
+                                // at the total row's end (v1.6.49 moved it off
+                                // the left edge): a plain inert notice that
+                                // the line is locked; only a DELIBERATE
+                                // long-press on the line edits it
+                                MdiIcon(
+                                    "lock-outline", fs.lineSp, C.faint,
+                                    Modifier.testTag("calcLineLock:$i"),
+                                )
+                                CopyBtn(tag = "calcLineCopy:$i") { copyLineText(lineCopyText(displayCalcNote(line), lineTotal)) }
+                                DeleteBtn(tag = "calcLineDelete:$i") {
+                                    Confirm.ask(t("ee.calcDeleteLineTitle"), t("ee.calcDeleteLineMsg"), t("act.delete"), danger = true) { ok ->
+                                        if (ok) deleteCalcLine(i)
                                     }
                                 }
-                            }
-                        }
-                        // COPY — every calculation line, locked or unlocked;
-                        // v1.6.45 — report #6: the copy INCLUDES the line's
-                        // own total ("why the copy btn is not including the
-                        // total")
-                        CopyBtn(tag = "calcLineCopy:$i") { copyLineText(lineCopyText(displayCalcNote(line), lineTotal)) }
-                        // v1.6.40 — removing asks first (custom modal)
-                        DeleteBtn(tag = "calcLineDelete:$i") {
-                            Confirm.ask(t("ee.calcDeleteLineTitle"), t("ee.calcDeleteLineMsg"), t("act.delete"), danger = true) { ok ->
-                                if (ok) deleteCalcLine(i)
                             }
                         }
                     }
@@ -1561,43 +1305,25 @@ fun EntryEditOverlay(
                 // (v1.6.39): text mode rides the system QWERTY; num mode
                 // shows the SAME line in the IME-suppressed native field.
                 // Long-press opens the NATIVE Copy · Cut · Paste ·
-                // Select-all menu with selection handles either way —
-                // exactly like any other input (the user's spec).
-                // v1.6.40 — text mode is a TextFieldValue whose SELECTION
-                // survives the Aa ↔ 123 swaps: after a toggle (or Next line)
-                // the blinking caret sits where writing continues — the END
-                // — instead of jumping before the first word. Edits from
-                // EITHER field land in onCalcEdited, so text-keyboard
-                // numbers are annotations and keypad numbers calculate.
-                // v1.6.41 — WHAT WAS WRITTEN IN TEXT MODE renders in its own
-                // colour (visual transformation in text mode, spans in the
-                // native field in num mode), and the num field carries the
-                // focus token so its caret is always live.
+                // Select-all menu with selection handles either way.
+                // v1.6.49 — its copy button and open lock moved DOWN onto the
+                // live-total row (report #3's left-edge fix), so the field
+                // starts right after the prefix.
+                val activePrefix = calcPrefixOf(prefixMode, calcLines.size)
                 Row(
                     Modifier.fillMaxWidth().padding(top = 4.dp),
                     verticalAlignment = Alignment.Top,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    // v1.6.47 — the ACTIVE line's own prefix (report #3):
-                    // the bullet, or the number this line will carry once
-                    // committed — where the next line lands, at a glance
-                    calcPrefixOf(prefixMode, calcLines.size)?.let { p ->
+                    activePrefix?.let { p ->
                         Text(
                             p,
-                            fontSize = F.small.sp,
+                            fontSize = fs.lineSp.sp,
                             color = C.faint,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.width(20.dp).testTag("calcActivePrefix"),
+                            modifier = Modifier.width(PREFIX_W).testTag("calcActivePrefix"),
                         )
                     }
-                    // v1.6.48 — the ACTIVE line's OPEN lock (report #7):
-                    // text-height like its committed siblings, inert — this
-                    // is the one line being edited right now, the open
-                    // counterpart of every committed line's closed lock
-                    MdiIcon(
-                        "lock-off-outline", F.small, C.brand,
-                        Modifier.testTag("calcActiveLock"),
-                    )
                     Box(Modifier.weight(1f)) {
                         if (calcMode == "text") {
                             // read in composition so colour changes recompose
@@ -1621,30 +1347,11 @@ fun EntryEditOverlay(
                                     calcSelection = v.selection
                                     onCalcEdited(v.text, fromQwerty = true)
                                 },
-                                // v1.6.42 — NO PLACEHOLDER (report #2: "when i
-                                // click the next line it is not showing it just
-                                // shows the placeholder example. and we don't
-                                // need the place holder"): the old decorationBox
-                                // REPLACED the field with example text whenever
-                                // the line was empty — after Next line the fresh
-                                // line showed the placeholder INSTEAD of the
-                                // caret. The field now always renders (caret
-                                // included) and keeps a stable 44dp write area,
-                                // and textDirection = Content makes the FIRST
-                                // typed word set the paragraph direction (report
-                                // #5: RTL "not working when i type text at first"
-                                // — Arabic text starts from the right end now,
-                                // exactly like the number field already did).
                                 textStyle = TextStyle(
-                                    // v1.6.46 — the de-bulked CALCULATION
-                                    // font (report #5: "make the fonts
-                                    // better for calculation, now it looks
-                                    // to bulky"): 18sp Medium — a point
-                                    // larger but a full weight lighter,
-                                    // matching the native field's light
-                                    // cut so the line reads identically in
-                                    // both modes
-                                    fontSize = 18.sp, fontWeight = FontWeight.Medium, color = C.ink,
+                                    // v1.6.49 — the FONT-SIZE choice scales the
+                                    // active line (report #6); 18sp Medium is
+                                    // the default cut (v1.6.46)
+                                    fontSize = fs.activeSp.sp, fontWeight = FontWeight.Medium, color = C.ink,
                                     textDirection = androidx.compose.ui.text.style.TextDirection.Content,
                                 ),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
@@ -1660,10 +1367,9 @@ fun EntryEditOverlay(
                             NoImeNumberField(
                                 value = calcText,
                                 onValueChange = { onCalcEdited(it, fromQwerty = false) },
-                                // v1.6.46 — the de-bulked calculation font:
-                                // 18sp in the LIGHT cut (bold = false),
-                                // matching the QWERTY field above
-                                fontSizeSp = 18,
+                                // v1.6.49 — the FONT-SIZE choice scales the
+                                // native field too (report #6)
+                                fontSizeSp = fs.activeSp,
                                 textColor = C.ink,
                                 cursorColor = C.brand,
                                 modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp).testTag("calcNumField"),
@@ -1679,23 +1385,42 @@ fun EntryEditOverlay(
                             )
                         }
                     }
-                    // the active line's copy icon — locked or not, same as
-                    // every committed line (v1.6.39); v1.6.45 — report #6:
-                    // the copy INCLUDES the live running total
+                }
+                // v1.6.49 — THE LIVE TOTAL ROW, aligned with the field above
+                // it (report #3: "when editing why is the individual total
+                // not aligned horizontaly with what above it, why it is
+                // pushed to the left"): it indents by exactly the prefix
+                // column, reads at the line TEXT's size (smaller than the
+                // 16sp it was — report #3), carries the ACTIVE line's own
+                // tappable currency (report #1), the open lock and the copy
+                // button. ALWAYS rendered — the buttons stay reachable even
+                // on a line that does not compute yet.
+                Row(
+                    Modifier
+                        .padding(top = 3.dp)
+                        .padding(start = if (activePrefix != null) PREFIX_W + 4.dp else 0.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (calcTotal != null) {
+                        Text(
+                            "= ${moneyNumber(calcTotal)}",
+                            fontSize = fs.lineSp.sp, fontWeight = FontWeight.SemiBold, color = C.brand,
+                            modifier = Modifier.testTag("calcTotal"),
+                        )
+                    }
+                    CurrencyChip(cur = calcCur ?: entryCur, tag = "calcActiveCur") { currencySheetFor = "A" }
+                    Spacer(Modifier.weight(1f))
+                    // the active line's OPEN lock — text-height, inert
+                    MdiIcon(
+                        "lock-off-outline", fs.lineSp, C.brand,
+                        Modifier.testTag("calcActiveLock"),
+                    )
+                    // the active line's copy — same slot as every committed
+                    // line's (report #2); the copy INCLUDES the live total
                     CopyBtn(tag = "calcActiveCopy") { copyLineText(lineCopyText(calcText, calcTotal)) }
                 }
-                // the live result + the show-your-work steps
-                if (calcTotal != null) {
-                    Text(
-                        "= ${money(calcTotal)}",
-                        // v1.6.48 — report #5: the live total matches the
-                        // committed lines' totals — ONE font size whether
-                        // the line is locked or not (the brand colour still
-                        // leads the eye), on a tighter lead
-                        fontSize = F.body.sp, fontWeight = FontWeight.SemiBold, color = C.brand,
-                        modifier = Modifier.padding(top = 3.dp).testTag("calcTotal"),
-                    )
-                }
+                // the show-your-work steps
                 if (calcStepList.isNotEmpty()) {
                     Text(
                         calcStepList.joinToString("   ") { s -> "${s.expr} = ${money(s.value)}" },
@@ -1705,38 +1430,31 @@ fun EntryEditOverlay(
                     )
                 }
             }
-            // THE TOTAL — v1.6.40: ALWAYS AFTER THE LAST CALCULATION ENTRY
-            // (it lived at the top of the canvas before), printed straight
-            // on the paper — NO different background.
-            // v1.6.45 — report #2: the sum total carried THE PAY BUTTON (the
-            // payments modal — history with full notes + record form), the
-            // LEFT CIRCLE and report #6's COPY button (the whole ledger
-            // export).
-            // v1.6.46 — report #2, round two ("put the pay btn bised the
-            // TOTAL text and the circle: a ring filling as you pay, should
-            // show how much % is left from the total and dont say something
-            // like 1 left"): ONE row now — the PAY RING (its sweep fills
-            // with the paid fraction, its centre carries the PERCENTAGE
-            // left, no "N left" count anywhere), the TOTAL label + amount
-            // (paid · remaining underneath once something is paid), and the
-            // PAY CHIP right beside them. The ring goes green at 0%.
+            // THE SUM TOTAL — v1.6.49 — VERY COMPACT (report #4: "make the
+            // sum total row very compact, it is talking to much space
+            // verticaly"): the ring shrank 40dp → 30dp, the double padding
+            // bands are gone, and the ring counts the PAID percentage —
+            // "why the persontage in the cercle says 100 when there is no
+            // any payment": it counted what was LEFT, so a fresh entry read
+            // 100%; it now counts what is PAID (0% until money moves, green
+            // at 100%), matching the entry cards' own rings. The sum's own
+            // TAPPABLE currency rides beside the number (report #1).
             val paidFraction = if (effAmount > 0.005) (paidTotal / effAmount).toFloat().coerceIn(0f, 1f) else 0f
-            val pctLeft = if (effAmount > 0.005) {
-                kotlin.math.round((remainingTotal / effAmount) * 100.0).toInt().coerceIn(0, 100)
-            } else 100
+            val pctPaid = if (effAmount > 0.005) {
+                kotlin.math.round((paidTotal / effAmount) * 100.0).toInt().coerceIn(0, 100)
+            } else 0
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp)
-                    .padding(top = 2.dp)
-                    .testTag("calcLedgerTotal")
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                    .padding(horizontal = 12.dp)
+                    .padding(top = 1.dp)
+                    .testTag("calcLedgerTotal"),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (effAmount > 0.005) {
                     PayRing(
-                        percentLeft = pctLeft,
+                        percentPaid = pctPaid,
                         fraction = paidFraction,
                         fullyPaid = remainingTotal <= 0.005 && paidTotal > 0.005,
                         tag = "calcPayRing",
@@ -1744,42 +1462,37 @@ fun EntryEditOverlay(
                     )
                 }
                 Column(Modifier.weight(1f)) {
-                    // v1.6.48 — report #2: the total number sits BESIDE the
-                    // "TOTAL" label, not under it — ONE row: label, amount,
-                    // (the items hint); the paid · remaining line rides
-                    // underneath once something is paid
+                    // v1.6.48 — the total number sits BESIDE the "TOTAL"
+                    // label — ONE row: label, amount, the sum's own currency
+                    // (v1.6.49), the items hint
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(t("ee.calcTotal"), fontSize = F.small.sp, fontWeight = FontWeight.SemiBold, color = C.sub)
-                        // v1.6.46 — SemiBold, one point larger (the de-bulked look)
                         Text(
-                            money(effAmount),
+                            moneyNumber(effAmount),
                             fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = C.brand,
                             modifier = Modifier.testTag("calcTotalAmount"),
                         )
+                        CurrencyChip(cur = entryCur, tag = "calcTotalCur") { currencySheetFor = "S" }
                         if (itemsSum > 0.0) {
-                            Text("+ ${money(itemsSum)}", fontSize = F.tiny.sp, color = C.faint)
+                            Text("+ ${money(itemsSum)}", fontSize = 11.sp, color = C.faint)
                         }
                     }
                     if (paidTotal > 0.005) {
                         Text(
-                            "${t("lg.paid")} ${money(paidTotal)} · ${t("lg.remaining")} ${money(remainingTotal)}",
-                            fontSize = F.tiny.sp, color = C.faint,
+                            "${t("lg.paid")} ${money(paidTotal, entryCur)} · ${t("lg.remaining")} ${money(remainingTotal, entryCur)}",
+                            fontSize = 11.sp, color = C.faint,
                             modifier = Modifier.testTag("calcTotalPaidLine"),
                         )
                     }
                 }
                 PayChip(
                     tag = "calcTotalPay",
-                    // v1.6.45 — always armed: the chip is the HISTORY's
-                    // entry point too — a fully-paid total still opens
-                    // the modal (its own Pay action simply hides when
-                    // nothing remains)
+                    // always armed: the chip is the HISTORY's entry point too
+                    // (its own Pay action hides when nothing remains)
                     enabled = effAmount > 0,
                 ) { payModal = -1 }
-                // v1.6.45 — report #6: a copy button FOR THE SUM TOTAL
-                // AND EVERYTHING IN IT (the whole ledger export — lines,
-                // dates, totals, payments with notes, paid · remaining;
-                // v1.6.46 — headed by the canvas title when there is one)
+                // v1.6.45 — report #6: a copy button FOR THE SUM TOTAL AND
+                // EVERYTHING IN IT (the whole ledger export)
                 CopyBtn(tag = "calcTotalCopy") {
                     copyLineText(
                         formatCalcLedgerExport(
@@ -1886,7 +1599,10 @@ fun EntryEditOverlay(
             // button still closes it (the canvas's own back handler).
         }
         } // end of the RTL-aware canvas
-    }
+    // v1.6.49 note: the form is GONE — the canvas IS the whole editor — so
+    // the old `if (amountMode == "calc" && calcExpanded) {` wrapper (whose
+    // closer used to sit here) no longer exists; the editor's trailing
+    // blocks below live directly in the function body until its real end.
 
     // v1.6.40 — THE SHARED PAYMENTS MODAL. v1.6.45 — report #2: the modal
     // opens from THE SUM TOTAL'S PAY BUTTON ONLY (the per-line chips and
@@ -1936,7 +1652,12 @@ fun EntryEditOverlay(
                             note = p.note,
                             remaining = run,
                             tag = "calcModalPayHist:$pi",
-                            onOpen = {},
+                            // v1.6.49 — report #10 ("why there is no a way to
+                            // update payment"): tapping a recorded payment
+                            // opens ITS editor — amount / date / method /
+                            // note, saved in place through
+                            // AppStore.updatePayment
+                            onOpen = { currentEntry?.let { ce -> openPaymentSheet(ce.id, edit = p) } },
                         )
                     }
                 }
@@ -1971,11 +1692,11 @@ fun EntryEditOverlay(
         }
     }
 
-    // v1.6.48 — THE CURRENCY PICKER (report #1: "the ability to change
-    // the currency"): the canvas header's currency chip opens this compact
-    // sheet — the same eight currencies the Settings region row carries.
-    // One tap writes settings.currency and every money() in the app
-    // re-renders the same frame (the live default since v1.6.48); the
+    // v1.6.48 — THE HEADER CURRENCY PICKER (report #1: "the ability to
+    // change the currency"): the canvas header's currency chip opens this
+    // compact sheet — the same eight currencies the Settings region row
+    // carries. One tap writes settings.currency and every money() in the
+    // app re-renders the same frame (the live default since v1.6.48); the
     // keypad hides while the sheet is up (wantPad) and re-arms on close.
     if (currencySheet) {
         com.callmony.ui.components.BottomSheet(
@@ -2004,36 +1725,86 @@ fun EntryEditOverlay(
         }
     }
 
-    // owner picker — inline ContactPicker + General option
-    if (showOwnerPicker) {
-        com.callmony.ui.components.ContactPicker(
-            title = t("ee.owner"),
-            onPick = { c ->
-                showOwnerPicker = false
-                owner = com.callmony.model.contactOwnerId(c.recordID)
-            },
-            onBack = { showOwnerPicker = false },
-        )
-    }
-
-    // inline category manager
-    if (catManager) {
-        var newCat by remember { mutableStateOf("") }
-        com.callmony.ui.components.BottomSheet(title = t("cat.custom"), onClose = { catManager = false }) {
+    // v1.6.49 — THE SCOPED CURRENCY PICKER (report #1, round two: "the
+    // ability to change the individual currency by clicking the currency
+    // that is there bisede the total and also for the sum total by clicking
+    // the currency that is there bisede the total"): the same compact sheet,
+    // aimed at whichever total's chip opened it — "S" writes the ENTRY's
+    // sum currency (LedgerEntry.calcCurrency), "A" the ACTIVE line's
+    // pending choice (rides the commit as the line's own), "L<i" committed
+    // line i's own. The keypad hides while the sheet is up (wantPad).
+    if (currencySheetFor != null) {
+        val target = currencySheetFor
+        val currentFor: String? = when {
+            target == "S" -> entryCur
+            target == "A" -> calcCur ?: entryCur
+            target != null && target.startsWith("L") ->
+                calcLines.getOrNull(target.substring(1).toIntOrNull() ?: -1)?.currency ?: entryCur
+            else -> null
+        }
+        com.callmony.ui.components.BottomSheet(
+            title = t("st.currency"),
+            onClose = { currencySheetFor = null },
+        ) {
             Column {
-                AppStore.state.settings.customCategories.forEach { cat ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(cat, fontSize = F.body.sp, color = C.ink, modifier = Modifier.weight(1f))
-                        IconBtn("close", { AppStore.removeCustomCategory(cat) }, size = 30, danger = true)
+                Row(Modifier.padding(bottom = 6.dp)) {
+                    ScrollRow {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            CURRENCIES.forEach { cur ->
+                                Chip(
+                                    label = "${cur.code} ${cur.symbol}",
+                                    compact = true,
+                                    active = currentFor == cur.code,
+                                    onPress = {
+                                        when {
+                                            target == "S" -> entryCur = cur.code
+                                            target == "A" -> calcCur = cur.code
+                                            target != null && target.startsWith("L") -> {
+                                                val li = target.substring(1).toIntOrNull() ?: -1
+                                                calcLines = calcLines.mapIndexed { j, l ->
+                                                    if (j == li) l.copy(currency = cur.code) else l
+                                                }
+                                            }
+                                        }
+                                        currencySheetFor = null
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
-                Field(label = t("cat.categoryName"), value = newCat, onChangeText = { newCat = it })
-                Btn(label = t("act.add"), onPress = {
-                    if (newCat.isNotBlank()) {
-                        AppStore.addCustomCategory(newCat.trim())
-                        newCat = ""
+            }
+        }
+    }
+
+    // v1.6.49 — THE FONT-SIZE PICKER (report #6: "i want the option to
+    // change the font size"): three sizes — S / M / L — scaling the whole
+    // canvas's calculation text; the choice rides the entry as calcFontSize
+    // so a reopened canvas keeps it.
+    if (fontSheet) {
+        com.callmony.ui.components.BottomSheet(
+            title = t("st.fontSize"),
+            onClose = { fontSheet = false },
+        ) {
+            Column {
+                Row(Modifier.padding(bottom = 6.dp)) {
+                    ScrollRow {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(
+                                "s" to "S ${calcFontSizesOf("s").lineSp}sp",
+                                "m" to "M ${calcFontSizesOf("m").lineSp}sp",
+                                "l" to "L ${calcFontSizesOf("l").lineSp}sp",
+                            ).forEach { (m, label) ->
+                                Chip(
+                                    label = label,
+                                    compact = true,
+                                    active = calcFontSizeSel == m,
+                                    onPress = { calcFontSizeSel = m; fontSheet = false },
+                                )
+                            }
+                        }
                     }
-                })
+                }
             }
         }
     }
@@ -2061,17 +1832,19 @@ private fun SmallCalcBtn(label: String, enabled: Boolean = true, onPress: () -> 
 /* v1.6.39 — the per-line COPY icon: every calculation line carries
    one, locked or unlocked (the user's spec: "each calculation line
    should have copy icons locked or unlocked"). */
+/* v1.6.49 — 22dp (report #2): the copy button rides the individual
+   total's OWN row now, so it shrank with it. */
 @Composable
 private fun CopyBtn(tag: String, onPress: () -> Unit) {
     val C = C()
     Box(
         Modifier
-            .size(26.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .size(22.dp)
+            .clip(RoundedCornerShape(7.dp))
             .clickable { onPress() }
             .testTag(tag),
         contentAlignment = Alignment.Center,
-    ) { MdiIcon("content-copy", 13, C.sub) }
+    ) { MdiIcon("content-copy", 12, C.sub) }
 }
 
 /* v1.6.40 — the per-line REMOVE button: a small red ✕ that asks through
@@ -2081,12 +1854,12 @@ private fun DeleteBtn(tag: String, onPress: () -> Unit) {
     val C = C()
     Box(
         Modifier
-            .size(26.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .size(22.dp)
+            .clip(RoundedCornerShape(7.dp))
             .clickable { onPress() }
             .testTag(tag),
         contentAlignment = Alignment.Center,
-    ) { MdiIcon("close", 13, C.red) }
+    ) { MdiIcon("close", 12, C.red) }
 }
 
 /* v1.6.41 — THE ROOT-LEVEL KEYPAD HOST: while number mode is armed the
@@ -2491,16 +2264,16 @@ internal fun formatCalcLedgerExport(
     return sb.toString().trimEnd('\n')
 }
 
-/* v1.6.46 — report #2, round two ("put the pay btn bised the TOTAL text
-   and the circle: a ring filling as you pay, should show how much % is
-   left from the total and dont say something like 1 left"): the sum-total
-   ring — its sweep FILLS with the paid fraction (brand while paying,
-   green once done) and its centre carries the PERCENTAGE LEFT, so one
-   glance answers "how much is left" without counting anything. The old
-   v1.6.45 LeftCircle (unpaid-line count + "N left" caption) is gone. */
+/* v1.6.46 — the sum-total ring: its sweep FILLS with the paid fraction
+   (brand while paying, green once done). v1.6.49 — report #4 ("why the
+   persontage in the cercle says 100 when there is no any payment"): the
+   centre now carries the PERCENTAGE PAID — the old percentage-LEFT read
+   100% on a fresh entry with nothing paid at all; it reads 0% now and
+   walks to a green 100% as money lands, matching the entry cards' rings.
+   The ring shrank 40dp → 30dp for the compact sum-total row. */
 @Composable
 private fun PayRing(
-    percentLeft: Int,
+    percentPaid: Int,
     fraction: Float,
     fullyPaid: Boolean,
     tag: String,
@@ -2509,7 +2282,7 @@ private fun PayRing(
     val C = C()
     Box(
         Modifier
-            .size(40.dp)
+            .size(30.dp)
             .testTag(tag),
         contentAlignment = Alignment.Center,
     ) {
@@ -2534,8 +2307,8 @@ private fun PayRing(
             }
         }
         Text(
-            "$percentLeft%",
-            fontSize = F.tiny.sp,
+            "$percentPaid%",
+            fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
             color = if (fullyPaid) C.green else C.brand,
             modifier = Modifier.testTag(pctTag),
@@ -2572,170 +2345,54 @@ internal fun recentItems(entries: List<com.callmony.model.LedgerEntry>): List<Pa
     return out.take(14)
 }
 
-/* line item edit form (v1.6.38: still reachable by tapping an existing
-   item row — the ADD tab is gone but editing what exists stays) */
-@Composable
-private fun ItemEditor(
-    onAdd: (EntryItem) -> Unit,
-    onUpdate: (EntryItem) -> Unit,
-    editing: EntryItem?,
-    onEditDone: () -> Unit,
-) {
-    val C = C()
-    var name by remember(editing) { mutableStateOf(editing?.name ?: "") }
-    var qty by remember(editing) { mutableStateOf(editing?.qty?.let { trimNum(it) } ?: "1") }
-    var unit by remember(editing) { mutableStateOf(editing?.unit ?: "") }
-    var price by remember(editing) { mutableStateOf(editing?.price?.let { trimNum(it) } ?: "") }
+/* v1.6.49 — THE PREFIX COLUMN's width (report #3: the left edge tightened
+   — 20dp → 16dp; with the lock off the left chain the calculation text
+   starts ~32dp from the screen edge instead of ~64dp). */
+private val PREFIX_W = 16.dp
 
-    if (editing != null) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(C.brandSoft)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(t("act.edit"), fontSize = F.small.sp, color = C.brand, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Text(t("act.cancel"), fontSize = F.small.sp, color = C.sub, fontWeight = FontWeight.Bold, modifier = Modifier.clickable {
-                onEditDone()
-                name = ""; qty = "1"; unit = ""; price = ""
-            })
-        }
-    }
-    Column(
+/* v1.6.49 — THE CANVAS'S FONT SIZES (report #6: "i want the option to
+ *  change the font size"): one choice scales the calculation text — the
+ *  active line's input and the committed lines — and every total follows
+ *  the line text's size (report #3: "the individual total font size should
+ *  be smaller as the text and numbers"). m (the default, and what every
+ *  absent/unknown value decodes to) keeps the v1.6.46/48 cuts. Pure, so
+ *  the harness pins the numbers. */
+internal data class CalcFontSizes(val activeSp: Int, val lineSp: Int)
+
+internal fun calcFontSizesOf(mode: String?): CalcFontSizes = when (mode) {
+    "s" -> CalcFontSizes(16, 13)
+    "l" -> CalcFontSizes(20, 16)
+    else -> CalcFontSizes(18, 14)
+}
+
+/* v1.6.49 — THE TAPPABLE CURRENCY beside every total (report #1: "the
+ *  ability to change the individual currency by clicking the currency that
+ *  is there bisede the total and also for the sum total by clicking the
+ *  currency that is there bisede the total"): a tiny chip at the text's own
+ *  height printing the currency that total CURRENTLY renders in (the line's
+ *  own choice → the entry's sum currency → the live setting), whose tap
+ *  opens the scoped picker. */
+@Composable
+private fun CurrencyChip(cur: String?, tag: String, onPress: () -> Unit) {
+    val C = C()
+    Box(
         Modifier
-            .fillMaxWidth()
-            .padding(bottom = 8.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(C.cardAlt.copy(alpha = 0.5f))
-            .padding(12.dp),
+            .heightIn(min = 18.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(C.card)
+            .border(1.dp, C.line, RoundedCornerShape(6.dp))
+            .clickable { onPress() }
+            .testTag(tag)
+            .padding(horizontal = 5.dp, vertical = 1.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Field(label = t("lg.itemName"), value = name, onChangeText = { name = it }, placeholder = t("lg.itemNamePh"))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(Modifier.weight(0.7f)) { Field(label = t("lg.qty"), value = qty, onChangeText = { qty = it }, keyboardType = "decimal-pad", placeholder = "1") }
-            Box(Modifier.weight(0.9f)) { Field(label = t("lg.unit"), value = unit, onChangeText = { unit = it }, placeholder = t("lg.unitPh")) }
-            Box(Modifier.weight(1.2f)) { Field(label = t("lg.unitPrice"), value = price, onChangeText = { price = it }, keyboardType = "decimal-pad", placeholder = "0") }
-        }
-        Row(Modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            ScrollRow {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    QUICK_UNITS.forEach { u ->
-                        Chip(label = u, compact = true, active = unit == u, onPress = { unit = if (unit == u) "" else u })
-                    }
-                }
-            }
-        }
-        Row(Modifier.padding(top = 8.dp)) {
-            Btn(
-                small = true, label = if (editing == null) t("lg.addItem") else t("lg.saveItem"), icon = "plus",
-                onPress = {
-                    val q = qty.replace(",", ".").toDoubleOrNull() ?: 1.0
-                    val p = price.replace(",", ".").toDoubleOrNull() ?: 0.0
-                    if (name.isBlank() || p <= 0) {
-                        Toasts.toast(t("lg.itemIncomplete"), "error")
-                        return@Btn
-                    }
-                    val item = EntryItem(id = editing?.id ?: uid(), name = name.trim(), qty = q, unit = unit.ifEmpty { null }, price = p)
-                    if (editing == null) onAdd(item) else onUpdate(item)
-                    onEditDone()
-                    name = ""; qty = "1"; unit = ""; price = ""
-                },
-            )
-        }
+        Text(
+            currencySymbol(cur ?: AppStore.state.settings.currency),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = C.sub,
+            maxLines = 1,
+        )
     }
 }
 
-/* ---------------- v1.6.18 attachments ---------------- */
-
-private val REF_ICON = mapOf(
-    "list" to "clipboard-list-outline",
-    "note" to "notebook-outline",
-    "reminder" to "bell-outline",
-)
-
-/** A single attached entity chip with a detach ✕ (used in the entry editor). */
-@Composable
-private fun AttachedChip(ref: com.callmony.model.LinkRef, onDetach: () -> Unit) {
-    val C = C()
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(C.brand.copy(alpha = 0.08f))
-            .padding(start = 10.dp, end = 2.dp, top = 4.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        MdiIcon(REF_ICON[ref.type] ?: "link-variant", 15, C.brand)
-        Text(ref.label ?: ref.id, fontSize = F.small.sp, color = C.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        IconBtn("close", onDetach, size = 26, danger = true)
-    }
-}
-
-/**
- * v1.6.18 — the Attach picker: one sheet, three tabs (Lists / Notes /
- * Reminders), live from the store.
- */
-@Composable
-fun AttachmentPicker(refs: List<com.callmony.model.LinkRef>, onChange: (List<com.callmony.model.LinkRef>) -> Unit, onClose: () -> Unit) {
-    val C = C()
-    var tab by remember { mutableStateOf("list") }
-    com.callmony.ui.components.BottomSheet(title = t("att.attachExisting"), onClose = onClose) {
-        Column {
-            com.callmony.ui.kit.Segmented(
-                listOf(
-                    Triple("list", t("misc.list"), null),
-                    Triple("note", t("misc.note"), null),
-                    Triple("reminder", t("misc.reminder"), null),
-                ),
-                tab,
-            ) { tab = it }
-            Spacer(Modifier.height(10.dp))
-            val pool: List<Triple<String, String, String>> = when (tab) {
-                "list" -> AppStore.state.lists
-                    .filter { it.deletedAt == null }
-                    .map { Triple(it.id, it.title.ifEmpty { t("ls.untitled") }, "list") }
-                "note" -> AppStore.state.notes
-                    .filter { it.deletedAt == null }
-                    .map { Triple(it.id, it.title.ifEmpty { t("nt.untitled") }, "note") }
-                else -> AppStore.state.reminders
-                    .filter { it.deletedAt == null }
-                    .map { Triple(it.id, it.title.ifEmpty { t("rm.kindCustom") }, "reminder") }
-            }
-            if (pool.isEmpty()) {
-                Text(t("ee.noAttachments"), fontSize = F.tiny.sp, color = C.faint, modifier = Modifier.padding(bottom = 8.dp))
-            } else {
-                LazyColumn(Modifier.heightIn(max = 320.dp)) {
-                    items(pool.size, key = { pool[it].first }) { i ->
-                        val (id, label, ty) = pool[i]
-                        val attached = refs.any { it.id == id && it.type == ty }
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (attached) C.brand.copy(alpha = 0.08f) else Color.Transparent)
-                                .clickable {
-                                    onChange(
-                                        if (attached) refs.filter { !(it.id == id && it.type == ty) }
-                                        else refs + com.callmony.model.LinkRef(type = ty, id = id, label = label)
-                                    )
-                                }
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            MdiIcon(REF_ICON[ty] ?: "link-variant", 18, if (attached) C.brand else C.sub)
-                            Text(label, fontSize = F.body.sp, color = C.ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (attached) MdiIcon("check-circle", 20, C.green)
-                        }
-                    }
-                }
-            }
-            Row(Modifier.padding(top = 10.dp)) {
-                Btn(small = true, label = t("act.close"), variant = "secondary", onPress = onClose)
-            }
-        }
-    }
-}

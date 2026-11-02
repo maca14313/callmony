@@ -26,13 +26,17 @@ import org.robolectric.annotation.GraphicsMode
 /* v1.6.38 — the ADD-MODE strip after the removal (user spec: "remove the
    just amount, qty*price and Quick item"): Calculator + Recent are what
    remain. Just amount / Items · qty × price / Quick item are GONE —
-   documented with all their features in removed/ at the repo root. This
-   battery pins:
+   documented with all their features in removed/ at the repo root.
+   v1.6.49 — report #7 ("we don't want the page that says edit entry for
+   the ledger"): the WHOLE FORM is gone — the canvas IS the editor. The
+   Recent tab and the inline item editor went with it, so this battery
+   now pins:
      1. the ledger view still renders no quick-item row
-     2. the RECENT tab books a one-tap repeat item, and the entry amount
-        = the calculator's ledger + those items (the SUM still holds)
-     3. an existing item row still opens the inline editor (editability
-        survives the tab's removal)
+     2. the canvas-only editor: no tabs, no collapsed band, no item
+        rows — and backing out still persists the calculator's note
+        through the leave-time create
+     3. an items entry opens straight into the canvas with its items
+        intact (data preserved even though the form UI is gone)
 
    Harness notes (same as every compose harness here): hydrated is
    deliberately NOT reset in @Before; onboarded flips AFTER
@@ -70,25 +74,13 @@ class EntryEditAddTabsTest {
         check(ph.isEmpty()) { "quick item row still rendered on the ledger view" }
     }
 
-    /* the calculator's ledger + a RECENT item SUM into the entry amount
-       (the v1.6.37 SUM semantics, kept after the tab removal) */
+    /* v1.6.49 — the FORM is gone (report #7): the editor opens straight
+       into the canvas; the Recent tab and every item row are gone, and
+       backing out persists the calculator's note through the leave-time
+       create — the SUM semantics the old test pinned, minus the form */
     @Test
     fun recentItemsAndTheCalculatorSumIntoTheEntryAmount() {
         ready()
-
-        // seed one booked item so the RECENT pool has something to reuse
-        rule.runOnUiThread {
-            AppStore.saveEntry(
-                com.callmony.model.LedgerEntry(
-                    id = com.callmony.lib.uid(), ownerId = "u:me", type = "credit", kind = "credit",
-                    amount = 35.0,
-                    items = listOf(com.callmony.model.EntryItem(id = com.callmony.lib.uid(), name = "Tea", qty = 1.0, price = 35.0)),
-                    date = com.callmony.lib.todayStr(),
-                    createdAt = com.callmony.lib.now(), updatedAt = com.callmony.lib.now(),
-                )
-            )
-        }
-        rule.waitForIdle()
 
         rule.runOnUiThread { UiStore.open(Overlay.EntryEdit(null, "u:me")) }
         rule.waitForIdle()
@@ -96,7 +88,8 @@ class EntryEditAddTabsTest {
             rule.onAllNodesWithTag("calcTextField").fetchSemanticsNodes().isNotEmpty()
         }
 
-        // the calculator line: 100 × 2 → 200
+        // the calculator line: 100 × 2 → 200 (the live total renders the
+        // number alone — the currency is its own tappable chip, v1.6.49)
         rule.onNodeWithTag("calcModeNum").performClick()
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
@@ -107,43 +100,41 @@ class EntryEditAddTabsTest {
             rule.waitForIdle()
         }
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("200 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("= 200", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
 
-        // v1.6.39 — the canvas is FULL SCREEN over the form now: collapse
-        // it to reach the input-mode strip
-        rule.onNodeWithTag("calcCollapse").performClick()
+        // v1.6.49 — NO FORM COMPOSES: no Recent tab, no collapsed band
+        assertEquals(
+            "the Recent tab must be gone (the form is deleted)",
+            0,
+            rule.onAllNodes(hasText(t("ee.tabRecent")) and hasClickAction()).fetchSemanticsNodes().size,
+        )
+        assertEquals(
+            "no collapsed band — the canvas is the whole editor",
+            0,
+            rule.onAllNodesWithTag("calcCollapsed").fetchSemanticsNodes().size,
+        )
+
+        // backing out of the editor persists the never-saved draft through
+        // the leave-time create — the entry carries the calc note, amount 200.
+        // v1.6.49: the KEYPAD is still armed in num mode, so the FIRST back
+        // closes it (AppBackHandler's num branch) — the second closes the
+        // editor and fires the leave-time save
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("calcCollapsed").fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithTag("calcKey:1").fetchSemanticsNodes().isEmpty()
         }
-
-        // RECENT: switch to the tab, then one tap books Tea · 35 again
-        val recentTab = rule.onAllNodes(hasText(t("ee.tabRecent")) and hasClickAction())
-        rule.waitUntil(timeoutMillis = 15000) { recentTab.fetchSemanticsNodes().isNotEmpty() }
-        recentTab[0].performClick()
-        rule.waitForIdle()
-        val recentChip = rule.onAllNodes(hasText("Tea · 35", substring = true) and hasClickAction())
-        rule.waitUntil(timeoutMillis = 15000) { recentChip.fetchSemanticsNodes().isNotEmpty() }
-        recentChip[0].performClick()
-        rule.waitForIdle()
-
-        // 200 (calculator) + 35 (item) = 235 on the total bar
-        rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("235 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
-        }
-
-        // v1.6.46 — THE SAVE BUTTON IS GONE (report #3: Next does what Save
-        // did): backing out of the editor persists the never-saved draft
-        // through the leave-time create — the entry carries the item AND the
-        // calc note, amount 235
         rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodesWithTag("calcTextField").fetchSemanticsNodes().isEmpty()
         }
         val saved = rule.runOnUiThread {
-            AppStore.state.entries.firstOrNull { e -> e.amount == 235.0 && e.items.size == 1 }
+            AppStore.state.entries.firstOrNull {
+                e -> e.amount == 200.0 &&
+                    e.exprNote?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), "") == "100 × 2"
+            }
         }
         checkNotNull(saved) {
             "sum entry was not persisted — entries now: " +
@@ -151,12 +142,12 @@ class EntryEditAddTabsTest {
                     AppStore.state.entries.joinToString("; ") { "amt=${it.amount} expr=${it.exprNote} items=${it.items.size}" }
                 }
         }
-        assertEquals("100 × 2", saved.exprNote)
-        assertEquals("Tea", saved.items.first().name)
+        assertEquals("100 × 2", saved.exprNote?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), ""))
     }
 
-    /* tapping an existing item row opens the inline item editor — the
-       qty × price ADD tab is gone but EDITING what exists stays */
+    /* v1.6.49 — an entry WITH items opens straight into the canvas (the
+       form — and its inline item editor — is gone, report #7): no item
+       row composes, and the items data rides the entry untouched */
     @Test
     fun tappingAnExistingItemOpensTheInlineEditor() {
         ready()
@@ -178,50 +169,36 @@ class EntryEditAddTabsTest {
         rule.runOnUiThread { UiStore.open(Overlay.EntryEdit(id, "u:me")) }
         rule.waitForIdle()
 
-        // v1.6.39 — the FULL-SCREEN canvas opens over the whole form:
-        // collapse it to reach the item rows
+        // the CANVAS opens directly — no collapse, no form underneath
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodesWithTag("calcCollapse").fetchSemanticsNodes().isNotEmpty()
         }
-        rule.onNodeWithTag("calcCollapse").performClick()
-        rule.waitForIdle()
+        assertEquals(
+            "no collapsed band — the canvas is the whole editor",
+            0,
+            rule.onAllNodesWithTag("calcCollapsed").fetchSemanticsNodes().size,
+        )
+        assertEquals(
+            "no inline item editor composes anymore",
+            0,
+            rule.onAllNodes(hasText(t("lg.saveItem")) and hasClickAction()).fetchSemanticsNodes().size,
+        )
+
+        // the items entry still computes: 25 item rides the sum total row
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("calcCollapsed").fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("25", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
 
-        // tap the Coffee item row → the inline editor's Save item button
-        // appears (its name field prefilled)
-        val itemRow = rule.onAllNodes(hasText("Coffee", substring = true))
-        rule.waitUntil(timeoutMillis = 15000) { itemRow.fetchSemanticsNodes().isNotEmpty() }
-        itemRow[0].performClick()
-        rule.waitForIdle()
-        val saveItemBtn = rule.onAllNodes(hasText(t("lg.saveItem")) and hasClickAction())
-        rule.waitUntil(timeoutMillis = 15000) { saveItemBtn.fetchSemanticsNodes().isNotEmpty() }
-        // the prefilled name field is editable (scroll the editor into view
-        // first — the canvas owns the top of the form)
-        val nameField = rule.onAllNodes(hasSetTextAction() and hasText("Coffee"))
-        rule.waitUntil(timeoutMillis = 15000) { nameField.fetchSemanticsNodes().isNotEmpty() }
-        nameField[0].performClick()
-        rule.waitForIdle()
-        nameField[0].performTextReplacement("Coffee X")
-        rule.waitForIdle()
-        saveItemBtn[0].performScrollTo().performClick()
-        rule.waitForIdle()
-        // the row itself re-renders with the new name before the entry saves
-        rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("Coffee X", substring = true)).fetchSemanticsNodes().isNotEmpty()
-        }
-        // v1.6.46 — no footer Save any more: backing out of the editor
-        // persists the edited item through the leave-time save (the entry
-        // is live — the autosave/leave path owns it)
+        // back out — the items data is intact (the form UI is gone, not
+        // the data)
         rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.runOnUiThread { AppStore.state.entries.find { it.id == id }?.items?.firstOrNull()?.name == "Coffee X" }
+            rule.runOnUiThread { AppStore.state.entries.find { it.id == id }?.items?.size == 1 }
         }
-        val renamed = rule.runOnUiThread {
-            AppStore.state.entries.find { it.id == id }?.items?.firstOrNull()?.name
+        val items = rule.runOnUiThread {
+            AppStore.state.entries.find { it.id == id }?.items
         }
-        assertEquals("Coffee X", renamed)
+        assertEquals("Coffee", items?.first()?.name)
     }
 }

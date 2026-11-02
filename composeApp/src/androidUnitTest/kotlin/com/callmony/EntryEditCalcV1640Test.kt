@@ -133,7 +133,7 @@ class EntryEditCalcV1640Test {
         toNumMode()
         listOf("5", "0", "0").forEach { key(it) }
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("500 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("= 500", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
 
         // v1.6.46 — NEXT does what Save did (report #3): commit the line and
@@ -322,7 +322,7 @@ class EntryEditCalcV1640Test {
         toNumMode()
         listOf("2", "5", "0").forEach { key(it) }
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("250 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("= 250", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
 
         // v1.6.46 — Next commits + saves; v1.6.47 — Next is the ONE key that
@@ -346,10 +346,12 @@ class EntryEditCalcV1640Test {
         }
         assertEquals(1, count)
 
-        // keep editing: keypad + 50 → 300 — the AUTOSAVE persists it
+        // keep editing: keypad + 50 → the SUM reads 300 — the AUTOSAVE
+        // persists it (v1.6.49: the sum-total amount node renders the
+        // number alone — "300 Br" combined no longer exists)
         listOf("+", "5", "0").forEach { key(it) }
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("300 Br", substring = true)).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodes(hasText("300")).fetchSemanticsNodes().isNotEmpty()
         }
         rule.waitUntil(timeoutMillis = 12000) {
             rule.runOnUiThread { AppStore.state.entries.any { it.amount == 300.0 } }

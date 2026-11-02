@@ -83,6 +83,14 @@ private fun numberStr(n: Double): String {
 fun currencySymbol(code: String): String =
     CURRENCIES.find { it.code == code }?.symbol ?: code
 
+/** v1.6.49 — the NUMBER part of money() alone ("1,234", no symbol): the
+ *  canvas's individual / sum totals render the number and the currency as
+ *  TWO nodes, because the currency beside a total is now TAPPABLE — it
+ *  opens the per-line / per-entry currency picker (report #1: "change the
+ *  individual currency by clicking the currency that is there bisede the
+ *  total"). */
+fun moneyNumber(n: Double): String = numberStr(n)
+
 /** v1.6.48 — THE CURRENCY ACTUALLY APPLIES (report #1: "the ability to
  *  change the currency"): money() used to hard-code ETB unless a caller
  *  remembered to pass the setting along — the Settings region row and the

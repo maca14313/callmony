@@ -194,19 +194,24 @@ class EntryEditCalcV1646Test {
             rule.waitForIdle()
         }
         rule.waitUntil(timeoutMillis = 15000) { entryCount(345.0) == 1 }
-        // the draft folded to the one-line grammar on its way out
+        // v1.6.49 — report #5 ("when it got locked, the line disappeared,
+        // it just one line why"): the enter key's break rides the saved
+        // grammar as the ⏎ marker (U+23CE) — one entry, the one
+        // multi-visual-line calculation, the break PRESERVED
         val savedExpr = rule.runOnUiThread {
             AppStore.state.entries.first { it.amount == 345.0 }.exprNote
         }
         assertTrue(
-            "the newline folds to a space in the saved grammar — got: $savedExpr",
-            savedExpr?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), "") == "275 + 70",
+            "the newline survives the save as the ⏎ marker — got: $savedExpr",
+            savedExpr?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), "") == "275 +\u23CE70",
         )
     }
 
-    /* 3 — the Save button is GONE, canvas up or collapsed: no act.save
-       control anywhere in the editor (Next owns persistence since v1.6.47
-       — the enter key became the plain newline) */
+    /* 3 — the Save button is GONE — v1.6.49: everywhere, because the FORM
+       itself is gone (report #7): the canvas is the whole editor, and Next
+       owns persistence since v1.6.47 (the enter key became the plain
+       newline). ✕ closes the editor; no act.save control can exist in any
+       state */
     @Test
     fun theSaveButtonIsGoneEverywhere() {
         ready()
@@ -221,14 +226,16 @@ class EntryEditCalcV1646Test {
             0,
             rule.onAllNodesWithTag("calcBtnSave").fetchSemanticsNodes().size,
         )
-        // collapse to the form — the footer band is gone too
+        // v1.6.49 — there is no form to collapse to: ✕ CLOSES the editor,
+        // and no Save control composes anywhere in the app shell either
         rule.onNodeWithTag("calcCollapse").performClick()
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("calcCollapsed").fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithTag("calcTextField").fetchSemanticsNodes().isEmpty() &&
+                rule.onAllNodesWithTag("calcCollapsed").fetchSemanticsNodes().isEmpty()
         }
         assertEquals(
-            "no footer Save under the collapsed form",
+            "no footer Save under any form (the form is gone)",
             0,
             rule.onAllNodes(hasText(t("act.save")) and hasClickAction()).fetchSemanticsNodes().size,
         )
@@ -307,19 +314,17 @@ class EntryEditCalcV1646Test {
         rule.waitUntil(timeoutMillis = 15000) {
             rule.runOnUiThread { AppStore.state.entries.any { it.calcTitle == "march rooms" } }
         }
-        // collapse — the band headlines the TITLE in the label's place
-        rule.onNodeWithTag("calcCollapse").performClick()
-        rule.waitForIdle()
+        // v1.6.49 — there is no collapsed band anymore (the form is gone,
+        // report #7): the TITLE FIELD itself sits under the header with the
+        // typed title in it, and the export heads with it
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("calcCollapsed").fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithTag("calcTitleField").fetchSemanticsNodes().isNotEmpty()
         }
         assertTrue(
-            "the collapsed band must headline the title",
+            "the title field must carry the typed title",
             rule.onAllNodes(hasText("march rooms", substring = true)).fetchSemanticsNodes().isNotEmpty(),
         )
-        // raise the canvas again and export: the title heads the copy
-        rule.onNodeWithTag("calcCollapsed").performClick()
-        rule.waitForIdle()
+        // export: the title heads the copy
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodesWithTag("calcTotalCopy").fetchSemanticsNodes().isNotEmpty()
         }

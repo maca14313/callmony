@@ -242,8 +242,9 @@ class EntryEditCalcV1647Test {
             entryCount(230.0),
         )
 
-        // NEXT commits the ONE line (break folded to a space in the
-        // grammar) and saves — the store finally holds it
+        // NEXT commits the ONE line and saves — v1.6.49: the enter key's
+        // break rides the saved grammar as the ⏎ marker (report #5: the
+        // locked line keeps its visual break) — the store finally holds it
         next()
         awaitLine(0)
         rule.waitUntil(timeoutMillis = 15000) { entryCount(230.0) == 1 }
@@ -251,8 +252,8 @@ class EntryEditCalcV1647Test {
             AppStore.state.entries.first { it.amount == 230.0 }.exprNote
         }
         assertTrue(
-            "the one line folds its newline to a space — got: $savedExpr",
-            savedExpr?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), "") == "185 + 40 + 5",
+            "the one line keeps its newline as the ⏎ marker — got: $savedExpr",
+            savedExpr?.replace(Regex("\\s*@\\d{4}-\\d{2}-\\d{2}"), "") == "185 + 40 +\u23CE5",
         )
     }
 
@@ -411,8 +412,8 @@ class EntryEditCalcV1647Test {
             rule.onAllNodes(hasText("${t("lg.paid")} 305 Br", substring = true)).fetchSemanticsNodes().isNotEmpty(),
         )
         assertTrue(
-            "the pay ring must read 0% once fully paid",
-            rule.onAllNodes(hasText("0%")).fetchSemanticsNodes().isNotEmpty(),
+            "the pay ring must read 100% once fully paid (v1.6.49 — it counts the paid share)",
+            rule.onAllNodes(hasText("100%")).fetchSemanticsNodes().isNotEmpty(),
         )
 
         // AND it must SURVIVE the next save (the old wipe ate it here)

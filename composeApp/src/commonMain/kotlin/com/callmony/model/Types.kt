@@ -154,6 +154,16 @@ data class LedgerEntry(
     // when absent) | "number" | "none". Same optional-default pattern as
     // exprNote / calcTitle.
     val calcPrefix: String? = null,
+    // v1.6.49 — the SUM TOTAL's OWN display currency (report #1: "also for
+    // the sum total by clicking the currency that is there bisede the
+    // total"): null = the live setting; a chosen code prints beside the
+    // TOTAL / paid / remaining rows. Same optional-default pattern.
+    val calcCurrency: String? = null,
+    // v1.6.49 — the canvas's FONT SIZE (report #6: "i want the option to
+    // change the font size"): "s" | "m" (the default when absent) | "l" —
+    // scales the calculation text and every total. Same optional-default
+    // pattern.
+    val calcFontSize: String? = null,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
     val deletedAt: Long? = null,
