@@ -243,6 +243,13 @@ class EntryEditCalcTabTest {
         }
         back()
         rule.waitForIdle()
+        // v1.6.50 — the autosave is a 600ms DEBOUNCE; the flow above now
+        // completes inside it on a warm harness (the canvas composes a
+        // frame faster since the one-size/prefix-slot round), so the clock
+        // walks past the debounce before the assertion reads the store —
+        // exactly what real usage does by simply continuing to exist
+        rule.mainClock.advanceTimeBy(700)
+        rule.waitForIdle()
 
         // Save: amount 300 + BOTH lines on the note (each with its commit
         // date marker — v1.6.42)

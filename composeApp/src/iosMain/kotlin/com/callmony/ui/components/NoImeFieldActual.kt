@@ -31,6 +31,10 @@ actual fun NoImeNumberField(
     highlightColor: Color,
     focusToken: Int,
     bold: Boolean,
+    // v1.6.50 — the calculation typeface flag (report #8): iOS keeps the
+    // platform system face for now (the Android release is the shipped
+    // surface); the param rides the common signature.
+    calcFont: Boolean,
 ) {
     BasicTextField(
         value = value,

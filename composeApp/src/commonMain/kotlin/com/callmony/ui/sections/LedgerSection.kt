@@ -92,6 +92,7 @@ import com.callmony.ui.kit.pressVeil
 import com.callmony.ui.kit.Pill
 import com.callmony.ui.kit.RootFab
 import com.callmony.ui.kit.SectionHeader
+import com.callmony.ui.kit.calcFontFamily
 import com.callmony.ui.kit.Toasts
 import com.callmony.ui.components.ScrollRow
 
@@ -320,54 +321,59 @@ fun LedgerSection(ownerId: String) {
                 }
             }
         }
-        // ungrouped ("Single entries") — v1.6.25 compact heading + controls
-        SectionHeader(t("lg.ungrouped"), right = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                // v1.6.18 — the filter tabs under "Single entries" carry a
-                // ＋ of their own (creates the KIND the tab is showing);
-                // v1.6.25 makes it a LABELED compact chip instead of the
-                // ghost icon the user could never find, and the kind now
-                // follows the active tab exactly (credit tab → + Credit…).
-                // v1.6.49 — report #8: on a CONTACT the labeled kind chip is
-                // GONE ("dont want thos + credit, + debit up there") — every
-                // ＋ on a contact's ledger opens the same +Credit/+Debit
-                // chooser as the FAB; the General ledger keeps both.
-                val addLabel = when (groupFilter) {
-                    "credit" -> if (isGeneral) t("lg.kindIncome") else null
-                    "debit" -> if (isGeneral) t("lg.kindExpense") else null
-                    else -> null
-                }
-                if (addLabel != null) {
-                    Row(
-                        Modifier
-                            .clip(RoundedCornerShape(999.dp))
-                            .background(C.brandSoft)
-                            .border(1.dp, C.brand, RoundedCornerShape(999.dp))
-                            .clickable {
-                                val (ty, kd) = when (groupFilter) {
-                                    "credit" -> if (isGeneral) "credit" to "income" else "credit" to "credit"
-                                    "debit" -> if (isGeneral) "debit" to "expense" else "debit" to "debit"
-                                    else -> null to null
-                                }
-                                UiStore.open(if (ty == null) Overlay.EntryEdit(null, ownerId) else Overlay.EntryEdit(null, ownerId, ty, kd))
-                            }
-                            .padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        MdiIcon("plus", 13, C.brand)
-                        Text(addLabel, fontSize = F.tiny.sp, color = C.brand, fontWeight = FontWeight.Bold)
+        // ungrouped ("Single entries") — v1.6.25 compact heading + controls.
+        // v1.6.50 — report #11 ("in the contact detail page remove the row
+        // that have the title single entry, + and x in it"): on a CONTACT's
+        // ledger that whole heading row is GONE — the title, its ＋ and the
+        // collapse chevron (the "x" in the report) — the entries simply
+        // list under the filter chips, always expanded, and the circular ＋
+        // FAB stays the one way to add (it asks the kind first, v1.6.49
+        // report #8). The GENERAL ledger keeps its heading + controls.
+        if (isGeneral) {
+            SectionHeader(t("lg.ungrouped"), right = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    // v1.6.18 — the filter tabs under "Single entries" carry a
+                    // ＋ of their own (creates the KIND the tab is showing);
+                    // v1.6.25 makes it a LABELED compact chip instead of the
+                    // ghost icon the user could never find, and the kind now
+                    // follows the active tab exactly (credit tab → + Credit…).
+                    val addLabel = when (groupFilter) {
+                        "credit" -> t("lg.kindIncome")
+                        "debit" -> t("lg.kindExpense")
+                        else -> null
                     }
+                    if (addLabel != null) {
+                        Row(
+                            Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(C.brandSoft)
+                                .border(1.dp, C.brand, RoundedCornerShape(999.dp))
+                                .clickable {
+                                    val (ty, kd) = when (groupFilter) {
+                                        "credit" -> "credit" to "income"
+                                        "debit" -> "debit" to "expense"
+                                        else -> null to null
+                                    }
+                                    UiStore.open(if (ty == null) Overlay.EntryEdit(null, ownerId) else Overlay.EntryEdit(null, ownerId, ty, kd))
+                                }
+                                .padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            MdiIcon("plus", 13, C.brand)
+                            Text(addLabel, fontSize = F.tiny.sp, color = C.brand, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    IconBtn("plus", { UiStore.open(Overlay.EntryEdit(null, ownerId)) }, size = 30)
+                    IconBtn(if (ungroupedCollapsed) "chevron-down" else "chevron-up", { ungroupedCollapsed = !ungroupedCollapsed }, size = 30)
                 }
-                IconBtn("plus", {
-                    // v1.6.49 — a contact's ＋ asks the kind (report #8);
-                    // the General ledger opens the canvas directly as before
-                    if (isGeneral) UiStore.open(Overlay.EntryEdit(null, ownerId)) else openAddKindChooser(ownerId)
-                }, size = 30)
-                IconBtn(if (ungroupedCollapsed) "chevron-down" else "chevron-up", { ungroupedCollapsed = !ungroupedCollapsed }, size = 30)
-            }
-        })
-        if (!ungroupedCollapsed) {
+            })
+        }
+        // v1.6.50 — a contact's ungrouped entries are ALWAYS expanded (the
+        // collapse control lived on the removed header row, report #11);
+        // the General ledger keeps its collapse toggle
+        val showUngrouped = if (isGeneral) !ungroupedCollapsed else true
+        if (showUngrouped) {
             // v1.6.25 — THE TABS/CARDS OVERLAP FIX: the filter strip gets its
             // own vertical padding (2dp top / 6dp bottom) so the chips can
             // never sit flush against the entry cards under them.
@@ -670,12 +676,35 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
         ?.take(4)
         ?: emptyList()
 
+    /* v1.6.50 — report #10 ("in the contact detail page the cards of the
+       single entries is not good ux or ui, think like ui or ux designer,
+       why the content in is a mess"): the card is a THREE-ZONE design now,
+       each zone answering ONE question at ONE glance instead of the old
+       single crammed row where the title, four calculation lines, the meta
+       line, the status pill, the amount, the pencil and the chevron all
+       fought for the same horizontal band:
+         ZONE 1 — WHO/HOW MUCH: the pay-percentage ring, the title with its
+         date · payments meta UNDER it, and the amount as the hero number
+         at the row's end — the first read answers "what is this and for
+         how much";
+         ZONE 2 — THE MATH: the entry's own calculation preview in a soft
+         card-alt container (the canvas's own look — a bordered surface,
+         the calculation typeface, up to four of its lines), visually a
+         distinct block instead of loose grey text glued under the title;
+         ZONE 3 — THE STATE: one tidy strip — the status pill at the left,
+         the running ledger balance, then the pencil (edit) and the chevron
+         (expand) at the right edge, aligned with each other instead of
+         crowding the amount.
+       One tap on the hero row or the math opens the editor (unchanged);
+       the chevron is still the only expander. */
+    val calcFf = calcFontFamily()
     Card(Modifier.padding(bottom = 6.dp)) {
         Column {
+            // ZONE 1 — the hero row: ring + title/meta + the AMOUNT
             Row(
                 // v1.6.18 — ONE-TAP EDIT: tapping the row opens the editor
                 // directly; the detail (payments history) opens from the
-                // chevron on the right.
+                // chevron in zone 3.
                 Modifier.fillMaxWidth().clickable { UiStore.open(Overlay.EntryEdit(entry.id, entry.ownerId)) },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -699,40 +728,67 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
                         )
                         entry.category?.let { Pill(it, "brand") }
                     }
-                    // v1.6.49 — THE CALCULATION ITSELF, up to four of its
-                    // lines (report #9) — the card shows most of the math
-                    if (calcPreviewLines.isNotEmpty()) {
-                        Text(
-                            calcPreviewLines.joinToString("\n"),
-                            fontSize = F.tiny.sp,
-                            color = C.sub,
-                            maxLines = 4,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.testTag("entryCardCalc:${entry.id}"),
-                        )
-                    }
                     Text(
                         listOfNotNull(
                             fd(entry.date),
-                            "${t("lg.balance")} ${compactMoney(running)}",
                             if (entry.payments.isNotEmpty()) "${t("lg.payments")} ${entry.payments.size}" else null,
+                            entry.dueDate?.takeIf { remaining > 0.005 }?.let { d ->
+                                if (overdue) t("lg.paymentDue") else fd(d)
+                            },
                         ).joinToString(" · "),
                         fontSize = F.tiny.sp,
                         color = C.sub,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    // v1.6.47 — THE STATUS, ON the card (report: "it should
-                    // show the status"): fully paid ✓, part-paid shows how
-                    // much of the total, unpaid shows what is pending.
-                    when {
-                        remaining > 0.005 && paid > 0.005 -> Pill("${t("lg.paid")} ${compactMoney(paid)} / ${compactMoney(entry.amount)}", "amber")
-                        remaining > 0.005 -> Pill("${t("lg.pending")} ${compactMoney(remaining)}", "red")
-                        remaining < -0.005 -> Pill("${t("lg.overpaidBy")} ${compactMoney(-remaining)}", "green")
-                        else -> Pill("✓ ${t("lg.paid")}", "green")
-                    }
                 }
-                Money(signed, signed = true, colorize = true, size = 15, weight = FontWeight.ExtraBold, compact = true)
+                Money(signed, signed = true, colorize = true, size = 17, weight = FontWeight.ExtraBold, compact = true)
+            }
+            // ZONE 2 — THE CALCULATION, in its own soft container (up to
+            // four of the entry's own lines, ⏎ folded — v1.6.49 report #9)
+            if (calcPreviewLines.isNotEmpty()) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(C.cardAlt.copy(alpha = 0.45f))
+                        .border(1.dp, C.line, RoundedCornerShape(8.dp))
+                        .clickable { UiStore.open(Overlay.EntryEdit(entry.id, entry.ownerId)) },
+                ) {
+                    Text(
+                        calcPreviewLines.joinToString("\n"),
+                        fontSize = F.tiny.sp,
+                        color = C.sub,
+                        fontFamily = calcFf,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp).testTag("entryCardCalc:${entry.id}"),
+                    )
+                }
+            }
+            // ZONE 3 — the status strip: state pill · running balance ·
+            // edit · expand, one aligned row at the card's foot
+            Row(
+                Modifier.fillMaxWidth().padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                when {
+                    remaining > 0.005 && paid > 0.005 -> Pill("${t("lg.paid")} ${compactMoney(paid)} / ${compactMoney(entry.amount)}", "amber")
+                    remaining > 0.005 -> Pill("${t("lg.pending")} ${compactMoney(remaining)}", "red")
+                    remaining < -0.005 -> Pill("${t("lg.overpaidBy")} ${compactMoney(-remaining)}", "green")
+                    else -> Pill("✓ ${t("lg.paid")}", "green")
+                }
+                Spacer(Modifier.weight(1f))
+                if (dueToday && !overdue) Pill(t("rm.today"), "amber")
+                Text(
+                    "${t("lg.balance")} ${compactMoney(running)}",
+                    fontSize = F.tiny.sp,
+                    color = C.faint,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
                 // v1.6.25 — VISIBLE EDIT ICON (user report: "on the credit or
                 // others where is the icon to update the existing one"): a
                 // pencil button on every entry card opens the editor — the

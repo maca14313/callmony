@@ -4,6 +4,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -176,82 +177,58 @@ class EntryEditCalcV1649Test {
         return aTop < bBot && bTop < aBot
     }
 
-    /* 1 — THE CURRENCY BESIDE EVERY TOTAL IS TAPPABLE (report #1): the
-       SUM's chip writes the entry's own currency; a committed line's chip
-       rewrites that LINE's currency, riding the save as the " ~EUR"
-       marker; the active line's chip rides its own commit */
+    /* 1 — v1.6.50 round: THE CURRENCY BESIDE EVERY TOTAL IS NOT TAPPABLE
+       ANYMORE (report #3 of the thirteen-report round: "don't make The
+       currency beside every total is TAPPABLE, just what in the header is
+       enough") — the per-line / per-total glyphs render as PLAIN TEXT, and
+       the HEADER's chip is the ONE tappable currency control (it writes
+       the live app-wide setting) */
     @Test
-    fun theCurrencyBesideEveryTotalIsTappableAndScoped() {
+    fun theCurrencyBesideTotalsIsPlainAndOnlyTheHeaderChipIsTappable() {
         ready()
         openEditor()
         toNumMode()
         listOf("6", "1", "0").forEach { key(it) }
-        rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("= 610", substring = true)).fetchSemanticsNodes().isNotEmpty()
-        }
+        next()
+        awaitLine(0)
 
-        // the SUM's chip — the entry's own display currency
-        rule.onNodeWithTag("calcTotalCur").performClick()
+        // the glyphs still RENDER beside every total (plain currency text)
+        rule.waitUntil(timeoutMillis = 15000) {
+            rule.onAllNodesWithTag("calcLineCur:0", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() &&
+                rule.onAllNodesWithTag("calcActiveCur", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() &&
+                rule.onAllNodesWithTag("calcTotalCur").fetchSemanticsNodes().isNotEmpty()
+        }
+        // …but NOT ONE of them is tappable anymore
+        assertEquals(
+            "the committed line's currency must be PLAIN TEXT (no click)",
+            0,
+            rule.onAllNodes(hasClickAction() and hasTestTag("calcLineCur:0"), useUnmergedTree = true).fetchSemanticsNodes().size,
+        )
+        assertEquals(
+            "the active line's currency must be PLAIN TEXT (no click)",
+            0,
+            rule.onAllNodes(hasClickAction() and hasTestTag("calcActiveCur"), useUnmergedTree = true).fetchSemanticsNodes().size,
+        )
+        assertEquals(
+            "the sum total's currency must be PLAIN TEXT (no click)",
+            0,
+            rule.onAllNodes(hasClickAction() and hasTestTag("calcTotalCur")).fetchSemanticsNodes().size,
+        )
+
+        // the HEADER's chip is the one tappable currency — and it still
+        // writes the LIVE app-wide setting (money() re-renders everywhere)
+        rule.onNodeWithTag("calcCurrencyBtn").performClick()
         rule.waitForIdle()
         val usd = rule.onAllNodes(hasText("USD $") and hasClickAction())
         rule.waitUntil(timeoutMillis = 15000) { usd.fetchSemanticsNodes().isNotEmpty() }
         usd[0].performClick()
         rule.waitForIdle()
-        // the chip now renders the dollar symbol
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("calcTotalCur").fetchSemanticsNodes().isNotEmpty() &&
-                rule.onAllNodes(hasText("$")).fetchSemanticsNodes().isNotEmpty()
+            rule.runOnUiThread { AppStore.state.settings.currency == "USD" }
         }
-
-        // commit the line — the save carries the entry's sum currency
-        next()
-        awaitLine(0)
+        // the header chip itself now prints the dollar symbol
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.runOnUiThread {
-                AppStore.state.entries.any { it.calcCurrency == "USD" && it.amount == 610.0 }
-            }
-        }
-
-        // the LINE's OWN chip — that line's currency, not the entry's
-        rule.onNodeWithTag("calcLineCur:0").performClick()
-        rule.waitForIdle()
-        val eur = rule.onAllNodes(hasText("EUR €") and hasClickAction())
-        rule.waitUntil(timeoutMillis = 15000) { eur.fetchSemanticsNodes().isNotEmpty() }
-        eur[0].performClick()
-        rule.waitForIdle()
-        // the line's chip now reads the euro symbol
-        rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodes(hasText("€")).fetchSemanticsNodes().isNotEmpty()
-        }
-        // another Next commits + saves again — the line's currency rides
-        // the note as the " ~EUR" marker
-        listOf("5", "0").forEach { key(it) }
-        next()
-        awaitLine(1)
-        rule.waitUntil(timeoutMillis = 15000) {
-            rule.runOnUiThread {
-                AppStore.state.entries.any {
-                    it.amount == 660.0 && it.exprNote?.contains("~EUR") == true
-                }
-            }
-        }
-
-        // the ACTIVE line's chip rides its own commit the same way
-        rule.onNodeWithTag("calcActiveCur").performClick()
-        rule.waitForIdle()
-        val gbp = rule.onAllNodes(hasText("GBP £") and hasClickAction())
-        rule.waitUntil(timeoutMillis = 15000) { gbp.fetchSemanticsNodes().isNotEmpty() }
-        gbp[0].performClick()
-        rule.waitForIdle()
-        listOf("2", "5").forEach { key(it) }
-        next()
-        awaitLine(2)
-        rule.waitUntil(timeoutMillis = 15000) {
-            rule.runOnUiThread {
-                AppStore.state.entries.any {
-                    it.amount == 685.0 && it.exprNote?.contains("~GBP") == true
-                }
-            }
+            rule.onAllNodes(hasText("$")).fetchSemanticsNodes().isNotEmpty()
         }
     }
 
@@ -474,12 +451,13 @@ class EntryEditCalcV1649Test {
             beside(font.positionInRoot.y, font.size.height, close.positionInRoot.y, close.size.height),
         )
 
-        // the picker — three sizes; L rides the entry as calcFontSize
+        // the picker — ELEVEN PIXEL options now (v1.6.50 report #6: "many
+        // options by px like in others"); 16 px rides the entry as "16"
         rule.onNodeWithTag("calcFontBtn").performClick()
         rule.waitForIdle()
-        val lChip = rule.onAllNodes(hasText("L 16sp", substring = true) and hasClickAction())
-        rule.waitUntil(timeoutMillis = 15000) { lChip.fetchSemanticsNodes().isNotEmpty() }
-        lChip[0].performClick()
+        val pxChip = rule.onAllNodes(hasText("16 px", substring = true) and hasClickAction())
+        rule.waitUntil(timeoutMillis = 15000) { pxChip.fetchSemanticsNodes().isNotEmpty() }
+        pxChip[0].performClick()
         rule.waitForIdle()
         toNumMode()
         listOf("4", "1", "0").forEach { key(it) }
@@ -487,20 +465,31 @@ class EntryEditCalcV1649Test {
         awaitLine(0)
         rule.waitUntil(timeoutMillis = 15000) {
             rule.runOnUiThread {
-                AppStore.state.entries.any { it.amount == 410.0 && it.calcFontSize == "l" }
+                AppStore.state.entries.any { it.amount == 410.0 && it.calcFontSize == "16" }
             }
         }
     }
 
-    /* 6b — the three cuts, pinned pure (the battery's own numbers) */
+    /* 6b — the px model, pinned pure (the battery's own numbers): ONE size
+       for every state (report #4), a pixel ladder 12…22 (report #6), and
+       the legacy S/M/L markers decode to their own numbers */
     @Test
-    fun theThreeFontCuts() {
-        assertEquals(com.callmony.ui.overlays.CalcFontSizes(16, 13), calcFontSizesOf("s"))
-        assertEquals(com.callmony.ui.overlays.CalcFontSizes(18, 14), calcFontSizesOf("m"))
-        assertEquals(com.callmony.ui.overlays.CalcFontSizes(20, 16), calcFontSizesOf("l"))
+    fun thePixelFontModel() {
+        assertEquals(com.callmony.ui.overlays.CalcFontSizes(13), calcFontSizesOf("s"))
+        assertEquals(com.callmony.ui.overlays.CalcFontSizes(14), calcFontSizesOf("m"))
+        assertEquals(com.callmony.ui.overlays.CalcFontSizes(16), calcFontSizesOf("l"))
         // an absent/unknown value decodes to the default cut
-        assertEquals(com.callmony.ui.overlays.CalcFontSizes(18, 14), calcFontSizesOf(null))
-        assertEquals(com.callmony.ui.overlays.CalcFontSizes(18, 14), calcFontSizesOf("junk"))
+        assertEquals(com.callmony.ui.overlays.CalcFontSizes(14), calcFontSizesOf(null))
+        assertEquals(com.callmony.ui.overlays.CalcFontSizes(14), calcFontSizesOf("junk"))
+        // a plain pixel number IS the size
+        assertEquals(com.callmony.ui.overlays.CalcFontSizes(17), calcFontSizesOf("17"))
+        assertEquals(com.callmony.ui.overlays.CalcFontSizes(12), calcFontSizesOf("12"))
+        assertEquals(com.callmony.ui.overlays.CalcFontSizes(22), calcFontSizesOf("22"))
+        // out-of-ladder values clamp INTO the ladder, never break it
+        assertEquals(com.callmony.ui.overlays.CalcFontSizes(12), calcFontSizesOf("5"))
+        assertEquals(com.callmony.ui.overlays.CalcFontSizes(22), calcFontSizesOf("99"))
+        // the picker's ladder itself: eleven stops, 12 → 22
+        assertEquals((12..22).toList(), com.callmony.ui.overlays.CALC_FONT_PX_OPTIONS)
     }
 
     /* 9 — THE CARD SHOWS MOST OF ITS CALCULATION (report #9): a two-line

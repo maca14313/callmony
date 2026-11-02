@@ -53,4 +53,10 @@ expect fun NoImeNumberField(
     // so the dialer, the keypad sheet and the plain calculator are
     // unchanged).
     bold: Boolean = true,
+    // v1.6.50 — THE CALCULATION TYPEFACE (report #8: "use better font
+    // family for the content that goes with calculation"): when true the
+    // field renders in the bundled IBM Plex Sans Medium cut — the SAME
+    // family every other calculation surface renders in — falling back to
+    // the platform's sans-serif-medium when the bundled face cannot load.
+    calcFont: Boolean = false,
 )

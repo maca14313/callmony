@@ -338,16 +338,24 @@ class EntryEditCalcV1647Test {
             rule.onAllNodes(hasText("2.")).fetchSemanticsNodes().isNotEmpty(),
         )
 
-        // tap again: numbers → none — the prefixes leave entirely
+        // tap again: numbers → none — the GLYPHS leave, but the SLOT STAYS
+        // (v1.6.50 report #4: "it should be consistent if there is bullet,
+        // number or notting" — the prefix column is always reserved so the
+        // content column never shifts between modes)
         rule.onNodeWithTag("calcPrefixBtn").performClick()
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
-            rule.onAllNodesWithTag("calcLinePrefix:0", useUnmergedTree = true).fetchSemanticsNodes().isEmpty()
+            rule.onAllNodes(hasText("1.")).fetchSemanticsNodes().isEmpty() &&
+                rule.onAllNodes(hasText("2.")).fetchSemanticsNodes().isEmpty() &&
+                rule.onAllNodes(hasText("•")).fetchSemanticsNodes().isEmpty()
         }
-        assertEquals(
-            "none mode must also drop the active line's prefix",
-            0,
-            rule.onAllNodesWithTag("calcActivePrefix").fetchSemanticsNodes().size,
+        assertTrue(
+            "none mode keeps the committed line's prefix SLOT reserved (alignment)",
+            rule.onAllNodesWithTag("calcLinePrefix:0", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty(),
+        )
+        assertTrue(
+            "none mode keeps the active line's prefix SLOT reserved",
+            rule.onAllNodesWithTag("calcActivePrefix", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty(),
         )
 
         // the choice persists: back out → the entry carries calcPrefix=none

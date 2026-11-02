@@ -383,7 +383,7 @@ internal val AR: Map<String, String> = mapOf(
     "ee.calcStep" to "خطوة",
     "ee.calcTotal" to "الإجمالي",
     "ee.calcLabelHint" to "تسمية (كرة، سعر…)",
-    "ee.calcNext" to "التالي",
+    "ee.calcNext" to "حفظ",
     "ee.calcPosBefore" to "قبل",
     "ee.calcPosAfter" to "بعد",
     "ee.calcDescribe" to "صف هذا الرقم (كرة، بر…)",

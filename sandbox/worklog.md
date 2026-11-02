@@ -769,3 +769,31 @@ User message: sandbox/chat-logs/2026-11-01-v1.6.47-space-enter-ime-prefix-paymen
 
 Stage Summary:
 - All six reports fixed; suite 228/228 green; the crash firewall + v1.6.44/45 IME defenses untouched and extended. Live: https://github.com/maca14313/callmony/releases/tag/v1.6.47
+
+---
+
+## Session 2026-11-02 (c) — v1.6.50 THE THIRTEEN-REPORT REFINEMENT ROUND (copy-all · Save rename · header-only currency · ONE size + px ladder · steps container · repeating keys · IBM Plex · hugging underline · three-zone card · heading row gone · backup battery)
+
+User message: sandbox/chat-logs/2026-11-02-v1.6.50-copy-all-save-rename-header-currency-one-size-px-steps-repeat-plex-card-zones.md
+
+- Repo reconciliation FIRST (per "check github"): local main was 25 commits behind — ff-only to origin/main (v1.6.49 vc60, the previous round fully shipped elsewhere); the ten-report round's contracts read from the real tree before any edit.
+- #1 copy-all: formatCalcLedgerExport callers pass calcLines + activeExportNote() — the ACTIVE line (live total) rides the export from both the sum row's copy and the modal's; clipboard battery pins title/line/total/active/TOTAL.
+- #2 Save: ee.calcNext value → Save / መመዝግብ / ኣቐምጥ / Olkaa'i / حفظ (key name kept for parity); commitAndSave untouched; tag calcBtnNext untouched.
+- #3 currency: CurrencyChip → CurrencyText (plain, same tags); scoped picker + currencySheetFor deleted; header chip stays the one tappable (writes the live setting); per-line DATA (~USD markers, calcCurrency) untouched.
+- #4 one size: CalcFontSizes(activeSp, lineSp) → CalcFontSizes(sp) — 18/14 split collapsed; NoImeNumberField fontSizeSp = fs.sp; prefix slot Box ALWAYS RESERVED (centered, PREFIX_W 16→14dp) on committed + active rows; live-total + steps indent unconditionally PREFIX_W+4.
+- #5 steps: Box container (cardAlt .5, hairline, 8dp radius, 8/5dp padding, start=PREFIX_W+4) — left edge equals the field's x (pinned ±2px).
+- #6 px ladder: calcFontSpOf (legacy s/m/l → 13/14/16; numeric clamped 12..22; junk → 14) + CALC_FONT_PX_OPTIONS (12..22); picker = eleven "N px" chips; calcFontSizeSel seeds DECODED.
+- #7 keys: Modifier.pressKey (pointerInput awaitEachGesture: fire on awaitFirstDown; outer-scope repeat job delay(initialDelay)+while(isActive){repeatTick(); delay(repeatMs)}; release/cancel → job.cancel in finally; semantics{onClick}=one press). ⌫ 350/55ms, space 420/90ms; space repeat = "␣!" unconditional append (guard bypass); vibrate only on landing. keyRepeatTicks pure for the harness.
+- #8 typeface: IBM Plex Sans variable (google/fonts, raw.githubusercontent) instanced with fonttools varLib.instancer at 400/500/600/700 → composeResources/font/calcfont_{regular,medium,semibold,bold}.ttf; calcFontFamily() (common, lazy, runCatching→Default); applied: locked lines, totals, prefix, steps, title field, active BasicTextField + NoImeNumberField (new calcFont param → Android Typeface.createFromAsset("composeResources/…/font/calcfont_medium.ttf"), guarded; iOS actual param ignored); CalcKey glyphs; EntryCard preview. APK assets verified (4×~218KB).
+- #9 title underline: row padding bottom 4→2dp, heightIn(min 30→24dp), tag calcTitleRow; gap field-bottom→border pinned <16px.
+- #10 card: EntryCard → three zones (hero: PayPctRing + title + date·payments·due meta + Money 17sp; math: preview in hairline cardAlt container, Plex; foot: status pill + running balance + pencil + chevron). Tags entryCardPct/entryCardCalc kept.
+- #11 contact page: SectionHeader(lg.ungrouped) + its ＋/chevron render on isGeneral ONLY; contact ungrouped always expanded (showUngrouped = if (isGeneral) !ungroupedCollapsed else true).
+- #13 backup: BackupCanvasFieldsV1650Test — full canvas-field round trip + legacy-no-field parse (the v1.6.26/34 layer itself re-verified, unchanged).
+- #12: arrived cut off ("in the contact detail page", no body) — flagged in chat-log + README; goes to the next round.
+- i18n: ee.calcNext ×5 (Save). Font px labels "N px" — no new keys (parity checker clean by construction).
+- Suite 267/267 (was 253): NEW V1650 canvas ×9 + contact ×3 + backup ×2; UPDATED V1649 #1 (plain glyphs + header-only tappable) + #6/#6b (16px chip, pixel model), V1646 (one Save + 14px active), V1647 (reserved slot in none), V1642 (Save label), CalcTabTest (mainClock.advanceTimeBy(700) past the autosave debounce — the flow now finishes inside it; empirically proven the save fires with the walk). Harness lessons: numbers typed on the QWERTY are annotations (v1.6.48 semantics) — batteries that want math type digits via the KEYPAD; a ScrollRow's later chips sit OFF-VIEWPORT and tap-injection cannot reach them (use a visible chip, e.g. "16 px"); performClick-off-screen is a silent no-op.
+- Build 1.6.50 vc61: assembleRelease; aapt com.callmony vc61 1.6.50; apksigner same key 2f6d65be…869ad; both iOS targets compile (SDK reinstalled from scripts/install_sdk.sh after the sandbox recycle).
+- Delivered: releases/callmony-1.6.50-release.apk committed + pushed; GitHub Release v1.6.50 published with the APK; copy at /home/z/my-project/download/callmony-1.6.50-kmp-release.apk; README + CHANGELOG + chat-log committed.
+
+Stage Summary:
+- v1.6.50 complete. 12 of the 13 reports implemented (#12 arrived truncated — flagged), suite fully green, the same release key, release published. Live: https://github.com/maca14313/callmony/releases/tag/v1.6.50

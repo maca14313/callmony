@@ -149,8 +149,18 @@ android {
         // INSIDE the same individual calculation (Next stays the one
         // commit+save key), and the lock icon returns as a text-height
         // inert glyph. saveEntry's merge now carries calcTitle/calcPrefix.
-        versionCode = 60
-        versionName = "1.6.49"
+        // v1.6.50 — THE THIRTEEN-REPORT REFINEMENT ROUND: the currency
+        // beside every total is plain text again (only the header's chip
+        // is tappable), ONE canvas font size for edited and locked alike
+        // chosen from an 11-stop PIXEL ladder (12…22), the always-reserved
+        // prefix slot, the steps in their own aligned container, the
+        // copy-all canvas export (active line included), the Save rename,
+        // the IBM Plex calculation typeface, the instant + repeating
+        // keypad keys, the hugging title underline, the three-zone entry
+        // card, the contact page's lost "Single entries" heading row, and
+        // the backup round-trip battery for every canvas field.
+        versionCode = 61
+        versionName = "1.6.50"
     }
 
     signingConfigs {

@@ -329,20 +329,28 @@ class EntryEditCalcV1642Test {
         )
     }
 
-    /* 9 — the button says just "Next" */
+    /* 9 — the button's label: plain "Next" since v1.6.42, "Save" since
+       v1.6.50 (report #2 of the thirteen-report round: "keep all 100% of
+       it's functionality but let's call the next btn save btn" — same
+       action, new name) */
     @Test
     fun theButtonSaysJustNext() {
         ready()
         openEditor()
         assertTrue(
-            "the Next button must carry the plain label",
+            "the commit button must carry the plain label",
             rule.onAllNodes(hasText(t("ee.calcNext")) and hasClickAction()).fetchSemanticsNodes().isNotEmpty(),
         )
-        assertEquals("Next", t("ee.calcNext"))
+        assertEquals("Save", t("ee.calcNext"))
         assertEquals(
-            "the old 'Next line' label must be gone",
+            "the old 'Next line' label must stay gone",
             0,
             rule.onAllNodes(hasText("Next line")).fetchSemanticsNodes().size,
+        )
+        assertEquals(
+            "the old plain 'Next' label must be gone too",
+            0,
+            rule.onAllNodes(hasText("Next") and hasClickAction()).fetchSemanticsNodes().size,
         )
     }
 }

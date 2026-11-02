@@ -80,6 +80,7 @@ actual fun NoImeNumberField(
     highlightColor: Color,
     focusToken: Int,
     bold: Boolean,
+    calcFont: Boolean,
 ) {
     val density = LocalDensity.current
     val textSizePx = with(density) { fontSizeSp.sp.toPx() }
@@ -87,6 +88,12 @@ actual fun NoImeNumberField(
     val hlArgb = if (highlightColor == Color.Unspecified) textColorArgb else highlightColor.toArgb()
     // a stable holder so the watcher survives recompositions
     val state = remember { NumberFieldState() }
+    // v1.6.50 — the calculation typeface: the bundled IBM Plex Sans Medium
+    // face read straight from the APK's composeResources assets (works on
+    // every API level — assets predate the res/font system), with the
+    // platform's sans-serif-medium as the guarded fallback (a JVM harness
+    // without the assets lands there and renders exactly as before)
+    val calcTypeface = if (calcFont) calcPlexTypeface() else null
 
     // v1.6.41 — the caret: real view focus, re-requested whenever the token
     //   bumps (canvas open, Aa/123 toggle, Next line, unlock).
@@ -127,11 +134,14 @@ actual fun NoImeNumberField(
                 // drops the heavy Bold for sans-serif-medium at Regular
                 // weight (the de-bulked look); everything else (the keypad
                 // sheet's display, the plain calculator) keeps the classic
-                // Bold — and the tight tracking only rides the light cut
-                typeface = if (bold) {
-                    android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
-                } else {
-                    android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+                // Bold — and the tight tracking only rides the light cut.
+                // v1.6.50 — with the calculation typeface armed the field
+                // renders in the bundled IBM Plex Sans Medium cut instead
+                // (the same family every other calculation surface uses).
+                typeface = when {
+                    calcTypeface != null -> calcTypeface
+                    bold -> android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+                    else -> android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
                 }
                 letterSpacing = if (bold) 0.04f else 0.01f
                 addTextChangedListener(object : TextWatcher {
@@ -312,6 +322,31 @@ private class NumberFieldState {
     var pendingHighlight: Set<Int> = emptySet()
     var pendingHlArgb = 0
     var postQueued = false
+}
+
+/** v1.6.50 — the bundled IBM Plex Sans Medium face for the number-mode
+ *  active line, read once from the APK's composeResources assets (the same
+ *  bundling path the logo uses) and cached process-wide. Returns null —
+ *  never throws — when the face cannot load (a JVM harness without the
+ *  assets), so the caller falls back to sans-serif-medium and renders
+ *  exactly as before. */
+private var plexTypefaceCache: android.graphics.Typeface? = null
+private var plexTypefaceResolved = false
+
+private fun calcPlexTypeface(): android.graphics.Typeface? {
+    if (plexTypefaceResolved) return plexTypefaceCache
+    plexTypefaceResolved = true
+    plexTypefaceCache = runCatching {
+        // appContext is lateinit — a call before Application.onCreate lands
+        // here as UninitializedPropertyAccessException and degrades to the
+        // fallback face instead of crashing
+        val ctx = com.callmony.AndroidPlatform.appContext
+        android.graphics.Typeface.createFromAsset(
+            ctx.assets,
+            "composeResources/callmony.composeapp.generated.resources/font/calcfont_medium.ttf",
+        )
+    }.getOrNull()
+    return plexTypefaceCache
 }
 
 private fun EditText.pxToSp(px: Float): Float = px / resources.displayMetrics.scaledDensity

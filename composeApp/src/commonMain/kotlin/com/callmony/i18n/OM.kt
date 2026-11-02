@@ -383,7 +383,7 @@ internal val OM: Map<String, String> = mapOf(
     "ee.calcStep" to "Tarkaanffii",
     "ee.calcTotal" to "WALIIGALAA",
     "ee.calcLabelHint" to "Mallatteessa (kubbaa, gatii…)",
-    "ee.calcNext" to "Itti aanu",
+    "ee.calcNext" to "Olkaa'i",
     "ee.calcPosBefore" to "Dura",
     "ee.calcPosAfter" to "Booda",
     "ee.calcDescribe" to "Lakkoofsa kana ibsi (kubbaa, birr…)",

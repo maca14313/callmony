@@ -104,9 +104,43 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.49 (versionCode 60)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.50 (versionCode 61)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.50** — THE THIRTEEN-REPORT REFINEMENT ROUND: (1) the copy beside
+  the Pay button exports ALL things on the canvas — title, every
+  committed line with its total + date, its payments, the ACTIVE line
+  with its live total (new `activeExportNote()`), items, TOTAL and
+  Paid · Remaining; (2) the commit+persist button is called **SAVE** now
+  (same action, all five languages); (3) the currency beside every total
+  is PLAIN TEXT again — only the HEADER's chip is tappable (writes the
+  live setting; the scoped per-line picker is deleted, the ` ~USD` data
+  still renders); (4) **ONE font size for edited and locked alike** —
+  `CalcFontSizes` collapsed to a single number feeding the active field
+  (Compose + native), locked lines, totals, prefix and steps — plus the
+  prefix slot ALWAYS RESERVED (centered 14dp): bullet / number / none all
+  align at the same x; (5) the show-your-work steps ride their own soft
+  container, aligned with the line above by the prefix column; (6) the
+  font-size picker is an ELEVEN-STOP PIXEL LADDER (12…22 px, riding the
+  entry as `calcFontSize`; legacy s/m/l decode); (7) the keypad is
+  INSTANT (every key fires on touch-DOWN — `clickable`'s release-fire
+  was the lag) and REPEATING under a held finger (⌫ 350ms + 55ms, space
+  420ms + 90ms; a held space types real spaces via the `␣!` spelling;
+  the schedule pinned pure); (8) the bundled **IBM Plex Sans** typeface
+  (SIL OFL, four static weights instanced from the official variable
+  font) renders everything that goes with a calculation — both input
+  modes, locked lines, totals, steps, title, keypad glyphs, card
+  previews; (9) the title's underline hugs the title (~2dp, was ~8dp);
+  (10) the entry card is a THREE-ZONE design — hero row (ring, title +
+  meta, 17sp amount), the calculation in its own hairline container, and
+  a status strip with pencil + chevron at the foot; (11) the contact
+  page's "Single entries" heading row (+ and ✕) is GONE — entries list
+  directly, the ＋ FAB remains the add, General keeps its heading;
+  (13) the backup round trip is PINNED to carry every canvas field
+  (exprNote with ⏎/@date/~currency markers, calcTitle, calcPrefix,
+  calcCurrency, calcFontSize, payments) — legacy backups still load.
+  Report #12 arrived cut off ("in the contact detail page", no body) —
+  nothing implemented for it.
 - **1.6.49** — THE TEN-REPORT ROUND: (1) THE CURRENCY BESIDE EVERY TOTAL
   IS TAPPABLE — a tiny chip prints the currency each total renders in
   (the line's own → the entry's sum currency → the live setting) and its

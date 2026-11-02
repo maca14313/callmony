@@ -436,7 +436,7 @@ internal val AM: Map<String, String> = mapOf(
     "ee.calcStep" to "ደረጃ",
     "ee.calcTotal" to "ጠቅላላ",
     "ee.calcLabelHint" to "መለያ (ኳስ፣ ዋጋ…)",
-    "ee.calcNext" to "ቀጣይ",
+    "ee.calcNext" to "መመዝግብ",
     "ee.calcPosBefore" to "በፊት",
     "ee.calcPosAfter" to "በኋላ",
     "ee.calcDescribe" to "ይህን ቁጥር ይግለጹ (ኳስ፣ ብር…)",

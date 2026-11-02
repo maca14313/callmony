@@ -216,18 +216,27 @@ class EntryEditCalcV1646Test {
     fun theSaveButtonIsGoneEverywhere() {
         ready()
         openEditor()
+        // v1.6.50 — the commit+persist button is CALLED Save now (report
+        // #2: "keep all 100% of it's functionality but let's call the next
+        // btn save btn"), so exactly ONE Save control exists while the
+        // canvas is up — the renamed commit button itself
         assertEquals(
-            "no Save control while the canvas is up",
-            0,
+            "exactly one Save control while the canvas is up (the renamed commit button)",
+            1,
             rule.onAllNodes(hasText(t("act.save")) and hasClickAction()).fetchSemanticsNodes().size,
         )
         assertEquals(
-            "the canvas's calcBtnSave tag must be gone",
+            "the Save label rides the commit button's own tag",
+            1,
+            rule.onAllNodesWithTag("calcBtnNext").fetchSemanticsNodes().size,
+        )
+        assertEquals(
+            "the canvas's old calcBtnSave tag must stay gone",
             0,
             rule.onAllNodesWithTag("calcBtnSave").fetchSemanticsNodes().size,
         )
         // v1.6.49 — there is no form to collapse to: ✕ CLOSES the editor,
-        // and no Save control composes anywhere in the app shell either
+        // and with it the one Save control goes too (no form anywhere)
         rule.onNodeWithTag("calcCollapse").performClick()
         rule.waitForIdle()
         rule.waitUntil(timeoutMillis = 15000) {
@@ -356,6 +365,11 @@ class EntryEditCalcV1646Test {
             et.typeface.isBold to et.textSize / et.resources.displayMetrics.scaledDensity
         }
         assertFalse("the active line must not render Bold any more", bold)
-        assertEquals("the active line renders 18sp", 18f, sizeSp, 0.5f)
+        // v1.6.50 — ONE size for the whole canvas (report #4: "the text and
+        // calculations font size should be thw same when it is edited and
+        // when it is locked"): the active line renders at the canvas's
+        // default 14px — the SAME size a locked line renders at (was the
+        // v1.6.46 18sp active-only cut)
+        assertEquals("the active line renders the canvas's single 14px cut", 14f, sizeSp, 0.5f)
     }
 }

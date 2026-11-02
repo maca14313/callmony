@@ -385,7 +385,7 @@ internal val EN: Map<String, String> = mapOf(
     "ee.calcStep" to "Step",
     "ee.calcTotal" to "TOTAL",
     "ee.calcLabelHint" to "Label (ball, price…)",
-    "ee.calcNext" to "Next",
+    "ee.calcNext" to "Save",
     "ee.calcPosBefore" to "Before",
     "ee.calcPosAfter" to "After",
     "ee.calcDescribe" to "Describe this number (ball, birr…)",
