@@ -159,8 +159,8 @@ android {
         // keypad keys, the hugging title underline, the three-zone entry
         // card, the contact page's lost "Single entries" heading row, and
         // the backup round-trip battery for every canvas field.
-        versionCode = 61
-        versionName = "1.6.50"
+        versionCode = 62
+        versionName = "1.6.51"
     }
 
     signingConfigs {

@@ -1,9 +1,6 @@
 package com.callmony.ui.overlays
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -785,18 +782,29 @@ fun AboutOverlay() {
 
 /* ---------------- AlarmDialog — full-screen reminder alert ---------------- */
 
+/* v1.6.51 — the alarm icon's pulse is BOUNDED: ALARM_PULSE_CYCLES full
+ *  breathe-in/breathe-out cycles (≈14 s of motion — the moment the user's
+ *  attention is won), then the animation ENDS and the GPU goes fully idle
+ *  with the dialog still up. The old rememberInfiniteTransition animated
+ *  at display rate for as long as the dialog existed — on the Galaxy-A12
+ *  class (both MAIN THREAD BLOCKED field reports) that is the one thing
+ *  that kept the RenderThread drawing for the whole life of a 39-minute
+ *  foreground session. Pure constant, pinned by the harness. */
+internal const val ALARM_PULSE_CYCLES = 12
+
 @Composable
 fun AlarmDialog() {
     val C = C()
     val r = UiStore.alarmQueue.firstOrNull() ?: return
     val kind = r.kind
     val icon = if (kind == "birthday") "cake" else "bell-ring"
-    val pulse = rememberInfiniteTransition(label = "pulse").animateFloat(
-        initialValue = 1f,
-        targetValue = 1.18f,
-        animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
-        label = "pulseScale",
-    )
+    val pulse = remember { Animatable(1f) }
+    LaunchedEffect(r.id) {
+        repeat(ALARM_PULSE_CYCLES) {
+            pulse.animateTo(1.18f, animationSpec = tween(600))
+            pulse.animateTo(1f, animationSpec = tween(600))
+        }
+    }
 
     LaunchedEffect(Unit) {
         Platform.notify.vibrate(longArrayOf(0, 400, 200, 400))

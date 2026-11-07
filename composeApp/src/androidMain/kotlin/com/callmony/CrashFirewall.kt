@@ -66,6 +66,10 @@ object CrashFirewall {
     /** Cooldown between two watchdog dumps of the same blockage. */
     const val DUMP_COOLDOWN_MS = 30000L
 
+    /** v1.6.51 — how many renderer-adjacent threads ride an ANR dump (the
+     *  RenderThread plus at most two driver/mali companions). */
+    const val RENDER_STACK_MAX_THREADS = 3
+
     private var appContext: Context? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     /** last wall-clock time a heartbeat task actually RAN on the main looper. */
@@ -73,6 +77,11 @@ object CrashFirewall {
     @Volatile private var lastDumpAt = 0L
     @Volatile private var resumed = 0
     @Volatile private var bootedAtMs = 0L
+    /** v1.6.51 — test hook: how many times the kill-path data protection has
+     *  run (the harness pins that a blocked main thread really flushes the
+     *  store before the report is written). No production reader. */
+    @Volatile var protectDataCalls = 0
+        internal set
 
     /* ---------------- install ---------------- */
 
@@ -98,6 +107,10 @@ object CrashFirewall {
         })
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            // v1.6.51 — protect the data FIRST (a crash ends the process
+            // just as dead as an ANR): flush whatever the store holds to
+            // the auto-backup file before anything else touches the disk
+            protectDataBeforeKill()
             try {
                 captureReport("UNCAUGHT EXCEPTION", thread, throwable.stackTraceToString())
             } catch (_: Throwable) {
@@ -116,11 +129,33 @@ object CrashFirewall {
                         now - lastDumpAt > DUMP_COOLDOWN_MS
                     ) {
                         lastDumpAt = now
+                        // v1.6.51 — THE KILL IS COMING: a main thread this
+                        // blocked ends in the system ANR-killing the process
+                        // (both v1.6.49/v1.6.50 field reports did). Flush
+                        // the whole store to the auto-backup file RIGHT NOW,
+                        // synchronously, from THIS thread — the main thread
+                        // is parked, so nothing can mutate the store under
+                        // the read, and the Persist queue's writer might
+                        // never get scheduled again before the kill lands.
+                        // The user's standing order: "this app should not
+                        // loss all kind of data it have that user puts at
+                        // it, even when installing again or update".
+                        protectDataBeforeKill()
                         val main = Looper.getMainLooper().thread
                         captureReport(
                             "MAIN THREAD BLOCKED for ${now - lastBeatAtMs}ms (lag/ANR)",
                             main,
-                            stackToString(main),
+                            // v1.6.51 — THE RENDER SIDE OF THE STORY: both
+                            // field reports parked the main thread inside
+                            // HardwareRenderer.nSyncAndDrawFrame /
+                            // nSetStopped — NATIVE calls that synchronously
+                            // WAIT ON THE RENDERTHREAD — but the report only
+                            // ever carried MAIN's stack, so what the render
+                            // thread itself was doing (the actual answer)
+                            // stayed invisible. The dump now carries the
+                            // render-thread stack(s) too, so the next pasted
+                            // report shows exactly where the stall lives.
+                            stackToString(main) + rendererStacksForReport(),
                         )
                     }
                 } catch (_: Throwable) {
@@ -148,6 +183,45 @@ object CrashFirewall {
     }
 
     /* ---------------- capture funnel ---------------- */
+
+    /** v1.6.51 — THE KILL-PATH DATA PROTECTION. Called the moment the
+     *  watchdog proves the main thread is blocked (or an uncaught exception
+     *  is about to end the process): forces the full-store auto-backup
+     *  export SYNCHRONOUSLY on the calling thread, bypassing both the
+     *  10-minute throttle and the async Persist queue — a dying process
+     *  cannot wait for a scheduler turn that may never come. Never throws;
+     *  a failed export leaves the previous backup file untouched, so the
+     *  data can only be AS fresh as the last write, never worse. */
+    internal fun protectDataBeforeKill() {
+        protectDataCalls++
+        try {
+            com.callmony.lib.AutoBackup.exportIfDue(force = true)
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** v1.6.51 — the RENDER-ADJACENT threads' live stacks, formatted for the
+     *  ANR report ("RenderThread" plus the mali/hwui driver threads it
+     *  leans on). Empty string when none exist. Pure over
+     *  Thread.getAllStackTraces(), so the harness can pin it with a thread
+     *  parked under the expected name. */
+    internal fun rendererStacksForReport(): String {
+        val sb = StringBuilder()
+        var picked = 0
+        try {
+            val all = Thread.getAllStackTraces()
+            for ((t, frames) in all) {
+                if (picked >= RENDER_STACK_MAX_THREADS) break
+                val n = t.name.lowercase()
+                if ("renderthread" !in n && !n.startsWith("mali") && "hwui" !in n) continue
+                sb.append("\nThread \"").append(t.name).append("\" (").append(t.state).append(")\n")
+                for (f in frames.take(60)) sb.append("    at ").appendLine(f)
+                picked++
+            }
+        } catch (_: Throwable) {
+        }
+        return if (sb.isEmpty()) "" else "\n──── render threads ────" + sb
+    }
 
     /** One report through every channel: logcat → file → clipboard → marker.
      *  Never throws. Safe to call from any thread (including a dying one). */

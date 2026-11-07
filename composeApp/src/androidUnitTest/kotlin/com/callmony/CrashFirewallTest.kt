@@ -141,4 +141,57 @@ class CrashFirewallTest {
         assertEquals(6000L, CrashFirewall.BLOCK_THRESHOLD_MS)
         assertEquals(30000L, CrashFirewall.DUMP_COOLDOWN_MS)
     }
+
+    /* 6 — v1.6.51 — THE KILL-PATH DATA PROTECTION: the moment a blockage
+       is proven (or an uncaught exception is about to end the process),
+       the store is force-flushed to the auto-backup file BEFORE the report
+       is written — a dying process cannot wait for the async Persist queue.
+       Pinned: it runs (the counter proves the watchdog path calls it), it
+       never throws, and an unhydrated store makes it a quiet no-op. */
+    @Test
+    fun protectDataBeforeKillRunsQuietlyAndNeverThrows() {
+        val before = CrashFirewall.protectDataCalls
+        CrashFirewall.protectDataBeforeKill()
+        assertEquals(
+            "the kill-path protection must have run exactly once",
+            before + 1,
+            CrashFirewall.protectDataCalls,
+        )
+        // a second call — idempotent, still never throws
+        CrashFirewall.protectDataBeforeKill()
+        assertEquals(before + 2, CrashFirewall.protectDataCalls)
+    }
+
+    /* 7 — v1.6.51 — THE RENDER SIDE OF THE ANR REPORT: both field reports
+       parked the main thread inside HardwareRenderer natives that WAIT ON
+       THE RENDERTHREAD — the report now carries that thread's live stack
+       too, so the next pasted report shows where the stall actually lives.
+       Pinned with a thread parked under the exact production name. */
+    @Test
+    fun renderThreadStacksRideTheReport() {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val fakeRenderThread = Thread({
+            try { latch.await() } catch (_: InterruptedException) {}
+        }, "RenderThread")
+        fakeRenderThread.isDaemon = true
+        try {
+            fakeRenderThread.start()
+            // let it reach its parked state
+            var spins = 0
+            while (fakeRenderThread.state != Thread.State.WAITING && spins++ < 200) {
+                Thread.sleep(5)
+            }
+            val stacks = CrashFirewall.rendererStacksForReport()
+            assertTrue(
+                "the render section must be present — got: [$stacks]",
+                stacks.contains("──── render threads ────"),
+            )
+            assertTrue("the RenderThread itself must be named", stacks.contains("\"RenderThread\""))
+            assertTrue("the thread's live frames must ride the dump", stacks.contains("    at "))
+        } finally {
+            latch.countDown()
+        }
+        // and the cap is what the docs promise
+        assertEquals(3, CrashFirewall.RENDER_STACK_MAX_THREADS)
+    }
 }

@@ -492,11 +492,33 @@ fun EntryEditOverlay(
     val initialKey = autoKey.value ?: currentKey
     // v1.6.40 — the entry is live after the FIRST Save too (currentEntry),
     // so a brand-new entry autosaves exactly like an opened one
-    if (currentEntry != null) {
-        LaunchedEffect(currentKey) {
-            if (!deleted && currentKey != initialKey && effAmount > 0) {
-                kotlinx.coroutines.delay(600)
-                if (!deleted && currentKey != initialKey && effAmount > 0) save(silent = true)
+    // v1.6.51 — THE MAX-WAIT AUTOSAVE (report #2, beside the two ANR
+    // reports: "this app should not loss all kind of data it have that
+    // user puts at it, even when installing again or update"). The old
+    // debounce RESTARTED on every keystroke — continuous typing never
+    // paused 600 ms, so nothing persisted until the hands left the keys,
+    // and a never-saved DRAFT had no autosave at all: a hard process kill
+    // (exactly what the two MAIN THREAD BLOCKED reports on the Samsung
+    // are) dropped everything typed since the last pause, or the whole
+    // draft. This loop writes AT MOST 600 ms behind the canvas — live
+    // entry or payable draft alike — so any kill, at any moment, can only
+    // ever cost the last half-second of typing. The dirty key still gates
+    // it (an untouched editor writes nothing), the <= 0 guard inside
+    // save() still stands, and the leave-time save below still catches
+    // whatever lands inside the last beat.
+    val autoSave by rememberUpdatedState { save(silent = true) }
+    val keyNow by rememberUpdatedState(currentKey)
+    val effNow by rememberUpdatedState(effAmount)
+    val liveNow by rememberUpdatedState(currentEntry != null)
+    val savedKey = remember { mutableStateOf<String?>(initialKey) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(600)
+            val dirtyLive = liveNow && keyNow != "" && keyNow != savedKey.value
+            val dirtyDraft = !liveNow && effNow > 0 && savedKey.value == ""
+            if (!deleted && (dirtyLive || dirtyDraft)) {
+                autoSave()
+                savedKey.value = keyNow
             }
         }
     }
@@ -1019,6 +1041,19 @@ fun EntryEditOverlay(
             // calculation typeface (report #8).
             val fs = calcFontSizesOf(calcFontSizeSel)
             val calcFf = calcFontFamily()
+            // v1.6.51 — THE PREFIX SLOT FOLLOWS THE FONT (report #1: "the dot
+            // bised number is showing up in the second row"): the fixed 14dp
+            // reservation could not hold "1." once the PIXEL ladder climbed
+            // past it (Plex Bold's digit + period run wider than 14dp from
+            // ~15px up), so the period wrapped onto its own second row
+            // inside the slot. The width is now COMPUTED from the canvas's
+            // own size and the widest number the canvas can show — the slot
+            // grows exactly as the text does (fontScale included), stays ONE
+            // reserved width for the whole canvas so bullet / number / none
+            // still start the content at the very same x, and the prefix
+            // itself can never wrap again (single line, no soft wrap).
+            val prefixW = prefixSlotDpOf(fs.sp, calcLines.size + 1)
+                .dp * LocalDensity.current.fontScale
             // header — v1.6.41: VERY COMPACT (38dp band, 32/28dp controls)
             // with UNDO / REDO beside the close button ("need undo,redo
             // btns at the top in header and make the header very compact,
@@ -1283,7 +1318,7 @@ fun EntryEditOverlay(
                         // and the glyph-to-content gap is one tight constant.
                         Box(
                             Modifier
-                                .width(PREFIX_W)
+                                .width(prefixW)
                                 .testTag("calcLinePrefix:$i"),
                             contentAlignment = Alignment.CenterStart,
                         ) {
@@ -1294,6 +1329,11 @@ fun EntryEditOverlay(
                                     color = C.faint,
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = calcFf,
+                                    // v1.6.51 — the prefix is ONE line, always
+                                    // (report #1: the period after the number
+                                    // must never drop to a second row)
+                                    maxLines = 1,
+                                    softWrap = false,
                                 )
                             }
                         }
@@ -1394,7 +1434,7 @@ fun EntryEditOverlay(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Box(
-                        Modifier.width(PREFIX_W).testTag("calcActivePrefix"),
+                        Modifier.width(prefixW).testTag("calcActivePrefix"),
                         contentAlignment = Alignment.CenterStart,
                     ) {
                         calcPrefixOf(prefixMode, calcLines.size)?.let { p ->
@@ -1404,6 +1444,9 @@ fun EntryEditOverlay(
                                 color = C.faint,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = calcFf,
+                                // v1.6.51 — one line, no wrap, ever
+                                maxLines = 1,
+                                softWrap = false,
                             )
                         }
                     }
@@ -1488,7 +1531,7 @@ fun EntryEditOverlay(
                 Row(
                     Modifier
                         .padding(top = 3.dp)
-                        .padding(start = PREFIX_W + 4.dp),
+                        .padding(start = prefixW + 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
@@ -1523,7 +1566,7 @@ fun EntryEditOverlay(
                     Box(
                         Modifier
                             .padding(top = 4.dp)
-                            .padding(start = PREFIX_W + 4.dp)
+                            .padding(start = prefixW + 4.dp)
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
                             .background(C.cardAlt.copy(alpha = 0.5f))
@@ -2543,8 +2586,25 @@ internal fun recentItems(entries: List<com.callmony.model.LedgerEntry>): List<Pa
    ALWAYS RESERVED — bullet, number or nothing, the column (and therefore
    the content's left edge) sits at exactly the same x on every line and
    in every prefix mode, and the glyph-to-content gap is one tight
-   constant instead of the wide left-aligned hole a tiny • left. */
-private val PREFIX_W = 14.dp
+   constant instead of the wide left-aligned hole a tiny • left.
+   v1.6.51 — report #1 ("the dot bised number is showing up in the second
+   row, like 1. it should be like this but the dot aft5the number is
+   going to the second row"): a FIXED 14dp slot could not hold "1." at the
+   bigger PIXEL-ladder sizes — IBM Plex Sans Bold's digit (≈0.60em) plus
+   period (≈0.28em) overtake 14dp from ~15px up, and the Text WRAPPED the
+   period onto a second row inside the slot. The width is now COMPUTED:
+   the canvas's own font size × the advance of the WIDEST number the
+   canvas can show (lineCount drives the digit count), floored at the
+   v1.6.50 reservation so small canvases keep their exact look. One width
+   per canvas → the same-x contract survives untouched. Pure, so the
+   harness pins the geometry. */
+internal fun prefixSlotDpOf(fontPx: Int, lineCount: Int): Float {
+    val digits = maxOf(1, lineCount).toString().length
+    // Plex Sans Bold advances in em: digit ≈ 0.60, period ≈ 0.28, plus
+    // 0.30em of air so the glyph never sits against the slot's edge
+    val em = 0.60f * digits + 0.28f + 0.30f
+    return maxOf(14f, fontPx * em)
+}
 
 /* v1.6.50 — THE CANVAS'S FONT SIZE, ONE NUMBER (report #4: "the text and
  *  calculations font size should be thw same when it is edited and when it

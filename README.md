@@ -104,9 +104,30 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.50 (versionCode 61)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.51 (versionCode 62)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.51** — THE ANR-REPORT ROUND: the two MAIN THREAD BLOCKED field
+  reports (both parked inside HardwareRenderer natives that WAIT ON THE
+  RENDERTHREAD — `nSyncAndDrawFrame` 101s / `nSetStopped` 34.8s on a
+  Galaxy A12) are answered three ways: the watchdog's ANR dump now carries
+  the RENDERTHREAD's own live stack (the missing evidence — the next
+  pasted report shows exactly where the stall lives), a proven blockage
+  (or a crash) force-flushes the whole store to the Downloads/Callmony
+  auto-backup file SYNCHRONOUSLY before the report is written (a dying
+  process cannot wait for the async queue), and the app's ONLY infinite
+  animation (the alarm bell's pulse) is bounded to ~14s — zero infinite
+  animations remain. NO DATA LOSS THROUGH THE KILL PATHS: the autosave is
+  a MAX-WAIT loop now (the old debounce restarted per keystroke —
+  continuous typing never persisted, and a payable draft had no autosave
+  at all, so a hard kill dropped it wholesale); a draft becomes a real row
+  within 600ms of the first payable keystroke and a live row keeps
+  updating mid-typing, so any kill can only ever cost the last
+  half-second of typing. AND the prefix slot FOLLOWS THE FONT ("the dot
+  bised number is showing up in the second row"): the width is computed
+  from the canvas's own px choice and the widest line number — "1." never
+  wraps again, bullet/number/none still start at the same x. Tests
+  273/273.
 - **1.6.50** — THE THIRTEEN-REPORT REFINEMENT ROUND: (1) the copy beside
   the Pay button exports ALL things on the canvas — title, every
   committed line with its total + date, its payments, the ACTIVE line
