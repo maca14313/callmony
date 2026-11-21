@@ -134,6 +134,7 @@ import com.callmony.ui.components.ScrollRow
 import com.callmony.ui.sections.openPaymentSheet
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import com.callmony.ui.components.glassCanvas
 
 /* EntryEdit — THE LEDGER ENTRY EDITOR. v1.6.49: the canvas IS the editor —
    the form page that said "Edit entry" is GONE (report #7: "we don't want
@@ -1028,7 +1029,7 @@ fun EntryEditOverlay(
                     val b = c.positionInWindow().y + c.size.height
                     if (b != canvasBottomPx) canvasBottomPx = b
                 }
-                .background(C.canvas)
+                .glassCanvas()
                 .imeLiftPadding()
                 .padding(bottom = padLift),
         ) {
@@ -2032,7 +2033,7 @@ private fun CalcKeypadHostContent(onKey: (String) -> Unit, onEnter: () -> Unit, 
                     // the background sits OUTSIDE the nav padding so the
                     // canvas colour still fills the system-nav band — no
                     // see-through hole under the keypad
-                    .background(C.canvas)
+                    .glassCanvas()
                     // v1.6.43 — never under the PHONE's navigation bar
                     .navigationBarsPadding()
                     .height(CALC_PAD_H)

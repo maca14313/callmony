@@ -85,6 +85,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToLong
 import com.callmony.ui.components.ScrollRow
+import com.callmony.ui.components.glassCanvas
 
 /* RecentsScreen — the home tab. Port of src/screens/RecentsScreen.tsx. */
 
@@ -975,7 +976,7 @@ private fun DayHeader(label: String, filter: String, onFilter: (String) -> Unit,
     Row(
         Modifier
             .fillMaxWidth()
-            .background(C.canvas)
+            .glassCanvas()
             .padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

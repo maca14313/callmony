@@ -66,6 +66,7 @@ import com.callmony.ui.kit.Segmented
 import com.callmony.ui.kit.Toasts
 import com.callmony.ui.kit.vibrate
 import com.callmony.ui.components.ScrollRow
+import com.callmony.ui.components.glassCanvas
 
 /* SettingsOverlay + LockScreen + PinFlow. Port of src/overlays/SettingsOverlay.tsx. */
 
@@ -534,7 +535,7 @@ fun LockScreen() {
     Column(
         Modifier
             .fillMaxSize()
-            .background(C.canvas)
+            .glassCanvas()
             // v1.6.14: the lock screen renders outside the shell column — pad
             // the system bars so the PIN pad never sits under the nav bar.
             .statusBarsPadding()

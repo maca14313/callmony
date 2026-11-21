@@ -50,6 +50,7 @@ import com.callmony.ui.kit.focusRing
 import com.callmony.ui.kit.pressVeil
 import com.callmony.ui.kit.Toaster
 import com.callmony.ui.components.ScrollRow
+import com.callmony.ui.components.glassCanvas
 
 /* OnboardingSheet — first-run: currency + country code + Get started.
    Port of src/overlays/OnboardingSheet.tsx. */
@@ -73,7 +74,7 @@ fun OnboardingSheet() {
     Column(
         Modifier
             .fillMaxSize()
-            .background(C.canvas)
+            .glassCanvas()
             // v1.6.14: the onboarding lives OUTSIDE the shell's padded column
             // — without these insets the "Welcome" title sat under the status
             // bar and Get started under the gesture/nav bar.
@@ -163,7 +164,7 @@ fun OnboardingSheet() {
         Box(
             Modifier
                 .fillMaxWidth()
-                .background(C.canvas)
+                .glassCanvas()
                 .padding(top = 6.dp, bottom = 10.dp),
             contentAlignment = Alignment.Center,
         ) {

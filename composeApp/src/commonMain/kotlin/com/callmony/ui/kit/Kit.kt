@@ -3,12 +3,14 @@ package com.callmony.ui.kit
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.node.DrawModifierNode
@@ -49,8 +51,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
@@ -305,8 +310,11 @@ fun Toaster() {
         Row(
             Modifier
                 .widthIn(max = 380.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(if (C.mode == "dark") Color(0xFF243230) else Color(0xFF1f2f2c))
+                .shadow(14.dp, RoundedCornerShape(18.dp), ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.18f))
+                .clip(RoundedCornerShape(18.dp))
+                // v1.6.52 — LIGHT GLASS toast: deep-ink glass pill.
+                .background(if (C.mode == "dark") Color(0xFF1B2B45).copy(alpha = 0.92f) else Color(0xFF152238).copy(alpha = 0.92f))
+                .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(18.dp))
                 // v1.6.35 — THE TOAST NO LONGER EATS TAPS. The pill used to
                 // carry an EMPTY clickable — it swallowed every touch (the
                 // Toaster floats bottom-center, exactly over sheet footers)
@@ -321,7 +329,7 @@ fun Toaster() {
         ) {
             Text(
                 first.msg,
-                color = Color(0xFFe8f1ef),
+                color = Color(0xFFEAF1FB),
                 fontSize = 14.sp,
                 modifier = Modifier.weight(1f, fill = false),
                 maxLines = 2,
@@ -330,9 +338,9 @@ fun Toaster() {
             if (first.action != null) {
                 Text(
                     first.actionLabel ?: t("act.undo"),
-                    color = C.brand,
+                    color = Color(0xFF6FB2FF),
                     fontSize = 14.sp,
-                    fontWeight = FontWeight.W800,
+                    fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.clickable {
                         first.action?.invoke()
                         Toasts.drop(first.id)
@@ -383,15 +391,17 @@ fun ConfirmHost() {
         Column(
             Modifier
                 .widthIn(max = 340.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(C.card)
+                .shadow(24.dp, RoundedCornerShape(28.dp), ambientColor = C.brand.copy(alpha = 0.15f), spotColor = C.brand.copy(alpha = 0.15f))
+                .clip(RoundedCornerShape(28.dp))
+                .background(if (C.mode == "dark") Color(0xFF152238).copy(alpha = 0.96f) else Color.White.copy(alpha = 0.96f))
+                .border(1.dp, if (C.mode == "dark") Color(0x333B94FF) else C.brand.copy(alpha = 0.10f), RoundedCornerShape(28.dp))
                 .padding(20.dp)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                 ) {},
         ) {
-            Text(req.title, fontSize = 18.sp, fontWeight = FontWeight.W800, color = C.ink)
+            Text(req.title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = C.ink)
             if (!req.message.isNullOrEmpty()) {
                 Text(req.message, fontSize = 15.sp, color = C.sub, lineHeight = 21.sp, modifier = Modifier.padding(top = 8.dp))
             }
@@ -522,23 +532,39 @@ fun Money(
 
 @Composable
 fun Avatar(contact: DeviceContact?, size: Int = 46, photo: String? = null) {
+    // v1.6.52 — LIGHT GLASS: gradient initials avatars (spec: "Use gradient
+    // initials avatars"), Tile shape (12dp rounded), white letter. The seed
+    // palette keeps its deterministic per-contact hue, now as a gradient.
     val palette = avatarColors(contact)
     val (bg, fg) = parseHexPair(palette)
     Box(
         Modifier
             .size(size.dp)
-            .clip(CircleShape)
-            .background(bg),
+            .clip(RoundedCornerShape((size * 0.26f).dp))
+            .background(
+                Brush.linearGradient(
+                    listOf(bg, bg.copy(alpha = 0.72f).compositeOverDark(fg))
+                )
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             initialsOf(contact),
-            color = fg,
-            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            fontWeight = FontWeight.SemiBold,
             fontSize = maxOf(size * 0.36, 13.0).sp,
         )
     }
 }
+
+/** Deepen a text tint into a gradient end that stays in the same hue. */
+private fun Color.compositeOverDark(other: Color): Color =
+    Color(
+        red = (red * 0.62f + other.red * 0.38f),
+        green = (green * 0.62f + other.green * 0.38f),
+        blue = (blue * 0.62f + other.blue * 0.38f),
+        alpha = 1f,
+    )
 
 private fun parseHexPair(p: Pair<String, String>): Pair<Color, Color> =
     parseHexColor(p.first) to parseHexColor(p.second)
@@ -566,8 +592,13 @@ fun parseHexColor(hex: String): Color {
 
 @Composable
 fun MdiIcon(name: String, size: Int, color: Color, modifier: Modifier = Modifier) {
+    // v1.6.52 — LIGHT GLASS: stroke-first. The Lucide stroke cut (1.8dp,
+    // round caps) renders when the name has one; the legacy filled MDI
+    // vector stays as fallback for names without a stroke mapping.
+    val vector = com.callmony.ui.icons.LucideIcons.get(name)
+        ?: com.callmony.ui.icons.MdiIcons[name]
     androidx.compose.foundation.Image(
-        imageVector = MdiIcons[name],
+        imageVector = vector,
         contentDescription = name,
         modifier = modifier.size(size.dp),
         colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(color),
@@ -587,38 +618,48 @@ fun Btn(
 ) {
     val C = C()
     val off = disabled || loading
-    val bg = when (variant) {
-        "primary" -> C.brand
-        "danger" -> C.red
-        "secondary" -> C.card
-        "soft" -> C.brandSoft
-        else -> Color.Transparent
-    }
+    // v1.6.52 — LIGHT GLASS: primary is a PILL with the horizontal
+    // BrandLight -> BrandDark gradient, white 500-weight text, min height
+    // 52dp (36dp small), brand-tinted shadow, press = scale 0.95; secondary
+    // is the glass/white pill with Brand text; soft/danger keep their
+    // semantic fills.
+    val shape = RoundedCornerShape(percent = 50)
     val fg = when (variant) {
         "primary", "danger" -> C.onBrand
         "soft" -> C.brand
-        "secondary" -> C.ink
+        "secondary" -> C.brand
         else -> C.sub
     }
-    val shape = RoundedCornerShape(if (small) 12.dp else 14.dp)
+    val src = remember { MutableInteractionSource() }
     Row(
         modifier
-            // v1.6.25 — flat design (user spec): the filled button keeps its
-            // solid brand fill as the affordance; the v1.6.24 drop shadow is
-            // gone — clean flat surfaces + subtle borders, no heavy shadows.
-            .then(if (variant == "secondary") Modifier.border(1.dp, C.line, shape) else Modifier)
-            .clip(shape)
-            .background(bg)
-            .clickable(enabled = !off) { onPress() }
-            // v1.6.17 — compact buttons (user request): less air, same tap target comfort
-            .padding(horizontal = if (small) 12.dp else 16.dp, vertical = if (small) 6.dp else 10.dp)
-            .heightIn(min = if (small) 34.dp else 44.dp),
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
+            .pressScaleCompat(src)
+            .then(
+                when (variant) {
+                    "primary" -> Modifier
+                        .shadow(12.dp, shape, ambientColor = C.brand.copy(alpha = 0.25f), spotColor = C.brand.copy(alpha = 0.25f))
+                        .clip(shape)
+                        .background(Brush.horizontalGradient(listOf(C.brandLight, C.brandDark)))
+                    "danger" -> Modifier
+                        .shadow(12.dp, shape, ambientColor = C.red.copy(alpha = 0.22f), spotColor = C.red.copy(alpha = 0.22f))
+                        .clip(shape)
+                        .background(C.red)
+                    "secondary" -> Modifier
+                        .shadow(8.dp, shape, ambientColor = C.brand.copy(alpha = 0.10f), spotColor = C.brand.copy(alpha = 0.10f))
+                        .clip(shape)
+                        .background(Color.White.copy(alpha = 0.86f))
+                        .border(1.dp, C.line, shape)
+                    "soft" -> Modifier.clip(shape).background(C.brandSoft)
+                    else -> Modifier.clip(shape)
+                }
+            )
+            .clickable(interactionSource = src, indication = null, enabled = !off) { onPress() }
+            .padding(horizontal = if (small) 16.dp else 22.dp)
+            .heightIn(min = if (small) 36.dp else 52.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (loading) {
-            // v1.6.15: the spinner uses the button's foreground color — a
-            // brand-colored spinner on the brand background was invisible.
             CircularProgressIndicator(
                 modifier = Modifier.size(17.dp),
                 strokeWidth = 2.dp,
@@ -628,9 +669,27 @@ fun Btn(
             MdiIcon(icon, 17, fg)
         }
         if (label != null) {
-            Text(label, color = fg, fontSize = if (small) 13.sp else 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                label,
+                color = fg,
+                fontSize = if (small) 13.sp else 15.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
+}
+
+/** Scale-only press motion for Btn (the veil comes from LocalIndication). */
+private fun Modifier.pressScaleCompat(src: MutableInteractionSource): Modifier = composed {
+    val pressed by src.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (pressed) 0.95f else 1f,
+        animationSpec = tween(if (pressed) 120 else 180),
+        label = "btnScale2",
+    )
+    this.scale(scale)
 }
 
 @Composable
@@ -671,11 +730,15 @@ fun Chip(
 ) {
     val C = C()
     val shape = RoundedCornerShape(999.dp)
-    val bg = if (active) (tint ?: C.brand) else C.chip
+    // v1.6.52 — LIGHT GLASS chips: active = soft Brand50 tint with Brand
+    // text (the spec's selected/hover row treatment), inactive = neutral
+    // glass chip; the per-tab tint keeps working as the active accent.
+    val accent = tint ?: C.brand
+    val bg = if (active) C.brandSoft else C.chip
     val body: @Composable () -> Unit = {
         Row(
             Modifier
-                .then(if (!iconOnly) Modifier.border(1.dp, if (active) (tint ?: C.brand) else C.line, shape) else Modifier)
+                .then(if (!iconOnly) Modifier.border(1.dp, if (active) accent.copy(alpha = 0.35f) else C.line, shape) else Modifier)
                 .background(bg, shape)
                 .padding(
                     horizontal = when { iconOnly -> 6.dp; compact -> 9.dp; else -> 13.dp },
@@ -686,14 +749,14 @@ fun Chip(
             horizontalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp),
         ) {
             if (icon != null) {
-                MdiIcon(icon, when { iconOnly -> 15; compact -> 13; else -> 15 }, if (active) C.onBrand else if (danger) C.red else (tint ?: C.sub))
+                MdiIcon(icon, when { iconOnly -> 15; compact -> 13; else -> 15 }, if (active) accent else if (danger) C.red else (tint ?: C.sub))
             }
             if (!iconOnly) {
                 Text(
                     label,
                     fontSize = if (compact) 12.sp else 14.sp,
-                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                    color = if (active) C.onBrand else if (danger) C.red else (tint ?: C.ink),
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                    color = if (active) accent else if (danger) C.red else (tint ?: C.ink),
                     maxLines = 1,
                 )
             }
@@ -703,14 +766,14 @@ fun Chip(
                         .widthIn(min = if (compact || iconOnly) 16.dp else 20.dp)
                         .height(if (compact || iconOnly) 16.dp else 20.dp)
                         .clip(CircleShape)
-                        .background(if (active) C.onBrand else if (danger) C.red else C.brand),
+                        .background(if (active) accent else if (danger) C.red else C.brand),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         if (count > 9) "9+" else "$count",
                         fontSize = if (compact || iconOnly) 11.sp else 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (active) (tint ?: C.brand) else Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -725,27 +788,31 @@ fun Chip(
 @Composable
 fun Card(modifier: Modifier = Modifier, onPress: (() -> Unit)? = null, children: @Composable () -> Unit) {
     val C = C()
-    // v1.6.25 — FLAT + BORDERED (redesign spec: "clean, flat surfaces and
-    // subtle borders over heavy shadows, neumorphism, gradients"). The
-    // v1.6.24 2dp shadow is gone; the hairline outline carries the layer.
-    // Radius/padding snapped to the 4dp system: 16dp corners, 12dp inset.
-    val shape = RoundedCornerShape(16.dp)
+    // v1.6.52 — LIGHT GLASS: the standard card is a floating glass card —
+    // white @78% over the glow canvas, 1dp brand@10% hairline, 24dp radius,
+    // brand-tinted shadow (~12dp; 20dp is reserved for hero cards).
+    val shape = RoundedCornerShape(24.dp)
+    val bg = if (C.mode == "dark") Color(0xFF152238).copy(alpha = 0.78f) else Color.White.copy(alpha = 0.78f)
+    val borderColor = if (C.mode == "dark") Color(0x333B94FF) else C.brand.copy(alpha = 0.10f)
+    val shadowColor = C.brand.copy(alpha = if (C.mode == "dark") 0.28f else 0.12f)
     if (onPress != null) {
         Box(Modifier.clip(shape).clickable { onPress() }) {
             Column(
                 modifier
+                    .shadow(12.dp, shape, ambientColor = shadowColor, spotColor = shadowColor)
                     .clip(shape)
-                    .background(C.card)
-                    .border(1.dp, C.line, shape)
+                    .background(bg)
+                    .border(1.dp, borderColor, shape)
                     .padding(12.dp)
             ) { children() }
         }
     } else {
         Column(
             modifier
+                .shadow(12.dp, shape, ambientColor = shadowColor, spotColor = shadowColor)
                 .clip(shape)
-                .background(C.card)
-                .border(1.dp, C.line, shape)
+                .background(bg)
+                .border(1.dp, borderColor, shape)
                 .padding(12.dp)
         ) { children() }
     }
@@ -900,57 +967,85 @@ fun Field(
     modifier: Modifier = Modifier,
 ) {
     val C = C()
+    // v1.6.52 — LIGHT GLASS text fields (spec: "transparent background,
+    // bottom hairline, focus = Brand underline + subtle Brand glow. Never
+    // use the default filled M3 field"). The box is transparent over the
+    // glass canvas; a 1dp Line hairline underlines it, and the focus ring
+    // (v1.6.31) now draws a Brand UNDERLINE glow instead of a full box.
+    var focused by remember { mutableStateOf(false) }
+    val glow by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (focused) 1f else 0f,
+        animationSpec = tween(160),
+        label = "fieldGlow",
+    )
     Column(modifier.padding(bottom = 12.dp)) {
         if (!label.isNullOrEmpty()) {
-            Text(label, fontSize = F.small.sp, fontWeight = FontWeight.SemiBold, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
         }
-        Row(
+        Box(
             Modifier
                 .fillMaxWidth()
-                // v1.6.29 — INPUT PRESS FEEDBACK: BasicTextField never
-                // consults LocalIndication, so before this the field box
-                // showed zero reaction to a touch. The veil is an observer
-                // (never consumes) — every field gesture is untouched.
-                .pressVeil()
-                // v1.6.31 — RING COLOUR WHILE ACTIVE: the same box gains a
-                // brand ring for as long as the field (or any input inside
-                // it) holds focus (user report: "need a ring colour on the
-                // inputs when they are active").
-                .focusRing()
-                .border(1.dp, C.line, RoundedCornerShape(14.dp))
-                .background(C.inputBg, RoundedCornerShape(14.dp))
-                .padding(horizontal = 14.dp)
-                .heightIn(min = 48.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .onFocusChanged { focused = it.hasFocus }
         ) {
-            BasicTextField(
-                value = value,
-                onValueChange = onChangeText,
-                textStyle = TextStyle(fontSize = F.body.sp, color = C.ink),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = when (keyboardType) {
-                        "numeric" -> KeyboardType.Number
-                        "phone-pad" -> KeyboardType.Phone
-                        "email-address" -> KeyboardType.Email
-                        "decimal-pad" -> KeyboardType.Decimal
-                        else -> KeyboardType.Text
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .pressVeil(corner = 10.dp)
+                    .padding(horizontal = 4.dp)
+                    .heightIn(min = 48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BasicTextField(
+                    value = value,
+                    onValueChange = onChangeText,
+                    textStyle = TextStyle(fontSize = F.body.sp, color = C.ink),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = when (keyboardType) {
+                            "numeric" -> KeyboardType.Number
+                            "phone-pad" -> KeyboardType.Phone
+                            "email-address" -> KeyboardType.Email
+                            "decimal-pad" -> KeyboardType.Decimal
+                            else -> KeyboardType.Text
+                        },
+                    ),
+                    singleLine = !multiline,
+                    cursorBrush = SolidColor(C.brand),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = if (multiline) 10.dp else 0.dp),
+                    decorationBox = { inner ->
+                        if (value.isEmpty() && !placeholder.isNullOrEmpty()) {
+                            Row {
+                                Text(placeholder, fontSize = F.body.sp, color = C.faint)
+                            }
+                            Box {}
+                        } else inner()
                     },
-                ),
-                singleLine = !multiline,
-                cursorBrush = SolidColor(C.brand),
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(vertical = if (multiline) 10.dp else 0.dp),
-                decorationBox = { inner ->
-                    if (value.isEmpty() && !placeholder.isNullOrEmpty()) {
-                        Row {
-                            Text(placeholder, fontSize = F.body.sp, color = C.faint)
-                        }
-                        Box {}
-                    } else inner()
-                },
+                )
+                right?.invoke()
+            }
+            // the underline: resting Line hairline; focused = 2dp Brand +
+            // soft brand glow riding just under the text baseline area
+            Box(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .height(if (focused) 2.dp else 1.dp)
+                    .background(if (glow > 0.5f) C.brand else C.line)
             )
-            right?.invoke()
+            if (glow > 0.01f) {
+                Box(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth(fraction = 1f)
+                        .height(6.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(C.brand.copy(alpha = 0.18f * glow), Color.Transparent)
+                            )
+                        )
+                )
+            }
         }
     }
 }
@@ -982,16 +1077,17 @@ fun PickerField(
     modifier: Modifier = Modifier,
 ) {
     val C = C()
+    // v1.6.52 — LIGHT GLASS: the picker mirrors Field's underline treatment
+    // (transparent box, bottom hairline) so a PickerField beside a Field
+    // still aligns — the v1.6.17 metrics contract, restyled.
     Column(modifier.padding(bottom = 12.dp)) {
-        Text(label, fontSize = F.small.sp, fontWeight = FontWeight.SemiBold, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
+        Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = C.sub, modifier = Modifier.padding(bottom = 6.dp))
         Row(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .border(1.dp, C.line, RoundedCornerShape(14.dp))
-                .background(C.inputBg, RoundedCornerShape(14.dp))
+                .clip(RoundedCornerShape(10.dp))
                 .clickable { onPress() }
-                .padding(horizontal = 14.dp)
+                .padding(horizontal = 4.dp)
                 .heightIn(min = 48.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1001,13 +1097,14 @@ fun PickerField(
                 value,
                 fontSize = F.body.sp,
                 color = C.ink,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
             MdiIcon("chevron-down", 18, C.faint)
         }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(C.line))
     }
 }
 

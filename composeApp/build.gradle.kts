@@ -159,8 +159,21 @@ android {
         // keypad keys, the hugging title underline, the three-zone entry
         // card, the contact page's lost "Single entries" heading row, and
         // the backup round-trip battery for every canvas field.
-        versionCode = 62
-        versionName = "1.6.51"
+        // v1.6.52 — THE LIGHT GLASS REDESIGN: the whole app re-skinned to
+        // the Light Glass spec — AppColors/AppShapes tokens (brand blue
+        // #1F7AEC, 24dp cards, 36dp sheets), re-themed Material3 (never
+        // default purple) with the Lexend typeface bundled at six weights,
+        // every full-screen surface over the #EAF3FF→#FFF3EE gradient with
+        // soft radial glows (drawBehind, no blur), glass cards (white @78%
+        // + brand hairline + tinted shadows), gradient pill buttons with
+        // press-scale, underline text fields, gradient-initials avatars,
+        // the floating 28dp-radius Brand bottom bar with the 68dp gradient
+        // dialer FAB, hero numerals (Lexend Light) on the General balance,
+        // and the entire icon surface rebuilt as Lucide-style 1.8dp round-
+        // cap strokes. All 273 tests green; nav band kept at 71dp so the
+        // v1.6.46/47 keypad-band pin (193dp) holds.
+        versionCode = 63
+        versionName = "1.6.52"
     }
 
     signingConfigs {

@@ -45,6 +45,7 @@ import com.callmony.ui.kit.MdiIcon
 import com.callmony.ui.kit.Money
 import com.callmony.ui.kit.SectionHeader
 import com.callmony.ui.kit.Segmented
+import com.callmony.ui.components.brandGradient
 import com.callmony.ui.sections.BankSection
 import com.callmony.ui.sections.LedgerSection
 import com.callmony.ui.sections.ListsSection
@@ -109,62 +110,79 @@ fun GeneralScreen() {
             .padding(16.dp)
             .padding(bottom = 28.dp),
     ) {
-        // hero
+        // hero — v1.6.52 LIGHT GLASS: the NET becomes a hero numeral
+        // (40sp Lexend Light in Brand — the spec's large light-weight
+        // numerals); income/expense/lists sit in soft-tinted pills below.
         Card(Modifier.padding(bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(
                     Modifier
                         .size(50.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(C.brand),
+                        .brandGradient(RoundedCornerShape(16.dp)),
                     contentAlignment = Alignment.Center,
                 ) { MdiIcon("wallet-outline", 26, C.onBrand) }
                 Column(Modifier.weight(1f)) {
-                    Text("${t("hdr.general")}.", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = C.ink)
+                    Text("${t("hdr.general")}.", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = C.ink)
                     Text(t("gv.intro"), fontSize = F.small.sp, color = C.sub)
                     Text(t("gv.acrossEveryone"), fontSize = F.tiny.sp, color = C.faint, modifier = Modifier.padding(top = 2.dp))
                 }
             }
-            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .border(1.dp, C.line, RoundedCornerShape(14.dp))
-                        .padding(horizontal = 10.dp, vertical = 9.dp),
-                ) {
-                    Text(t("lg.income"), fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
-                    Money(global.first, size = 16, weight = FontWeight.ExtraBold, compact = true)
-                }
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .border(1.dp, C.line, RoundedCornerShape(14.dp))
-                        .padding(horizontal = 10.dp, vertical = 9.dp),
-                ) {
-                    Text(t("lg.expense"), fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
-                    Money(-global.second, size = 16, weight = FontWeight.ExtraBold, compact = true)
-                }
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(C.brandSoft)
-                        .border(1.dp, C.brand, RoundedCornerShape(14.dp))
-                        .padding(horizontal = 10.dp, vertical = 9.dp),
-                ) {
-                    Text(t("lg.net"), fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
-                    Money(net, colorize = true, size = 16, weight = FontWeight.ExtraBold, compact = true)
-                }
-            }
-            if (global.third > 0.005) {
+            Row(
+                Modifier.padding(top = 14.dp),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text(
-                    "${t("lg.openLists")}: ${compactMoney(global.third)}",
-                    fontSize = F.tiny.sp,
-                    color = C.amber,
-                    modifier = Modifier.padding(top = 8.dp),
+                    t("lg.net"),
+                    fontSize = 13.sp,
+                    color = C.sub,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(bottom = 7.dp),
                 )
+                Text(
+                    compactMoney(net, signed = false),
+                    fontSize = 40.sp,
+                    fontWeight = FontWeight.Light,
+                    color = if (net >= 0) C.brand else C.red,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(C.brandSoft.copy(alpha = 0.55f))
+                        .border(1.dp, C.line, RoundedCornerShape(14.dp))
+                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                ) {
+                    Text(t("lg.income"), fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.Medium)
+                    Money(global.first, size = 16, weight = FontWeight.Medium, compact = true)
+                }
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(C.brandSoft.copy(alpha = 0.55f))
+                        .border(1.dp, C.line, RoundedCornerShape(14.dp))
+                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                ) {
+                    Text(t("lg.expense"), fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.Medium)
+                    Money(-global.second, size = 16, weight = FontWeight.Medium, compact = true)
+                }
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(C.brandSoft.copy(alpha = 0.55f))
+                        .border(1.dp, C.line, RoundedCornerShape(14.dp))
+                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                ) {
+                    Text(t("lg.openLists"), fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.Medium)
+                    Money(global.third, size = 16, weight = FontWeight.Medium, compact = true)
+                }
             }
         }
 

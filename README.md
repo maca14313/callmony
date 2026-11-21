@@ -104,9 +104,29 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.51 (versionCode 62)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.52 (versionCode 63)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.52** — THE LIGHT GLASS REDESIGN: the whole app re-skinned to the
+  Light Glass spec — AppColors/AppShapes design tokens (brand blue
+  #1F7AEC, 24dp cards, 36dp sheets, swap-the-file to rebrand), a
+  re-themed Material3 wrapper (never default purple) with the **Lexend**
+  typeface bundled at six weights (200/300 hero numerals, 400 body, 500
+  labels, 600 titles) flowing to every Text through a family-only ambient
+  style (metrics stay pixel-pinned — the canvas ladder and prefix-slot
+  geometry are untouched), the entire icon surface (51 glyphs) rebuilt as
+  **Lucide-style 1.8dp round-cap strokes**, every full-screen surface over
+  the #EAF3FF→#FFF3EE gradient with soft radial brand/accent/teal glows
+  (drawBehind, no blur — identical on every platform), glass cards (white
+  @78% + brand hairline + brand-tinted shadows), gradient pill buttons
+  with press-scale motion, underline text fields, gradient-initials
+  avatars, the floating solid-Brand bottom bar (28dp radius, 12dp insets)
+  with a 68dp gradient dialer FAB, and hero numerals (40sp Lexend Light)
+  on the General balance. The nav band stays exactly 71dp so the
+  v1.6.46/47 keypad-band pin (193dp) holds; no new infinite animations
+  (the v1.6.51 ANR lesson outranks the decorative FAB pulse). All 273
+  tests green; APK 1.6.52 vc63 same release key as always; the .tar build
+  artifact ships beside the APK in releases/ and on the GitHub Release.
 - **1.6.51** — THE ANR-REPORT ROUND: the two MAIN THREAD BLOCKED field
   reports (both parked inside HardwareRenderer natives that WAIT ON THE
   RENDERTHREAD — `nSyncAndDrawFrame` 101s / `nSetStopped` 34.8s on a

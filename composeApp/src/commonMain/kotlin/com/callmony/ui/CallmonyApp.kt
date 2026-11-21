@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,6 +41,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -64,6 +67,8 @@ import androidx.compose.runtime.collectAsState
 import com.callmony.ui.components.BottomSheet
 import com.callmony.ui.components.KeypadSheet
 import com.callmony.ui.components.SheetScrim
+import com.callmony.ui.components.glassCanvas
+import com.callmony.ui.components.pressScale
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
@@ -117,9 +122,14 @@ fun CallmonyApp() {
     // default-`clickable`/`combinedClickable` in the whole tree, across all
     // screens, sheets and overlays; scrims/toasts that pass indication=null
     // explicitly stay perfectly quiet.
+    // v1.6.52 — LIGHT GLASS: the tree is additionally wrapped in AppTheme
+    // (re-themed Material3 + Lexend app-wide). The press veil still comes
+    // from LocalIndication (kept; it composes under the theme wrapper).
     androidx.compose.runtime.CompositionLocalProvider(
         androidx.compose.foundation.LocalIndication provides PressIndication,
-    ) { CallmonyAppContent() }
+    ) {
+        com.callmony.theme.AppTheme { CallmonyAppContent() }
+    }
 }
 
 @Composable
@@ -329,7 +339,11 @@ private fun CallmonyAppContent() {
     Box(
         Modifier
             .fillMaxSize()
-            .background(C.canvas)
+            // v1.6.52 — LIGHT GLASS CANVAS: the near-white diagonal gradient
+            // (#EAF3FF -> #FFFFFF -> #FFF3EE) with 2-3 large soft radial
+            // glows (brand / accent / teal) drawn with drawBehind — the
+            // spec's background, identical on every platform (no blur).
+            .glassCanvas()
             // v1.6.17 — autolock idle timer: every touch refreshes it.
             // v1.6.22 — THE FREEZE ROOT CAUSE, decoded from the v1.6.20 +
             // v1.6.21 diagnostics reports: awaitEachGesture REQUIRES its
@@ -428,7 +442,7 @@ private fun CallmonyAppContent() {
         // onboarding stays full-screen — it is a blocking first-run wizard
         if (!AppStore.state.settings.onboarded) {
             BootTrace.mark("ui.onboarding")
-            Box(Modifier.fillMaxSize().background(C.canvas)) { OnboardingSheet() }
+            Box(Modifier.fillMaxSize().glassCanvas()) { OnboardingSheet() }
         }
     }
 
@@ -463,7 +477,7 @@ private var splashFadeDone = false
 @Composable
 private fun SplashPane(logoBmp: ImageBitmap?) {
     val C = C()
-    Box(Modifier.fillMaxSize().background(C.canvas), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().glassCanvas(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             val bmp = logoBmp
             if (bmp != null) {
@@ -533,61 +547,63 @@ private fun Header() {
     val C = C()
     val tab = UiStore.tab
     val primary = tab == "recents" || tab == "general"
-    Box {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-                .padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            if (primary) {
-                // logo tile + wordmark + tagline + search (v1.6.13: the REAL
-                // logo everywhere the old icon tile used to be)
-                LogoTile(38, corner = 12)
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("call", fontSize = F.body.sp, fontWeight = FontWeight.ExtraBold, color = C.ink)
-                        Text("mony", fontSize = F.body.sp, fontWeight = FontWeight.ExtraBold, color = C.brand)
-                    }
-                    Text(t("hdr.tagline"), fontSize = F.tiny.sp, color = C.faint)
+    // v1.6.52 — LIGHT GLASS header: transparent over the glow canvas (the
+    // old hairline is gone; the canvas gradient IS the header background).
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (primary) {
+            // logo tile + wordmark + tagline + search (v1.6.13: the REAL
+            // logo everywhere the old icon tile used to be)
+            LogoTile(38, corner = 12)
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("call", fontSize = F.body.sp, fontWeight = FontWeight.SemiBold, color = C.ink)
+                    Text("mony", fontSize = F.body.sp, fontWeight = FontWeight.SemiBold, color = C.brand)
                 }
-                // v1.6.18 — the search entry is a SOLID brand pill now (was a
-                // 40 dp ghost-grey magnify that vanished against the wordmark —
-                // “make the search icon more visible and dominant”).
-                Box(
-                    Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(C.brand)
-                        .border(1.dp, C.brand, RoundedCornerShape(20.dp))
-                        .clickable { UiStore.open(Overlay.Search()) },
-                    contentAlignment = Alignment.Center,
-                ) { MdiIcon("magnify", 24, Color.White) }
-            } else {
-                // secondary: back + title
-                Box(
-                    Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .clickable { UiStore.setTab("recents") },
-                    contentAlignment = Alignment.Center,
-                ) { MdiIcon("arrow-left", 22, C.sub) }
-                Text(
-                    when (tab) {
-                        "reminders" -> t("tab.reminders")
-                        "trash" -> t("hdr.trash")
-                        else -> t("hdr.recents")
-                    },
-                    fontSize = F.h2.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = C.ink,
-                )
+                Text(t("hdr.tagline"), fontSize = F.tiny.sp, color = C.faint)
             }
+            // v1.6.18 — the search entry is a SOLID brand pill now (was a
+            // 40 dp ghost-grey magnify that vanished against the wordmark —
+            // “make the search icon more visible and dominant”). v1.6.52:
+            // gradient glass FAB-style circle with brand shadow.
+            val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .pressScale(src)
+                    .shadow(10.dp, CircleShape, ambientColor = C.brand.copy(alpha = 0.30f), spotColor = C.brand.copy(alpha = 0.30f))
+                    .clip(CircleShape)
+                    .background(Brush.linearGradient(listOf(C.brandLight, C.brandDark)))
+                    .clickable(interactionSource = src, indication = null) { UiStore.open(Overlay.Search()) },
+                contentAlignment = Alignment.Center,
+            ) { MdiIcon("magnify", 22, Color.White) }
+        } else {
+            // secondary: back + title
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.62f))
+                    .clickable { UiStore.setTab("recents") },
+                contentAlignment = Alignment.Center,
+            ) { MdiIcon("arrow-left", 22, C.brand) }
+            Text(
+                when (tab) {
+                    "reminders" -> t("tab.reminders")
+                    "trash" -> t("hdr.trash")
+                    else -> t("hdr.recents")
+                },
+                fontSize = F.h2.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = C.ink,
+            )
         }
-        // hairline
-        Box(Modifier.fillMaxWidth().height(1.dp).background(C.line).align(Alignment.BottomCenter))
     }
 }
 
@@ -597,80 +613,102 @@ private fun Header() {
 private fun BottomNav() {
     val C = C()
     val overdueCount = AppStore.state.reminders.count { it.deletedAt == null && !it.done && dueStatus(it.snoozedUntil ?: it.dueAt) == "overdue" }
-    Column {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(C.line))
-        Row(
+    // v1.6.52 — LIGHT GLASS BOTTOM NAV (spec: "solid Brand bar, 28dp radius,
+    // inset 12dp from screen edges, white icons + 10sp labels, center FAB
+    // overlapping the top edge"). The bar floats over the glass canvas with
+    // a brand-tinted shadow; the center dialer key becomes the gradient FAB
+    // with a 4dp white ring. (The spec's optional pulse ring animation is
+    // deliberately OMITTED: v1.6.51 just banished the app's last infinite
+    // animation because a display-rate pulse contributed to a 101-second
+    // RenderThread stall on the weakest device class — the ANR lesson
+    // outranks the decorative pulse. Every other motion stays 120-200ms
+    // terminating tweens, per spec MOTION.)
+    // GEOMETRY CONTRACT: the nav's TOTAL height stays exactly 71dp (64dp
+    // bar + 7dp bottom inset) — the v1.6.46/47 keypad-band pin (264 − 71 =
+    // 193dp) and the canvas lift math measure the real nav; the floating
+    // look comes from the horizontal 12dp insets and the 28dp radius, NOT
+    // from extra vertical air.
+    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp)) {
+        Box(
             Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(bottom = 6.dp)
-                .height(64.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(bottom = 7.dp)
+                .shadow(18.dp, RoundedCornerShape(28.dp), ambientColor = C.brand.copy(alpha = 0.30f), spotColor = C.brand.copy(alpha = 0.30f))
+                .clip(RoundedCornerShape(28.dp))
+                .background(Brush.horizontalGradient(listOf(C.brand, C.brandDark))),
         ) {
-            // v1.6.15 (user request): the KEYPAD sits in the MIDDLE slot of
-            // the five-tile bar: Recents · Calculator · Keypad · General · More
-            // v1.6.33 — tapping Recents (even while already on it) resets the
-            // Recents view — owe tab, direction filter and scroll all snap
-            // back to the nothing-clicked state (user report: "if the recent
-            // btn at the bottom navigation is clicked it should go back to
-            // the recent as the tabs was not clicked").
-            NavSlot("recents", "history", "Recents", Modifier.weight(1f)) {
-                UiStore.recentsResetTick++
-            }
-            NavSlot("calculator", "calculator-variant", "Calculator", Modifier.weight(1f)) {
-                // RN parity: tap toggles the calculator sheet over the current tab
-                val calcOpen = UiStore.overlayStack.any { it is Overlay.Calculator }
-                if (calcOpen) UiStore.closeType("Calculator")
-                else UiStore.open(Overlay.Calculator())
-            }
-            // keypad — the floating dialer button (middle of the bar)
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                val active = UiStore.keypadOpen
-                Box(
-                    Modifier
-                        .size(52.dp, 40.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(if (active) C.card else C.brand)
-                        .border(1.5.dp, C.brand, RoundedCornerShape(14.dp))
-                        .clickable {
-                            // RN parity: tap while open closes; otherwise the
-                            // dialer opens ON TOP of the Recents tab
-                            UiStore.closeAll()
-                            if (!active) {
-                                UiStore.setTab("recents")
-                                UiStore.keypadOpen = true
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(64.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // v1.6.15 (user request): the KEYPAD sits in the MIDDLE slot of
+                // the five-tile bar: Recents · Calculator · Keypad · General · More
+                // v1.6.33 — tapping Recents (even while already on it) resets the
+                // Recents view — owe tab, direction filter and scroll all snap
+                // back to the nothing-clicked state (user report: "if the recent
+                // btn at the bottom navigation is clicked it should go back to the
+                // recent as the tabs was not clicked").
+                NavSlot("recents", "history", "Recents", Modifier.weight(1f)) {
+                    UiStore.recentsResetTick++
+                }
+                NavSlot("calculator", "calculator-variant", "Calculator", Modifier.weight(1f)) {
+                    // RN parity: tap toggles the calculator sheet over the current tab
+                    val calcOpen = UiStore.overlayStack.any { it is Overlay.Calculator }
+                    if (calcOpen) UiStore.closeType("Calculator")
+                    else UiStore.open(Overlay.Calculator())
+                }
+                // keypad — the floating dialer FAB (middle of the bar, overlapping)
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    val active = UiStore.keypadOpen
+                    Box(
+                        Modifier
+                            .size(68.dp)
+                            .shadow(16.dp, CircleShape, ambientColor = C.brandDark.copy(alpha = 0.45f), spotColor = C.brandDark.copy(alpha = 0.45f))
+                            .clip(CircleShape)
+                            .background(Brush.linearGradient(listOf(C.brandLight, C.brandDark)))
+                            .border(4.dp, Color.White, CircleShape)
+                            .clickable {
+                                // RN parity: tap while open closes; otherwise the
+                                // dialer opens ON TOP of the Recents tab
+                                UiStore.closeAll()
+                                if (!active) {
+                                    UiStore.setTab("recents")
+                                    UiStore.keypadOpen = true
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) { MdiIcon("dialpad", 26, Color.White) }
+                }
+                NavSlot("general", "wallet-outline", "General", Modifier.weight(1f))
+                // More
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .size(48.dp, 34.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (UiStore.moreOpen) Color.White.copy(alpha = 0.22f) else Color.Transparent)
+                            .clickable { UiStore.moreOpen = !UiStore.moreOpen },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        MdiIcon("dots-horizontal-circle-outline", 24, if (UiStore.moreOpen) Color.White else Color.White.copy(alpha = 0.80f))
+                        if (overdueCount > 0) {
+                            Box(
+                                Modifier
+                                    .align(Alignment.TopEnd)
+                                    .size(16.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color.White),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    if (overdueCount > 9) "9+" else "$overdueCount",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = C.brand,
+                                )
                             }
-                        },
-                    contentAlignment = Alignment.Center,
-                ) { MdiIcon("dialpad", 22, if (active) C.brand else Color.White) }
-            }
-            NavSlot("general", "wallet-outline", "General", Modifier.weight(1f))
-            // More
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Box(
-                    Modifier
-                        .size(48.dp, 34.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (UiStore.moreOpen) C.brandSoft else Color.Transparent)
-                        .clickable { UiStore.moreOpen = !UiStore.moreOpen },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    MdiIcon("dots-horizontal-circle-outline", 24, if (UiStore.moreOpen) C.brand else C.sub)
-                    if (overdueCount > 0) {
-                        Box(
-                            Modifier
-                                .align(Alignment.TopEnd)
-                                .size(16.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(C.red),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                if (overdueCount > 9) "9+" else "$overdueCount",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                            )
                         }
                     }
                 }
@@ -725,7 +763,9 @@ private fun NavSlot(tab: String, icon: String, label: String, modifier: Modifier
             Modifier
                 .size(48.dp, 34.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(if (active) C.brandSoft else Color.Transparent)
+                // v1.6.52 — LIGHT GLASS nav tiles: active = white @22% over
+                // the brand bar, inactive = transparent (white @80% icon).
+                .background(if (active) Color.White.copy(alpha = 0.22f) else Color.Transparent)
                 .clickable {
                     // v1.6.14 FIX: the nav tiles never switched tabs — tapping
                     // General (the wallet/ledger page) or Recents did nothing.
@@ -735,7 +775,7 @@ private fun NavSlot(tab: String, icon: String, label: String, modifier: Modifier
                     onClick()
                 },
             contentAlignment = Alignment.Center,
-        ) { MdiIcon(icon, 24, if (active) C.brand else C.sub) }
+        ) { MdiIcon(icon, 24, if (active) Color.White else Color.White.copy(alpha = 0.80f)) }
     }
 }
 
@@ -813,13 +853,19 @@ fun MoreSheet() {
 @Composable
 private fun MoreTile(icon: String, label: String, modifier: Modifier = Modifier, badge: Int = 0, onPress: () -> Unit) {
     val C = C()
+    // v1.6.52 — LIGHT GLASS: More tiles are GlassCards (white @78%, brand
+    // hairline, tinted shadow) with press-scale.
+    val shape = RoundedCornerShape(20.dp)
+    val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Column(
         modifier
             .height(84.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(C.card)
-            .border(1.dp, C.line, RoundedCornerShape(18.dp))
-            .clickable { onPress() },
+            .pressScale(src)
+            .shadow(12.dp, shape, ambientColor = C.brand.copy(alpha = 0.12f), spotColor = C.brand.copy(alpha = 0.12f))
+            .clip(shape)
+            .background(if (C.mode == "dark") Color(0xFF152238).copy(alpha = 0.78f) else Color.White.copy(alpha = 0.78f))
+            .border(1.dp, if (C.mode == "dark") Color(0x333B94FF) else C.brand.copy(alpha = 0.10f), shape)
+            .clickable(interactionSource = src, indication = null) { onPress() },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -834,7 +880,7 @@ private fun MoreTile(icon: String, label: String, modifier: Modifier = Modifier,
                         .background(C.red),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(if (badge > 9) "9+" else "$badge", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(if (badge > 9) "9+" else "$badge", fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
                 }
             }
         }
@@ -842,7 +888,7 @@ private fun MoreTile(icon: String, label: String, modifier: Modifier = Modifier,
             label,
             fontSize = F.tiny.sp,
             color = C.sub,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
             maxLines = 1,
             modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp),
@@ -874,7 +920,7 @@ private fun OverlayHost() {
         }
     }
     UiStore.overlayStack.lastOrNull()?.let { overlay ->
-        Box(Modifier.fillMaxSize().background(com.callmony.ui.kit.C().canvas)) {
+        Box(Modifier.fillMaxSize().glassCanvas()) {
             when (overlay) {
                 is Overlay.Contact -> ContactDetailOverlay(overlay.recordID, overlay.initialSeg)
                 is Overlay.ContactEdit -> ContactEditorOverlay(overlay.recordID)

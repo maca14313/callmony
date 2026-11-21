@@ -51,7 +51,7 @@ import com.callmony.ui.kit.C
 import com.callmony.ui.kit.IconBtn
 import com.callmony.ui.kit.Toasts
 import com.callmony.ui.kit.vibrate
-
+import com.callmony.ui.components.glassCanvas
 /* Sheet & BottomSheet — the overlay containers used by every modal in the
    app (port of src/components/kit.tsx Sheet + BottomSheet). */
 
@@ -116,19 +116,13 @@ fun Sheet(
     // v1.6.26 — sheets render INSIDE the shell's content area (between the
     // app header and the always-visible bottom nav), so they no longer pad
     // the system bars themselves — the shell already did it above, and the
-    // nav below owns the gesture-bar inset. (Previously each sheet was a
-    // full-screen surface and had to handle both insets itself.)
-    // v1.6.35 — IME LIFT (user report: "when keyboard is open then if
-    // some modal opens up, the keyboard is covering it"): typing inside a
-    // modal lifts it above the keyboard so the footer and the bottom
-    // fields are never covered.
-    // v1.6.36 — the lift is POSITION-AWARE (imeLiftPadding above): the
-    // footer now rests exactly on the keyboard top — never a nav-band
-    // higher (which squeezed the form under the save bar).
+    // nav below owns the gesture-bar inset.
+    // v1.6.35 — IME LIFT; v1.6.36 — position-aware lift.
+    // v1.6.52 — LIGHT GLASS: the sheet canvas is the glow gradient.
     Column(
         Modifier
             .fillMaxSize()
-            .background(C.canvas)
+            .glassCanvas()
             .imeLiftPadding()
     ) {
         // header: back chevron · avatar · title (auto-shrink) · actions
@@ -215,7 +209,7 @@ fun Sheet(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .background(C.canvas)
+                    .background(Color.Transparent)
                     .padding(horizontal = 18.dp, vertical = 10.dp),
             ) { footer() }
         }
@@ -282,6 +276,11 @@ fun BottomSheet(
     val C = C()
     // v1.6.15: the native back button closes the bottom sheet first
     com.callmony.ui.kit.AppBackHandler(enabled = true) { onClose() }
+    // v1.6.52 — LIGHT GLASS sheet: 36dp top corners (the Sheet shape), a
+    // glass body (white @92% in light — sheets need higher opacity than
+    // cards so scrolled content reads — with the brand hairline and a
+    // brand-tinted 20dp shadow floating over the scrim).
+    val sheetShape = RoundedCornerShape(topStart = 36.dp, topEnd = 36.dp)
     Box(
         Modifier
             .fillMaxSize()
@@ -300,11 +299,9 @@ fun BottomSheet(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                 ) {}
-                // v1.6.25 — flat spec: a modest 6dp lift (was 10dp) — the
-                // sheet floats over the scrim without a heavy shadow.
-                .shadow(6.dp, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .background(C.card)
+                .shadow(20.dp, sheetShape, ambientColor = C.brand.copy(alpha = 0.18f), spotColor = C.brand.copy(alpha = 0.18f))
+                .clip(sheetShape)
+                .background(if (C.mode == "dark") Color(0xFF101D33).copy(alpha = 0.96f) else Color.White.copy(alpha = 0.96f))
                 // v1.6.35 — IME LIFT: a bottom sheet carrying a text input
                 // (custom category, quick add…) rises above the keyboard
                 // instead of being covered by it.
