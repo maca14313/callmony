@@ -147,8 +147,13 @@ fun Sheet(
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = C.ink,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    // v1.6.54 — ROUND 2, SPEC 3: titles may wrap to two
+                    // lines (maxLines = 2, softWrap) — never ellipsize
+                    // ("Calcul…" was cut off). Only names may ellipsize.
+                    maxLines = 2,
+                    softWrap = true,
+                    overflow = TextOverflow.Visible,
+                    lineHeight = 24.sp,
                 )
                 if (!subtitle.isNullOrEmpty()) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -277,10 +282,12 @@ fun BottomSheet(
     val C = C()
     // v1.6.15: the native back button closes the bottom sheet first
     com.callmony.ui.kit.AppBackHandler(enabled = true) { onClose() }
-    // v1.6.52 — LIGHT GLASS sheet: 36dp top corners (the Sheet shape), a
-    // glass body (white @92% in light — sheets need higher opacity than
-    // cards so scrolled content reads — with the brand hairline and a
-    // brand-tinted 20dp shadow floating over the scrim).
+    // v1.6.54 — ROUND 2, SPEC 1: the sheet surface is 100% OPAQUE white
+    // (containerColor = Color.White, never alpha — the @96% glass let the
+    // page behind read through: "Credit Nov 7…", "People", contact names
+    // were visible through Add entry / Keypad / More). The scrim is the
+    // spec's Ink @40%. 36dp top corners + brand hairline + brand-tinted
+    // shadow unchanged.
     val sheetShape = RoundedCornerShape(topStart = 36.dp, topEnd = 36.dp)
     Box(
         Modifier
@@ -302,7 +309,7 @@ fun BottomSheet(
                 ) {}
                 .shadow(20.dp, sheetShape, ambientColor = C.brand.copy(alpha = 0.18f), spotColor = C.brand.copy(alpha = 0.18f))
                 .clip(sheetShape)
-                .background(if (C.mode == "dark") Color(0xFF101D33).copy(alpha = 0.96f) else Color.White.copy(alpha = 0.96f))
+                .background(if (C.mode == "dark") Color(0xFF101D33) else Color.White)
                 // v1.6.35 — IME LIFT: a bottom sheet carrying a text input
                 // (custom category, quick add…) rises above the keyboard
                 // instead of being covered by it.
@@ -347,8 +354,11 @@ fun BottomSheet(
                         fontWeight = FontWeight.SemiBold,
                         color = C.ink,
                         modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        // v1.6.54 — ROUND 2, SPEC 3: two lines, no ellipsis
+                        maxLines = 2,
+                        softWrap = true,
+                        overflow = TextOverflow.Visible,
+                        lineHeight = 24.sp,
                     )
                     if (headerRight != null) headerRight() else IconBtn("close", onClose, size = 36)
                 }

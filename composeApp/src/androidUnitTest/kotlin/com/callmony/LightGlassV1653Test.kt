@@ -72,42 +72,29 @@ class LightGlassV1653Test {
         rule.waitForIdle()
     }
 
-    /* 1 — the canvas is the spec's exact three stops and exactly two
-       glows; the light alpha caps hold (brand <=12%, peach <=10%). The
-       constants live in Glass.kt; the pin guards them against drift
-       (the v1.6.52 teal breath + 55% center alphas are the regression
-       this catches). */
+    /* 1 — v1.6.54 ROUND 2: the canvas is PURE WHITE (the bg is only white —
+       no gradient, no glows, nothing blue spilling in) and the scrim is
+       Ink @40%. */
     @Test
-    fun canvasIsExactlyTheSpecThreeStopsAndTwoGlows() {
-        // the light gradient stops: #EAF3FF -> #FFFFFF -> #FFF3EE
-        // (exposed by the glass tokens test surface below)
+    fun canvasIsPureWhiteWithNoGlowsAndScrimIsInk40() {
+        // the light canvas: pure white everywhere
         val stops = com.callmony.ui.components.GlassTokensSpec.lightStops
         assertEquals(
-            "the light canvas must be EXACTLY the spec's three stops",
-            listOf(0xFFEAF3FF, 0xFFFFFFFF, 0xFFFFF3EE),
+            "the light canvas must be PURE WHITE (round 2: bg only white)",
+            listOf(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF),
             stops,
         )
-        // exactly TWO glows; no teal anywhere
+        // ZERO glows
         assertEquals(
-            "the canvas carries exactly two glows",
-            2,
+            "the canvas carries NO glows (round 2)",
+            0,
             com.callmony.ui.components.GlassTokensSpec.LIGHT_GLOW_COUNT,
         )
-        assertTrue(
-            "the brand glow alpha must be <= 0.12 (spec: <=12%)",
-            com.callmony.ui.components.GlassTokensSpec.BRAND_GLOW_MAX_ALPHA <= 0.12f,
-        )
-        assertTrue(
-            "the peach glow alpha must be <= 0.10 (spec: <=10%)",
-            com.callmony.ui.components.GlassTokensSpec.PEACH_GLOW_ALPHA <= 0.10f,
-        )
-        assertTrue(
-            "the peach glow sits BOTTOM-RIGHT (y > 0.5), not top-right",
-            com.callmony.ui.components.GlassTokensSpec.peachGlowAt.second > 0.5f,
-        )
-        assertTrue(
-            "the brand glow sits TOP-LEFT (y <= 0.2)",
-            com.callmony.ui.components.GlassTokensSpec.brandGlowAt.second <= 0.2f,
+        // the scrim: Ink @40%
+        assertEquals(
+            "the sheet scrim must be Ink @40% (round 2, spec 1)",
+            0.40f,
+            com.callmony.ui.components.GlassTokensSpec.SHEET_SCRIM_ALPHA,
         )
     }
 

@@ -722,8 +722,12 @@ fun EntryCard(entry: LedgerEntry, running: Double) {
                             fontSize = F.body.sp,
                             fontWeight = FontWeight.Bold,
                             color = C.ink,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            // v1.6.54 — round 2, spec 3: titles wrap to two
+                            // lines, never ellipsize
+                            maxLines = 2,
+                            softWrap = true,
+                            overflow = TextOverflow.Visible,
+                            lineHeight = 19.sp,
                             modifier = Modifier.weight(1f, fill = false),
                         )
                         entry.category?.let { Pill(it, "brand") }

@@ -73,7 +73,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.callmony.i18n.t
 import com.callmony.lib.AppStore
-import com.callmony.lib.avatarColors
 import com.callmony.lib.compactMoney
 import com.callmony.lib.displayName
 import com.callmony.lib.initialsOf
@@ -372,7 +371,7 @@ fun Toaster() {
                 .shadow(14.dp, RoundedCornerShape(18.dp), ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.18f))
                 .clip(RoundedCornerShape(18.dp))
                 // v1.6.52 — LIGHT GLASS toast: deep-ink glass pill.
-                .background(if (C.mode == "dark") Color(0xFF1B2B45).copy(alpha = 0.92f) else Color(0xFF152238).copy(alpha = 0.92f))
+                .background(if (C.mode == "dark") Color(0xFF1B2B45) else Color(0xFF152238))  // v1.6.54 — opaque toast
                 .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(18.dp))
                 // v1.6.35 — THE TOAST NO LONGER EATS TAPS. The pill used to
                 // carry an EMPTY clickable — it swallowed every touch (the
@@ -452,7 +451,8 @@ fun ConfirmHost() {
                 .widthIn(max = 340.dp)
                 .shadow(24.dp, RoundedCornerShape(28.dp), ambientColor = C.brand.copy(alpha = 0.15f), spotColor = C.brand.copy(alpha = 0.15f))
                 .clip(RoundedCornerShape(28.dp))
-                .background(if (C.mode == "dark") Color(0xFF152238).copy(alpha = 0.96f) else Color.White.copy(alpha = 0.96f))
+                // v1.6.54 — ROUND 2, SPEC 1: dialogs are 100% OPAQUE white.
+                .background(if (C.mode == "dark") Color(0xFF152238) else Color.White)
                 .border(1.dp, if (C.mode == "dark") Color(0x333B94FF) else C.brand.copy(alpha = 0.10f), RoundedCornerShape(28.dp))
                 .padding(20.dp)
                 .clickable(
@@ -566,6 +566,14 @@ fun HostSheetsHost() {
 
 /* ---------------- money ---------------- */
 
+/** v1.6.54 — ROUND 2, SPEC 3: money values NEVER truncate. Money autosizes
+ *  (measure-and-shrink) between MONEY_AUTOSIZE_MIN (14sp) and 44sp,
+ *  maxLines = 1, so every amount always fits its width — "503886.2…",
+ *  "Income 505272.…" and the hero "505272.8M Br" touching the screen edge
+ *  were all clipped money. The step ladder mirrors HeroNumeral's grammar. */
+const val MONEY_AUTOSIZE_MIN = 14
+const val MONEY_AUTOSIZE_MAX = 44
+
 @Composable
 fun Money(
     value: Double,
@@ -584,26 +592,84 @@ fun Money(
     val cur = currency ?: AppStore.state.settings.currency
     val text = if (compact && abs(value) >= 100000) compactMoney(value, cur, signed) else money(value, cur, signed)
     val color = if (colorize) { if (value > 0) C.green else if (value < 0) C.red else C.sub } else C.ink
-    Text(text, fontSize = size.sp, fontWeight = weight, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    AutoFitText(
+        text = text,
+        maxFontSize = if (size <= MONEY_AUTOSIZE_MAX) size.sp else MONEY_AUTOSIZE_MAX.sp,
+        minFontSize = MONEY_AUTOSIZE_MIN.sp,
+        color = color,
+        fontWeight = weight,
+        maxLines = 1,
+    )
+}
+
+/** v1.6.54 — measure-and-shrink text (round 2, spec 3): starts at
+ *  maxFontSize and steps down the sp ladder until it fits ONE line in the
+ *  available width; at the floor it lets the layout wrap/size naturally
+ *  rather than clip. Shared by Money and any label that must never
+ *  truncate. */
+@Composable
+fun AutoFitText(
+    text: String,
+    maxFontSize: androidx.compose.ui.unit.TextUnit,
+    minFontSize: androidx.compose.ui.unit.TextUnit,
+    color: Color,
+    fontWeight: FontWeight,
+    maxLines: Int = 1,
+    modifier: Modifier = Modifier,
+    textAlign: TextAlign? = null,
+) {
+    val measurer = rememberTextMeasurer()
+    val style = remember(fontWeight) { TextStyle(fontWeight = fontWeight) }
+    BoxWithConstraints(modifier) {
+        val density = LocalDensity.current
+        val maxW = with(density) { maxWidth.toPx() }
+        // step down in 2sp units from max to min; fall back to the min size
+        // (never ellipsize — the last resort is the smallest size on one
+        // line; a width so small that even that cannot fit simply renders
+        // the min-size line and lets the parent wrap content)
+        val chosen by remember(text, maxW, maxFontSize, minFontSize) {
+            val maxSp = maxFontSize.value
+            val minSp = minFontSize.value
+            var chosenSp = minSp
+            var s = maxSp
+            while (s >= minSp) {
+                val w = measurer.measure(
+                    text,
+                    style = style.copy(fontSize = s.sp),
+                ).size.width.toFloat()
+                if (w <= maxW) { chosenSp = s; break }
+                s -= 2f
+            }
+            mutableStateOf(chosenSp.sp)
+        }
+        Text(
+            text,
+            fontSize = chosen,
+            fontWeight = fontWeight,
+            color = color,
+            maxLines = maxLines,
+            softWrap = maxLines > 1,
+            textAlign = textAlign,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
 }
 
 /* ---------------- avatar ---------------- */
 
 @Composable
 fun Avatar(contact: DeviceContact?, size: Int = 46, photo: String? = null) {
-    // v1.6.52 — LIGHT GLASS: gradient initials avatars (spec: "Use gradient
-    // initials avatars"), Tile shape (12dp rounded), white letter. The seed
-    // palette keeps its deterministic per-contact hue, now as a gradient.
-    val palette = avatarColors(contact)
-    val (bg, fg) = parseHexPair(palette)
+    // v1.6.54 — ROUND 2, SPEC 5: every avatar is the BRAND gradient
+    // (BrandLight -> BrandDark) with white 600-weight initials — contrast
+    // far above 4.5:1 on both gradient stops. The random per-contact
+    // pastel palette (white letters on washed-out hues, hard to read and
+    // not brand colored) is gone.
     Box(
         Modifier
             .size(size.dp)
             .clip(RoundedCornerShape((size * 0.26f).dp))
             .background(
-                Brush.linearGradient(
-                    listOf(bg, bg.copy(alpha = 0.72f).compositeOverDark(fg))
-                )
+                Brush.linearGradient(listOf(C().brandLight, C().brandDark))
             ),
         contentAlignment = Alignment.Center,
     ) {
@@ -615,18 +681,6 @@ fun Avatar(contact: DeviceContact?, size: Int = 46, photo: String? = null) {
         )
     }
 }
-
-/** Deepen a text tint into a gradient end that stays in the same hue. */
-private fun Color.compositeOverDark(other: Color): Color =
-    Color(
-        red = (red * 0.62f + other.red * 0.38f),
-        green = (green * 0.62f + other.green * 0.38f),
-        blue = (blue * 0.62f + other.blue * 0.38f),
-        alpha = 1f,
-    )
-
-private fun parseHexPair(p: Pair<String, String>): Pair<Color, Color> =
-    parseHexColor(p.first) to parseHexColor(p.second)
 
 fun parseHexColor(hex: String): Color {
     val h = hex.removePrefix("#")
@@ -706,7 +760,7 @@ fun Btn(
                     "secondary" -> Modifier
                         .shadow(8.dp, shape, ambientColor = C.brand.copy(alpha = 0.10f), spotColor = C.brand.copy(alpha = 0.10f))
                         .clip(shape)
-                        .background(Color.White.copy(alpha = 0.86f))
+                        .background(Color.White)  // v1.6.54 — opaque (round 2, spec 1)
                         .border(1.dp, C.line, shape)
                     "soft" -> Modifier.clip(shape).background(C.brandSoft)
                     else -> Modifier.clip(shape)
@@ -733,8 +787,15 @@ fun Btn(
                 color = fg,
                 fontSize = if (small) 13.sp else 15.sp,
                 fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                // v1.6.54 — ROUND 2, SPEC 3: button labels wrap to TWO
+                // lines (softWrap + a height that fits two lines), never
+                // ellipsize — "WhatsA…" and friends were cut action labels.
+                maxLines = 2,
+                softWrap = true,
+                overflow = TextOverflow.Visible,
+                textAlign = TextAlign.Center,
+                lineHeight = if (small) 16.sp else 19.sp,
+                modifier = Modifier.widthIn(max = 220.dp),
             )
         }
     }
@@ -818,7 +879,15 @@ fun Chip(
                     fontSize = if (compact) 12.sp else 14.sp,
                     fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
                     color = if (active) accent else if (danger) C.red else (tint ?: C.sub),
-                    maxLines = 1,
+                    // v1.6.54 — ROUND 2, SPEC 3: chip labels wrap to TWO
+                    // lines, never ellipsize ("Re", "Accounts", "KES", "SA"
+                    // were clipped chips). Chips in a strip keep one line —
+                    // only standalone chips wrap.
+                    maxLines = if (compact) 1 else 2,
+                    softWrap = !compact,
+                    overflow = TextOverflow.Visible,
+                    lineHeight = if (compact) 14.sp else 17.sp,
+                    textAlign = TextAlign.Center,
                 )
             }
             if (count != null && count > 0) {
@@ -853,7 +922,7 @@ fun Card(modifier: Modifier = Modifier, onPress: (() -> Unit)? = null, children:
     // white @78% over the glow canvas, 1dp brand@10% hairline, 24dp radius,
     // brand-tinted shadow (~12dp; 20dp is reserved for hero cards).
     val shape = RoundedCornerShape(24.dp)
-    val bg = if (C.mode == "dark") Color(0xFF152238).copy(alpha = 0.78f) else Color.White.copy(alpha = 0.78f)
+    val bg = if (C.mode == "dark") Color(0xFF152238) else Color.White  // v1.6.54 — opaque cards (round 2)
     val borderColor = if (C.mode == "dark") Color(0x333B94FF) else C.brand.copy(alpha = 0.10f)
     val shadowColor = C.brand.copy(alpha = if (C.mode == "dark") 0.28f else 0.12f)
     if (onPress != null) {
@@ -965,31 +1034,32 @@ fun Segmented(
     tintOf: ((String) -> Color?)? = null,
     onChange: (String) -> Unit,
 ) {
-    Row(
+    // v1.6.54 — ROUND 2, SPEC 4: the tab strip rides the shared ScrollRow
+    // (real DstIn edge fades + 16dp content padding) — tabs were clipped
+    // with no hint before.
+    com.callmony.ui.components.ScrollRow(
         Modifier
             .padding(top = 5.dp, bottom = 5.dp)
-            .horizontalScrollCompat(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+            .fillMaxWidth(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 0.dp, end = 16.dp),
     ) {
-        for ((key, label, count) in options) {
-            Chip(
-                label = label,
-                active = value == key,
-                count = count,
-                compact = true,
-                onPress = { onChange(key) },
-                icon = iconOf?.invoke(key),
-                tint = tintOf?.invoke(key),
-            )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            for ((key, label, count) in options) {
+                Chip(
+                    label = label,
+                    active = value == key,
+                    count = count,
+                    compact = true,
+                    onPress = { onChange(key) },
+                    icon = iconOf?.invoke(key),
+                    tint = tintOf?.invoke(key),
+                )
+            }
         }
     }
-}
-
-@Composable
-private fun Modifier.horizontalScrollCompat(): Modifier {
-    val state = androidx.compose.foundation.rememberScrollState()
-    return this.horizontalScroll(state)
 }
 
 /** v1.6.17 — live countdown to (or past) a due moment, e.g. "in 2h 15m"
@@ -1206,7 +1276,9 @@ fun Pill(
             // rule, applied without inventing new glyphs
             Box(Modifier.size(4.dp).clip(CircleShape).background(fg))
         }
-        Text(label, fontSize = F.tiny.sp, fontWeight = FontWeight.Bold, color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // v1.6.54 — round 2, spec 3: pill labels wrap to two lines, never
+        // ellipsize ("Income 505272.…" was a truncated pill)
+        Text(label, fontSize = F.tiny.sp, fontWeight = FontWeight.Bold, color = fg, maxLines = 2, softWrap = true, overflow = TextOverflow.Visible, lineHeight = 14.sp)
     }
 }
 

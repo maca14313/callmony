@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -457,12 +458,15 @@ fun RecentsScreen() {
         // owe chips row — THE TWO TABS (v1.6.30: toggleable — tapping the
         // active one returns to "all"; they no longer collide with the
         // direction filter chips)
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Chip(compact = true, icon = "arrow-bottom-left", label = t("cd.theyOweYou"), active = oweTab == "theyOwe", onPress = { oweTab = if (oweTab == "theyOwe") "all" else "theyOwe" })
-            Chip(compact = true, icon = "arrow-top-right", label = t("cd.youOweThem"), active = oweTab == "youOwe", onPress = { oweTab = if (oweTab == "youOwe") "all" else "youOwe" })
+        // v1.6.54 — ROUND 2, SPEC 3+4: the two owe tabs sit in a SCROLLING
+        // strip with the edge fade — full labels, never truncated
+        // ("They owe y…", "You owe th…" were cut), and the row scrolls when
+        // the localized labels are long.
+        ScrollRow(Modifier.fillMaxWidth().padding(vertical = 6.dp), contentPadding = PaddingValues(horizontal = 16.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Chip(icon = "arrow-bottom-left", label = t("cd.theyOweYou"), active = oweTab == "theyOwe", onPress = { oweTab = if (oweTab == "theyOwe") "all" else "theyOwe" })
+                Chip(icon = "arrow-top-right", label = t("cd.youOweThem"), active = oweTab == "youOwe", onPress = { oweTab = if (oweTab == "youOwe") "all" else "youOwe" })
+            }
         }
         // v1.6.34 — THE OWE-TAB FILTER TABS. The v1.6.30/33 row of
         // call-direction chips under the owe buttons is GONE (user report:
@@ -477,8 +481,11 @@ fun RecentsScreen() {
         if (oweTab != "all") {
             ScrollRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // v1.6.54 — ROUND 2, SPEC 3: the owe sub-filter chips
+                    // wrap their labels (no ellipsis) — they live in the
+                    // scrolling fade strip.
                     Chip(
-                        compact = true, icon = "calendar-blank-outline",
+                        compact = false, icon = "calendar-blank-outline",
                         label = when (oweDays) {
                             1 -> t("cd.oweToday"); 7 -> t("cd.oweLast7"); 30 -> t("cd.oweLast30")
                             -1 -> t("cd.oweCustom"); else -> t("cd.oweDate")
@@ -487,13 +494,13 @@ fun RecentsScreen() {
                         onPress = { oweMenu = "date" },
                     )
                     Chip(
-                        compact = true, icon = "cash-check",
+                        compact = false, icon = "cash-check",
                         label = if (oweMinAmount > 0) t("cd.oweAbove", mapOf("n" to compactMoney(oweMinAmount))) else t("cd.oweAmount"),
                         active = oweMinAmount > 0,
                         onPress = { oweMenu = "amount" },
                     )
                     Chip(
-                        compact = true, icon = "account-circle-outline",
+                        compact = false, icon = "account-circle-outline",
                         label = when (oweNameSort) {
                             "az" -> t("cd.oweAZ"); "za" -> t("cd.oweZA"); else -> t("cd.oweName")
                         },
@@ -1008,6 +1015,9 @@ private fun DayHeader(label: String, filter: String, onFilter: (String) -> Unit,
         if (showFilters) DayFilters(filter, onFilter, missedCount)
     }
 }
+// (v1.6.54 note: the DayHeader's date label may ellipsize — dates/names
+// are the ONLY text allowed to (round 2, spec 3); the filter chips are
+// iconOnly fixed-width tiles that always fit at 360dp.)
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -1141,8 +1151,12 @@ fun CallCard(
                         )
                     }
                     if (balance != 0.0) {
+                        // v1.6.54 — ROUND 2, SPEC 3: the owe pill wraps
+                        // its label to two lines (never "They owe y…"),
+                        // and the money autosizes instead of ellipsizing.
                         Row(
                             Modifier
+                                .padding(top = 2.dp)
                                 .clip(RoundedCornerShape(999.dp))
                                 .background(if (balance > 0) C.green.copy(alpha = 0.13f) else C.red.copy(alpha = 0.12f))
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
@@ -1152,12 +1166,14 @@ fun CallCard(
                             MdiIcon(if (balance > 0) "arrow-bottom-left" else "arrow-top-right", 10, if (balance > 0) C.green else C.red)
                             Money(value = balance, colorize = true, signed = true, size = 11, compact = true)
                             Text(
-                                "· ${if (balance > 0) t("cd.theyOweYou") else t("cd.youOweThem")}",
+                                if (balance > 0) t("cd.theyOweYou") else t("cd.youOweThem"),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (balance > 0) C.green else C.red,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+                                maxLines = 2,
+                                softWrap = true,
+                                overflow = TextOverflow.Visible,
+                                lineHeight = 12.sp,
                             )
                         }
                     } else if (hasRealNumber) {

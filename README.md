@@ -104,9 +104,45 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.53 (versionCode 64)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.54 (versionCode 65)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.54** — THE ROUND 2 CORRECTION LIST (the user's exact 10-point fix
+  list, sent with v1.6.53 screenshots, applied through SHARED COMPONENTS):
+  sheets/menus/dialogs are 100% OPAQUE white over an Ink@40% scrim (the
+  @96% glass let the page behind read through Add entry / Keypad / More);
+  the bottom nav derives ONE selected item from the current ROUTE
+  (Calculator overlay -> Calculator, Settings/Trash/More-open -> More —
+  NavSlot takes an explicit `selected` now) with the "Calc" label that
+  fits at 360dp while the screen title keeps the full "Calculator"; ZERO
+  TRUNCATION — button/chip/pill/tile/sheet/ledger labels wrap to two
+  lines and every Money value autosizes (new AutoFitText
+  measure-and-shrink) between 14sp and 44sp on one line, and the
+  Calculator header's four actions collapse into one History pill + a
+  three-dot overflow menu (Sigma/Paste/Copy) so the title renders whole;
+  chip rows get REAL edge fades (graphicsLayer Offscreen + drawWithContent
+  + BlendMode.DstIn, 24dp bands, 16dp content padding — the old fade
+  PAINTED color over the chips) and Segmented tabs ride ScrollRow; every
+  avatar is the BrandLight->BrandDark gradient with white 600-weight
+  initials (the per-contact pastel palette is unreferenced); the keypad
+  shows the typed number ABOVE the keys (ExtraLight 48sp Brand) with up
+  to 2 suggested contacts under it and the gradient call button whenever
+  a number is typed; the background is PURE WHITE everywhere (the blue/
+  peach gradient and both glows deleted — "the bg should be only white";
+  brand blue lives only in components) so the transparent app bar is
+  IDENTICAL on every screen and the area behind the gesture bar has no
+  seam; the calculator's numTints checkerboard is gone — digits/⌫/± all
+  white, operators Brand50, "=" the Brand gradient, AC Danger. Tests
+  285 (NEW Round2V1654Test x7 at w360dp: route selection, label pins,
+  money autosize bounds, hero edge-clearance at 360dp, keypad contract,
+  calculator compose; the LightGlass canvas pin updated to
+  pure-white/zero-glows/Ink@40%); the 3 full-battery timeouts are the
+  documented sandbox Robolectric flakiness (ContactDetailV1636 A/B-proven
+  flaky on the pristine v1.6.53 baseline; RecentsV1615 passed on rerun;
+  the Round2 keypad test was corrected to the observable contract and
+  passes). APK 1.6.54 vc65 (9.24MB), same release key as always; both
+  iOS targets compile; the 360dp audit table (all 10 points PASS) is in
+  `sandbox/chat-logs/2026-11-22-b-v1.6.54-round2-corrections.md`.
 - **1.6.53** — THE LIGHT GLASS SPEC-CORRECTION ROUND ("what you did is not
   correct"): the v1.6.52 re-skin was audited against the user's 12-point
   design language and every deviation fixed. THE CANVAS is now exactly the

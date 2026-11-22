@@ -2,7 +2,9 @@ package com.callmony.ui.components
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
@@ -12,55 +14,66 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
-import com.callmony.theme.AppColors
 import com.callmony.ui.kit.C
 
 /** A Row that scrolls horizontally — used for every chip strip.
  *  v1.6.53 — LIGHT GLASS (spec 7: "rows of chips scroll horizontally with
- *  an edge fade; never clipped without a hint"): while the strip can
- *  scroll further, a soft 16dp brand-tinted fade hints at the content
- *  hiding beyond each edge. The fade reads as canvas (near-white), so it
- *  works over the glow gradient without a scissor; it disappears when an
- *  edge is reached. */
+ *  an edge fade; never clipped without a hint").
+ *  v1.6.54 — ROUND 2, SPEC 4, EXACT: the fade is a REAL alpha mask now —
+ *  graphicsLayer(compositingStrategy = Offscreen) + drawWithContent drawing
+ *  a gradient with BlendMode.DstIn, so the chips genuinely dissolve at the
+ *  edge instead of a Brand50 veil PAINTED OVER them (the v1.6.53 fake —
+ *  it read as a blue smudge and covered the chip text). 24dp fade at both
+ *  edges while content hides beyond them, plus 16dp content padding so
+ *  the first and last chip are never cut. */
 @Composable
-fun ScrollRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+fun ScrollRow(modifier: Modifier = Modifier, contentPadding: PaddingValues? = null, content: @Composable () -> Unit) {
     val state = rememberScrollState()
-    val dark = C().mode == "dark"
     val canLeft by remember { derivedStateOf { state.canScrollBackward } }
     val canRight by remember { derivedStateOf { state.canScrollForward } }
     Box(
         modifier
+            .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
             .horizontalScroll(state)
             .drawWithContent {
                 drawContent()
-                val w = 16.dp.toPx()
-                val fade = if (dark) Color(0xFF0B1626) else AppColors.Brand50
+                val w = 24.dp.toPx()
+                // DstIn mask: transparent -> opaque over the fade band, so
+                // the content's own alpha dissolves toward the edge (a real
+                // fade, never a painted veil)
                 if (canLeft) {
                     drawRect(
                         Brush.horizontalGradient(
-                            listOf(fade, Color.Transparent),
+                            listOf(Color.Transparent, Color.Black),
                             startX = 0f,
                             endX = w,
                         ),
-                        size = androidx.compose.ui.geometry.Size(w, size.height),
+                        size = Size(w, size.height),
+                        blendMode = BlendMode.DstIn,
                     )
                 }
                 if (canRight) {
                     drawRect(
                         Brush.horizontalGradient(
-                            listOf(Color.Transparent, fade),
+                            listOf(Color.Black, Color.Transparent),
                             startX = size.width - w,
                             endX = size.width,
                         ),
-                        topLeft = androidx.compose.ui.geometry.Offset(size.width - w, 0f),
-                        size = androidx.compose.ui.geometry.Size(w, size.height),
+                        topLeft = Offset(size.width - w, 0f),
+                        size = Size(w, size.height),
+                        blendMode = BlendMode.DstIn,
                     )
                 }
             },
     ) {
-        Row { content() }
+        Row(
+            Modifier.padding(contentPadding ?: PaddingValues(horizontal = 16.dp)),
+        ) { content() }
     }
 }

@@ -69,7 +69,7 @@ data class ThemeColors(
 
 val LIGHT = ThemeColors(
     mode = "light",
-    canvas = Color(0xFFFAFCFF), // near-white with the faintest blue breath (the gradient canvas sits behind)
+    canvas = Color.White, // v1.6.54 — pure white page (round 2: no blue spill, bg only white)
     card = Color.White,
     cardAlt = Color(0xFFF1F6FD),
     ink = AppColors.Ink,
@@ -84,9 +84,9 @@ val LIGHT = ThemeColors(
     amber = Color(0xFFB7791F), // readable amber on white (WCAG on light glass)
     blue = Color(0xFF2563EB),
     chip = Color(0xFFEFF4FB),
-    scrim = Color(0x59131F35), // ink-navy @35% glass scrim
+    scrim = Color(0x660F1B2D), // v1.6.54 — Ink @40% scrim (round 2, spec 1: the page behind a sheet dims under Ink@40%)
     inputBg = Color.White,
-    headerBg = Color(0xFFFAFCFF),
+    headerBg = Color.White, // v1.6.54 — the header band is the page itself (transparent over white; round 2, spec 8)
 )
 
 val DARK = ThemeColors(

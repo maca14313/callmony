@@ -18,9 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -285,12 +282,12 @@ fun KeypadSheet() {
     Column(
         Modifier
             .fillMaxWidth()
-            // v1.6.53 — LIGHT GLASS overlay (spec 4b): sheets get 36dp top
-            // corners, a >=96%-opaque surface and a BRAND-TINTED shadow
-            // (grey/black shadows are banned by the spec).
+            // v1.6.54 — ROUND 2, SPEC 1: the keypad sheet surface is 100%
+            // OPAQUE white (the @96% glass let Recents read through it);
+            // 36dp top corners + brand-tinted shadow unchanged.
             .shadow(20.dp, RoundedCornerShape(topStart = 36.dp, topEnd = 36.dp), ambientColor = C.brand.copy(alpha = 0.18f), spotColor = C.brand.copy(alpha = 0.18f))
             .clip(RoundedCornerShape(topStart = 36.dp, topEnd = 36.dp))
-            .background(if (C.mode == "dark") Color(0xFF101D33).copy(alpha = 0.96f) else Color.White.copy(alpha = 0.96f)),
+            .background(if (C.mode == "dark") Color(0xFF101D33) else Color.White),
             // v1.6.26: no navigationBarsPadding — the keypad sheet anchors on
             // top of the always-visible app nav inside the content area.
     ) {
@@ -321,24 +318,54 @@ fun KeypadSheet() {
             )
             IconBtn("close", close, size = 36)
         }
-        // live matches — v1.6.27 — THE "KEYPAD PUSHED UNDER THE NAVBAR" FIX.
-        // The list used heightIn(max=250): with matches + exact pill + number
-        // display + the 12-key grid + the action row the panel exceeded the
-        // content area, and a bottom-anchored Column CLIPS ITS TAIL — the
-        // bottom rows of the keypad ended up UNDER the always-visible nav.
-        // The list is now a WEIGHTED child (fill=false): it takes whatever
-        // space is LEFT above the fixed keypad portion, scrolls inside it,
-        // and the keypad grid + action row stay anchored above the nav no
-        // matter how many matches there are (contacts at the top, keypad
-        // exactly where it was — the user's expected behavior).
+        // NUMBER DISPLAY — v1.6.54 — ROUND 2, SPEC 6, EXACT: the typed
+        // number sits ABOVE THE KEYS in the spec's own grammar —
+        // ExtraLight 48sp in Brand (stepping down only for very long
+        // numbers so it never clips), still the real editable field with
+        // the native long-press menu (copy/cut/paste, IME suppressed).
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp)
+                .heightIn(min = 56.dp, max = 76.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NoImeNumberField(
+                value = number,
+                onValueChange = { onChangeNumber(it) },
+                fontSizeSp = when {
+                    number.length <= 10 -> 48
+                    number.length <= 13 -> 40
+                    number.length <= 17 -> 32
+                    else -> 26
+                },
+                textColor = C.brand,
+                cursorColor = C.brand,
+                modifier = Modifier
+                    .weight(1f)
+                    .defaultMinSize(minHeight = 48.dp)
+                    // v1.6.29 — INPUT PRESS FEEDBACK: the number display is
+                    // an input too (paste/cut live here) — same veil.
+                    .pressVeil(corner = 10.dp)
+                    // v1.6.31 — ring colour while the number display is
+                    // active (the caret lives here)
+                    .focusRing(corner = 10.dp),
+                bold = false,
+            )
+            // paste + backspace
+            if (number.isEmpty()) {
+                IconBtn("content-paste", { pasteFromClipboard() }, size = 38, color = C.sub)
+            } else {
+                IconBtn("backspace-outline", { backspace() }, size = 38, color = C.sub)
+            }
+        }
+        // SUGGESTED CONTACTS — v1.6.54 — ROUND 2, SPEC 6: up to TWO
+        // suggested contacts under the number display (the old list of 60
+        // matches above the display buried the keys and had no bound; the
+        // spec asks for suggestions, not a directory).
         if (matches.isNotEmpty()) {
-            LazyColumn(
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f, fill = false)
-                    .padding(horizontal = 10.dp),
-            ) {
-                itemsIndexed(matches, key = { i, c -> "$i-${c.recordID}" }) { _, c ->
+            Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp)) {
+                matches.take(2).forEach { c ->
                     val bal = balByOwner[contactOwnerId(c.recordID)] ?: 0.0
                     Row(
                         Modifier
@@ -357,7 +384,7 @@ fun KeypadSheet() {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(11.dp),
                     ) {
-                        Avatar(c, size = 36)
+                        Avatar(c, size = 32)
                         Column(Modifier.weight(1f)) {
                             Text(
                                 displayName(c),
@@ -368,7 +395,6 @@ fun KeypadSheet() {
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                // show the favourite number first (v1.6.27)
                                 primaryPhone(c)?.let { prettyPhone(it, countryCode) } ?: t("cd.noPhone"),
                                 fontSize = 13.sp,
                                 color = C.faint,
@@ -402,46 +428,6 @@ fun KeypadSheet() {
                     fontWeight = FontWeight.Bold,
                     color = C.brand,
                 )
-            }
-        }
-        // number display — v1.6.15: a REAL editable native field with the
-        // software keyboard suppressed (RN parity: TextInput with
-        // showSoftInputOnFocus=false). Long-press gives the full native
-        // Copy · Cut · Paste · Select-all menu with selection handles;
-        // the 12-key grid stays the only way to type digits.
-        // v1.6.39: a slimmer band (52–68dp) — the compact-container spec.
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp)
-                .heightIn(min = 52.dp, max = 68.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            NoImeNumberField(
-                value = number,
-                onValueChange = { onChangeNumber(it) },
-                fontSizeSp = when {
-                    number.length <= 12 -> 28
-                    number.length <= 16 -> 24
-                    else -> 21
-                },
-                textColor = C.ink,
-                cursorColor = C.brand,
-                modifier = Modifier
-                    .weight(1f)
-                    .defaultMinSize(minHeight = 44.dp)
-                    // v1.6.29 — INPUT PRESS FEEDBACK: the number display is
-                    // an input too (paste/cut live here) — same veil.
-                    .pressVeil(corner = 10.dp)
-                    // v1.6.31 — ring colour while the number display is
-                    // active (the caret lives here)
-                    .focusRing(corner = 10.dp),
-            )
-            // paste + backspace
-            if (number.isEmpty()) {
-                IconBtn("content-paste", { pasteFromClipboard() }, size = 38, color = C.sub)
-            } else {
-                IconBtn("backspace-outline", { backspace() }, size = 38, color = C.sub)
             }
         }
         if (number.isNotEmpty() && exactMatch == null) Spacer(Modifier.height(2.dp))

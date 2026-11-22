@@ -591,7 +591,7 @@ private fun Header() {
                 Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.62f))
+                    .background(Color.White)  // v1.6.54 — opaque (round 2, spec 8)
                     .clickable { UiStore.setTab("recents") },
                 contentAlignment = Alignment.Center,
             ) { MdiIcon("arrow-left", 22, C.brand) }
@@ -620,6 +620,24 @@ internal const val DIALER_FAB_PULSE_CYCLES = 3
 private fun BottomNav() {
     val C = C()
     val overdueCount = AppStore.state.reminders.count { it.deletedAt == null && !it.done && dueStatus(it.snoozedUntil ?: it.dueAt) == "overdue" }
+    // v1.6.54 — ROUND 2, SPEC 2: ONE selected item, derived from the
+    // current ROUTE — not from UiStore.tab alone. The v1.6.53 nav read
+    // only UiStore.tab, so the Calculator (an overlay) left RECENTS lit,
+    // Settings/Trash (inner tabs) left GENERAL lit, and the More sheet
+    // lit nothing. The single source of truth:
+    //   calculator overlay open          -> "calculator"
+    //   More sheet open                  -> "more"
+    //   keypad sheet open                -> "recents" (it opens over Recents)
+    //   contact detail / search / any
+    //     other overlay                  -> the underlying tab (recents)
+    //   reminders / trash / settings     -> "more" (inner screens of More)
+    //   general                          -> "general"
+    val selectedTab = when {
+        UiStore.overlayStack.any { it is Overlay.Calculator } -> "calculator"
+        UiStore.moreOpen -> "more"
+        UiStore.tab == "reminders" || UiStore.tab == "trash" -> "more"
+        else -> UiStore.tab
+    }
     // v1.6.53 — THE SPEC NAV, COMPLETE: solid Brand bar, 28dp radius,
     // 12dp insets, white icons AND 10sp labels ALWAYS visible (inactive
     // white @80%), the selected item on a soft white@20% PILL, and the
@@ -663,10 +681,10 @@ private fun BottomNav() {
                 // back to the nothing-clicked state (user report: "if the recent
                 // btn at the bottom navigation is clicked it should go back to
                 // recent as the tabs was not clicked").
-                NavSlot("recents", "history", t("nav.recents"), Modifier.weight(1f)) {
+                NavSlot("recents", "history", t("nav.recents"), Modifier.weight(1f), selected = selectedTab == "recents") {
                     UiStore.recentsResetTick++
                 }
-                NavSlot("calculator", "calculator-variant", t("nav.calculator"), Modifier.weight(1f)) {
+                NavSlot("calculator", "calculator-variant", t("nav.calculator"), Modifier.weight(1f), selected = selectedTab == "calculator") {
                     // RN parity: tap toggles the calculator sheet over the current tab
                     val calcOpen = UiStore.overlayStack.any { it is Overlay.Calculator }
                     if (calcOpen) UiStore.closeType("Calculator")
@@ -678,20 +696,20 @@ private fun BottomNav() {
                     val active = UiStore.keypadOpen
                     DialerFab(active = active)
                 }
-                NavSlot("general", "wallet-outline", t("nav.general"), Modifier.weight(1f))
+                NavSlot("general", "wallet-outline", t("nav.general"), Modifier.weight(1f), selected = selectedTab == "general")
                 // More
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     Box(
                         Modifier
                             .clip(RoundedCornerShape(999.dp))
-                            .background(if (UiStore.moreOpen) Color.White.copy(alpha = 0.20f) else Color.Transparent)
+                            .background(if (selectedTab == "more") Color.White.copy(alpha = 0.20f) else Color.Transparent)
                             .clickable { UiStore.moreOpen = !UiStore.moreOpen }
                             .padding(horizontal = 12.dp, vertical = 4.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Box {
-                                MdiIcon("dots-horizontal-circle-outline", 24, if (UiStore.moreOpen) Color.White else Color.White.copy(alpha = 0.80f))
+                                MdiIcon("dots-horizontal-circle-outline", 24, if (selectedTab == "more") Color.White else Color.White.copy(alpha = 0.80f))
                                 if (overdueCount > 0) {
                                     Box(
                                         Modifier
@@ -710,7 +728,7 @@ private fun BottomNav() {
                                     }
                                 }
                             }
-                            NavLabel(t("nav.more"), UiStore.moreOpen)
+                            NavLabel(t("nav.more"), selectedTab == "more")
                         }
                     }
                 }
@@ -720,7 +738,10 @@ private fun BottomNav() {
 }
 
 /** v1.6.53 — the nav item's 10sp always-visible label (spec: white when
- *  active, white @80% when not). */
+ *  active, white @80% when not).
+ *  v1.6.54 — ROUND 2, SPEC 2: ONE line, NO ellipsis — the label is
+ *  allowed to scale its letter spacing down, but "Calculat…" must never
+ *  appear; the slot's weight gives the label its full width. */
 @Composable
 private fun NavLabel(label: String, active: Boolean) {
     Text(
@@ -729,7 +750,11 @@ private fun NavLabel(label: String, active: Boolean) {
         fontWeight = FontWeight.Medium,
         color = if (active) Color.White else Color.White.copy(alpha = 0.80f),
         maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
+        softWrap = false,
+        // never ellipsize: the text may measure slightly over the slot and
+        // the Box clips nothing (no clip modifier) — a full label beats a
+        // truncated one every time (round 2, spec 2: "1 line, no ellipsis")
+        overflow = TextOverflow.Visible,
     )
 }
 
@@ -786,9 +811,12 @@ private fun DialerFab(active: Boolean) {
 }
 
 @Composable
-private fun NavSlot(tab: String, icon: String, label: String, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
+private fun NavSlot(tab: String, icon: String, label: String, modifier: Modifier = Modifier, selected: Boolean = false, onClick: () -> Unit = {}) {
     val C = C()
-    val active = UiStore.tab == tab
+    // v1.6.54 — ROUND 2, SPEC 2: `selected` comes from the ROUTE-derived
+    // selection in BottomNav (one item, ever), not from UiStore.tab —
+    // the caller owns it now.
+    val active = selected
     Box(modifier.height(64.dp), contentAlignment = Alignment.Center) {
         Box(
             Modifier
@@ -926,8 +954,9 @@ fun MoreSheet() {
 @Composable
 private fun MoreTile(icon: String, label: String, modifier: Modifier = Modifier, badge: Int = 0, onPress: () -> Unit) {
     val C = C()
-    // v1.6.52 — LIGHT GLASS: More tiles are GlassCards (white @78%, brand
-    // hairline, tinted shadow) with press-scale.
+    // v1.6.54 — ROUND 2, SPEC 1: More tiles are 100% OPAQUE white (the
+    // @78% glass let the page behind read through the More sheet's tiles).
+    // v1.6.53 — labels wrap to TWO lines, never ellipsized (round 2, spec 3).
     val shape = RoundedCornerShape(20.dp)
     val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Column(
@@ -936,7 +965,7 @@ private fun MoreTile(icon: String, label: String, modifier: Modifier = Modifier,
             .pressScale(src)
             .shadow(12.dp, shape, ambientColor = C.brand.copy(alpha = 0.12f), spotColor = C.brand.copy(alpha = 0.12f))
             .clip(shape)
-            .background(if (C.mode == "dark") Color(0xFF152238).copy(alpha = 0.78f) else Color.White.copy(alpha = 0.78f))
+            .background(if (C.mode == "dark") Color(0xFF152238) else Color.White)
             .border(1.dp, if (C.mode == "dark") Color(0x333B94FF) else C.brand.copy(alpha = 0.10f), shape)
             .clickable(interactionSource = src, indication = null) { onPress() },
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -963,7 +992,10 @@ private fun MoreTile(icon: String, label: String, modifier: Modifier = Modifier,
             color = C.sub,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
-            maxLines = 1,
+            maxLines = 2,
+            softWrap = true,
+            overflow = TextOverflow.Visible,
+            lineHeight = 14.sp,
             modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp),
         )
     }
