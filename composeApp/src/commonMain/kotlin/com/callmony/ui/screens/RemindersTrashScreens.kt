@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -83,7 +84,15 @@ fun RemindersScreen() {
         }
     }
 
-    Column(Modifier.fillMaxSize()) {
+    // v1.6.53 — LIGHT GLASS (spec 5): content max width 480dp on phones in
+    // landscape and desktop — the screen column centers inside the window
+    // instead of stretching edge to edge.
+    Column(
+        Modifier
+            .fillMaxSize()
+            .widthIn(max = 480.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         // pinned header
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
@@ -242,9 +251,12 @@ fun TrashScreen() {
     Column(
         Modifier
             .fillMaxSize()
+            // v1.6.53 — LIGHT GLASS (spec 5): max content width 480dp.
+            .widthIn(max = 480.dp)
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
             .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.padding(bottom = 12.dp)) {
             Segmented(

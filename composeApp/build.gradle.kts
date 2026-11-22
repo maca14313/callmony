@@ -172,8 +172,8 @@ android {
         // and the entire icon surface rebuilt as Lucide-style 1.8dp round-
         // cap strokes. All 273 tests green; nav band kept at 71dp so the
         // v1.6.46/47 keypad-band pin (193dp) holds.
-        versionCode = 63
-        versionName = "1.6.52"
+        versionCode = 64
+        versionName = "1.6.53"
     }
 
     signingConfigs {

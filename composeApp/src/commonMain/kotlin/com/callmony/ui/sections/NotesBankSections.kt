@@ -83,11 +83,11 @@ fun NotesSection(ownerId: String) {
             Column(Modifier.padding(bottom = 8.dp)) {
                 SwipeRow(
                     key = n.id,
-                    left = listOf(SwipeAction(t("nt.pinned"), if (n.pinned) "pin-off-outline" else "pin", Color(0xFFb97d10)) {
+                    left = listOf(SwipeAction(t("nt.pinned"), if (n.pinned) "pin-off-outline" else "pin", C.brandDark) {
                         AppStore.saveNote(n.copy(pinned = !n.pinned, updatedAt = com.callmony.lib.now()))
                     }),
                     right = listOf(
-                        SwipeAction(t("act.edit"), "pencil-outline", Color(0xFF4a7d9b)) {
+                        SwipeAction(t("act.edit"), "pencil-outline", C.brand) {
                             UiStore.open(Overlay.NoteEdit(n.id, ownerId))
                         },
                         SwipeAction(t("act.delete"), "trash-can-outline", C.red) {
@@ -119,7 +119,7 @@ fun NotesSection(ownerId: String) {
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
-                                    if (n.pinned) MdiIcon("pin", 14, Color(0xFFb97d10))
+                                    if (n.pinned) MdiIcon("pin", 14, C.brand)
                                 }
                                 if (n.body.isNotEmpty()) {
                                     Text(n.body, fontSize = F.small.sp, color = C.sub, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
@@ -188,7 +188,7 @@ fun BankSection(ownerId: String) {
             Column(Modifier.padding(bottom = 8.dp)) {
                 SwipeRow(
                     key = b.id,
-                    left = listOf(SwipeAction(t("bk.showNumber"), "eye-outline", Color(0xFF4a7d9b)) { toggleReveal(b.id) }),
+                    left = listOf(SwipeAction(t("bk.showNumber"), "eye-outline", C.brand) { toggleReveal(b.id) }),
                     right = listOf(
                         SwipeAction(t("act.share"), "share-variant-outline", C.brand) { shareFor = b },
                         SwipeAction(t("act.delete"), "trash-can-outline", C.red) {

@@ -1,6 +1,7 @@
 package com.callmony.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
@@ -283,10 +285,12 @@ fun KeypadSheet() {
     Column(
         Modifier
             .fillMaxWidth()
-            // v1.6.25 — flat spec: modest 6dp lift (was 10dp)
-            .shadow(6.dp, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .background(C.card),
+            // v1.6.53 — LIGHT GLASS overlay (spec 4b): sheets get 36dp top
+            // corners, a >=96%-opaque surface and a BRAND-TINTED shadow
+            // (grey/black shadows are banned by the spec).
+            .shadow(20.dp, RoundedCornerShape(topStart = 36.dp, topEnd = 36.dp), ambientColor = C.brand.copy(alpha = 0.18f), spotColor = C.brand.copy(alpha = 0.18f))
+            .clip(RoundedCornerShape(topStart = 36.dp, topEnd = 36.dp))
+            .background(if (C.mode == "dark") Color(0xFF101D33).copy(alpha = 0.96f) else Color.White.copy(alpha = 0.96f)),
             // v1.6.26: no navigationBarsPadding — the keypad sheet anchors on
             // top of the always-visible app nav inside the content area.
     ) {
@@ -465,9 +469,12 @@ fun KeypadSheet() {
                                 .weight(1f)
                                 .heightIn(min = 56.dp, max = 74.dp)
                                 .clip(RoundedCornerShape(20.dp))
-                                // v1.6.27 — pressed-state feedback (the keys
-                                // bypass LocalIndication, see pressedKey above)
-                                .background(if (pressedKey == k.d) C.brandSoft else C.card)
+                                // v1.6.53 — LIGHT GLASS keys: white tiles with
+                                // the brand@10% hairline (Tile shape family),
+                                // pressed = Brand50 (spec 7 list-row grammar);
+                                // the flat C.card tone is gone.
+                                .background(if (pressedKey == k.d) C.brandSoft else Color.White)
+                                .border(1.dp, C.line, RoundedCornerShape(20.dp))
                                 .pointerInput(k.d) {
                                     detectTapGestures(
                                         onPress = {
@@ -512,11 +519,15 @@ fun KeypadSheet() {
                 contentAlignment = Alignment.Center,
             ) { MdiIcon("video-outline", 19, C.sub) }
             // call button — the one control that GREW with the keys
+            // v1.6.53 — LIGHT GLASS: the BrandLight->BrandDark gradient
+            // pill-circle with a brand-tinted shadow (every primary action
+            // is the gradient, never a flat fill).
             Box(
                 Modifier
                     .size(60.dp)
+                    .shadow(12.dp, CircleShape, ambientColor = C.brand.copy(alpha = 0.30f), spotColor = C.brand.copy(alpha = 0.30f))
                     .clip(CircleShape)
-                    .background(if (number.isNotEmpty()) C.brand else C.faint)
+                    .background(if (number.isNotEmpty()) Brush.linearGradient(listOf(C.brandLight, C.brandDark)) else Brush.linearGradient(listOf(C.faint, C.faint)))
                     .clickable(enabled = number.isNotEmpty()) { call() },
                 contentAlignment = Alignment.Center,
             ) { MdiIcon("phone", 26, Color.White) }

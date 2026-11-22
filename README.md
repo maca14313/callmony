@@ -104,9 +104,54 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.52 (versionCode 63)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.53 (versionCode 64)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.53** — THE LIGHT GLASS SPEC-CORRECTION ROUND ("what you did is not
+  correct"): the v1.6.52 re-skin was audited against the user's 12-point
+  design language and every deviation fixed. THE CANVAS is now exactly the
+  spec's three stops (#EAF3FF → #FFFFFF → #FFF3EE — the extra #F3F8FF
+  fourth stop is gone) with EXACTLY TWO radial glows — brand top-left at
+  ≤12% alpha and warm peach BOTTOM-RIGHT at ≤10% (the v1.6.52 teal third
+  glow and ~55% center alphas are gone; the constants are exposed as
+  GlassTokensSpec and pinned by LightGlassV1653Test). THE BOTTOM NAV
+  carries its 10sp labels under every slot, ALWAYS visible (white active,
+  white @80% inactive), the selected item sits on a fully-round white@20%
+  PILL, and the dialer FAB breathes a gentle one-shot PULSE RING — three
+  ~1.6s cycles then off (bounded: the zero-infinite-animations rule from
+  the v1.6.51 RenderThread ANR lesson stands), suppressed entirely when
+  the OS requests reduced motion (new Platform.ui.reduceMotion hook;
+  Android reads the global animator-scale-0 setting). The nav's total
+  height stays exactly 71dp — the labels live INSIDE the existing 64dp
+  bar, so the v1.6.46/47 keypad-band pin (264−71=193dp) holds. HERO
+  NUMERALS: the General net balance renders through the new HeroNumeral
+  component — 48sp Lexend Light in Brand (Danger red when negative),
+  auto-shrinking down a 48→20sp ladder until the money string fits ONE
+  line (measured, never ellipsized or clipped). CHIPS: unselected chips
+  are WHITE with Muted text (the grey chip tone is gone); selected stay
+  Brand50 + Brand. PRESS FEEDBACK: the app-wide press veil is
+  brand-tinted in light mode (the spec's pressed = Brand50 grammar; dark
+  keeps the black veil). STATUS PILLS: semantic tones (green/red/amber)
+  always carry a sign — the caller's icon or a 4dp dot — never color
+  alone. THE KEYPAD dialer sheet gets its overlay treatment: 36dp top
+  corners, ≥96% opaque surface, brand-tinted shadow, white key tiles with
+  the brand@10% hairline, and the call button is the BrandLight→BrandDark
+  gradient with a tinted shadow. ONE BRAND COLOR: the swipe-action
+  rainbow (teal/green/blue/amber/grey), the calculator's five-hue digit
+  palette, the amber favourite stars and every off-palette hex in
+  screens/sections/overlays are re-pointed onto Brand/BrandDark/Success/
+  Danger tokens — the whole app reads one confident blue. SECTION TITLES
+  drop to 14sp Medium and sheet titles to 20sp SemiBold (the ExtraBold
+  shout is gone — Light Glass is calm); ScrollRow chip strips carry a
+  soft 16dp edge fade hinting at hidden content; the trash/restore dialog
+  uses the 28dp overlay radius; all four tab screens cap their content
+  column at 480dp centered (spec 5: landscape/desktop width). Tests
+  278/278 (273 + 5 new LightGlassV1653 pins: the canvas stops/glows, the
+  always-visible nav labels, the 71dp nav geometry, the hero numeral
+  single-line contract, the bounded pulse + reduced-motion hook). APK
+  1.6.53 vc64, same release key as always; both iOS targets compile; the
+  .tar build artifact ships beside the APK in releases/ and on the GitHub
+  Release.
 - **1.6.52** — THE LIGHT GLASS REDESIGN: the whole app re-skinned to the
   Light Glass spec — AppColors/AppShapes design tokens (brand blue
   #1F7AEC, 24dp cards, 36dp sheets, swap-the-file to rebrand), a
@@ -116,15 +161,14 @@ feature history.
   style (metrics stay pixel-pinned — the canvas ladder and prefix-slot
   geometry are untouched), the entire icon surface (51 glyphs) rebuilt as
   **Lucide-style 1.8dp round-cap strokes**, every full-screen surface over
-  the #EAF3FF→#FFF3EE gradient with soft radial brand/accent/teal glows
-  (drawBehind, no blur — identical on every platform), glass cards (white
+  the #EAF3FF→#FFF3EE gradient with soft radial glows (drawBehind, no
+  blur — identical on every platform), glass cards (white
   @78% + brand hairline + brand-tinted shadows), gradient pill buttons
   with press-scale motion, underline text fields, gradient-initials
   avatars, the floating solid-Brand bottom bar (28dp radius, 12dp insets)
-  with a 68dp gradient dialer FAB, and hero numerals (40sp Lexend Light)
-  on the General balance. The nav band stays exactly 71dp so the
-  v1.6.46/47 keypad-band pin (193dp) holds; no new infinite animations
-  (the v1.6.51 ANR lesson outranks the decorative FAB pulse). All 273
+  with a 68dp gradient dialer FAB. The nav band stays exactly 71dp so the
+  v1.6.46/47 keypad-band pin (193dp) holds; no new infinite animations.
+  All 273
   tests green; APK 1.6.52 vc63 same release key as always; the .tar build
   artifact ships beside the APK in releases/ and on the GitHub Release.
 - **1.6.51** — THE ANR-REPORT ROUND: the two MAIN THREAD BLOCKED field

@@ -143,8 +143,9 @@ fun Sheet(
             Column(Modifier.weight(1f).padding(start = if (avatar != null) 6.dp else 4.dp)) {
                 Text(
                     title,
-                    fontSize = F.h2.sp,
-                    fontWeight = FontWeight.ExtraBold,
+                    // v1.6.53 — titles are 20sp SemiBold (spec 6)
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
                     color = C.ink,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -341,8 +342,9 @@ fun BottomSheet(
                 ) {
                     Text(
                         title,
-                        fontSize = F.h2.sp,
-                        fontWeight = FontWeight.ExtraBold,
+                        // v1.6.53 — sheet titles are 20sp SemiBold (spec 6)
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
                         color = C.ink,
                         modifier = Modifier.weight(1f),
                         maxLines = 1,

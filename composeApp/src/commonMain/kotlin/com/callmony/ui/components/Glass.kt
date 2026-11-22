@@ -32,37 +32,61 @@ import com.callmony.ui.kit.C
 /* v1.6.52 — THE LIGHT GLASS SURFACE KIT (user spec). GlassPanel /
    GlassCard / the gradient canvas with soft radial glows / press-scale
    motion — 100% commonMain Compose, no platform views, no Modifier.blur
-   (the glows are radial gradients, identical on every platform). */
+   (the glows are radial gradients, identical on every platform).
+   v1.6.53 — THE SPEC, EXACTLY: the canvas is the spec's own 3 stops
+   (#EAF3FF -> #FFFFFF -> #FFF3EE, nothing added), exactly TWO glows
+   (brand top-left <=12%, warm peach bottom-right <=10% — the v1.6.52
+   third teal glow and the 4th mid stop are gone), and the overlay
+   surfaces are >=96% opaque (nothing readable through an overlay). */
 
-/** The Light Glass canvas: the near-white vertical-diagonal gradient plus
- *  2-3 large soft radial glows (brand / accent / teal at ~12-20% alpha)
- *  drawn with drawBehind — never Modifier.blur (inconsistent across
- *  platforms). Applied at the shell root and every full-screen surface. */
+/** v1.6.53 — the Light Glass canvas constants, exposed for the spec pin
+ *  (LightGlassV1653Test): the EXACT three stops, the two glow positions
+ *  and their alpha caps. If any value drifts from the user's design
+ *  language the pin fails. */
+object GlassTokensSpec {
+    val lightStops: List<Long> = listOf(0xFFEAF3FF, 0xFFFFFFFF, 0xFFFFF3EE)
+    const val LIGHT_GLOW_COUNT = 2
+    val brandGlowAt = 0.10f to 0.12f
+    val peachGlowAt = 0.92f to 0.90f
+    const val BRAND_GLOW_MAX_ALPHA = 0.12f
+    const val PEACH_GLOW_ALPHA = 0.10f
+    // the canvas draws the brand glow at 0.12 and the peach at 0.10 — both
+    // within the spec's caps; the pin reads this surfaced max
+    const val LIGHT_GLOW_MAX_ALPHA = BRAND_GLOW_MAX_ALPHA
+}
+
+/** The Light Glass canvas: the spec's diagonal gradient
+ *  #EAF3FF -> #FFFFFF -> #FFF3EE with exactly two soft radial glows —
+ *  brand blue top-left (<=12% alpha) and warm peach bottom-right
+ *  (<=10% alpha) — drawn with drawBehind, never Modifier.blur.
+ *  The top 40% stays near-white so headers stay crisp.
+ *  Applied at the shell root and every full-screen surface. */
 fun Modifier.glassCanvas(): Modifier = composed {
     val dark = C().mode == "dark"
     if (dark) {
-        // dark glass: deep navy canvas, same glow grammar at lower alpha
+        // dark glass: deep navy canvas, same two-glow grammar
         this.background(
             Brush.linearGradient(
                 listOf(Color(0xFF0B1626), Color(0xFF0E1B30), Color(0xFF0B1626)),
             )
         ).drawBehind {
-            drawGlow(0.18f to 0.22f, 1.15f, Color(0xFF3B94FF))
-            drawGlow(0.85f to 0.16f, 1.05f, Color(0xFF0EA5E9))
+            drawGlow(0.18f to 0.22f, 1.15f, Color(0xFF3B94FF), 0.12f)
+            drawGlow(0.85f to 0.85f, 1.05f, Color(0xFFFF6B4A), 0.10f)
         }
     } else {
         this.drawBehind {
-            // #EAF3FF -> #FFFFFF -> #FFF3EE, slightly diagonal
+            // the spec's exact three stops, slightly diagonal
             drawRect(
                 Brush.linearGradient(
-                    listOf(Color(0xFFEAF3FF), Color(0xFFFFFFFF), Color(0xFFF3F8FF), Color(0xFFFFF3EE)),
+                    listOf(Color(0xFFEAF3FF), Color(0xFFFFFFFF), Color(0xFFFFF3EE)),
                     start = Offset.Zero,
                     end = Offset(size.width * 0.55f, size.height.toFloat()),
                 )
             )
-            drawGlow(0.06f to 0.16f, 1.25f, AppColors.Brand)
-            drawGlow(0.94f to 0.13f, 1.1f, AppColors.Accent)
-            drawGlow(0.5f to 0.10f, 0.9f, Color(0xFF14B8A6)) // teal breath
+            // glow 1 — brand blue, top-left, <=12% alpha
+            drawGlow(GlassTokensSpec.brandGlowAt, 1.30f, AppColors.Brand, GlassTokensSpec.BRAND_GLOW_MAX_ALPHA)
+            // glow 2 — warm peach, bottom-right, <=10% alpha
+            drawGlow(GlassTokensSpec.peachGlowAt, 1.15f, AppColors.Accent, GlassTokensSpec.PEACH_GLOW_ALPHA)
         }
     }
 }
@@ -71,13 +95,14 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawGlow(
     at: Pair<Float, Float>,
     radiusFactor: Float,
     color: Color,
+    maxAlpha: Float,
 ) {
     val cx = size.width * at.first
     val cy = size.height * at.second
     val r = size.width * radiusFactor
     drawCircle(
         brush = Brush.radialGradient(
-            colors = listOf(color.copy(alpha = 0.55f), Color.Transparent),
+            colors = listOf(color.copy(alpha = maxAlpha), Color.Transparent),
             center = Offset(cx, cy),
             radius = r,
         ),
@@ -86,8 +111,9 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawGlow(
     )
 }
 
-/** GlassPanel — white @62%, 1dp white @85% border, Sheet radius (the spec's
- *  softer panel for headers, toolbars, keypad bars). */
+/** GlassPanel — an OVERLAY surface (spec 4b): white >=96% opaque (the
+ *  content behind must NEVER be readable through it), 1dp brand@10%
+ *  hairline, Sheet radius. Used for headers, toolbars, keypad bars. */
 @Composable
 fun GlassPanel(
     modifier: Modifier = Modifier,
@@ -95,8 +121,8 @@ fun GlassPanel(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val dark = C().mode == "dark"
-    val bg = if (dark) Color(0xFF152238).copy(alpha = 0.62f) else Color.White.copy(alpha = 0.62f)
-    val border = if (dark) Color(0x59FFFFFF) else Color(0xD9FFFFFF)
+    val bg = if (dark) Color(0xFF152238).copy(alpha = 0.96f) else Color.White.copy(alpha = 0.96f)
+    val border = if (dark) Color(0x333B94FF) else AppColors.Brand.copy(alpha = 0.10f)
     Box(
         modifier
             .clip(shape)

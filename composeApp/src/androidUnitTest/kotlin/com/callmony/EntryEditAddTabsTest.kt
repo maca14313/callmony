@@ -5,6 +5,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -104,10 +105,16 @@ class EntryEditAddTabsTest {
         }
 
         // v1.6.49 — NO FORM COMPOSES: no Recent tab, no collapsed band
+        // v1.6.53 — the bottom nav's always-visible labels collide by TEXT
+        // ("Calculator" etc.), so count matches ABOVE the nav band only.
+        val navTopY = rule.onRoot().fetchSemanticsNode().size.height - (71f * 2.625f)
         assertEquals(
             "the Recent tab must be gone (the form is deleted)",
             0,
-            rule.onAllNodes(hasText(t("ee.tabRecent")) and hasClickAction()).fetchSemanticsNodes().size,
+            rule.onAllNodes(hasText(t("ee.tabRecent")) and hasClickAction())
+                .fetchSemanticsNodes()
+                .filter { it.positionInRoot.y < navTopY }
+                .size,
         )
         assertEquals(
             "no collapsed band — the canvas is the whole editor",

@@ -613,16 +613,14 @@ fun CalculatorSheet() {
                 Modifier.padding(top = 12.dp).weight(55f),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // v1.6.26 — the colourful key palette (soft tinted tile +
-                // strong matching glyph). Hues stay inside the app's family
-                // (teal/amber/blue/rose/violet) so nothing clashes with the
-                // brand green reserved for the operators.
+                // v1.6.53 — LIGHT GLASS: one brand color, no rainbow — the
+                // digits are Brand-on-Brand50 (the chip grammar), operators
+                // Brand on white, AC keeps its Danger tint (a status), ⌫ and
+                // ± keep their tints only as soft status tints. The old
+                // teal/violet/amber/rose digit rainbow is gone (spec 2).
                 val numTints = listOf(
-                    Color(0xFF16a085) to Color(0x1f16a085), // teal
-                    Color(0xFF4a7d9b) to Color(0x1f4a7d9b), // blue
-                    Color(0xFF7c5cb8) to Color(0x1f7c5cb8), // violet
-                    Color(0xFFb97d10) to Color(0x1fb97d10), // amber
-                    Color(0xFFc65b6e) to Color(0x1fc65b6e), // rose
+                    C.brand to C.brandSoft,
+                    C.brandDark to Color.White,
                 )
                 val rows = listOf(
                     listOf(
@@ -661,11 +659,15 @@ fun CalculatorSheet() {
                     Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         for (ck in row) {
                             val (fg, bg) = when (ck.kind) {
-                                CalcKeyKind.EQ -> C.onBrand to C.ink
+                                // v1.6.53 — LIGHT GLASS keys: the = key is the
+                                // gradient primary (white on brand gradient),
+                                // operators Brand on Brand50, digits Brand on
+                                // white/Brand50 alternating, AC Danger (status)
+                                CalcKeyKind.EQ -> C.onBrand to C.brand
                                 CalcKeyKind.OP -> C.brand to C.brandSoft
-                                CalcKeyKind.CLEAR -> C.red to Color(0x1fd64545)
-                                CalcKeyKind.BACK -> C.amber to Color(0x1fb97d10)
-                                CalcKeyKind.PERCENT -> C.blue to Color(0x1f4a7d9b)
+                                CalcKeyKind.CLEAR -> C.red to C.red.copy(alpha = 0.12f)
+                                CalcKeyKind.BACK -> C.brand to C.brandSoft
+                                CalcKeyKind.PERCENT -> C.brandDark to C.brandSoft
                                 CalcKeyKind.NUM -> numTints[numIdx++ % numTints.size].let { it.first to it.second }
                             }
                             val isHold = ck.kind == CalcKeyKind.BACK
@@ -676,7 +678,7 @@ fun CalculatorSheet() {
                                     .clip(RoundedCornerShape(18.dp))
                                     // v1.6.27 — pressed-state on the hold key
                                     // (pointerInput bypasses LocalIndication)
-                                    .background(if (isHold && backHeld) Color(0x33b97d10) else bg)
+                                    .background(if (isHold && backHeld) C.brandSoft else bg)
                                     .then(
                                         if (isHold) {
                                             Modifier.pointerInput(Unit) {

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -41,8 +42,10 @@ import com.callmony.theme.F
 import com.callmony.ui.kit.Avatar
 import com.callmony.ui.kit.C
 import com.callmony.ui.kit.Card
+import com.callmony.ui.kit.HeroNumeral
 import com.callmony.ui.kit.MdiIcon
 import com.callmony.ui.kit.Money
+import com.callmony.ui.kit.Pill
 import com.callmony.ui.kit.SectionHeader
 import com.callmony.ui.kit.Segmented
 import com.callmony.ui.components.brandGradient
@@ -106,9 +109,13 @@ fun GeneralScreen() {
     Column(
         Modifier
             .fillMaxWidth()
+            // v1.6.53 — LIGHT GLASS (spec 5): max content width 480dp,
+            // centered on wide windows (landscape / desktop).
+            .widthIn(max = 480.dp)
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
             .padding(bottom = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // hero — v1.6.52 LIGHT GLASS: the NET becomes a hero numeral
         // (40sp Lexend Light in Brand — the spec's large light-weight
@@ -137,16 +144,19 @@ fun GeneralScreen() {
                     fontSize = 13.sp,
                     color = C.sub,
                     fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(bottom = 7.dp),
+                    modifier = Modifier.padding(bottom = 9.dp),
                 )
-                Text(
+                // v1.6.53 — the NET is a true HERO NUMERAL (spec 6: 48-64sp
+                // ExtraLight/Light in Brand, auto-shrink to one line, never
+                // overflow or clip) — HeroNumeral measures and steps down
+                // the ladder until the money string fits one line. Negative
+                // nets go Danger red (the signed convention; red is a
+                // status, not a second brand).
+                HeroNumeral(
                     compactMoney(net, signed = false),
-                    fontSize = 40.sp,
-                    fontWeight = FontWeight.Light,
-                    color = if (net >= 0) C.brand else C.red,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    negative = net < 0,
                     modifier = Modifier.weight(1f),
+                    tag = "heroNumeral:generalNet",
                 )
             }
             Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -190,24 +200,13 @@ fun GeneralScreen() {
         SectionHeader(t("gv.people"), subtitle = t("gv.peopleHint"))
         Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             if (owedToYou > 0.005) {
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color_green12())
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                ) {
-                    Text("${t("gv.owedToYou")} ${compactMoney(owedToYou)}", fontSize = F.tiny.sp, color = C.green, fontWeight = FontWeight.ExtraBold)
-                }
+                // v1.6.53 — status pills through the kit (tinted bg +
+                // matching text + sign, never color alone); the raw hex
+                // boxes are gone.
+                Pill("${t("gv.owedToYou")} ${compactMoney(owedToYou)}", tone = "green", icon = "arrow-down-left")
             }
             if (youOwe > 0.005) {
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color_red10())
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                ) {
-                    Text("${t("gv.youOwe")} ${compactMoney(youOwe)}", fontSize = F.tiny.sp, color = C.red, fontWeight = FontWeight.ExtraBold)
-                }
+                Pill("${t("gv.youOwe")} ${compactMoney(youOwe)}", tone = "red", icon = "arrow-up-right")
             }
         }
         if (people.isEmpty()) {
@@ -261,6 +260,3 @@ fun GeneralScreen() {
         }
     }
 }
-
-private fun Color_green12() = androidx.compose.ui.graphics.Color(0x1f1d9a6b)
-private fun Color_red10() = androidx.compose.ui.graphics.Color(0x1ad64545)

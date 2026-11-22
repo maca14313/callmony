@@ -371,7 +371,15 @@ fun RecentsScreen() {
         return
     }
 
-    Column(Modifier.fillMaxSize()) {
+    // v1.6.53 — LIGHT GLASS (spec 5): content max width 480dp on phones in
+    // landscape and desktop — the screen column centers inside the window
+    // instead of stretching edge to edge.
+    Column(
+        Modifier
+            .fillMaxSize()
+            .widthIn(max = 480.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         // credit summary strip — three slim stat cards
         if (owedToYou > 0.005 || youOwe > 0.005) {
             Row(
@@ -392,7 +400,7 @@ fun RecentsScreen() {
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 6.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .border(1.dp, Color(0x59b97d10), RoundedCornerShape(14.dp))
+                    .border(1.dp, C.brand.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
                     .clickable { askContacts() }
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -653,7 +661,7 @@ fun RecentsScreen() {
                                         }
                                     },
                                     size = 30,
-                                    color = if (isFav) Color(0xFFb97d10) else C.faint,
+                                    color = if (isFav) C.brand else C.faint,
                                 )
                             }
                             IconBtn("phone-outline", { callOptsRow = null; Calls.placeCall(p.number) }, size = 30)
@@ -1055,14 +1063,18 @@ fun CallCard(
     // v1.6.15 (user request): the full quick-action set on swipe, not just
     // call + favourite — left drag: Call · WhatsApp · SMS · Favourite;
     // right drag: Copy number · Create/Add contact · Info.
+    // v1.6.53 — LIGHT GLASS: one brand color, no rainbow — every action
+    // tile is Brand or BrandDark with its white stroke icon (the icons
+    // differentiate; the old teal/green/blue/amber/grey rainbow is gone,
+    // per spec 2 "No rainbow, pastel multicolor").
     val leftActions = if (hasRealNumber) buildList {
-        add(SwipeAction(t("act.call"), "phone", Color(0xFF16a085)) { onCall(callNumber) })
-        add(SwipeAction(t("act.whatsapp"), "whatsapp", Color(0xFF1faa53)) { onWhatsApp(callNumber) })
-        add(SwipeAction(t("act.sms"), "message-text-outline", Color(0xFF4a7d9b)) { onSMS(callNumber) })
-        if (row.contact != null) add(SwipeAction(t("cd.favorites"), "star", Color(0xFFb97d10)) { onToggleFav(row.contact!!.recordID) })
+        add(SwipeAction(t("act.call"), "phone", C.brand) { onCall(callNumber) })
+        add(SwipeAction(t("act.whatsapp"), "whatsapp", C.brandDark) { onWhatsApp(callNumber) })
+        add(SwipeAction(t("act.sms"), "message-text-outline", C.brand) { onSMS(callNumber) })
+        if (row.contact != null) add(SwipeAction(t("cd.favorites"), "star", C.brandDark) { onToggleFav(row.contact!!.recordID) })
     } else emptyList()
     val rightActions = if (hasRealNumber) buildList {
-        add(SwipeAction(t("cd.copyNumber"), "content-copy", Color(0xFF5c6f6c)) { onCopy(callNumber) })
+        add(SwipeAction(t("cd.copyNumber"), "content-copy", C.brandDark) { onCopy(callNumber) })
         add(
             if (row.contact != null) SwipeAction(t("cd.callHistory"), "account-circle-outline", C.brand) { onDetail(row) }
             else SwipeAction(t("cd.createContact"), "account-plus-outline", C.brand) { onCreateContact(callNumber) }
@@ -1132,7 +1144,7 @@ fun CallCard(
                         Row(
                             Modifier
                                 .clip(RoundedCornerShape(999.dp))
-                                .background(if (balance > 0) Color(0x2116a085) else Color(0x1dd64545))
+                                .background(if (balance > 0) C.green.copy(alpha = 0.13f) else C.red.copy(alpha = 0.12f))
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(3.dp),
@@ -1220,7 +1232,7 @@ private fun NumberTile(
                 if (isFav) "star" else "star-outline",
                 onToggleFav,
                 size = 26,
-                color = if (isFav) Color(0xFFb97d10) else C.faint,
+                color = if (isFav) C.brand else C.faint,
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {

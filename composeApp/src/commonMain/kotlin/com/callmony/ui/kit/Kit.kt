@@ -21,6 +21,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -60,10 +61,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -138,9 +141,13 @@ private class PressIndicationNode(
             // v1.6.27 — 0.16 veil (was 0.10): the v1.6.25 strength was
             // practically invisible on the near-white canvas — the user
             // reported inputs STILL didn't visibly react ("even in the
-            // ledger"). 16% black reads clearly on every surface in both
-            // themes without hiding the content underneath.
-            drawRect(Color.Black.copy(alpha = p * 0.16f))
+            // ledger"). v1.6.53 — LIGHT GLASS: the veil is BRAND-tinted
+            // in light mode (the pressed = Brand50 spec rule for rows —
+            // grey-black veils read muddy on the airy canvas); dark keeps
+            // the black veil.
+            val c = resolveTheme(AppStore.state.settings.theme)
+            if (c.mode == "dark") drawRect(Color.Black.copy(alpha = p * 0.16f))
+            else drawRect(c.brand.copy(alpha = p * 0.14f))
         }
     }
 }
@@ -243,6 +250,58 @@ fun Modifier.focusRing(corner: Dp = 14.dp, width: Dp = 2.dp): Modifier = compose
                 )
             }
         }
+}
+
+/* ---------------- hero numerals (spec 6) ---------------- */
+
+/** v1.6.53 — HERO NUMERAL (spec 6: "Hero numerals 48-64sp ExtraLight/Light
+ *  in Brand … Big numbers auto-shrink to one line; never overflow or
+ *  clip"). Starts at 48sp Lexend Light in Brand and steps down through the
+ *  scale until the text fits ONE line in the available width (measured
+ *  with the platform text measurer — no overflow, no clip, no ellipsis).
+ *  Negative values may go Danger red (the ledger's signed convention),
+ *  which is a status, not a second brand. */
+@Composable
+fun HeroNumeral(
+    text: String,
+    modifier: Modifier = Modifier,
+    negative: Boolean = false,
+    tag: String? = null,
+) {
+    val C = C()
+    val color = if (negative) C.red else C.brand
+    val measurer = rememberTextMeasurer()
+    val style = remember { TextStyle(fontWeight = FontWeight.Light) }
+    // step down 48 -> 44 -> ... -> 20; pick the first size whose single
+    // line fits the incoming constraint width (stepped ladder — hero
+    // numerals read best on the stops; auto-shrink, never overflow/clip)
+    BoxWithConstraints(modifier) {
+        val density = LocalDensity.current
+        val maxW = with(density) { maxWidth.toPx() }
+        val fontSize by remember(text, maxW) {
+            val ladder = listOf(48f, 44f, 40f, 36f, 32f, 28f, 24f, 20f)
+            var chosen = 20f
+            for (s in ladder) {
+                val w = measurer.measure(
+                    text,
+                    style = style.copy(fontSize = s.sp),
+                ).size.width.toFloat()
+                if (w <= maxW) { chosen = s; break }
+            }
+            mutableStateOf(chosen.sp)
+        }
+        Text(
+            text,
+            fontSize = fontSize,
+            fontWeight = FontWeight.Light,
+            color = color,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (tag != null) Modifier.testTag(tag) else Modifier),
+        )
+    }
 }
 
 /* ---------------- toast ---------------- */
@@ -730,11 +789,13 @@ fun Chip(
 ) {
     val C = C()
     val shape = RoundedCornerShape(999.dp)
-    // v1.6.52 — LIGHT GLASS chips: active = soft Brand50 tint with Brand
-    // text (the spec's selected/hover row treatment), inactive = neutral
-    // glass chip; the per-tab tint keeps working as the active accent.
+    // v1.6.53 — LIGHT GLASS chips, exactly per spec 7: selected = Brand50
+    // fill + Brand text; unselected = WHITE fill + Muted text (the
+    // v1.6.52 neutral-grey chip is gone — chips are white on the airy
+    // canvas, never grey). The per-tab tint keeps working as the active
+    // accent.
     val accent = tint ?: C.brand
-    val bg = if (active) C.brandSoft else C.chip
+    val bg = if (active) C.brandSoft else Color.White
     val body: @Composable () -> Unit = {
         Row(
             Modifier
@@ -756,7 +817,7 @@ fun Chip(
                     label,
                     fontSize = if (compact) 12.sp else 14.sp,
                     fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-                    color = if (active) accent else if (danger) C.red else (tint ?: C.ink),
+                    color = if (active) accent else if (danger) C.red else (tint ?: C.sub),
                     maxLines = 1,
                 )
             }
@@ -827,9 +888,11 @@ fun SectionHeader(title: String, right: @Composable (() -> Unit)? = null, subtit
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = F.body.sp, fontWeight = FontWeight.ExtraBold, color = C.ink)
+            // v1.6.53 — section titles are 14sp Medium (spec 6); the
+            // ExtraBold shout is gone — Light Glass is calm.
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = C.ink)
             if (!subtitle.isNullOrEmpty()) {
-                Text(subtitle, fontSize = F.tiny.sp, color = C.sub, modifier = Modifier.padding(top = 1.dp))
+                Text(subtitle, fontSize = 11.sp, color = C.sub, modifier = Modifier.padding(top = 1.dp))
             }
         }
         right?.invoke()
@@ -1115,13 +1178,18 @@ fun Pill(
     icon: String? = null,
 ) {
     val C = C()
-    val (bg, fg) = when (tone) {
-        "brand" -> C.brandSoft to C.brand
-        "green" -> Color(0x241d9a6b) to C.green
-        "red" -> Color(0x21d64545) to C.red
-        "amber" -> Color(0x24b97d10) to C.amber
-        "blue" -> Color(0x244a7d9b) to C.blue
-        else -> C.chip to C.sub
+    // v1.6.53 — status pills per spec 7: tinted background + matching
+    // text + icon/signal, never color alone. Semantic tones (green/red/
+    // amber) always carry a marker: the caller's icon when given, else a
+    // small sign dot so the status survives greyscale and color-blind
+    // viewing.
+    val (bg, fg, semantic: Boolean) = when (tone) {
+        "brand" -> Triple(C.brandSoft, C.brand, false)
+        "green" -> Triple(Color(0x241d9a6b), C.green, true)
+        "red" -> Triple(Color(0x21d64545), C.red, true)
+        "amber" -> Triple(Color(0x24b97d10), C.amber, true)
+        "blue" -> Triple(Color(0x244a7d9b), C.blue, true)
+        else -> Triple(C.chip, C.sub, false)
     }
     Row(
         Modifier
@@ -1132,6 +1200,12 @@ fun Pill(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (icon != null) MdiIcon(icon, 13, fg)
+        else if (semantic) {
+            // the sign dot: a 4dp filled circle in the tone's own ink —
+            // the "always comes with an icon or sign, never color alone"
+            // rule, applied without inventing new glyphs
+            Box(Modifier.size(4.dp).clip(CircleShape).background(fg))
+        }
         Text(label, fontSize = F.tiny.sp, fontWeight = FontWeight.Bold, color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

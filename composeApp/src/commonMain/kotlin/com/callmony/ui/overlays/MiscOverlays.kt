@@ -834,7 +834,7 @@ fun AlarmDialog() {
             Modifier
                 .padding(20.dp)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(24.dp))
+                .clip(RoundedCornerShape(28.dp))
                 .background(C.card)
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

@@ -34,6 +34,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +49,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.callmony.i18n.LANGUAGES
@@ -609,26 +611,37 @@ private fun Header() {
 
 /* ---------------- BottomNav ---------------- */
 
+/** v1.6.53 — the main-action FAB's pulse ring runs this many breathe
+ *  cycles then stops (BOUNDED — the zero-infinite-animations rule from
+ *  the v1.6.51 RenderThread ANR lesson); pinned by LightGlassV1653Test. */
+internal const val DIALER_FAB_PULSE_CYCLES = 3
+
 @Composable
 private fun BottomNav() {
     val C = C()
     val overdueCount = AppStore.state.reminders.count { it.deletedAt == null && !it.done && dueStatus(it.snoozedUntil ?: it.dueAt) == "overdue" }
-    // v1.6.52 — LIGHT GLASS BOTTOM NAV (spec: "solid Brand bar, 28dp radius,
-    // inset 12dp from screen edges, white icons + 10sp labels, center FAB
-    // overlapping the top edge"). The bar floats over the glass canvas with
-    // a brand-tinted shadow; the center dialer key becomes the gradient FAB
-    // with a 4dp white ring. (The spec's optional pulse ring animation is
-    // deliberately OMITTED: v1.6.51 just banished the app's last infinite
-    // animation because a display-rate pulse contributed to a 101-second
-    // RenderThread stall on the weakest device class — the ANR lesson
-    // outranks the decorative pulse. Every other motion stays 120-200ms
-    // terminating tweens, per spec MOTION.)
+    // v1.6.53 — THE SPEC NAV, COMPLETE: solid Brand bar, 28dp radius,
+    // 12dp insets, white icons AND 10sp labels ALWAYS visible (inactive
+    // white @80%), the selected item on a soft white@20% PILL, and the
+    // main-action FAB overlapping the bar's top edge with a gentle pulse
+    // ring. The v1.6.52 bar had icons only and a 12dp rounded rect for the
+    // active tile — both spec misses.
+    // MOTION DISCIPLINE: the pulse ring is a BOUNDED one-shot (three ~1.6s
+    // breathe cycles, then off — the AlarmDialog v1.6.51 lesson: zero
+    // infinite animations), and it never runs when reduced motion is on
+    // (Platform.ui.reduceMotion).
     // GEOMETRY CONTRACT: the nav's TOTAL height stays exactly 71dp (64dp
     // bar + 7dp bottom inset) — the v1.6.46/47 keypad-band pin (264 − 71 =
     // 193dp) and the canvas lift math measure the real nav; the floating
     // look comes from the horizontal 12dp insets and the 28dp radius, NOT
     // from extra vertical air.
-    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp)) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 12.dp)
+            .testTag("bottomNavRoot"),
+    ) {
         Box(
             Modifier
                 .fillMaxWidth()
@@ -648,70 +661,155 @@ private fun BottomNav() {
                 // v1.6.33 — tapping Recents (even while already on it) resets the
                 // Recents view — owe tab, direction filter and scroll all snap
                 // back to the nothing-clicked state (user report: "if the recent
-                // btn at the bottom navigation is clicked it should go back to the
+                // btn at the bottom navigation is clicked it should go back to
                 // recent as the tabs was not clicked").
-                NavSlot("recents", "history", "Recents", Modifier.weight(1f)) {
+                NavSlot("recents", "history", t("nav.recents"), Modifier.weight(1f)) {
                     UiStore.recentsResetTick++
                 }
-                NavSlot("calculator", "calculator-variant", "Calculator", Modifier.weight(1f)) {
+                NavSlot("calculator", "calculator-variant", t("nav.calculator"), Modifier.weight(1f)) {
                     // RN parity: tap toggles the calculator sheet over the current tab
                     val calcOpen = UiStore.overlayStack.any { it is Overlay.Calculator }
                     if (calcOpen) UiStore.closeType("Calculator")
                     else UiStore.open(Overlay.Calculator())
                 }
-                // keypad — the floating dialer FAB (middle of the bar, overlapping)
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                // keypad — the floating dialer FAB (middle of the bar,
+                // overlapping the bar's top edge per the spec)
+                Box(Modifier.weight(1f).testTag("dialerFabSlot"), contentAlignment = Alignment.Center) {
                     val active = UiStore.keypadOpen
-                    Box(
-                        Modifier
-                            .size(68.dp)
-                            .shadow(16.dp, CircleShape, ambientColor = C.brandDark.copy(alpha = 0.45f), spotColor = C.brandDark.copy(alpha = 0.45f))
-                            .clip(CircleShape)
-                            .background(Brush.linearGradient(listOf(C.brandLight, C.brandDark)))
-                            .border(4.dp, Color.White, CircleShape)
-                            .clickable {
-                                // RN parity: tap while open closes; otherwise the
-                                // dialer opens ON TOP of the Recents tab
-                                UiStore.closeAll()
-                                if (!active) {
-                                    UiStore.setTab("recents")
-                                    UiStore.keypadOpen = true
-                                }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) { MdiIcon("dialpad", 26, Color.White) }
+                    DialerFab(active = active)
                 }
-                NavSlot("general", "wallet-outline", "General", Modifier.weight(1f))
+                NavSlot("general", "wallet-outline", t("nav.general"), Modifier.weight(1f))
                 // More
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     Box(
                         Modifier
-                            .size(48.dp, 34.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (UiStore.moreOpen) Color.White.copy(alpha = 0.22f) else Color.Transparent)
-                            .clickable { UiStore.moreOpen = !UiStore.moreOpen },
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(if (UiStore.moreOpen) Color.White.copy(alpha = 0.20f) else Color.Transparent)
+                            .clickable { UiStore.moreOpen = !UiStore.moreOpen }
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        MdiIcon("dots-horizontal-circle-outline", 24, if (UiStore.moreOpen) Color.White else Color.White.copy(alpha = 0.80f))
-                        if (overdueCount > 0) {
-                            Box(
-                                Modifier
-                                    .align(Alignment.TopEnd)
-                                    .size(16.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color.White),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    if (overdueCount > 9) "9+" else "$overdueCount",
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = C.brand,
-                                )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box {
+                                MdiIcon("dots-horizontal-circle-outline", 24, if (UiStore.moreOpen) Color.White else Color.White.copy(alpha = 0.80f))
+                                if (overdueCount > 0) {
+                                    Box(
+                                        Modifier
+                                            .align(Alignment.TopEnd)
+                                            .size(16.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color.White),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            if (overdueCount > 9) "9+" else "$overdueCount",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = C.brand,
+                                        )
+                                    }
+                                }
                             }
+                            NavLabel(t("nav.more"), UiStore.moreOpen)
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** v1.6.53 — the nav item's 10sp always-visible label (spec: white when
+ *  active, white @80% when not). */
+@Composable
+private fun NavLabel(label: String, active: Boolean) {
+    Text(
+        label,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Medium,
+        color = if (active) Color.White else Color.White.copy(alpha = 0.80f),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/** v1.6.53 — THE MAIN-ACTION FAB (spec 7: 68-76dp circle, 4dp white ring,
+ *  gradient, strong tinted shadow, gentle pulse ring; the main action may
+ *  overlap the bar's top edge). The pulse ring is a BOUNDED one-shot —
+ *  three breathe cycles then gone (the zero-infinite-animations rule from
+ *  the v1.6.51 RenderThread ANR lesson), and it is suppressed entirely
+ *  when the OS requests reduced motion. */
+@Composable
+private fun DialerFab(active: Boolean) {
+    val C = C()
+    // one-shot ring: 0 -> 1 -> 0 over three breathes, then stays off
+    val ring = remember { Animatable(0f) }
+    var ringDone by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!com.callmony.platform.Platform.ui.reduceMotion) {
+            repeat(3) {
+                ring.animateTo(1f, tween(800, easing = FastOutSlowInEasing))
+                ring.animateTo(0f, tween(800, easing = FastOutSlowInEasing))
+            }
+        }
+        ringDone = true
+    }
+    Box(contentAlignment = Alignment.Center) {
+        if (!ringDone && ring.value > 0.01f) {
+            // the soft pulse ring — a white halo breathing around the FAB
+            Box(
+                Modifier
+                    .size(68.dp)
+                    .graphicsLayer { this.alpha = ring.value * 0.45f }
+                    .border(3.dp, Color.White, CircleShape)
+            )
+        }
+        Box(
+            Modifier
+                .size(68.dp)
+                .shadow(16.dp, CircleShape, ambientColor = C.brandDark.copy(alpha = 0.45f), spotColor = C.brandDark.copy(alpha = 0.45f))
+                .clip(CircleShape)
+                .background(Brush.linearGradient(listOf(C.brandLight, C.brandDark)))
+                .border(4.dp, Color.White, CircleShape)
+                .clickable {
+                    // RN parity: tap while open closes; otherwise the
+                    // dialer opens ON TOP of the Recents tab
+                    UiStore.closeAll()
+                    if (!active) {
+                        UiStore.setTab("recents")
+                        UiStore.keypadOpen = true
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) { MdiIcon("dialpad", 26, Color.White) }
+    }
+}
+
+@Composable
+private fun NavSlot(tab: String, icon: String, label: String, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
+    val C = C()
+    val active = UiStore.tab == tab
+    Box(modifier.height(64.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                // v1.6.53 — the selected item is a soft white@20% PILL
+                // (spec 7), fully round; inactive = transparent.
+                .clip(RoundedCornerShape(999.dp))
+                .background(if (active) Color.White.copy(alpha = 0.20f) else Color.Transparent)
+                .clickable {
+                    // v1.6.14 FIX: the nav tiles never switched tabs — tapping
+                    // General (the wallet/ledger page) or Recents did nothing.
+                    // RN parity: closeAll() first, then setTab for real tabs.
+                    UiStore.closeAll()
+                    if (tab != "calculator") UiStore.setTab(tab)
+                    onClick()
+                }
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                MdiIcon(icon, 22, if (active) Color.White else Color.White.copy(alpha = 0.80f))
+                NavLabel(label, active)
             }
         }
     }
@@ -751,31 +849,6 @@ fun LogoTile(sizeDp: Int, corner: Int = sizeDp / 3) {
                 color = C.onBrand,
             )
         }
-    }
-}
-
-@Composable
-private fun NavSlot(tab: String, icon: String, label: String, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
-    val C = C()
-    val active = UiStore.tab == tab
-    Box(modifier.height(64.dp), contentAlignment = Alignment.Center) {
-        Box(
-            Modifier
-                .size(48.dp, 34.dp)
-                .clip(RoundedCornerShape(12.dp))
-                // v1.6.52 — LIGHT GLASS nav tiles: active = white @22% over
-                // the brand bar, inactive = transparent (white @80% icon).
-                .background(if (active) Color.White.copy(alpha = 0.22f) else Color.Transparent)
-                .clickable {
-                    // v1.6.14 FIX: the nav tiles never switched tabs — tapping
-                    // General (the wallet/ledger page) or Recents did nothing.
-                    // RN parity: closeAll() first, then setTab for real tabs.
-                    UiStore.closeAll()
-                    if (tab != "calculator") UiStore.setTab(tab)
-                    onClick()
-                },
-            contentAlignment = Alignment.Center,
-        ) { MdiIcon(icon, 24, if (active) Color.White else Color.White.copy(alpha = 0.80f)) }
     }
 }
 

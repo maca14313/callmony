@@ -230,10 +230,10 @@ fun ContactEditorOverlay(recordID: String) {
                         Modifier
                             .size(36.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(if (defaultIdx == i) Color(0x2eb97d10) else Color.Transparent)
+                            .background(if (defaultIdx == i) C().brandSoft else Color.Transparent)
                             .clickable { defaultIdx = i },
                         contentAlignment = Alignment.Center,
-                    ) { MdiIcon(if (defaultIdx == i) "star" else "star-outline", 19, if (defaultIdx == i) Color(0xFFb97d10) else C().faint) }
+                    ) { MdiIcon(if (defaultIdx == i) "star" else "star-outline", 19, if (defaultIdx == i) C().brand else C().faint) }
                     if (phones.size > 1) {
                         Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).clickable { if (phones.size > 1) phones = phones.filterIndexed { idx, _ -> idx != i } }, contentAlignment = Alignment.Center) {
                             MdiIcon("close", 18, C().red)
@@ -369,10 +369,10 @@ fun ContactCreatorOverlay(prefillPhone: String?, prefillName: String?) {
                         Modifier
                             .size(36.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(if (defaultIdx == i) Color(0x2eb97d10) else Color.Transparent)
+                            .background(if (defaultIdx == i) C().brandSoft else Color.Transparent)
                             .clickable { defaultIdx = i },
                         contentAlignment = Alignment.Center,
-                    ) { MdiIcon(if (defaultIdx == i) "star" else "star-outline", 19, if (defaultIdx == i) Color(0xFFb97d10) else C.faint) }
+                    ) { MdiIcon(if (defaultIdx == i) "star" else "star-outline", 19, if (defaultIdx == i) C.brand else C.faint) }
                     if (phones.size > 1) {
                         Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).clickable { if (phones.size > 1) phones = phones.filterIndexed { idx, _ -> idx != i } }, contentAlignment = Alignment.Center) {
                             MdiIcon("close", 18, C.red)

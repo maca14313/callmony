@@ -2006,7 +2006,7 @@ private val CALC_PAD_H = 264.dp
 /** The text-keyboard colour — everything written in TEXT mode renders in
  *  this blue, everything written in NUMBER mode stays ink ("it should be
  *  different colour for what was written in text and number modes"). */
-internal val TEXTMODE_COLOR = Color(0xFF4A7D9B)
+internal val TEXTMODE_COLOR = Color(0xFF1565D8) // BrandDark (v1.6.53 — moved onto the token)
 
 @Composable
 private fun CalcKeypadHostContent(onKey: (String) -> Unit, onEnter: () -> Unit, rtl: Boolean) {
@@ -2273,10 +2273,10 @@ private fun CalcKey(key: String, modifier: Modifier = Modifier, onPress: (String
         modifier
             .clip(RoundedCornerShape(14.dp))
             .background(when {
-                key == "⌫" -> Color(0x1dd64545)
-                key == "AC" -> Color(0x1dd64545)
-                key == "%" -> Color(0x1f4a7d9b)
-                key == "±" -> Color(0x1f4a7d9b)
+                key == "⌫" -> C.red.copy(alpha = 0.12f)
+                key == "AC" -> C.red.copy(alpha = 0.12f)
+                key == "%" -> C.brandSoft
+                key == "±" -> C.brandSoft
                 op -> C.brandSoft
                 else -> C.card
             })
@@ -2284,7 +2284,7 @@ private fun CalcKey(key: String, modifier: Modifier = Modifier, onPress: (String
                 1.dp,
                 when {
                     key == "⌫" || key == "AC" -> C.red
-                    key == "%" || key == "±" -> Color(0xFF4a7d9b)
+                    key == "%" || key == "±" -> C.brandDark
                     op -> C.brand
                     else -> C.line
                 },
@@ -2312,7 +2312,7 @@ private fun CalcKey(key: String, modifier: Modifier = Modifier, onPress: (String
                 fontFamily = ff,
                 color = when {
                     op -> C.brand
-                    key == "%" || key == "±" -> Color(0xFF4a7d9b)
+                    key == "%" || key == "±" -> C.brandDark
                     else -> C.ink
                 },
             )
