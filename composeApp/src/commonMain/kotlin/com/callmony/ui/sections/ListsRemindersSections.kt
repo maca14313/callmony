@@ -108,7 +108,7 @@ fun ListsSection(ownerId: String) {
                     onLongPress = { menuFor = l },
                     left = listOf(SwipeAction(t("act.open"), "open-in-new", C.brand) { UiStore.open(Overlay.ListDetail(l.id)) }),
                     right = listOf(
-                        SwipeAction(t("act.duplicate"), "content-duplicate", C.brandDark) {
+                        SwipeAction(t("act.duplicate"), "content-duplicate", Color(0xFF4a7d9b)) {
                             AppStore.duplicateList(l.id)
                             Toasts.toast(t("ls.listDuplicated"))
                         },
@@ -359,11 +359,11 @@ fun RemindersSection(
                                 SwipeAction(
                                     if (r.done) t("rm.reopen") else t("act.done"),
                                     if (r.done) "restore" else "check",
-                                    if (r.done) C.brand else C.green,
+                                    if (r.done) Color(0xFF4a7d9b) else C.green,
                                 ) { if (r.done) AppStore.reopenReminder(r.id) else AppStore.completeReminder(r.id) },
                             ),
                             right = listOf(
-                                SwipeAction(t("rm.snooze1h"), "alarm-clock-plus", C.brandDark) {
+                                SwipeAction(t("rm.snooze1h"), "alarm-clock-plus", Color(0xFFb97d10)) {
                                     AppStore.snoozeReminder(r.id, now() + 3600000)
                                     Toasts.toast(t("rm.snoozed", mapOf("label" to "1h")))
                                 },

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -42,13 +41,10 @@ import com.callmony.theme.F
 import com.callmony.ui.kit.Avatar
 import com.callmony.ui.kit.C
 import com.callmony.ui.kit.Card
-import com.callmony.ui.kit.HeroNumeral
 import com.callmony.ui.kit.MdiIcon
 import com.callmony.ui.kit.Money
-import com.callmony.ui.kit.Pill
 import com.callmony.ui.kit.SectionHeader
 import com.callmony.ui.kit.Segmented
-import com.callmony.ui.components.brandGradient
 import com.callmony.ui.sections.BankSection
 import com.callmony.ui.sections.LedgerSection
 import com.callmony.ui.sections.ListsSection
@@ -109,90 +105,66 @@ fun GeneralScreen() {
     Column(
         Modifier
             .fillMaxWidth()
-            // v1.6.53 — LIGHT GLASS (spec 5): max content width 480dp,
-            // centered on wide windows (landscape / desktop).
-            .widthIn(max = 480.dp)
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
             .padding(bottom = 28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // hero — v1.6.52 LIGHT GLASS: the NET becomes a hero numeral
-        // (40sp Lexend Light in Brand — the spec's large light-weight
-        // numerals); income/expense/lists sit in soft-tinted pills below.
+        // hero
         Card(Modifier.padding(bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(
                     Modifier
                         .size(50.dp)
-                        .brandGradient(RoundedCornerShape(16.dp)),
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(C.brand),
                     contentAlignment = Alignment.Center,
                 ) { MdiIcon("wallet-outline", 26, C.onBrand) }
                 Column(Modifier.weight(1f)) {
-                    Text("${t("hdr.general")}.", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = C.ink)
+                    Text("${t("hdr.general")}.", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = C.ink)
                     Text(t("gv.intro"), fontSize = F.small.sp, color = C.sub)
                     Text(t("gv.acrossEveryone"), fontSize = F.tiny.sp, color = C.faint, modifier = Modifier.padding(top = 2.dp))
                 }
             }
-            Row(
-                Modifier.padding(top = 14.dp),
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    t("lg.net"),
-                    fontSize = 13.sp,
-                    color = C.sub,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(bottom = 9.dp),
-                )
-                // v1.6.53 — the NET is a true HERO NUMERAL (spec 6: 48-64sp
-                // ExtraLight/Light in Brand, auto-shrink to one line, never
-                // overflow or clip) — HeroNumeral measures and steps down
-                // the ladder until the money string fits one line. Negative
-                // nets go Danger red (the signed convention; red is a
-                // status, not a second brand).
-                HeroNumeral(
-                    compactMoney(net, signed = false),
-                    negative = net < 0,
-                    modifier = Modifier.weight(1f),
-                    tag = "heroNumeral:generalNet",
-                )
+            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(1.dp, C.line, RoundedCornerShape(14.dp))
+                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                ) {
+                    Text(t("lg.income"), fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
+                    Money(global.first, size = 16, weight = FontWeight.ExtraBold, compact = true)
+                }
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(1.dp, C.line, RoundedCornerShape(14.dp))
+                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                ) {
+                    Text(t("lg.expense"), fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
+                    Money(-global.second, size = 16, weight = FontWeight.ExtraBold, compact = true)
+                }
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(C.brandSoft)
+                        .border(1.dp, C.brand, RoundedCornerShape(14.dp))
+                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                ) {
+                    Text(t("lg.net"), fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.SemiBold)
+                    Money(net, colorize = true, size = 16, weight = FontWeight.ExtraBold, compact = true)
+                }
             }
-            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(C.brandSoft.copy(alpha = 0.55f))
-                        .border(1.dp, C.line, RoundedCornerShape(14.dp))
-                        .padding(horizontal = 10.dp, vertical = 9.dp),
-                ) {
-                    Text(t("lg.income"), fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.Medium)
-                    Money(global.first, size = 16, weight = FontWeight.Medium, compact = true)
-                }
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(C.brandSoft.copy(alpha = 0.55f))
-                        .border(1.dp, C.line, RoundedCornerShape(14.dp))
-                        .padding(horizontal = 10.dp, vertical = 9.dp),
-                ) {
-                    Text(t("lg.expense"), fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.Medium)
-                    Money(-global.second, size = 16, weight = FontWeight.Medium, compact = true)
-                }
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(C.brandSoft.copy(alpha = 0.55f))
-                        .border(1.dp, C.line, RoundedCornerShape(14.dp))
-                        .padding(horizontal = 10.dp, vertical = 9.dp),
-                ) {
-                    Text(t("lg.openLists"), fontSize = F.tiny.sp, color = C.sub, fontWeight = FontWeight.Medium)
-                    Money(global.third, size = 16, weight = FontWeight.Medium, compact = true)
-                }
+            if (global.third > 0.005) {
+                Text(
+                    "${t("lg.openLists")}: ${compactMoney(global.third)}",
+                    fontSize = F.tiny.sp,
+                    color = C.amber,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
             }
         }
 
@@ -200,13 +172,24 @@ fun GeneralScreen() {
         SectionHeader(t("gv.people"), subtitle = t("gv.peopleHint"))
         Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             if (owedToYou > 0.005) {
-                // v1.6.53 — status pills through the kit (tinted bg +
-                // matching text + sign, never color alone); the raw hex
-                // boxes are gone.
-                Pill("${t("gv.owedToYou")} ${compactMoney(owedToYou)}", tone = "green", icon = "arrow-down-left")
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color_green12())
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Text("${t("gv.owedToYou")} ${compactMoney(owedToYou)}", fontSize = F.tiny.sp, color = C.green, fontWeight = FontWeight.ExtraBold)
+                }
             }
             if (youOwe > 0.005) {
-                Pill("${t("gv.youOwe")} ${compactMoney(youOwe)}", tone = "red", icon = "arrow-up-right")
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color_red10())
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Text("${t("gv.youOwe")} ${compactMoney(youOwe)}", fontSize = F.tiny.sp, color = C.red, fontWeight = FontWeight.ExtraBold)
+                }
             }
         }
         if (people.isEmpty()) {
@@ -260,3 +243,6 @@ fun GeneralScreen() {
         }
     }
 }
+
+private fun Color_green12() = androidx.compose.ui.graphics.Color(0x1f1d9a6b)
+private fun Color_red10() = androidx.compose.ui.graphics.Color(0x1ad64545)

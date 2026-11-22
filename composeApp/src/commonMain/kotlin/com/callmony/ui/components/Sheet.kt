@@ -51,7 +51,7 @@ import com.callmony.ui.kit.C
 import com.callmony.ui.kit.IconBtn
 import com.callmony.ui.kit.Toasts
 import com.callmony.ui.kit.vibrate
-import com.callmony.ui.components.glassCanvas
+
 /* Sheet & BottomSheet — the overlay containers used by every modal in the
    app (port of src/components/kit.tsx Sheet + BottomSheet). */
 
@@ -116,13 +116,19 @@ fun Sheet(
     // v1.6.26 — sheets render INSIDE the shell's content area (between the
     // app header and the always-visible bottom nav), so they no longer pad
     // the system bars themselves — the shell already did it above, and the
-    // nav below owns the gesture-bar inset.
-    // v1.6.35 — IME LIFT; v1.6.36 — position-aware lift.
-    // v1.6.52 — LIGHT GLASS: the sheet canvas is the glow gradient.
+    // nav below owns the gesture-bar inset. (Previously each sheet was a
+    // full-screen surface and had to handle both insets itself.)
+    // v1.6.35 — IME LIFT (user report: "when keyboard is open then if
+    // some modal opens up, the keyboard is covering it"): typing inside a
+    // modal lifts it above the keyboard so the footer and the bottom
+    // fields are never covered.
+    // v1.6.36 — the lift is POSITION-AWARE (imeLiftPadding above): the
+    // footer now rests exactly on the keyboard top — never a nav-band
+    // higher (which squeezed the form under the save bar).
     Column(
         Modifier
             .fillMaxSize()
-            .glassCanvas()
+            .background(C.canvas)
             .imeLiftPadding()
     ) {
         // header: back chevron · avatar · title (auto-shrink) · actions
@@ -143,17 +149,11 @@ fun Sheet(
             Column(Modifier.weight(1f).padding(start = if (avatar != null) 6.dp else 4.dp)) {
                 Text(
                     title,
-                    // v1.6.53 — titles are 20sp SemiBold (spec 6)
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontSize = F.h2.sp,
+                    fontWeight = FontWeight.ExtraBold,
                     color = C.ink,
-                    // v1.6.54 — ROUND 2, SPEC 3: titles may wrap to two
-                    // lines (maxLines = 2, softWrap) — never ellipsize
-                    // ("Calcul…" was cut off). Only names may ellipsize.
-                    maxLines = 2,
-                    softWrap = true,
-                    overflow = TextOverflow.Visible,
-                    lineHeight = 24.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 if (!subtitle.isNullOrEmpty()) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -215,7 +215,7 @@ fun Sheet(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .background(Color.Transparent)
+                    .background(C.canvas)
                     .padding(horizontal = 18.dp, vertical = 10.dp),
             ) { footer() }
         }
@@ -282,13 +282,6 @@ fun BottomSheet(
     val C = C()
     // v1.6.15: the native back button closes the bottom sheet first
     com.callmony.ui.kit.AppBackHandler(enabled = true) { onClose() }
-    // v1.6.54 — ROUND 2, SPEC 1: the sheet surface is 100% OPAQUE white
-    // (containerColor = Color.White, never alpha — the @96% glass let the
-    // page behind read through: "Credit Nov 7…", "People", contact names
-    // were visible through Add entry / Keypad / More). The scrim is the
-    // spec's Ink @40%. 36dp top corners + brand hairline + brand-tinted
-    // shadow unchanged.
-    val sheetShape = RoundedCornerShape(topStart = 36.dp, topEnd = 36.dp)
     Box(
         Modifier
             .fillMaxSize()
@@ -307,9 +300,11 @@ fun BottomSheet(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                 ) {}
-                .shadow(20.dp, sheetShape, ambientColor = C.brand.copy(alpha = 0.18f), spotColor = C.brand.copy(alpha = 0.18f))
-                .clip(sheetShape)
-                .background(if (C.mode == "dark") Color(0xFF101D33) else Color.White)
+                // v1.6.25 — flat spec: a modest 6dp lift (was 10dp) — the
+                // sheet floats over the scrim without a heavy shadow.
+                .shadow(6.dp, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                .background(C.card)
                 // v1.6.35 — IME LIFT: a bottom sheet carrying a text input
                 // (custom category, quick add…) rises above the keyboard
                 // instead of being covered by it.
@@ -349,16 +344,12 @@ fun BottomSheet(
                 ) {
                     Text(
                         title,
-                        // v1.6.53 — sheet titles are 20sp SemiBold (spec 6)
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontSize = F.h2.sp,
+                        fontWeight = FontWeight.ExtraBold,
                         color = C.ink,
                         modifier = Modifier.weight(1f),
-                        // v1.6.54 — ROUND 2, SPEC 3: two lines, no ellipsis
-                        maxLines = 2,
-                        softWrap = true,
-                        overflow = TextOverflow.Visible,
-                        lineHeight = 24.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     if (headerRight != null) headerRight() else IconBtn("close", onClose, size = 36)
                 }

@@ -5,11 +5,7 @@ internal val EN: Map<String, String> = mapOf(
     "nav.recents" to "Recents",
     "nav.contacts" to "Contacts",
     "nav.keypad" to "Keypad",
-    "nav.calculator" to "Calc",  // v1.6.54 — round 2: the nav label fits one line at 360dp, never ellipsized (the Calculator TITLE keeps the full word)
-    "calc.titleFull" to "Calculator",
-    "calc.advanced" to "Advanced",
-    "calc.pasteAction" to "Paste",
-    "calc.copyAction" to "Copy result",
+    "nav.calculator" to "Calculator",
     "nav.general" to "General",
     "nav.more" to "More",
     "tab.ledger" to "Ledger",

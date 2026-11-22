@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -86,7 +85,6 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToLong
 import com.callmony.ui.components.ScrollRow
-import com.callmony.ui.components.glassCanvas
 
 /* RecentsScreen — the home tab. Port of src/screens/RecentsScreen.tsx. */
 
@@ -372,15 +370,7 @@ fun RecentsScreen() {
         return
     }
 
-    // v1.6.53 — LIGHT GLASS (spec 5): content max width 480dp on phones in
-    // landscape and desktop — the screen column centers inside the window
-    // instead of stretching edge to edge.
-    Column(
-        Modifier
-            .fillMaxSize()
-            .widthIn(max = 480.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
+    Column(Modifier.fillMaxSize()) {
         // credit summary strip — three slim stat cards
         if (owedToYou > 0.005 || youOwe > 0.005) {
             Row(
@@ -401,7 +391,7 @@ fun RecentsScreen() {
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 6.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .border(1.dp, C.brand.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+                    .border(1.dp, Color(0x59b97d10), RoundedCornerShape(14.dp))
                     .clickable { askContacts() }
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -458,15 +448,12 @@ fun RecentsScreen() {
         // owe chips row — THE TWO TABS (v1.6.30: toggleable — tapping the
         // active one returns to "all"; they no longer collide with the
         // direction filter chips)
-        // v1.6.54 — ROUND 2, SPEC 3+4: the two owe tabs sit in a SCROLLING
-        // strip with the edge fade — full labels, never truncated
-        // ("They owe y…", "You owe th…" were cut), and the row scrolls when
-        // the localized labels are long.
-        ScrollRow(Modifier.fillMaxWidth().padding(vertical = 6.dp), contentPadding = PaddingValues(horizontal = 16.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Chip(icon = "arrow-bottom-left", label = t("cd.theyOweYou"), active = oweTab == "theyOwe", onPress = { oweTab = if (oweTab == "theyOwe") "all" else "theyOwe" })
-                Chip(icon = "arrow-top-right", label = t("cd.youOweThem"), active = oweTab == "youOwe", onPress = { oweTab = if (oweTab == "youOwe") "all" else "youOwe" })
-            }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Chip(compact = true, icon = "arrow-bottom-left", label = t("cd.theyOweYou"), active = oweTab == "theyOwe", onPress = { oweTab = if (oweTab == "theyOwe") "all" else "theyOwe" })
+            Chip(compact = true, icon = "arrow-top-right", label = t("cd.youOweThem"), active = oweTab == "youOwe", onPress = { oweTab = if (oweTab == "youOwe") "all" else "youOwe" })
         }
         // v1.6.34 — THE OWE-TAB FILTER TABS. The v1.6.30/33 row of
         // call-direction chips under the owe buttons is GONE (user report:
@@ -481,11 +468,8 @@ fun RecentsScreen() {
         if (oweTab != "all") {
             ScrollRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    // v1.6.54 — ROUND 2, SPEC 3: the owe sub-filter chips
-                    // wrap their labels (no ellipsis) — they live in the
-                    // scrolling fade strip.
                     Chip(
-                        compact = false, icon = "calendar-blank-outline",
+                        compact = true, icon = "calendar-blank-outline",
                         label = when (oweDays) {
                             1 -> t("cd.oweToday"); 7 -> t("cd.oweLast7"); 30 -> t("cd.oweLast30")
                             -1 -> t("cd.oweCustom"); else -> t("cd.oweDate")
@@ -494,13 +478,13 @@ fun RecentsScreen() {
                         onPress = { oweMenu = "date" },
                     )
                     Chip(
-                        compact = false, icon = "cash-check",
+                        compact = true, icon = "cash-check",
                         label = if (oweMinAmount > 0) t("cd.oweAbove", mapOf("n" to compactMoney(oweMinAmount))) else t("cd.oweAmount"),
                         active = oweMinAmount > 0,
                         onPress = { oweMenu = "amount" },
                     )
                     Chip(
-                        compact = false, icon = "account-circle-outline",
+                        compact = true, icon = "account-circle-outline",
                         label = when (oweNameSort) {
                             "az" -> t("cd.oweAZ"); "za" -> t("cd.oweZA"); else -> t("cd.oweName")
                         },
@@ -668,7 +652,7 @@ fun RecentsScreen() {
                                         }
                                     },
                                     size = 30,
-                                    color = if (isFav) C.brand else C.faint,
+                                    color = if (isFav) Color(0xFFb97d10) else C.faint,
                                 )
                             }
                             IconBtn("phone-outline", { callOptsRow = null; Calls.placeCall(p.number) }, size = 30)
@@ -991,7 +975,7 @@ private fun DayHeader(label: String, filter: String, onFilter: (String) -> Unit,
     Row(
         Modifier
             .fillMaxWidth()
-            .glassCanvas()
+            .background(C.canvas)
             .padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1015,9 +999,6 @@ private fun DayHeader(label: String, filter: String, onFilter: (String) -> Unit,
         if (showFilters) DayFilters(filter, onFilter, missedCount)
     }
 }
-// (v1.6.54 note: the DayHeader's date label may ellipsize — dates/names
-// are the ONLY text allowed to (round 2, spec 3); the filter chips are
-// iconOnly fixed-width tiles that always fit at 360dp.)
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -1073,18 +1054,14 @@ fun CallCard(
     // v1.6.15 (user request): the full quick-action set on swipe, not just
     // call + favourite — left drag: Call · WhatsApp · SMS · Favourite;
     // right drag: Copy number · Create/Add contact · Info.
-    // v1.6.53 — LIGHT GLASS: one brand color, no rainbow — every action
-    // tile is Brand or BrandDark with its white stroke icon (the icons
-    // differentiate; the old teal/green/blue/amber/grey rainbow is gone,
-    // per spec 2 "No rainbow, pastel multicolor").
     val leftActions = if (hasRealNumber) buildList {
-        add(SwipeAction(t("act.call"), "phone", C.brand) { onCall(callNumber) })
-        add(SwipeAction(t("act.whatsapp"), "whatsapp", C.brandDark) { onWhatsApp(callNumber) })
-        add(SwipeAction(t("act.sms"), "message-text-outline", C.brand) { onSMS(callNumber) })
-        if (row.contact != null) add(SwipeAction(t("cd.favorites"), "star", C.brandDark) { onToggleFav(row.contact!!.recordID) })
+        add(SwipeAction(t("act.call"), "phone", Color(0xFF16a085)) { onCall(callNumber) })
+        add(SwipeAction(t("act.whatsapp"), "whatsapp", Color(0xFF1faa53)) { onWhatsApp(callNumber) })
+        add(SwipeAction(t("act.sms"), "message-text-outline", Color(0xFF4a7d9b)) { onSMS(callNumber) })
+        if (row.contact != null) add(SwipeAction(t("cd.favorites"), "star", Color(0xFFb97d10)) { onToggleFav(row.contact!!.recordID) })
     } else emptyList()
     val rightActions = if (hasRealNumber) buildList {
-        add(SwipeAction(t("cd.copyNumber"), "content-copy", C.brandDark) { onCopy(callNumber) })
+        add(SwipeAction(t("cd.copyNumber"), "content-copy", Color(0xFF5c6f6c)) { onCopy(callNumber) })
         add(
             if (row.contact != null) SwipeAction(t("cd.callHistory"), "account-circle-outline", C.brand) { onDetail(row) }
             else SwipeAction(t("cd.createContact"), "account-plus-outline", C.brand) { onCreateContact(callNumber) }
@@ -1151,14 +1128,10 @@ fun CallCard(
                         )
                     }
                     if (balance != 0.0) {
-                        // v1.6.54 — ROUND 2, SPEC 3: the owe pill wraps
-                        // its label to two lines (never "They owe y…"),
-                        // and the money autosizes instead of ellipsizing.
                         Row(
                             Modifier
-                                .padding(top = 2.dp)
                                 .clip(RoundedCornerShape(999.dp))
-                                .background(if (balance > 0) C.green.copy(alpha = 0.13f) else C.red.copy(alpha = 0.12f))
+                                .background(if (balance > 0) Color(0x2116a085) else Color(0x1dd64545))
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(3.dp),
@@ -1166,14 +1139,12 @@ fun CallCard(
                             MdiIcon(if (balance > 0) "arrow-bottom-left" else "arrow-top-right", 10, if (balance > 0) C.green else C.red)
                             Money(value = balance, colorize = true, signed = true, size = 11, compact = true)
                             Text(
-                                if (balance > 0) t("cd.theyOweYou") else t("cd.youOweThem"),
+                                "· ${if (balance > 0) t("cd.theyOweYou") else t("cd.youOweThem")}",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (balance > 0) C.green else C.red,
-                                maxLines = 2,
-                                softWrap = true,
-                                overflow = TextOverflow.Visible,
-                                lineHeight = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     } else if (hasRealNumber) {
@@ -1248,7 +1219,7 @@ private fun NumberTile(
                 if (isFav) "star" else "star-outline",
                 onToggleFav,
                 size = 26,
-                color = if (isFav) C.brand else C.faint,
+                color = if (isFav) Color(0xFFb97d10) else C.faint,
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {

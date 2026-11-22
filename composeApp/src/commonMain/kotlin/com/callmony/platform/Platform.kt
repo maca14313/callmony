@@ -171,11 +171,6 @@ interface UiPlatform {
     val osDarkFlow: MutableStateFlow<Boolean>
     fun setStatusBarMode(dark: Boolean)
     fun setNavColor(rgba: Long)
-    /** v1.6.53 — whether the user asked the OS to reduce motion (spec 8:
-     *  decorative animation is disabled when reduced motion is on). A
-     *  plain read refreshed on demand; defaults to false where the OS
-     *  exposes no setting (iOS native, desktop). */
-    val reduceMotion: Boolean get() = false
     /** v1.6.47 — WINDOW-LEVEL IME SUPPRESSION for the calculator's number
      *  keypad (user report: "sometimes the netiv keyboard opens up on the
      *  number mode why"): while the 12-key grid is up, the window itself

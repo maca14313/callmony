@@ -230,7 +230,7 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
                     MdiIcon("pencil-outline", 20, C.sub)
                 }
                 Box(Modifier.size(34.dp, 38.dp).clickable { toggleFav() }, contentAlignment = Alignment.Center) {
-                    MdiIcon(if (isFav) "star" else "star-outline", 20, if (isFav) C.brand else C.sub)
+                    MdiIcon(if (isFav) "star" else "star-outline", 20, if (isFav) Color(0xFFb97d10) else C.sub)
                 }
                 Box(Modifier.size(30.dp, 38.dp).clickable { moreOpen = true }, contentAlignment = Alignment.Center) {
                     MdiIcon("dots-vertical", 20, C.sub)
@@ -273,8 +273,8 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
                         .background(
                             when {
                                 kotlin.math.abs(balance) < 0.005 -> C.cardAlt
-                                balance > 0 -> C.green.copy(alpha = 0.14f)
-                                else -> C.red.copy(alpha = 0.12f)
+                                balance > 0 -> Color(0x2416a085)
+                                else -> Color(0x1fd64545)
                             }
                         )
                         .border(1.dp, C.line, RoundedCornerShape(999.dp))
@@ -522,7 +522,7 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
                     buildList {
                         add(MoreTileSpec("phone", t("act.call"), C.brand) { moreOpen = false; runAction("call") })
                         add(MoreTileSpec("message-text-outline", t("act.sms"), C.brand) { moreOpen = false; runAction("sms") })
-                        add(MoreTileSpec("whatsapp", t("act.whatsapp"), C.brand) { moreOpen = false; runAction("whatsapp") })
+                        add(MoreTileSpec("whatsapp", t("act.whatsapp"), Color(0xFF1faa53)) { moreOpen = false; runAction("whatsapp") })
                         add(MoreTileSpec("send", t("act.telegram"), C.blue) { moreOpen = false; tgPicker = true })
                         add(MoreTileSpec("email-outline", t("act.email"), C.amber) { moreOpen = false; emailPicker = true })
                     },
@@ -536,7 +536,7 @@ fun ContactDetailOverlay(recordID: String, initialSeg: String? = null) {
                         dedupePhones().forEach { p ->
                             val digits = normalizePhone(p.number, countryCode).replace(Regex("\\D"), "")
                             if (digits.length >= 7) {
-                                add(MoreTileSpec("whatsapp", "WhatsApp", C.brandDark) { Messengers.waLink(p.number) })
+                                add(MoreTileSpec("whatsapp", "WhatsApp", Color(0xFF1faa53)) { Messengers.waLink(p.number) })
                                 add(MoreTileSpec("send", "Telegram", C.blue) { Messengers.tgLink(digits) })
                             }
                         }
@@ -717,7 +717,7 @@ fun ContactInfo(
                     ) {
                         Pill(p.label, "brand")
                         Text(prettyPhone(p.number, countryCode), fontSize = F.small.sp, color = C.ink, modifier = Modifier.weight(1f))
-                        if (isPrimaryMark(p.number, contact)) MdiIcon("star", 14, C.brand)
+                        if (isPrimaryMark(p.number, contact)) MdiIcon("star", 14, Color(0xFFb97d10))
                         IconBtn("content-copy", { Platform.share.copyText(p.number); Toasts.toast(t("act.copied")) }, size = 28)
                         IconBtn("phone-outline", { Calls.placeCall(p.number) }, size = 28)
                     }
@@ -742,7 +742,7 @@ fun ContactInfo(
                 val digits = normalizePhone(p.number, countryCode).replace(Regex("\\D"), "")
                 if (digits.length >= 7) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MdiIcon("whatsapp", 16, C.brand)
+                        MdiIcon("whatsapp", 16, Color(0xFF1faa53))
                         Text("WhatsApp · ${p.number}", fontSize = F.small.sp, color = C.ink, modifier = Modifier.weight(1f))
                         IconBtn("open-in-new", { Messengers.waLink(p.number) }, size = 28)
                     }
@@ -932,7 +932,7 @@ fun NumberPickerSheet(
                                     }
                                 },
                                 size = 30,
-                                color = if (isFav) C.brand else C.faint,
+                                color = if (isFav) Color(0xFFb97d10) else C.faint,
                             )
                         }
                         // v1.6.18 — every row carries the ACTION icon (call /

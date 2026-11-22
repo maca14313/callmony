@@ -1021,19 +1021,6 @@ class AndroidUi(private val ctx: Context) : UiPlatform {
         osDarkFlow.value = currentSystemDark()
     }
 
-    /** v1.6.53 — reduced motion (spec 8): the global animator scale at 0
-     *  is Android's "remove animations" accessibility setting. Read fresh
-     *  each time the FAB composes so toggling the setting applies on the
-     *  next frame, without a flow subscription. */
-    override val reduceMotion: Boolean
-        get() = runCatching {
-            android.provider.Settings.Global.getFloat(
-                ctx.contentResolver,
-                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
-                1f,
-            ) == 0f
-        }.getOrDefault(false)
-
     override fun setStatusBarMode(dark: Boolean) {
         // handled through enableEdgeToEdge + Compose in MainActivity
     }

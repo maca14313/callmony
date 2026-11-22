@@ -5,7 +5,6 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -425,26 +424,15 @@ class EntryEditCalcTabTest {
         rule.waitUntil(timeoutMillis = 15000) {
             rule.onAllNodesWithTag("calcTextField").fetchSemanticsNodes().isNotEmpty()
         }
-        // v1.6.53 — the bottom nav's new always-visible labels collide by
-        // TEXT ("Calculator" is also nav.calculator), so count only the
-        // matches ABOVE the nav band (the editor sheet owns everything
-        // above; the deleted tabs lived there).
-        val navTopY = rule.onRoot().fetchSemanticsNode().size.height - (71f * 2.625f)
-        val calcMatches = rule.onAllNodes(hasText(t("ee.tabCalc")) and hasClickAction())
-            .fetchSemanticsNodes()
-            .filter { it.positionInRoot.y < navTopY }
         assertEquals(
             "the Calculator tab must be gone (the form is deleted)",
             0,
-            calcMatches.size,
+            rule.onAllNodes(hasText(t("ee.tabCalc")) and hasClickAction()).fetchSemanticsNodes().size,
         )
-        val recentMatches = rule.onAllNodes(hasText(t("ee.tabRecent")) and hasClickAction())
-            .fetchSemanticsNodes()
-            .filter { it.positionInRoot.y < navTopY }
         assertEquals(
             "the Recent tab must be gone (the form is deleted)",
             0,
-            recentMatches.size,
+            rule.onAllNodes(hasText(t("ee.tabRecent")) and hasClickAction()).fetchSemanticsNodes().size,
         )
         assertEquals(
             "Just amount chip must be gone",

@@ -5,11 +5,7 @@ internal val AR: Map<String, String> = mapOf(
     "nav.recents" to "الأحدث",
     "nav.contacts" to "جهات الاتصال",
     "nav.keypad" to "لوحة الأرقام",
-    "nav.calculator" to "حاسبة",  // v1.6.54 — round 2: fits the 360dp nav slot
-    "calc.titleFull" to "الآلة الحاسبة",
-    "calc.advanced" to "متقدم",
-    "calc.pasteAction" to "لصق",
-    "calc.copyAction" to "نسخ النتيجة",
+    "nav.calculator" to "الآلة الحاسبة",
     "nav.general" to "عام",
     "nav.more" to "المزيد",
     "tab.ledger" to "الدفتر",

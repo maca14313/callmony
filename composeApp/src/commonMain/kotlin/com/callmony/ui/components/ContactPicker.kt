@@ -54,7 +54,6 @@ import com.callmony.ui.kit.pressVeil
 import com.callmony.ui.kit.Toaster
 import com.callmony.ui.kit.Toasts
 import com.callmony.ui.kit.vibrate
-import com.callmony.ui.components.glassCanvas
 
 /* ContactPicker — full-screen search sheet used everywhere an owner or a
    contact target is chosen (port of src/components/ContactPicker.tsx).
@@ -84,7 +83,7 @@ fun ContactPicker(
     // v1.6.15: native back closes the picker itself (inner handler wins)
     com.callmony.ui.kit.AppBackHandler(enabled = true) { onBack() }
 
-    Column(Modifier.fillMaxSize().glassCanvas().statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(C.canvas).statusBarsPadding()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp).height(56.dp),
             verticalAlignment = Alignment.CenterVertically,

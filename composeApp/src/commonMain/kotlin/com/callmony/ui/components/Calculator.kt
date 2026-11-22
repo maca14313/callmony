@@ -177,12 +177,6 @@ fun CalculatorSheet() {
     var memory by remember { mutableStateOf<Double?>(null) }
     var history by remember { mutableStateOf(listOf<HistItem>()) }
     var showHistory by remember { mutableStateOf(false) }
-    // v1.6.54 — ROUND 2, SPEC 3: the header no longer crowds FOUR action
-    // controls beside the title ("Calcul…" was the truncated casualty) —
-    // the History pill keeps its labelled slot; Σ, Paste and Copy move
-    // into a THREE-DOT OVERFLOW menu. The title gets the full word
-    // (calc.titleFull) and two lines, never ellipsized.
-    var showOverflow by remember { mutableStateOf(false) }
     // v1.6.27 — the memory keys live in an ADVANCED panel now (user report:
     // "we don't need the m+ m- mr, make them in advanced, the advanced icon
     // should be beside the history icon") — toggled by the Σ icon that sits
@@ -375,19 +369,32 @@ fun CalculatorSheet() {
     }
 
     Sheet(
-        title = t("calc.titleFull"),
+        title = t("nav.calculator"),
         subtitle = memory?.let { "M = ${fmtResult(it)}" },
         onBack = pop,
         scrollable = false,
         headerRight = {
-            // v1.6.54 — ROUND 2, SPEC 3: the app-bar actions are ONE
-            // labelled History pill + ONE overflow menu (Σ · Paste · Copy
-            // inside) — the title never shares a row with four buttons,
-            // so "Calculator" renders in full.
+            // v1.6.29 — THE HISTORY CONTROL IS A LABELLED BRAND PILL now
+            // (user report: "make the history icon more visible"): the old
+            // bare 22dp sub-toned glyph was easy to miss on the canvas. It
+            // reads as a real button — icon + bold label, brand-tinted, and
+            // solid brand while the panel is open. Σ and copy get visible
+            // chips too (cardAlt + hairline), so nothing in the header is a
+            // naked faint icon anymore.
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                // the ADVANCED toggle (Σ) — v1.6.27, kept beside history
+                Box(
+                    Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (showAdvanced) C.brandSoft else C.cardAlt)
+                        .border(1.dp, if (showAdvanced) C.brand else C.line, RoundedCornerShape(12.dp))
+                        .clickable { showAdvanced = !showAdvanced },
+                    contentAlignment = Alignment.Center,
+                ) { MdiIcon("sigma", 20, if (showAdvanced) C.brand else C.sub) }
                 // HISTORY — the labelled pill, impossible to miss
                 Row(
                     Modifier
@@ -406,58 +413,30 @@ fun CalculatorSheet() {
                         fontSize = F.tiny.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (showHistory) C.onBrand else C.brand,
-                        maxLines = 1,
-                        softWrap = false,
                     )
                 }
-                // OVERFLOW — Σ · Paste · Copy live here now
-                Box {
-                    Box(
-                        Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(C.cardAlt)
-                            .border(1.dp, C.line, RoundedCornerShape(12.dp))
-                            .clickable { showOverflow = !showOverflow },
-                        contentAlignment = Alignment.Center,
-                    ) { MdiIcon("dots-vertical", 18, C.sub) }
-                    androidx.compose.material3.DropdownMenu(
-                        expanded = showOverflow,
-                        onDismissRequest = { showOverflow = false },
-                    ) {
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    MdiIcon("sigma", 17, if (showAdvanced) C.brand else C.sub)
-                                    Text(
-                                        (if (showAdvanced) "✓ " else "") + t("calc.advanced"),
-                                        fontSize = F.small.sp,
-                                        color = C.ink,
-                                    )
-                                }
-                            },
-                            onClick = { showAdvanced = !showAdvanced; showOverflow = false },
-                        )
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    MdiIcon("content-paste", 17, C.sub)
-                                    Text(t("calc.pasteAction"), fontSize = F.small.sp, color = C.ink)
-                                }
-                            },
-                            onClick = { pasteFromClipboard(); showOverflow = false },
-                        )
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    MdiIcon("content-copy", 17, C.sub)
-                                    Text(t("calc.copyAction"), fontSize = F.small.sp, color = C.ink)
-                                }
-                            },
-                            onClick = { copyResult(); showOverflow = false },
-                        )
-                    }
-                }
+                // v1.6.30 — PASTE from the clipboard into the display —
+                // the mirror of the copy chip beside it ("copy and paste in
+                // the display just like other calculators")
+                Box(
+                    Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(C.cardAlt)
+                        .border(1.dp, C.line, RoundedCornerShape(12.dp))
+                        .clickable { pasteFromClipboard() },
+                    contentAlignment = Alignment.Center,
+                ) { MdiIcon("content-paste", 18, C.sub) }
+                // copy result
+                Box(
+                    Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(C.cardAlt)
+                        .border(1.dp, C.line, RoundedCornerShape(12.dp))
+                        .clickable { copyResult() },
+                    contentAlignment = Alignment.Center,
+                ) { MdiIcon("content-copy", 18, C.sub) }
             }
         },
     ) {
@@ -634,11 +613,17 @@ fun CalculatorSheet() {
                 Modifier.padding(top = 12.dp).weight(55f),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // v1.6.54 — ROUND 2, SPEC 9, EXACT: ALL digit keys are the
-                // SAME white tile (the v1.6.53 numTints cycle read as a
-                // white/blue CHECKERBOARD — "looks accidental"); operators
-                // are Brand50 with Brand text; "=" is the Brand GRADIENT;
-                // AC keeps its Danger tint. No alternating pattern.
+                // v1.6.26 — the colourful key palette (soft tinted tile +
+                // strong matching glyph). Hues stay inside the app's family
+                // (teal/amber/blue/rose/violet) so nothing clashes with the
+                // brand green reserved for the operators.
+                val numTints = listOf(
+                    Color(0xFF16a085) to Color(0x1f16a085), // teal
+                    Color(0xFF4a7d9b) to Color(0x1f4a7d9b), // blue
+                    Color(0xFF7c5cb8) to Color(0x1f7c5cb8), // violet
+                    Color(0xFFb97d10) to Color(0x1fb97d10), // amber
+                    Color(0xFFc65b6e) to Color(0x1fc65b6e), // rose
+                )
                 val rows = listOf(
                     listOf(
                         CalcKey("AC", CalcKeyKind.CLEAR) { vibrate(longArrayOf(10)); expr = ""; result = null; justEvaluated = false },
@@ -671,43 +656,27 @@ fun CalculatorSheet() {
                         CalcKey("=", CalcKeyKind.EQ) { pressEquals() },
                     ),
                 )
+                var numIdx = 0
                 for (row in rows) {
                     Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         for (ck in row) {
-                            // v1.6.54 — ROUND 2, SPEC 9: one uniform tile
-                            // per class — digits ALL white (ink text),
-                            // operators Brand50 (Brand text), "=" the Brand
-                            // GRADIENT (white text), AC the Danger tint,
-                            // ⌫/± white like digits. No checkerboard.
                             val (fg, bg) = when (ck.kind) {
-                                CalcKeyKind.EQ -> C.onBrand to C.brand
+                                CalcKeyKind.EQ -> C.onBrand to C.ink
                                 CalcKeyKind.OP -> C.brand to C.brandSoft
-                                CalcKeyKind.CLEAR -> C.red to C.red.copy(alpha = 0.12f)
-                                CalcKeyKind.BACK -> C.ink to Color.White
-                                CalcKeyKind.PERCENT -> C.ink to Color.White
-                                CalcKeyKind.NUM -> C.ink to Color.White
+                                CalcKeyKind.CLEAR -> C.red to Color(0x1fd64545)
+                                CalcKeyKind.BACK -> C.amber to Color(0x1fb97d10)
+                                CalcKeyKind.PERCENT -> C.blue to Color(0x1f4a7d9b)
+                                CalcKeyKind.NUM -> numTints[numIdx++ % numTints.size].let { it.first to it.second }
                             }
-                            val isEq = ck.kind == CalcKeyKind.EQ
                             val isHold = ck.kind == CalcKeyKind.BACK
                             Box(
                                 Modifier
                                     .weight(1f)
                                     .fillMaxHeight()
                                     .clip(RoundedCornerShape(18.dp))
-                                    // v1.6.54 — the "=" key is the Brand
-                                    // GRADIENT (round 2, spec 9), not a
-                                    // flat fill.
-                                    .then(
-                                        if (isEq) {
-                                            Modifier.background(
-                                                androidx.compose.ui.graphics.Brush.linearGradient(
-                                                    listOf(C.brandLight, C.brandDark)
-                                                )
-                                            )
-                                        } else {
-                                            Modifier.background(if (isHold && backHeld) C.brandSoft else bg)
-                                        }
-                                    )
+                                    // v1.6.27 — pressed-state on the hold key
+                                    // (pointerInput bypasses LocalIndication)
+                                    .background(if (isHold && backHeld) Color(0x33b97d10) else bg)
                                     .then(
                                         if (isHold) {
                                             Modifier.pointerInput(Unit) {

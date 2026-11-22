@@ -88,7 +88,6 @@ import com.callmony.ui.kit.Pill
 import com.callmony.ui.kit.Toasts
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import com.callmony.ui.components.glassCanvas
 
 /* MiscOverlays — global Search, SpeedDial grid, Merge duplicates, About,
    AlarmDialog. Port of src/overlays/MiscOverlays.tsx. */
@@ -212,7 +211,7 @@ fun SearchOverlay() {
         .let { if (hasQuery) it.take(5) else it.take(20) }
         .filter { hasQuery || browsing }
 
-    Column(Modifier.fillMaxSize().glassCanvas()) {
+    Column(Modifier.fillMaxSize().background(C.canvas)) {
         // search field
         Row(
             Modifier
@@ -834,7 +833,7 @@ fun AlarmDialog() {
             Modifier
                 .padding(20.dp)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(28.dp))
+                .clip(RoundedCornerShape(24.dp))
                 .background(C.card)
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

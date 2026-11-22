@@ -104,9 +104,25 @@ RN source in `react-native/src/`.
 
 ## Versioning
 
-**1.6.54 (versionCode 65)** — see `react-native/docs/CHANGELOG.md` for the
+**1.6.51 (versionCode 66)** — see `react-native/docs/CHANGELOG.md` for the
 feature history.
 
+- **1.6.51 ROLLBACK (vc66)** — the user asked to go back to v1.6.51
+  ("forget about the ui shit, just go back v1.6.51"), so that is what
+  shipped: the app source tree is byte-identical to the original v1.6.51
+  release (commit 9cfd972) except ONE build line, versionCode 62 -> 66,
+  because Android refuses to install an APK with a lower build number
+  over the installed v1.6.54 (65) and the only alternative,
+  uninstall-first, would delete user data. versionName stays 1.6.51.
+  The Light Glass redesign tree (v1.6.52 re-skin + the v1.6.53 spec
+  corrections + the v1.6.54 Round 2 list) is abandoned wholesale. Data
+  written by v1.6.52-54 loads cleanly under v1.6.51 (git diff over
+  model/, Db.kt, Persist.kt, Store.kt, AutoBackup.kt between the two is
+  EMPTY — the UI rounds never touched the data layer; same JSON schema,
+  same storage keys, same loader) — verified before rolling back. Signed
+  with the same release key as every prior release, so it installs as a
+  direct update with data intact. v1.6.52-54 are NOT deleted: they remain
+  in git history and on the Releases page.
 - **1.6.54** — THE ROUND 2 CORRECTION LIST (the user's exact 10-point fix
   list, sent with v1.6.53 screenshots, applied through SHARED COMPONENTS):
   sheets/menus/dialogs are 100% OPAQUE white over an Ink@40% scrim (the

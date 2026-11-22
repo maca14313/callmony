@@ -807,3 +807,13 @@ Stage Summary:
 - 360dp audit vs all 10 points: PASS on every point (table in the chat-log); nothing still fails. Watch-items: keypad display value not assertable through Compose semantics under Robolectric (native EditText, documented v1.6.42 limitation); localized nav labels audited (AR shortened to حاسبة).
 - Tests 285 (was 278): NEW Round2V1654Test ×7 at w360dp + LightGlass canvas pin updated to pure-white/zero-glows/Ink@40%. Full battery 282/285; the 3 timeouts = documented sandbox flakiness (RecentsV1615 passed on rerun; the Round2 keypad test corrected to the observable contract and passes; ContactDetailV1636 A/B-proven flaky on the PRISTINE v1.6.53 baseline via git stash/pop). Both iOS targets compile clean.
 - Build 1.6.54 vc65 (9.24MB); aapt verified; apksigner SHA-256 2f6d65be…869ad (same key as always — installs over anything, data intact). Delivered: releases/callmony-1.6.54-release.apk + releases/callmony-android-v1.6.54.tar + download copy; README + CHANGELOG + sandbox/chat-logs updated per the backup requirement.
+
+---
+
+## Session 2026-11-22 (c) — v1.6.51 ROLLBACK ("forget about the ui shit, just go back v1.6.51")
+
+- Repo: synced ff-only to origin/main (v1.6.54 @ 659247d; sandbox recycle → SDK + Gradle caches reinstalled).
+- Full rollback to v1.6.51 (commit 9cfd972, vc62): git read-tree -u --reset → tree byte-identical over composeApp/src + iosApp/ + gradle config. Sole build change: versionCode 62→66 (install-over v1.6.54 vc65 without data loss); versionName stays 1.6.51. The Light Glass tree (v1.6.52/53/54) is abandoned; those versions stay in history + Releases.
+- Data safety verified BEFORE rollback: git diff v1.6.51↔v1.6.54 over model/, Db.kt, Persist.kt, Store.kt, AutoBackup.kt = EMPTY (the UI rounds never touched the data layer) — v1.6.52–54 data loads cleanly under v1.6.51.
+- Release infra + chat-log history restored from HEAD; rollback chat-log at sandbox/chat-logs/2026-11-22-c-v1.6.51-rollback.md.
+- v1.6.51 battery on the restored tree + build 1.6.51 vc66 + GitHub Release v1.6.51-rollback (APK + .tar) — see the chat-log for the results.
